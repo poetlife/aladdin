@@ -1,0 +1,54 @@
+# golangci-lint 配置。
+#
+# 阈值与前端 ESLint 保持一致（见 web/eslint.config.js）：
+# 文件与函数过大是"该拆分了"的信号，用统一的数值表达同一条约定。
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - gosec
+    - bodyclose
+    - errorlint
+    - noctx
+    - unconvert
+    - misspell
+    - godot
+
+  settings:
+    revive:
+      rules:
+        # 导出的标识符必须有注释——spec 与代码的导航依赖它。
+        - name: exported
+          arguments:
+            - disableStutteringCheck
+
+    gosec:
+      excludes:
+        # 测试中允许使用弱随机数生成夹具标识。
+        - G404
+
+  exclusions:
+    rules:
+      # 生成代码不参与风格检查，但参与编译检查。
+      - path: api/gen/
+        linters: [revive, godot, misspell]
+      - path: internal/rbac/catalog_gen.go
+        linters: [revive, godot, misspell]
+      - path: _test\.go
+        linters: [gosec, noctx, errcheck]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      # 本仓库的导入分组：标准库 / 第三方 / 本仓库。
+      local-prefixes:
+        - github.com/poetlife/aladdin

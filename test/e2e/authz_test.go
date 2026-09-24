@@ -1,0 +1,284 @@
+//go:build e2e
+
+// Package e2e 端到端验证鉴权链路。
+//
+// 它与单元测试的分工：internal/rbac 的测试验证**判定逻辑**，
+// 这里的测试验证**判定如何被接入**——注解解析、主体提取、
+// 作用域解析、拒绝语义到状态码的映射，全部走真实的 gRPC 连接。
+//
+// 运行：make test-e2e
+package e2e
+
+import (
+	"context"
+	"errors"
+	"net"
+	"testing"
+	"time"
+
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
+	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
+	"github.com/poetlife/aladdin/internal/config"
+	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/server"
+	"github.com/poetlife/aladdin/pkg/client"
+)
+
+const (
+	testToken   = "e2e-token"
+	testSubject = "e2e-user"
+	testScope   = "tenant/acme"
+)
+
+// harness 是一次端到端测试的全部依赖。
+type harness struct {
+	address string
+}
+
+// startServer 在随机端口上启动服务端，并注入一个测试主体。
+func startServer(t *testing.T, roleID string, scope rbac.Scope) harness {
+	t.Helper()
+
+	cfg := config.Default()
+	cfg.Address = "127.0.0.1:0"
+	logger := zap.NewNop()
+
+	srv := server.New(cfg, logger)
+	srv.Store().RegisterSubject(rbac.Subject{
+		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,
+	})
+	if err := srv.Store().Bind(context.Background(), rbac.RoleBinding{
+		SubjectID: testSubject, RoleID: roleID, Scope: scope,
+	}); err != nil {
+		t.Fatalf("注入绑定失败: %v", err)
+	}
+	srv.Authenticator().Add(testToken, rbac.Subject{
+		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,
+	})
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("监听失败: %v", err)
+	}
+
+	// 服务端 goroutine 只向 channel 写，不碰 *testing.T：
+	// t.Logf 在测试结束后调用会与 testing 包内部状态竞争，
+	// 而且真出现问题时日志早已失去归属。
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(lis) }()
+
+	t.Cleanup(func() {
+		_ = lis.Close()
+		if err := <-errCh; err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, grpc.ErrServerStopped) {
+			t.Errorf("服务端异常退出: %v", err)
+		}
+	})
+
+	return harness{address: lis.Addr().String()}
+}
+
+// dial 构造一个已注入凭证的客户端。
+func (h harness) dial(t *testing.T, token, scope string) *client.Client {
+	t.Helper()
+	c, err := client.Dial(client.Options{
+		Address: h.address,
+		Token:   token,
+		Scope:   scope,
+		Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("连接失败: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+func TestWhoAmI(t *testing.T) {
+	h := startServer(t, rbac.RoleViewer, testScope)
+	c := h.dial(t, testToken, testScope)
+
+	ctx, cancel := c.Context()
+	defer cancel()
+
+	resp, err := identityv1.NewIdentityServiceClient(c.Conn()).WhoAmI(ctx, &identityv1.WhoAmIRequest{})
+	if err != nil {
+		t.Fatalf("WhoAmI 失败: %v", err)
+	}
+	if resp.GetSubjectId() != testSubject {
+		t.Errorf("主体 = %q, want %q", resp.GetSubjectId(), testSubject)
+	}
+}
+
+// TestSessionPermissionsAreExpanded 验证前端拿到的是**展开后**的权限码集合。
+//
+// 这是前端能保持"只做集合成员判断"的前提：继承与作用域展开在服务端完成。
+func TestSessionPermissionsAreExpanded(t *testing.T) {
+	h := startServer(t, rbac.RoleViewer, testScope)
+	c := h.dial(t, testToken, testScope)
+
+	ctx, cancel := c.Context()
+	defer cancel()
+
+	resp, err := identityv1.NewIdentityServiceClient(c.Conn()).
+		GetSessionPermissions(ctx, &identityv1.GetSessionPermissionsRequest{})
+	if err != nil {
+		t.Fatalf("GetSessionPermissions 失败: %v", err)
+	}
+
+	want := map[string]bool{
+		rbac.PermissionRbacRoleRead.String():    true,
+		rbac.PermissionRbacSubjectRead.String(): true,
+	}
+	if len(resp.GetPermissions()) != len(want) {
+		t.Fatalf("权限码 = %v, want %d 条", resp.GetPermissions(), len(want))
+	}
+	for _, p := range resp.GetPermissions() {
+		if !want[p] {
+			t.Errorf("出现非预期权限码 %q", p)
+		}
+	}
+}
+
+// TestScopeContainmentOverWire 验证作用域包含规则在真实链路上生效。
+func TestScopeContainmentOverWire(t *testing.T) {
+	h := startServer(t, rbac.RoleViewer, testScope)
+
+	tests := []struct {
+		name    string
+		scope   string
+		wantErr codes.Code
+	}{
+		{"子作用域放行", "tenant/acme/project/web", codes.OK},
+		{"自身作用域放行", "tenant/acme", codes.OK},
+		{"父作用域拒绝", "tenant", codes.PermissionDenied},
+		{"兄弟作用域拒绝", "tenant/other", codes.PermissionDenied},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := h.dial(t, testToken, tt.scope)
+			ctx, cancel := c.Context()
+			defer cancel()
+
+			_, err := rbacv1.NewRBACServiceClient(c.Conn()).
+				ListRoles(ctx, &rbacv1.ListRolesRequest{Scope: tt.scope})
+			if got := status.Code(err); got != tt.wantErr {
+				t.Fatalf("状态码 = %s, want %s (err=%v)", got, tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestUnauthenticatedDistinctFromPermissionDenied 验证两类失败不被混淆。
+//
+// 混用会让客户端在权限不足时反复刷新凭证，把一次配置错误放大成登录风暴。
+func TestUnauthenticatedDistinctFromPermissionDenied(t *testing.T) {
+	t.Run("未携带凭证", func(t *testing.T) {
+		h := startServer(t, rbac.RoleViewer, testScope)
+		c := h.dial(t, "", testScope)
+		ctx, cancel := c.Context()
+		defer cancel()
+
+		_, err := rbacv1.NewRBACServiceClient(c.Conn()).
+			ListRoles(ctx, &rbacv1.ListRolesRequest{Scope: testScope})
+		if got := status.Code(err); got != codes.Unauthenticated {
+			t.Fatalf("状态码 = %s, want Unauthenticated", got)
+		}
+	})
+
+	t.Run("凭证无效", func(t *testing.T) {
+		h := startServer(t, rbac.RoleViewer, testScope)
+		c := h.dial(t, "bogus-token", testScope)
+		ctx, cancel := c.Context()
+		defer cancel()
+
+		_, err := rbacv1.NewRBACServiceClient(c.Conn()).
+			ListRoles(ctx, &rbacv1.ListRolesRequest{Scope: testScope})
+		if got := status.Code(err); got != codes.Unauthenticated {
+			t.Fatalf("状态码 = %s, want Unauthenticated", got)
+		}
+	})
+
+	t.Run("已认证但无权限", func(t *testing.T) {
+		// auditor 没有 rbac.role.write，尝试写角色应得到 PermissionDenied。
+		h := startServer(t, rbac.RoleAuditor, testScope)
+		c := h.dial(t, testToken, testScope)
+		ctx, cancel := c.Context()
+		defer cancel()
+
+		_, err := rbacv1.NewRBACServiceClient(c.Conn()).
+			PutRole(ctx, &rbacv1.PutRoleRequest{
+				Scope: testScope,
+				Role:  &rbacv1.Role{Id: "new-role", DisplayName: "新角色"},
+			})
+		if got := status.Code(err); got != codes.PermissionDenied {
+			t.Fatalf("状态码 = %s, want PermissionDenied", got)
+		}
+	})
+}
+
+// TestDenialReasonIsStructured 验证拒绝原因是结构化枚举而非自由文本。
+//
+// CLI 与前端都依赖它做分支，因此它必须能被机器读取。
+func TestDenialReasonIsStructured(t *testing.T) {
+	h := startServer(t, rbac.RoleViewer, testScope)
+	// 请求父作用域：有权限但作用域不够，应得到 scope_mismatch。
+	c := h.dial(t, testToken, "tenant")
+
+	ctx, cancel := c.Context()
+	defer cancel()
+
+	_, err := rbacv1.NewRBACServiceClient(c.Conn()).
+		ListRoles(ctx, &rbacv1.ListRolesRequest{Scope: "tenant"})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("期望 PermissionDenied，实际 %v", err)
+	}
+
+	detail := denialDetail(t, err)
+	if detail.GetReason() != rbac.ReasonScopeMismatch {
+		t.Errorf("原因 = %s, want %s", detail.GetReason(), rbac.ReasonScopeMismatch)
+	}
+}
+
+// TestPublicMethodNeedsNoCredential 验证公开方法真的公开，且仅限白名单内的方法。
+func TestPublicMethodNeedsNoCredential(t *testing.T) {
+	h := startServer(t, rbac.RoleViewer, testScope)
+	c := h.dial(t, "", "")
+
+	ctx, cancel := c.Context()
+	defer cancel()
+
+	_, err := identityv1.NewIdentityServiceClient(c.Conn()).
+		Login(ctx, &identityv1.LoginRequest{
+			Credential: &identityv1.LoginRequest_Token{
+				Token: &identityv1.TokenCredential{Token: testToken},
+			},
+		})
+	if err != nil {
+		t.Fatalf("公开方法不应要求凭证: %v", err)
+	}
+}
+
+// denialDetail 从错误中取出结构化的拒绝详情。
+//
+// 服务端是 Connect 服务，这里走 gRPC 协议：Connect 把详情编码进
+// grpc-status-details-bin，grpc-go 能直接解出来，不需要额外处理。
+func denialDetail(t *testing.T, err error) *rbacv1.DenialDetail {
+	t.Helper()
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("不是 gRPC 状态错误: %v", err)
+	}
+	for _, d := range st.Details() {
+		if detail, ok := d.(*rbacv1.DenialDetail); ok {
+			return detail
+		}
+	}
+	t.Fatalf("错误中未携带 DenialDetail: %v", err)
+	return nil
+}

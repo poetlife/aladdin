@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package aladdin.identity.v1;
+
+import "aladdin/rbac/v1/annotations.proto";
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1;identityv1";
+
+// IdentityService 是身份认证面。
+//
+// 边界：本服务只做认证（你是谁）。判定（你能做什么）由 RBAC 负责。
+// 认证失败与鉴权失败必须返回不同的状态码，见 grpc-interceptor.md 的拒绝语义。
+service IdentityService {
+  // 登录并换取访问凭证。
+  // 这是极少数公开方法之一，必须显式标记 public，否则鉴权拦截器默认拒绝。
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (aladdin.rbac.v1.public) = true;
+  }
+
+  // 刷新访问凭证。
+  rpc Refresh(RefreshRequest) returns (RefreshResponse) {
+    option (aladdin.rbac.v1.public) = true;
+  }
+
+  // 返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 返回当前主体在其可及作用域下展开后的权限码集合。
+  // 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
+  // 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
+  rpc GetSessionPermissions(GetSessionPermissionsRequest) returns (GetSessionPermissionsResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+}
+
+message LoginRequest {
+  // 人类用户使用用户名口令；机器凭证使用 token 换取短期访问凭证。
+  oneof credential {
+    PasswordCredential password = 1;
+    TokenCredential token = 2;
+  }
+}
+
+message PasswordCredential {
+  string username = 1;
+  string password = 2;
+}
+
+message TokenCredential {
+  string token = 1;
+}
+
+message LoginResponse {
+  string access_token = 1;
+  // ISO 8601 UTC 时间。CLI 依据它做本地过期预检（见 cli-permissions.md）。
+  string expires_at = 2;
+}
+
+message RefreshRequest {
+  string access_token = 1;
+}
+
+message RefreshResponse {
+  string access_token = 1;
+  string expires_at = 2;
+}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  string subject_id = 1;
+  // 主体类型：user / service_account / machine。
+  string subject_type = 2;
+  // 凭证自身绑定的默认作用域。
+  string default_scope = 3;
+}
+
+message GetSessionPermissionsRequest {
+  // 期望的作用域。留空时使用凭证的默认作用域。
+  string scope = 1;
+}
+
+message GetSessionPermissionsResponse {
+  string scope = 1;
+  // 已展开的最终权限码集合。
+  repeated string permissions = 2;
+}

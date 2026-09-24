@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package aladdin.rbac.v1;
+
+import "aladdin/rbac/v1/annotations.proto";
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1;rbacv1";
+
+// RBACService 是权限体系的管理面。
+//
+// 注意：本服务只负责**管理**角色与授权关系，不负责判定。
+// 判定发生在每个业务方法的入口（由鉴权拦截器统一执行），
+// 因此本服务自身的方法同样受注解约束。
+service RBACService {
+  // 读取角色定义。
+  rpc GetRole(GetRoleRequest) returns (GetRoleResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.role.read";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 列出某个作用域下可见的角色。
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.role.read";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 创建或更新角色。属于不可逆操作，调用方需二次确认。
+  rpc PutRole(PutRoleRequest) returns (PutRoleResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.role.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 删除角色。不可逆。
+  rpc DeleteRole(DeleteRoleRequest) returns (DeleteRoleResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.role.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 为主体授予或回收角色。
+  rpc AssignRole(AssignRoleRequest) returns (AssignRoleResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.subject.assign";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 列出某个主体持有的角色绑定。
+  rpc ListSubjectBindings(ListSubjectBindingsRequest) returns (ListSubjectBindingsResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.subject.read";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 使一次角色变更正式生效（缓存失效 + 生效确认）。
+  // 对应 docs/design/rbac/role-model.md 的"生效确认"阶段。
+  rpc PublishPolicy(PublishPolicyRequest) returns (PublishPolicyResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.policy.publish";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+}
+
+message Role {
+  // 角色标识。一经发布不可更改；标识变更等同于"删除旧角色 + 新建角色"。
+  string id = 1;
+  // 展示名，可修改。
+  string display_name = 2;
+  // 角色直接持有的权限码，取值必须存在于权限目录中。
+  repeated string permissions = 3;
+  // 被继承的角色标识。
+  repeated string inherits = 4;
+  // 静态互斥（SSD）的角色标识：不可与这些角色同时授予同一主体。
+  repeated string mutually_exclusive_with = 5;
+  // 是否内置角色。内置角色不可删除，且权限范围不可修改。
+  bool builtin = 6;
+}
+
+message GetRoleRequest {
+  string scope = 1;
+  string role_id = 2;
+}
+
+message GetRoleResponse {
+  Role role = 1;
+}
+
+message ListRolesRequest {
+  string scope = 1;
+}
+
+message ListRolesResponse {
+  repeated Role roles = 1;
+}
+
+message PutRoleRequest {
+  string scope = 1;
+  Role role = 2;
+}
+
+message PutRoleResponse {
+  Role role = 1;
+  // 本次变更的标识，可作为进度查询的键（见 role-model.md 的检查点约定）。
+  string change_id = 2;
+}
+
+message DeleteRoleRequest {
+  string scope = 1;
+  string role_id = 2;
+}
+
+message DeleteRoleResponse {
+  string change_id = 1;
+}
+
+message AssignRoleRequest {
+  string scope = 1;
+  // 目标主体标识。
+  string subject_id = 2;
+  string role_id = 3;
+  // true 为授予，false 为回收。
+  bool grant = 4;
+}
+
+message AssignRoleResponse {
+  string change_id = 1;
+}
+
+message ListSubjectBindingsRequest {
+  string scope = 1;
+  string subject_id = 2;
+}
+
+message ListSubjectBindingsResponse {
+  repeated RoleBinding bindings = 1;
+  // 展开后的最终权限码集合。前端会话权限即来源于此（见 frontend-permissions.md）。
+  repeated string effective_permissions = 2;
+}
+
+message RoleBinding {
+  string subject_id = 1;
+  string role_id = 2;
+  string scope = 3;
+}
+
+message PublishPolicyRequest {
+  string scope = 1;
+  // 要发布的变更标识。留空表示发布该作用域下全部未发布的变更。
+  string change_id = 2;
+}
+
+message PublishPolicyResponse {
+  string change_id = 1;
+  // 实际失效的缓存条目数，用于外部确认"缓存失效"阶段已完成。
+  int32 invalidated_entries = 2;
+}

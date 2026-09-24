@@ -1,0 +1,61 @@
+# 权限目录 —— 权限码全集的唯一信源。
+#
+# 本文件由 `make gen` 派生两份产物，两端都不得手工修改：
+#   - internal/rbac/catalog_gen.go    （Go 常量 + 内置角色定义）
+#   - web/src/gen/permission-codes.ts （前端常量）
+#
+# 新增权限的行为约定（见 docs/design/rbac/role-model.md）：
+#   1. 先在本文件登记；
+#   2. 再在 proto 的方法上引用（option (aladdin.rbac.v1.required_permission)）；
+#   3. 一致性由 internal/rbac/catalog_test.go 在构建期强制校验。
+version: 1
+
+permissions:
+  - code: "rbac.role.read"
+    description: "读取角色定义与角色列表"
+  - code: "rbac.role.write"
+    description: "创建、修改、删除角色。属不可逆操作"
+  - code: "rbac.subject.read"
+    description: "读取主体的角色绑定关系"
+  - code: "rbac.subject.assign"
+    description: "为主体授予或回收角色，会改变权限边界"
+  - code: "rbac.policy.publish"
+    description: "使一次角色变更正式生效（缓存失效与生效确认）"
+  - code: "audit.log.read"
+    description: "查阅审计日志"
+  - code: "audit.log.export"
+    description: "导出审计日志。属批量操作"
+  - code: "*"
+    description: "全部权限。仅保留给系统管理员角色，不得授予其他角色"
+
+# 内置角色的存在是模型的一部分（代码可依赖其标识）；
+# 其具体权限绑定可在部署时调整，但经本文件修改后需重新生成。
+roles:
+  - id: "system.admin"
+    display_name: "系统管理员"
+    builtin: true
+    permissions:
+      - "*"
+  - id: "rbac.admin"
+    display_name: "权限管理员"
+    builtin: true
+    permissions:
+      - "rbac.role.read"
+      - "rbac.role.write"
+      - "rbac.subject.read"
+      - "rbac.subject.assign"
+      - "rbac.policy.publish"
+  - id: "auditor"
+    display_name: "审计员"
+    builtin: true
+    permissions:
+      - "audit.log.read"
+      - "audit.log.export"
+      - "rbac.role.read"
+      - "rbac.subject.read"
+  - id: "viewer"
+    display_name: "只读用户"
+    builtin: true
+    permissions:
+      - "rbac.role.read"
+      - "rbac.subject.read"

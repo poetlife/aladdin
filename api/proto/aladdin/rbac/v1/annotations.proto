@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package aladdin.rbac.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1;rbacv1";
+
+// 本文件定义 RBAC 的方法级注解。
+//
+// 设计要点：受控方法所需的权限码与作用域来源**声明在方法上**，
+// 而不是在拦截器里逐条硬编码。拦截器通过读取方法描述符上的这些
+// 注解来决定如何鉴权，从而做到"新增接口只需在 proto 中声明"。
+//
+// 权限码的字符串取值必须存在于权限目录中（api/permissions/catalog.yaml），
+// 该一致性由构建期测试强制校验。
+//
+// 一个受控方法必须恰好属于以下三类之一，鉴权拦截器按此三分：
+//   1. public = true                     —— 免认证免鉴权（白名单）
+//   2. authenticated_only = true         —— 仅需认证，任何已确认主体可调用
+//   3. required_permission 非空          —— 需认证 + 需该权限
+// 三者皆不满足的方法默认拒绝，视为注解遗漏。
+
+extend google.protobuf.MethodOptions {
+  // 调用该方法所需的权限码，形如 "rbac.role.read"。
+  // 留空表示该方法不受此注解控制——此时它必须出现在公开白名单中，否则鉴权拦截器默认拒绝。
+  string required_permission = 80001;
+
+  // 本次调用的作用域从何处解析。取值语义见 ScopeSource。
+  // 未声明时视为 SCOPE_SOURCE_UNSPECIFIED，鉴权以"作用域不符"拒绝（不降级为全局作用域）。
+  ScopeSource scope_source = 80002;
+
+  // 显式声明为公开方法，无需认证与鉴权。
+  // 该标记是白名单的载体，应尽可能少用；典型成员只有登录与健康检查。
+  bool public = 80003;
+
+  // 显式声明"只需认证、不需特定权限"。
+  // 适用于主体查询自身信息的场景（如 WhoAmI）。
+  // 必须显式声明，不允许通过"留空 required_permission"隐式表达，
+  // 否则一个漏写注解的业务方法会被误当作公开给所有登录用户。
+  bool authenticated_only = 80004;
+}
+
+// 作用域的解析来源。
+enum ScopeSource {
+  SCOPE_SOURCE_UNSPECIFIED = 0;
+
+  // 从请求消息的 scope 字段读取（适用于 RPC 本身就以某个作用域为操作对象的场景）。
+  SCOPE_SOURCE_REQUEST_FIELD = 1;
+
+  // 从请求元数据 aladdin-scope 读取（适用于调用方在当前会话作用域下操作，作用域不体现在消息体里）。
+  SCOPE_SOURCE_METADATA = 2;
+
+  // 使用凭证自身绑定的默认作用域。仅用于身份类方法。
+  SCOPE_SOURCE_CREDENTIAL = 3;
+}

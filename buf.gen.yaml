@@ -1,0 +1,34 @@
+version: v2
+# 一份 proto，四份产物。两侧代码由同一次生成产出，不可能漂移。
+#
+# 传输方式为 Connect RPC（参考 usememos/memos）：connect-go 的 handler
+# 在同一个端口上同时支持 Connect / gRPC / gRPC-Web 三种协议，因此
+#   - 浏览器走 Connect（web/src/api/transport.ts）
+#   - CLI 走原生 gRPC（pkg/client，grpc-go 客户端）
+# 两者打的是同一个地址，不存在两套服务端。
+#
+# 有意不生成 grpc-gateway 与 OpenAPI：同一个方法两条调用路径会带来
+# "文档说 REST、实现走 Connect"这类漂移。需要对外 REST 文档时再加。
+plugins:
+  # Go 侧三个插件都用本地二进制（make tools 安装），离线可用。
+  - local: protoc-gen-go
+    out: api/gen
+    opt: paths=source_relative
+
+  # 仅用于 CLI 的 grpc-go 客户端。服务端不再实现这套接口。
+  - local: protoc-gen-go-grpc
+    out: api/gen
+    opt: paths=source_relative
+
+  # 服务端 handler 与客户端。
+  - local: protoc-gen-connect-go
+    out: api/gen
+    opt: paths=source_relative
+
+  # 前端类型与 service descriptor。
+  # protoc-gen-es v2 已内置生成 service descriptor，无需 protoc-gen-connect-es。
+  # 这个插件没有 Go 实现，只能走 BSR 远程插件。
+  - remote: buf.build/bufbuild/es:v2.15.0
+    out: web/src/gen/proto
+    opt:
+      - target=ts

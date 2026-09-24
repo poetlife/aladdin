@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package aladdin.rbac.v1;
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1;rbacv1";
+
+// 本文件定义鉴权拒绝原因。
+//
+// 拒绝原因是**对外契约**：客户端据此分支处理（前端决定提示什么、
+// CLI 决定退出码、脚本决定要不要重试），因此它必须能被机器读取，
+// 而不能是一句会变的错误文本。
+//
+// 它定义在 proto 里而不是各端各写一份，是为了让 Go 与 TypeScript
+// 两侧的枚举取值永远同源——两边对同一个原因的拼写不一致，
+// 会表现为"前端把权限不足当成了网络错误"这类难以定位的问题。
+
+// DenialReason 是一次鉴权结论的固定原因。
+enum DenialReason {
+  DENIAL_REASON_UNSPECIFIED = 0;
+
+  // 允许。它是判定结论的一种，与拒绝原因共用同一枚举，
+  // 使"结论 + 原因"始终只占一个字段，不可能出现自相矛盾的组合。
+  DENIAL_REASON_ALLOW = 1;
+
+  // 主体确实没有这条权限。客户端不应重试。
+  DENIAL_REASON_NO_MATCHING_GRANT = 2;
+
+  // 主体有此权限，但被授予的作用域不覆盖本次请求。
+  // 与上一条分开，是因为两者对用户的提示完全不同：
+  // 一个要联系管理员，另一个只需换个更高层级的 --scope。
+  DENIAL_REASON_SCOPE_MISMATCH = 3;
+
+  // 凭证失效或未携带。客户端应引导重新登录。
+  DENIAL_REASON_SESSION_EXPIRED = 4;
+
+  // 主体已被删除或停用。客户端不应重试。
+  DENIAL_REASON_SUBJECT_NOT_FOUND = 5;
+
+  // 存储不可用，无法得出结论。
+  //
+  // 它**不是拒绝**：上层应据此返回"服务不可用"并允许客户端退避重试，
+  // 而不是让客户端以为权限不足。
+  DENIAL_REASON_STORE_UNAVAILABLE = 6;
+
+  // 方法未声明任何鉴权注解，被默认拒绝。
+  //
+  // 这**不是调用方的问题**，而是服务端的配置缺陷：新增接口时漏写了
+  // required_permission / public / authenticated_only 三者之一。
+  // 单独成一个取值，是为了让调用方与排障者一眼看出"该找服务端开发"
+  // 而不是"我权限不够"。它同时由构建期测试提前拦截。
+  DENIAL_REASON_ANNOTATION_MISSING = 7;
+}
+
+// DenialDetail 是附带在 RPC 错误上的结构化拒绝原因。
+//
+// 它作为 google.protobuf.Any 挂在错误详情里，三端都从同一个
+// 生成类型读取，不做任何文本匹配。
+message DenialDetail {
+  DenialReason reason = 1;
+
+  // 人类可读的补充说明。**客户端不得据此分支**——需要分支的信息
+  // 应当进 reason 或 metadata，而不是靠匹配这句话。
+  string detail = 2;
+
+  // 结构化补充信息。服务端配置缺陷（注解缺失）时携带
+  // method / detail 两个键，便于在几秒内定位到是哪个方法漏了声明。
+  map<string, string> metadata = 3;
+}

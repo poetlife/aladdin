@@ -1,0 +1,28 @@
+# 构建产物
+/bin/
+/dist/
+coverage.out
+coverage.html
+
+# Go
+*.test
+*.prof
+
+# 前端
+web/node_modules/
+web/dist/
+web/.vite/
+web/*.tsbuildinfo
+web/node_modules/.vite/
+
+# 本地配置与凭证
+.env
+.env.local
+*.local.yaml
+*.local.json
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+.DS_Store
