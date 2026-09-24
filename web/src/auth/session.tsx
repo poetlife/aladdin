@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 
 import * as identityApi from '../api/identity'
+import { messageOf } from '../api/errors'
 import { onUnauthenticated } from '../api/transport'
 import type { WhoAmIResponse } from '../gen/proto/aladdin/identity/v1/identity_pb'
 import { PermissionSet } from './permission-set'
@@ -84,6 +85,18 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
    * 任何失败都收敛到"未登录"或"错误"，不会留下"有主体但没权限码"的中间态——
    * 那种状态会让界面在"能点"与"点了报错"之间闪烁。
    */
+  /**
+   * 采纳服务端解析出的作用域。
+   *
+   * 只写状态与本地存储，**不触发重新拉取**——它就是本次拉取的结果，
+   * 再拉一次会绕成死循环。
+   */
+  const adoptScope = useCallback((next: string): void => {
+    scopeRef.current = next
+    setScopeState(next)
+    globalThis.localStorage?.setItem(SCOPE_STORAGE_KEY, next)
+  }, [])
+
   const load = useCallback(async (): Promise<void> => {
     if (readToken() === null) {
       setStatus('anonymous')
@@ -93,16 +106,29 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     }
     try {
       const session = await identityApi.whoAmI()
+      // 作用域留空时，服务端会回落到凭证自身绑定的默认作用域，
+      // 并把**实际使用的那个**回传回来。
       const effective = await identityApi.getSessionPermissions(scopeRef.current)
       setSubject(session)
       setPermissions(PermissionSet.from(effective.permissions))
+
+      // 本地没有显式作用域（首次登录、换了浏览器）时必须采纳服务端的结果。
+      //
+      // 否则会出现自相矛盾的表现：权限码集合是按 tenant/acme 展开的，
+      // 而后续按作用域过滤的接口却带着空作用域（等于全局）发出去，
+      // 于是菜单因为持有权限码而渲染出来、点进去却被拒。
+      // 前端不猜作用域——服务端说用了哪个就用哪个。
+      if (scopeRef.current === '') {
+        adoptScope(effective.scope)
+      }
+
       setStatus('authenticated')
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(messageOf(err))
       clear()
     }
-  }, [clear])
+  }, [clear, adoptScope])
 
   useEffect(() => {
     void load()

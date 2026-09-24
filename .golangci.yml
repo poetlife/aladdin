@@ -40,8 +40,11 @@ linters:
         linters: [revive, godot, misspell]
       - path: internal/rbac/catalog_gen.go
         linters: [revive, godot, misspell]
+      # 测试夹具天然包含故意的非法输入——拼错的键名、畸形的地址、
+      # 越界的取值，正是"必须被拒绝"的那些用例。把 misspell 排除掉，
+      # 否则每加一条这类用例都要写一次 nolint。
       - path: _test\.go
-        linters: [gosec, noctx, errcheck]
+        linters: [gosec, noctx, errcheck, misspell]
 
 formatters:
   enable:
