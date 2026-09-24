@@ -1,0 +1,190 @@
+# 发布流水线：推送 vX.Y.Z tag 时触发。
+#
+# 顺序是刻意的：validate → gate → build → publish → prune。
+# 门禁在构建之前，失败则不产出任何东西——宁可没有 Release，也不要半个。
+# 完整说明见 docs/release.md。
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# 默认最小权限，需要写权限的 job 各自单独提升。
+permissions:
+  contents: read
+
+concurrency:
+  # 发布不能半途取消；两次发版串行，清理逻辑才不会读到过期的列表。
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: 校验 tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: tag 必须形如 vX.Y.Z
+        # `tags: ['v*']` 只是粗筛，这里才是真正的约束。
+        # 不合法就立刻失败，不创建任何东西。
+        run: |
+          if ! [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag 必须形如 vX.Y.Z，收到：${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          echo "tag 合法：${GITHUB_REF_NAME}"
+
+  gate:
+    name: 门禁
+    needs: validate
+    uses: ./.github/workflows/gate.yml
+    permissions:
+      contents: read
+
+  build:
+    name: 构建发布产物
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装前端依赖
+        run: make web-ci
+
+      # 交叉编译、归档与校验和都在 Makefile 里，这里不重写一遍 go build：
+      # 构建命令若有第二个入口，就会与 make build 漂移。
+      # VERSION 由 tag 传入，与 make build 共用同一处 LDFLAGS。
+      - name: 构建
+        run: make release-build VERSION="${GITHUB_REF_NAME}"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: 发布 Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # 必须检出仓库：--generate-notes 靠 git 历史与前一个 tag 算变更日志，
+      # 没有 .git 时 gh 会直接报 "not a git repository"。
+      # fetch-tags 显式打开，否则找不到上一个 tag，变更日志会退化成"从第一个提交开始"。
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 下载产物
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: 校验产物完整性
+        # 传到 Release 之前先核对一遍，避免上传半截文件。
+        run: |
+          cd dist
+          ls -1
+          sha256sum -c SHA256SUMS
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # --verify-tag：tag 不存在就报错，而不是顺手新建一个指向
+          # 当前默认分支的 tag。--generate-notes 依据上一个 tag 以来的提交生成变更日志。
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
+
+  prune:
+    name: 清理旧版本产物
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 只保留最近若干版本的 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 保留的版本数。更早的 Release 会被删掉，git tag 不受影响。
+          KEEP: "5"
+        # 本步骤是全流程唯一不可逆的操作，因此每一条防护都写在明面上：
+        #   · 只处理 tag 形如 vX.Y.Z 的 Release，人工创建的、名字不匹配的一律不碰
+        #   · 只删 Release，绝不删 git tag（不带 --cleanup-tag）
+        #   · 数量未超过 KEEP 时什么也不做
+        #   · isLatest 无论如何不删
+        #   · 读不到列表就中止，绝不把"什么也没看见"当成"全都该删"
+        #
+        # 每条 gh 命令都显式带 -R：本 job 不检仓库，仓库上下文全靠环境变量推，
+        # 而"环境里应该有"正是上一版 publish 出错的原因，不再依赖它。
+        run: |
+          set -euo pipefail
+
+          # 候选集 = 本流水线会创建的 Release：非草稿、非预发布、tag 形如 vX.Y.Z。
+          # 这里的 tag 形状判断同时保护了"非本流水线创建的 Release"。
+          if ! releases=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1000 \
+                --exclude-drafts --exclude-pre-releases \
+                --json tagName,createdAt,isLatest); then
+            echo "读取 Release 列表失败，本次放弃清理。" >&2
+            echo "发布本身已成功，产物不受影响；下次发版会重新尝试清理。" >&2
+            exit 1
+          fi
+
+          candidates=$(jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))]' <<<"$releases")
+          total=$(jq 'length' <<<"$candidates")
+
+          echo "候选 Release 共 ${total} 个，保留最近 ${KEEP} 个。"
+          if [ "$total" -le "$KEEP" ]; then
+            echo "未超过保留数量，无需清理。"
+            exit 0
+          fi
+
+          # createdAt 倒序后跳过前 KEEP 个，剩下的即溢出的部分；删除量有上界。
+          to_delete=$(jq -r --argjson keep "$KEEP" \
+            'sort_by(.createdAt) | reverse | .[$keep:]
+             | .[] | select(.isLatest == false) | .tagName' <<<"$candidates")
+
+          if [ -z "$to_delete" ]; then
+            echo "没有需要清理的 Release。"
+            exit 0
+          fi
+
+          echo "将清理以下 Release（只删 Release，不删 git tag）："
+          echo "$to_delete" | sed 's/^/  - /'
+
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            # 幂等：并发下已被删掉的条目不应让整个 job 失败。
+            gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes >/dev/null \
+              || echo "  ${tag}：删除失败或已不存在，跳过" >&2
+          done <<<"$to_delete"
+
+          echo "清理完成，当前 Release 数：$(gh release list -R "$GITHUB_REPOSITORY" \
+            --limit 1000 --exclude-drafts --exclude-pre-releases \
+            --json tagName --jq 'length')"
