@@ -36,6 +36,9 @@ const (
 	// EnvConfig 指定配置文件路径，优先级高于该端的默认位置。
 	EnvConfig = "ALADDIN_CONFIG"
 
+	EnvDatabaseDriver = "ALADDIN_DATABASE_DRIVER"
+	EnvDatabaseDSN    = "ALADDIN_DATABASE_DSN"
+
 	EnvOTelEndpoint    = "ALADDIN_OTEL_ENDPOINT"
 	EnvOTelInsecure    = "ALADDIN_OTEL_INSECURE"
 	EnvOTelSampleRatio = "ALADDIN_OTEL_SAMPLE_RATIO"
@@ -47,6 +50,9 @@ const (
 	keyLogLevel = "log_level"
 	keyLogFile  = "log_file"
 	keyTimeout  = "timeout"
+
+	keyDatabaseDriver = "database_driver"
+	keyDatabaseDSN    = "database_dsn"
 
 	keyOTelEndpoint    = "otel_endpoint"
 	keyOTelInsecure    = "otel_insecure"
@@ -67,7 +73,33 @@ const (
 	//
 	// 骨架阶段不接受"恰好没采到"这种排障体验；需要降量时显式配置。
 	DefaultSampleRatio = 1.0
+
+	// DefaultDatabaseDriver 是默认的数据库后端。
+	//
+	// 取 sqlite 是因为它不需要一个独立进程、一个账号、一条网络路径，
+	// 于是"第一次跑起来"没有前置条件。
+	//
+	// **后端取值的合法集合不在这里**：它由 internal/database 定义（方言知识
+	// 只应有一处），本常量是否仍在那个集合内由一个守卫测试保证。
+	DefaultDatabaseDriver = "sqlite"
+	// DefaultDatabaseDSN 是默认的数据库连接串：启动时工作目录下的一个文件。
+	//
+	// 基准与配置文件的默认位置一致，两处的相对路径含义相同。
+	DefaultDatabaseDSN = "aladdin.db"
 )
+
+// DatabaseConfig 描述服务端把数据存在哪。
+//
+// 它只承载取值，不解释取值：连接串两种形态的区分、方言语义与脱敏摘要
+// 都属于持久化模块（见 docs/design/persistence/schema.md）。
+// 配置模块负责的是"这两项按同一套分层规则被读到"。
+type DatabaseConfig struct {
+	// Driver 是数据库后端。
+	Driver string
+	// DSN 是连接串。**可能含口令，因此不得进日志**——
+	// 它的地位与 CLI 的凭证文件相同（见 docs/design/config/README.md）。
+	DSN string
+}
 
 // ServerConfig 是服务端启动配置。
 type ServerConfig struct {
@@ -77,6 +109,8 @@ type ServerConfig struct {
 	LogLevel observability.Level
 	// LogFile 是日志文件路径；为空表示写标准错误。
 	LogFile string
+	// Database 是数据的存放位置。
+	Database DatabaseConfig
 	// OTelEndpoint 是 OTLP/HTTP 端点。为空表示不上报——
 	// 但链路标识照常生成、传播、回写响应头（见 docs/observability.md）。
 	OTelEndpoint string
@@ -109,8 +143,12 @@ type CLIConfig struct {
 // 要对外提供服务必须显式改动这一项。忘记改的后果是连不上，而不是被扫到。
 func DefaultServer() ServerConfig {
 	return ServerConfig{
-		Address:         DefaultAddress,
-		LogLevel:        DefaultLogLevel,
+		Address:  DefaultAddress,
+		LogLevel: DefaultLogLevel,
+		Database: DatabaseConfig{
+			Driver: DefaultDatabaseDriver,
+			DSN:    DefaultDatabaseDSN,
+		},
 		OTelSampleRatio: DefaultSampleRatio,
 	}
 }
@@ -161,6 +199,9 @@ func (c ServerConfig) Validate() error {
 		return err
 	}
 	if err := validateLogLevel(c.LogLevel); err != nil {
+		return err
+	}
+	if err := validateDatabase(c.Database); err != nil {
 		return err
 	}
 	return validateTelemetry(c.OTelEndpoint, c.OTelSampleRatio)
@@ -223,6 +264,21 @@ func validateLogLevel(l observability.Level) error {
 	default:
 		return invalidKey(keyLogLevel, EnvLogLevel, fmt.Sprintf("取值非法: %q", string(l)))
 	}
+}
+
+// validateDatabase 校验数据库配置的**形状**：两项都不能为空。
+//
+// 后端取值是否属于已知集合、连接串能否用，属于方言语义，由持久化模块
+// 在建立连接时判定（仍早于监听端口打开）。在这里再写一遍取值集合，
+// 等于让"有哪些后端"有两个来源，而它们迟早会漂移。
+func validateDatabase(db DatabaseConfig) error {
+	if db.Driver == "" {
+		return invalidKey(keyDatabaseDriver, EnvDatabaseDriver, "不能为空")
+	}
+	if db.DSN == "" {
+		return invalidKey(keyDatabaseDSN, EnvDatabaseDSN, "不能为空")
+	}
+	return nil
 }
 
 // checkHostPort 校验 host:port 的形状。

@@ -41,7 +41,7 @@ const shutdownGrace = 10 * time.Second
 type Server struct {
 	cfg        config.ServerConfig
 	logger     *zap.Logger
-	store      *rbac.MemoryStore
+	store      rbac.MutableStore
 	engine     *rbac.Engine
 	authn      interceptor.Authenticator
 	httpServer *http.Server
@@ -49,10 +49,13 @@ type Server struct {
 
 // New 按配置装配服务端。
 //
+// store 由调用方提供而不是在这里构造：存储的打开与迁移属于**启动顺序**
+// 的一部分（要在监听之前完成，失败即拒绝启动），而那件事只能发生在入口
+// 进程里。服务端拿到的是一个已经可用、已经迁移完毕的存储。
+//
 // metrics 为 nil 时不记录请求指标；遥测的 provider 生命周期由调用方
 // （入口进程）管理，服务端只消费它建好的全局实现。
-func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics) *Server {
-	store := rbac.NewMemoryStore()
+func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore) *Server {
 	engine := rbac.NewEngine(store, logger, metrics)
 	authenticator := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
@@ -191,7 +194,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // Store 暴露存储，供本地开发与测试注入初始数据。
-func (s *Server) Store() *rbac.MemoryStore { return s.store }
+func (s *Server) Store() rbac.MutableStore { return s.store }
 
 // Authenticator 暴露认证器，供本地开发签发开发用 token。
 func (s *Server) Authenticator() *interceptor.TokenAuthenticator {

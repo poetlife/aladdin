@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,8 +25,10 @@ import (
 	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/config"
+	"github.com/poetlife/aladdin/internal/database"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
 	"github.com/poetlife/aladdin/pkg/client"
 )
@@ -61,10 +64,25 @@ func startServer(t *testing.T, roleID string, scope rbac.Scope) harness {
 	}
 	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
 
-	srv := server.New(cfg, logger, nil)
-	srv.Store().RegisterSubject(rbac.Subject{
+	// 端到端测试用**真实的持久化存储**，不是内存存储：被测的是"判定如何
+	// 被接入"，而接入方式之一就是它读的数据从哪来。用内存存储会让这一层
+	// 变成测试夹具自己搭的样子，掩盖掉真实路径上的问题（表没建、写入没落盘、
+	// 错误没被翻译）。每个用例一个临时目录，用例之间互不干扰。
+	store, err := gormstore.Open(context.Background(), config.DatabaseConfig{
+		Driver: string(database.DialectSQLite),
+		DSN:    filepath.Join(t.TempDir(), "e2e.db"),
+	}, logger)
+	if err != nil {
+		t.Fatalf("打开测试库失败: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	srv := server.New(cfg, logger, nil, store)
+	if err := srv.Store().PutSubject(context.Background(), rbac.Subject{
 		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,
-	})
+	}); err != nil {
+		t.Fatalf("注入测试主体失败: %v", err)
+	}
 	if err := srv.Store().Bind(context.Background(), rbac.RoleBinding{
 		SubjectID: testSubject, RoleID: roleID, Scope: scope,
 	}); err != nil {

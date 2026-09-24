@@ -57,7 +57,9 @@ func ApplyDevSeed(s *Server, logger *zap.Logger) error {
 		Type:         rbac.SubjectTypeUser,
 		DefaultScope: scope,
 	}
-	s.store.RegisterSubject(subject)
+	if err := s.store.PutSubject(ctx, subject); err != nil {
+		return fmt.Errorf("注入开发主体失败: %w", err)
+	}
 	if err := s.store.Bind(ctx, rbac.RoleBinding{
 		SubjectID: subjectID,
 		RoleID:    roleID,

@@ -24,6 +24,11 @@ web/node_modules/.vite/
 *.local.json
 credentials.json
 
+# 本地数据库（默认 sqlite 落在启动目录，见 docs/design/persistence/）
+*.db
+*.db-wal
+*.db-shm
+
 # 编辑器
 .idea/
 .vscode/

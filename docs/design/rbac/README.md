@@ -40,7 +40,7 @@ aladdin 是前端（React + antd）、服务端（Go + gRPC）、命令行（cob
 | 依赖对象 | 交互方式 |
 |---------|---------|
 | 身份认证（Authentication） | 本模块只消费"已确认的主体标识"，不负责登录、口令校验、令牌签发。认证失败在鉴权之前拦截 |
-| 持久化存储 | 通过 `rbac.Store` 抽象读取角色/权限/绑定关系；本模块不关心底层是内存、SQL 还是外部目录服务 |
+| 持久化存储 | 通过 `rbac.Store` 抽象读取角色/权限/绑定关系；本模块不关心底层是内存、SQL 还是外部目录服务。SQL 实现与库结构见 [../persistence/](../persistence/README.md) |
 | proto 定义 | 受控接口、消息与拒绝原因在 `api/proto/` 中声明，经 `buf generate` 同时派生 Go 与 TypeScript 代码 |
 | 权限目录 | 权限码全集在 `api/permissions/catalog.yaml` 中定义，经 `make gen` 派生 Go 与 TS 常量 |
 | 可观测性 | 决策结果按 [observability.md](../../observability.md) 的鉴权强制字段留痕 |

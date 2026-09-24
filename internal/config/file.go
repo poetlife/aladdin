@@ -27,8 +27,10 @@ var otelKeys = []string{keyOTelEndpoint, keyOTelInsecure, keyOTelSampleRatio}
 // 新增键时必须同时补上取值映射与测试样例，见 config_test.go 的
 // TestDeclaredKeysAllTakeEffect。
 var (
-	serverKeys = append([]string{keyAddress, keyLogLevel, keyLogFile}, otelKeys...)
-	cliKeys    = append([]string{keyAddress, keyLogLevel, keyTimeout}, otelKeys...)
+	serverKeys = append([]string{
+		keyAddress, keyLogLevel, keyLogFile, keyDatabaseDriver, keyDatabaseDSN,
+	}, otelKeys...)
+	cliKeys = append([]string{keyAddress, keyLogLevel, keyTimeout}, otelKeys...)
 )
 
 // fileValues 是一份配置文件里"出现过的键 → 原始取值"的映射。
@@ -48,10 +50,12 @@ func (v fileValues) str(key string) *string {
 
 func serverLayer(v fileValues) (layer, error) {
 	l := layer{
-		address:      v.str(keyAddress),
-		logLevel:     v.str(keyLogLevel),
-		logFile:      v.str(keyLogFile),
-		otelEndpoint: v.str(keyOTelEndpoint),
+		address:        v.str(keyAddress),
+		logLevel:       v.str(keyLogLevel),
+		logFile:        v.str(keyLogFile),
+		databaseDriver: v.str(keyDatabaseDriver),
+		databaseDSN:    v.str(keyDatabaseDSN),
+		otelEndpoint:   v.str(keyOTelEndpoint),
 	}
 	if err := applyTelemetryScalars(v, &l); err != nil {
 		return layer{}, err
@@ -164,7 +168,7 @@ func readFileLayer(path string, required bool, parse func(string) (layer, error)
 			}
 			return layer{}, nil
 		}
-		return layer{}, fmt.Errorf("%w: 无法读取配置文件 %s: %v", ErrInvalid, path, err)
+		return layer{}, fmt.Errorf("%w: 无法读取配置文件 %s: %w", ErrInvalid, path, err)
 	}
 	return parse(path)
 }
@@ -194,7 +198,7 @@ func parseCLIFile(path string) (layer, error) {
 func readFileValues(path string, allowed []string) (fileValues, error) {
 	raw, err := os.ReadFile(path) //nolint:gosec // 路径来源受控，非用户输入
 	if err != nil {
-		return nil, fmt.Errorf("%w: 无法读取配置文件 %s: %v", ErrInvalid, path, err)
+		return nil, fmt.Errorf("%w: 无法读取配置文件 %s: %w", ErrInvalid, path, err)
 	}
 	// 空文件合法，等价于"一个键都没写"。
 	if strings.TrimSpace(string(raw)) == "" {
@@ -203,7 +207,7 @@ func readFileValues(path string, allowed []string) (fileValues, error) {
 
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("%w: 解析配置文件 %s 失败: %v", ErrInvalid, path, err)
+		return nil, fmt.Errorf("%w: 解析配置文件 %s 失败: %w", ErrInvalid, path, err)
 	}
 	root := &doc
 	if root.Kind == yaml.DocumentNode {
@@ -234,7 +238,7 @@ func readFileValues(path string, allowed []string) (fileValues, error) {
 		value := ""
 		if node := root.Content[i+1]; node.Tag != "!!null" {
 			if err := node.Decode(&value); err != nil {
-				return nil, fmt.Errorf("%w: 配置文件 %s 的 %s 取值无法解析: %v",
+				return nil, fmt.Errorf("%w: 配置文件 %s 的 %s 取值无法解析: %w",
 					ErrInvalid, path, key, err)
 			}
 		}

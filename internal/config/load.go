@@ -19,6 +19,9 @@ type layer struct {
 	logFile  *string
 	timeout  *time.Duration
 
+	databaseDriver *string
+	databaseDSN    *string
+
 	otelEndpoint    *string
 	otelInsecure    *bool
 	otelSampleRatio *float64
@@ -79,6 +82,12 @@ func serverEnvOverrides() (layer, error) {
 	if v := os.Getenv(EnvLogFile); v != "" {
 		l.logFile = &v
 	}
+	if v := os.Getenv(EnvDatabaseDriver); v != "" {
+		l.databaseDriver = &v
+	}
+	if v := os.Getenv(EnvDatabaseDSN); v != "" {
+		l.databaseDSN = &v
+	}
 	return l, nil
 }
 
@@ -138,6 +147,12 @@ func mergeServer(cfg ServerConfig, l layer) ServerConfig {
 	}
 	if l.logFile != nil {
 		cfg.LogFile = *l.logFile
+	}
+	if l.databaseDriver != nil {
+		cfg.Database.Driver = *l.databaseDriver
+	}
+	if l.databaseDSN != nil {
+		cfg.Database.DSN = *l.databaseDSN
 	}
 	cfg.OTelEndpoint, cfg.OTelInsecure, cfg.OTelSampleRatio = mergeTelemetry(
 		cfg.OTelEndpoint, cfg.OTelInsecure, cfg.OTelSampleRatio, l)
