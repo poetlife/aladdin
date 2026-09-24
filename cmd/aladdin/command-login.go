@@ -20,7 +20,7 @@ func newLoginCommand() *cobra.Command {
 		Long: `登录并把凭证写入本地凭证文件。
 
 凭证文件权限为 0600；权限过宽时后续命令会拒绝使用该文件。`,
-		Args: cobra.NoArgs,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runLogin(cmd, token)
 		},
@@ -36,6 +36,9 @@ func runLogin(cmd *cobra.Command, token string) error {
 
 	cfg, err := resolvedConfig()
 	if err != nil {
+		return err
+	}
+	if err := ensureTelemetry(cfg); err != nil {
 		return err
 	}
 	c, err := client.Dial(client.Options{Address: cfg.Address, Timeout: cfg.Timeout})

@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/poetlife/aladdin/internal/auth"
+	"github.com/poetlife/aladdin/internal/config"
 )
 
 // CLI 退出码。四类失败必须互不相同，脚本才能据此分支处理
@@ -45,6 +46,10 @@ func exitCodeFor(err error) int {
 	switch {
 	case errors.Is(err, auth.ErrNoCredential), errors.Is(err, auth.ErrCredentialFileInsecure):
 		return exitUnauthenticated
+	case errors.Is(err, config.ErrInvalid):
+		// 配置错误归入用法错误：正确处理是修正配置后重跑。
+		// 归入"未认证"会让脚本反复触发登录，归入"服务端不可用"会让脚本白等退避。
+		return exitUsage
 	}
 
 	var ue *usageError

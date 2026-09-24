@@ -3,7 +3,7 @@ import { Alert, Button, Card, Space, Table, Tag, Typography } from 'antd'
 import type { TableProps } from 'antd'
 
 import * as rbacApi from '../api/rbac'
-import { messageOf } from '../api/errors'
+import { messageOf, traceIdOf } from '../api/errors'
 import { PermissionGate, useSession } from '../auth'
 import { PermissionCodes } from '../gen/permission-codes'
 import type { Role } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
@@ -35,6 +35,12 @@ const columns: NonNullable<TableProps<Role>['columns']> = [
   },
 ]
 
+// failure 是一次失败的展示信息：给用户的文案，以及可拿去找日志的追踪 ID。
+interface failure {
+  message: string
+  traceId: string | null
+}
+
 /**
  * 角色列表页。
  *
@@ -45,18 +51,20 @@ export function RolesPage(): React.ReactNode {
   const { scope } = useSession()
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [failure, setFailure] = useState<failure | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
-    setError(null)
+    setFailure(null)
     try {
       const response = await rbacApi.listRoles(scope)
       setRoles(response.roles)
     } catch (err) {
       // messageOf 会区分鉴权拒绝与服务端其它错误，
       // 避免用户因为统一提示"加载失败"而去排查错误的方向。
-      setError(messageOf(err))
+      // traceIdOf 取的是服务端回写的 trace-id：把它一并显示出来，
+      // 用户报障时就不必描述"我什么时候点了什么"，直接给这一串即可对齐日志。
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
       setRoles([])
     } finally {
       setLoading(false)
@@ -79,7 +87,20 @@ export function RolesPage(): React.ReactNode {
         </Space>
       }
     >
-      {error !== null && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
+      {failure !== null && (
+        <Alert
+          type="error"
+          message={failure.message}
+          description={
+            failure.traceId !== null && (
+              <Typography.Text type="secondary" copyable>
+                追踪 ID：{failure.traceId}
+              </Typography.Text>
+            )
+          }
+          style={{ marginBottom: 16 }}
+        />
+      )}
       <Table<Role> rowKey="id" columns={columns} dataSource={roles} loading={loading} pagination={false} />
     </Card>
   )

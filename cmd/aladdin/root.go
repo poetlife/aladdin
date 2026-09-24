@@ -19,13 +19,14 @@ import (
 
 // globalFlags 是全部子命令共享的全局参数。
 type globalFlags struct {
-	address string
-	token   string
-	scope   string
-	output  string
-	debug   bool
-	yes     bool
-	timeout time.Duration
+	configPath string
+	address    string
+	token      string
+	scope      string
+	output     string
+	debug      bool
+	yes        bool
+	timeout    time.Duration
 }
 
 var flags globalFlags
@@ -33,7 +34,13 @@ var flags globalFlags
 // Execute 运行命令行并返回进程退出码。
 func Execute() int {
 	root := newRootCommand()
-	if err := root.Execute(); err != nil {
+	err := root.Execute()
+
+	// 冲刷遥测。CLI 是短命进程，不主动冲刷就一定会丢掉最后一批数据；
+	// 而退出路径只有这一条，所以放在这里，而不是散落进各命令的 RunE。
+	shutdownTelemetry()
+
+	if err != nil {
 		printf(os.Stderr, "aladdin: %s\n", describeError(err))
 		return exitCodeFor(err)
 	}
@@ -65,6 +72,7 @@ func newRootCommand() *cobra.Command {
 	}
 
 	pf := root.PersistentFlags()
+	pf.StringVar(&flags.configPath, "config", "", "配置文件路径（默认读取 ALADDIN_CONFIG，否则读用户配置目录下的 config.yml）")
 	pf.StringVar(&flags.address, "address", "", "服务端地址（默认读取 ALADDIN_ADDRESS 或内置默认值）")
 	pf.StringVar(&flags.token, "token", "", "访问凭证（优先级最高）")
 	pf.StringVar(&flags.scope, "scope", "", "本次调用声明的作用域")
@@ -72,6 +80,13 @@ func newRootCommand() *cobra.Command {
 	pf.BoolVar(&flags.debug, "debug", false, "输出调试信息（不包含凭证原文）")
 	pf.BoolVar(&flags.yes, "yes", false, "跳过危险操作的二次确认（非交互式环境必须显式指定）")
 	pf.DurationVar(&flags.timeout, "timeout", 0, "单次调用超时")
+
+	// 标志解析失败统一标记为用法错误：退出码约定要求"用法错误（参数不合法）"
+	// 与参数解析失败落到同一个值，配置文件的错误也归入这一类
+	// （见 docs/design/rbac/cli-permissions.md 与 docs/design/config/cli-config.md）。
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return usageErrorf("%s", err)
+	})
 
 	root.AddCommand(
 		newVersionCommand(),
@@ -83,22 +98,17 @@ func newRootCommand() *cobra.Command {
 	return root
 }
 
-// resolvedConfig 合并全局参数与配置默认值。
-func resolvedConfig() (config.Config, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return config.Config{}, err
-	}
-	if flags.address != "" {
-		cfg.Address = flags.address
-	}
-	if flags.timeout > 0 {
-		cfg.Timeout = flags.timeout
-	}
-	if flags.debug {
-		cfg.LogLevel = observability.LevelDebug
-	}
-	return cfg, nil
+// resolvedConfig 合并出本次调用的配置。
+//
+// 五层来源的合并与校验都在 config 包内实现一处，这里只把命令行**显式给出**
+// 的值传进去——不在这里再叠一层"没给就用默认"的判断。
+func resolvedConfig() (config.CLIConfig, error) {
+	return config.LoadCLI(config.CLIFlags{
+		ConfigPath: flags.configPath,
+		Address:    flags.address,
+		Timeout:    flags.timeout,
+		Debug:      flags.debug,
+	})
 }
 
 // newClient 构造已注入凭证的 gRPC 客户端。
@@ -110,6 +120,11 @@ func newClient() (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 遥测必须早于客户端构造：client span 由客户端的拦截器起，
+	// 而 otel.Tracer 取的是调用当时注册的实现。
+	if err := ensureTelemetry(cfg); err != nil {
+		return nil, err
+	}
 	cred, err := auth.Resolve(flags.token, flags.scope)
 	if err != nil {
 		return nil, err
@@ -117,7 +132,7 @@ func newClient() (*client.Client, error) {
 	if cred.Expired(time.Now()) {
 		return nil, fmt.Errorf("凭证已于 %s 过期，请重新登录", cred.ExpiresAt.Format(time.RFC3339))
 	}
-	if flags.debug {
+	if cfg.LogLevel == observability.LevelDebug {
 		// 只输出来源，绝不输出凭证原文。
 		printf(os.Stderr, "debug: 凭证来源=%s 作用域=%q 地址=%s\n", cred.Source, cred.Scope, cfg.Address)
 	}
@@ -158,6 +173,17 @@ func confirm(prompt string) error {
 // 于是危险操作会挂在那里等一个永远不会到来的确认。
 func isInteractive() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+// noArgs 与 cobra.NoArgs 等价，但把错误标记为用法错误。
+//
+// 多传一个参数与标志写错同属"用法错误"，应落到同一个退出码；
+// 直接用 cobra.NoArgs 会让前者落进未分类失败，脚本无法据此分支处理。
+func noArgs(cmd *cobra.Command, args []string) error {
+	if err := cobra.NoArgs(cmd, args); err != nil {
+		return usageErrorf("%s", err)
+	}
+	return nil
 }
 
 // effectiveScope 返回本次调用应当声明的作用域。

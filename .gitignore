@@ -16,10 +16,13 @@ web/*.tsbuildinfo
 web/node_modules/.vite/
 
 # 本地配置与凭证
+# config.yml 是团队共享的，可以提交；下面这些是个人本机改动与密钥，不可提交。
 .env
 .env.local
 *.local.yaml
+*.local.yml
 *.local.json
+credentials.json
 
 # 编辑器
 .idea/

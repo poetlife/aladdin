@@ -23,7 +23,7 @@ func newRoleListCommand() *cobra.Command {
 	return requirePermission(&cobra.Command{
 		Use:   "list",
 		Short: "列出当前作用域下可见的角色",
-		Args:  cobra.NoArgs,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := newClient()
 			if err != nil {
@@ -69,7 +69,7 @@ func newRoleAssignCommand() *cobra.Command {
 
 这是危险操作：它会改变权限边界，因此需要二次确认；
 非交互式环境下必须显式传入 --yes。`,
-		Args: cobra.NoArgs,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if subjectID == "" || roleID == "" {
 				return usageErrorf("--subject 与 --role 均为必填")

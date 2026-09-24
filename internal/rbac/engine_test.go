@@ -25,7 +25,7 @@ func newTestEngine(t *testing.T) (*Engine, *MemoryStore) {
 		t.Fatalf("绑定失败: %v", err)
 	}
 	// nobody 已登记但没有任何绑定：用于区分"无匹配授权"与"主体不存在"。
-	return NewEngine(store, nil), store
+	return NewEngine(store, nil, nil), store
 }
 
 func TestEngineCheck(t *testing.T) {
@@ -155,7 +155,7 @@ func TestEngineInheritance(t *testing.T) {
 		t.Fatalf("绑定失败: %v", err)
 	}
 
-	engine := NewEngine(store, nil)
+	engine := NewEngine(store, nil, nil)
 	for _, want := range []PermissionCode{
 		PermissionAuditLogRead, PermissionAuditLogExport, PermissionRbacRoleRead,
 	} {
@@ -173,7 +173,7 @@ func TestEngineInheritance(t *testing.T) {
 // 关键约定：存储不可用**不是拒绝**。上层需要据此返回"服务不可用"，
 // 让客户端退避重试，而不是以为权限不足。
 func TestEngineStoreUnavailable(t *testing.T) {
-	engine := NewEngine(failingStore{}, nil)
+	engine := NewEngine(failingStore{}, nil, nil)
 	got := engine.Check(context.Background(), Subject{ID: "u1"}, PermissionRbacRoleRead, "root")
 	if got.Allowed {
 		t.Error("存储故障时不应允许")

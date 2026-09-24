@@ -1,0 +1,37 @@
+# aladdin 命令行配置示例
+#
+# 用法：复制到用户配置目录下（macOS 为 ~/Library/Application Support/aladdin/，
+# Linux 为 ${XDG_CONFIG_HOME:-~/.config}/aladdin/）、改名为 config.yml 即可生效。
+# 也可以用 `aladdin --config /path/to/config.yml` 或环境变量 ALADDIN_CONFIG 指定。
+#
+# 它与凭证文件**同目录但不同文件**：配置可以提交、可以共享，凭证不可以。
+#
+# 个人本机改动写进同目录的 config.local.yml（不提交），它覆盖本文件。
+#
+# 完整规则见 docs/design/config/README.md。
+
+# 目标服务端地址，格式为 host:port。
+#
+# 默认值与服务端的默认监听地址相同，因此本机开发时两端都是零配置即可互通。
+address: 127.0.0.1:9090
+
+# 单次调用的超时，必须是正数时长。
+timeout: 30s
+
+# 输出详细度。debug 等价于命令行 --debug。
+#
+# 即使设为 debug 也只输出凭证的**来源**（哪个文件、哪个环境变量），
+# 绝不输出凭证原文。
+log_level: info
+
+# OTLP/HTTP 端点，格式为 host:port。留空表示不上报。
+#
+# 留空不影响链路：CLI 照样为每次调用起 client span 并通过 traceparent
+# 把链路交给服务端，只是不导出。
+otel_endpoint: ""
+
+# 是否用明文 HTTP 连接上面的端点。本地收集端通常需要开启。
+otel_insecure: false
+
+# 采样比例，取值 (0, 1]。
+otel_sample_ratio: 1

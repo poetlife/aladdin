@@ -3,6 +3,7 @@ package rbac
 import (
 	"context"
 	"errors"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -59,13 +60,17 @@ type Decision struct {
 // 三端中只有服务端持有 Engine；前端与 CLI 的本地判断只做权限码集合的
 // 成员测试，不重复实现本引擎的逻辑。
 type Engine struct {
-	store  Store
-	logger *zap.Logger
+	store   Store
+	logger  *zap.Logger
+	metrics *observability.Metrics
 }
 
-// NewEngine 构造决策引擎。logger 为 nil 时判定静默执行（仅测试场景）。
-func NewEngine(store Store, logger *zap.Logger) *Engine {
-	return &Engine{store: store, logger: logger}
+// NewEngine 构造决策引擎。
+//
+// logger 为 nil 时判定不留痕、metrics 为 nil 时不计数，两者互不影响
+// （仅测试场景会用到 nil）。
+func NewEngine(store Store, logger *zap.Logger, metrics *observability.Metrics) *Engine {
+	return &Engine{store: store, logger: logger, metrics: metrics}
 }
 
 // Check 判定主体在给定作用域下是否持有指定权限。
@@ -75,6 +80,35 @@ func NewEngine(store Store, logger *zap.Logger) *Engine {
 //
 // 无论允许还是拒绝都会留痕；拒绝的留痕不可采样。
 func (e *Engine) Check(ctx context.Context, subject Subject, permission PermissionCode, scope Scope) Decision {
+	started := time.Now()
+	decision := e.check(ctx, subject, permission, scope)
+	e.observe(ctx, decision, time.Since(started))
+	return decision
+}
+
+// observe 把一次判定的结论写到链路与指标上。
+//
+// 日志在各条返回路径上就近输出（见 log / logWithError），而链路属性与指标
+// 在这里统一记录：计时必须包住整次判定，只能在最外层做。集中在一处也保证了
+// "每条结论都被计数"——散落到各条返回路径上，迟早会出现某种拒绝没有指标。
+func (e *Engine) observe(ctx context.Context, d Decision, elapsed time.Duration) {
+	label := decisionLabel(d.Allowed)
+	observability.RecordDecision(ctx, d.SubjectID, d.Permission.String(), label, d.Reason.String())
+	e.metrics.RBACDecision(ctx, d.Permission.String(), label, elapsed)
+}
+
+// decisionLabel 把结论转成指标属性与链路属性用的取值。
+//
+// 取值必须有界：属性上出现自由文本会让时序数量随流量增长。
+func decisionLabel(allowed bool) string {
+	if allowed {
+		return "allow"
+	}
+	return "deny"
+}
+
+// check 是判定本身。
+func (e *Engine) check(ctx context.Context, subject Subject, permission PermissionCode, scope Scope) Decision {
 	decision := Decision{
 		SubjectID:  subject.ID,
 		Permission: permission,
@@ -206,7 +240,7 @@ func (e *Engine) logWithError(ctx context.Context, d Decision, err error) {
 		zap.String("subject_id", d.SubjectID),
 		zap.String("permission", d.Permission.String()),
 		zap.String("scope", d.Scope.String()),
-		zap.String("decision", map[bool]string{true: "allow", false: "deny"}[d.Allowed]),
+		zap.String("decision", decisionLabel(d.Allowed)),
 		zap.String("reason", d.Reason.String()),
 	}
 	if len(d.Roles) > 0 {
@@ -216,7 +250,7 @@ func (e *Engine) logWithError(ctx context.Context, d Decision, err error) {
 		fields = append(fields, zap.Error(err))
 	}
 
-	logger := observability.WithTraceIDField(e.logger, ctx)
+	logger := observability.SpanLogger(ctx, e.logger)
 	// 拒绝必须留痕且不可采样，因此用 WARN/ERROR 而非 DEBUG。
 	// 允许可以降级到 DEBUG，避免高频放行把日志淹没。
 	switch {

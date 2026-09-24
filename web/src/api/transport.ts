@@ -8,9 +8,13 @@ import { RBACService } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
 /**
  * 本文件是前端所有出站请求的唯一出口（见 docs/ssot-registry.md）。
  *
- * 凭证注入、链路标识、会话失效处理只在这里实现一次；api/ 下的各服务模块
+ * 凭证注入、链路标识注入、会话失效处理只在这里实现一次；api/ 下的各服务模块
  * 只负责把一个 service descriptor 绑到这个 transport 上。
  * 组件不得直接 fetch，也不得自行 `createConnectTransport`。
+ *
+ * 链路标识用 W3C Trace Context 的 `traceparent`（见 ./trace-context）。
+ * 服务端为每个请求起 span，并把同一个 trace-id、服务端自己的 span-id
+ * 回写在响应头里；失败时可用 `traceIdOf(error)` 取出，见 ./errors。
  *
  * 传输协议是 Connect（参考 usememos/memos）：服务端用 connect-go，
  * 同一个端口同时支持 Connect / gRPC / gRPC-Web，因此浏览器走 Connect、
@@ -25,26 +29,13 @@ export interface TransportOptions {
   getToken: () => string | null
 }
 
-/** 链路标识的请求头名，与服务端 observability.TraceIDHeader 一致。 */
-const TRACE_ID_HEADER = 'x-trace-id'
-
-/**
- * 生成链路标识。
- *
- * 每次调用生成一个新的，与 CLI 的行为一致；服务端把它写进所有相关日志，
- * 使一次前端操作可以在服务端日志中被完整还原。
- */
-function newTraceID(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID().replace(/-/g, '')
-  }
-  return `trace-${Math.random().toString(16).slice(2)}`
-}
+/** 链路标识的常量与生成/校验都在 trace-context 里，此处只做注入。 */
+import { newTraceparent, TRACEPARENT_HEADER } from './trace-context'
 
 /**
  * 认证拦截器。
  *
- * 它同时负责凭证注入与链路标识注入，以及未认证时的统一会话失效处理。
+ * 它同时负责凭证注入、链路标识注入，以及未认证时的统一会话失效处理。
  *
  * 关于"刷新后重试"：服务端目前签发的凭证不过期，因此这里不假装实现重试循环。
  * 接入真实凭证后，在 catch 分支里加"刷新一次并重放请求"即可——重放时务必
@@ -57,7 +48,13 @@ function createAuthInterceptor(options: TransportOptions): Interceptor {
     if (token !== null && token !== '') {
       req.header.set('Authorization', `Bearer ${token}`)
     }
-    req.header.set(TRACE_ID_HEADER, newTraceID())
+
+    // 拿不到密码学随机数时不发这个头：缺头只是让服务端自己起一条链路，
+    // 而发一个格式非法的值会污染服务端日志。
+    const traceparent = newTraceparent()
+    if (traceparent !== null) {
+      req.header.set(TRACEPARENT_HEADER, traceparent)
+    }
 
     try {
       return await next(req)

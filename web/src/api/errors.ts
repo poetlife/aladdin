@@ -2,6 +2,7 @@ import { ConnectError, Code } from '@connectrpc/connect'
 
 import { DenialDetailSchema } from '../gen/proto/aladdin/rbac/v1/errors_pb'
 import { DenialReason } from '../gen/proto/aladdin/rbac/v1/errors_pb'
+import { parseTraceID, parseTraceparent, TRACE_ID_HEADER, TRACEPARENT_HEADER } from './trace-context'
 
 /**
  * 拒绝原因枚举。
@@ -57,6 +58,27 @@ export function messageOf(error: unknown): string {
     return describeDenial(error)
   }
   return ConnectError.from(error).rawMessage
+}
+
+/**
+ * 取回服务端在响应头里回写的链路 ID。
+ *
+ * 优先取 `x-trace-id`：服务端直接给 32 位 trace-id，复制它去搜日志即可，
+ * 不必从 `traceparent` 的 `00-` 与 span-id 之间手工剥。
+ *
+ * 回退到解析 `traceparent` 是为了容忍还没升级的服务端——前后端可以独立部署，
+ * 我们这边的改动不该只在后端跟上之后才生效。
+ *
+ * 返回 null 表示这次失败没有走到服务端（网络中断、请求被浏览器拦下），
+ * 或服务端两个头都没回写。两者都不该编一个 ID 出来。
+ */
+export function traceIdOf(error: unknown): string | null {
+  const metadata = ConnectError.from(error).metadata
+  return (
+    parseTraceID(metadata.get(TRACE_ID_HEADER)) ??
+    parseTraceparent(metadata.get(TRACEPARENT_HEADER))?.traceId ??
+    null
+  )
 }
 
 /**

@@ -10,7 +10,7 @@ func newWhoAmICommand() *cobra.Command {
 	return markAuthenticatedOnly(&cobra.Command{
 		Use:   "whoami",
 		Short: "打印当前凭证对应的主体",
-		Args:  cobra.NoArgs,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := newClient()
 			if err != nil {

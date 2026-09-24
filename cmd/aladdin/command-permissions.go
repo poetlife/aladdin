@@ -15,7 +15,7 @@ func newPermissionsCommand() *cobra.Command {
 		Long: `向服务端查询当前主体在指定作用域下展开后的最终权限码集合。
 
 服务端返回的已是展开结果，本工具不做任何本地推导。`,
-		Args: cobra.NoArgs,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := newClient()
 			if err != nil {

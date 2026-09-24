@@ -24,6 +24,7 @@ import (
 	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/config"
+	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server"
 	"github.com/poetlife/aladdin/pkg/client"
@@ -44,11 +45,23 @@ type harness struct {
 func startServer(t *testing.T, roleID string, scope rbac.Scope) harness {
 	t.Helper()
 
-	cfg := config.Default()
+	cfg := config.DefaultServer()
 	cfg.Address = "127.0.0.1:0"
 	logger := zap.NewNop()
 
-	srv := server.New(cfg, logger)
+	// 遥测必须真的建起来：otel.Tracer 取的是调用当时注册的实现，
+	// 没有 provider 时 span 无效，响应头也就不会被回写——
+	// 那时端到端测试看到的"没有 traceparent"是夹具的问题，不是被测代码的问题。
+	provider, err := observability.NewProvider(context.Background(), observability.ProviderOptions{
+		ServiceName: "aladdin-server-e2e",
+		SampleRatio: 1,
+	})
+	if err != nil {
+		t.Fatalf("构建遥测失败: %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+
+	srv := server.New(cfg, logger, nil)
 	srv.Store().RegisterSubject(rbac.Subject{
 		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,
 	})

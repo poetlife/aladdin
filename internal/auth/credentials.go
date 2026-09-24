@@ -133,15 +133,23 @@ func fromFile() (Credential, error) {
 
 // Save 把凭证写入默认路径，权限为 0600。
 //
-// 写入用 0600 而不是先写后 chmod，避免存在短暂的宽权限窗口。
+// 先在同目录写一个 0600 的临时文件，成功后 rename 到目标路径。这样做的两个理由：
+//
+//   - **要么完整成功、要么保持原值**。直接截断目标文件再写，中途失败
+//     （磁盘满、进程被杀）会留下内容截断的凭证文件——它表现为"未认证"，
+//     用户无法从提示中看出真正原因是磁盘问题。
+//   - **创建即受限**。临时文件由 os.CreateTemp 以 0600 创建，不存在
+//     "先建好再收紧权限"的宽权限窗口，也不需要先写后 chmod。
 func Save(cred Credential) (string, error) {
 	path, err := DefaultPath()
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
+
 	payload := fileCredential{Token: cred.Token, Scope: cred.Scope}
 	if !cred.ExpiresAt.IsZero() {
 		payload.ExpiresAt = cred.ExpiresAt.Format(time.RFC3339)
@@ -150,18 +158,34 @@ func Save(cred Credential) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // 路径来源受控
+
+	// 临时文件必须与目标同目录：rename 只在同一文件系统内才是原子的。
+	tmp, err := os.CreateTemp(dir, ".credentials-*.tmp")
 	if err != nil {
 		return "", err
 	}
-	if _, err := f.Write(raw); err != nil {
-		// 写失败时也要关闭，但错误以写为准——Close 的错误在这里没有更多信息。
-		_ = f.Close()
+	tmpName := tmp.Name()
+
+	// 任何一步失败都要清掉临时文件，否则用户配置目录里会留下一个名字不显眼、
+	// 内容却是真凭证的残留。
+	if err := writeAndClose(tmp, raw); err != nil {
+		_ = os.Remove(tmpName)
 		return "", err
 	}
-	// 写成功后 Close 的错误必须上报：缓冲区可能要到关闭时才真正落盘。
-	if err := f.Close(); err != nil {
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
 		return "", err
 	}
 	return path, nil
+}
+
+// writeAndClose 写入并关闭。
+//
+// Close 的错误必须上报：缓冲区可能要到关闭时才真正落盘。
+func writeAndClose(f *os.File, raw []byte) error {
+	if _, err := f.Write(raw); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

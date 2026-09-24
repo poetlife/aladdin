@@ -26,6 +26,7 @@ import (
 	identityv1connect "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
 	rbacv1connect "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
 	"github.com/poetlife/aladdin/internal/config"
+	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
@@ -38,7 +39,7 @@ const shutdownGrace = 10 * time.Second
 
 // Server 是 aladdin 的 RPC 服务端。
 type Server struct {
-	cfg        config.Config
+	cfg        config.ServerConfig
 	logger     *zap.Logger
 	store      *rbac.MemoryStore
 	engine     *rbac.Engine
@@ -47,9 +48,12 @@ type Server struct {
 }
 
 // New 按配置装配服务端。
-func New(cfg config.Config, logger *zap.Logger) *Server {
+//
+// metrics 为 nil 时不记录请求指标；遥测的 provider 生命周期由调用方
+// （入口进程）管理，服务端只消费它建好的全局实现。
+func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics) *Server {
 	store := rbac.NewMemoryStore()
-	engine := rbac.NewEngine(store, logger)
+	engine := rbac.NewEngine(store, logger, metrics)
 	authenticator := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
 
@@ -58,15 +62,24 @@ func New(cfg config.Config, logger *zap.Logger) *Server {
 
 	mux := http.NewServeMux()
 
+	// registeredPaths 收集所有注册到 mux 的路径。
+	// 遥测中间件用它把请求路径归一成有界的指标属性值——没有它，
+	// 任意一条路径都会各占一个时序。
+	var registeredPaths []string
+	register := func(path string, handler http.Handler) {
+		mux.Handle(path, handler)
+		registeredPaths = append(registeredPaths, path)
+	}
+
 	// 两个业务服务都挂鉴权拦截器。拦截器同时适用于三种协议。
 	opts := []connect.HandlerOption{
 		connect.WithInterceptors(authorizer.Interceptor()),
 	}
 	rbacPath, rbacHandler := rbacv1connect.NewRBACServiceHandler(NewRBACService(store, engine), opts...)
-	mux.Handle(rbacPath, rbacHandler)
+	register(rbacPath, rbacHandler)
 
 	identityPath, identityHandler := identityv1connect.NewIdentityServiceHandler(identitySrv, opts...)
-	mux.Handle(identityPath, identityHandler)
+	register(identityPath, identityHandler)
 
 	// 健康检查与反射：不参与业务鉴权，由 authMiddleware 的
 	// infraProcedurePrefixes 显式放行。
@@ -75,7 +88,7 @@ func New(cfg config.Config, logger *zap.Logger) *Server {
 		identityv1connect.IdentityServiceName,
 	}
 	healthPath, healthHandler := grpchealth.NewHandler(grpchealth.NewStaticChecker(serviceNames...))
-	mux.Handle(healthPath, healthHandler)
+	register(healthPath, healthHandler)
 
 	reflector := grpcreflect.NewStaticReflector(serviceNames...)
 	for _, newHandler := range []func(*grpcreflect.Reflector, ...connect.HandlerOption) (string, http.Handler){
@@ -83,17 +96,18 @@ func New(cfg config.Config, logger *zap.Logger) *Server {
 		grpcreflect.NewHandlerV1Alpha,
 	} {
 		path, handler := newHandler(reflector)
-		mux.Handle(path, handler)
+		register(path, handler)
 	}
 
-	// 中间件顺序固定：链路标识 → 认证。
+	// 中间件顺序固定：链路追踪 → 认证。
 	// 认证之后才交给 handler 读请求体，未认证的请求不会被完整读取一遍。
+	telemetry := &telemetryMiddleware{metrics: metrics, logger: logger, registeredPaths: registeredPaths}
 	authn := &authMiddleware{
 		authn:       authenticator,
 		errorWriter: connect.NewErrorWriter(),
 		logger:      logger,
 	}
-	handler := withTraceID(authn.wrap(mux))
+	handler := telemetry.wrap(authn.wrap(mux))
 
 	httpServer := &http.Server{
 		Addr:    cfg.Address,

@@ -1,9 +1,12 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"go.uber.org/zap"
@@ -34,19 +37,123 @@ func isInfraProcedure(path string) bool {
 	return false
 }
 
-// withTraceID 生成或继承链路标识。
+// procedureUnmatched 是未落在任何已注册服务下的路径共用的指标属性值。
+//
+// 直接拿 r.URL.Path 当指标属性会让任意路径（扫描器、拼错的地址）各占一个
+// 时序，时序数量随流量增长——这正是"指标属性必须有界"要防的事。
+const procedureUnmatched = "unmatched"
+
+// telemetryMiddleware 在 HTTP 层起 server span、回写链路标识并记录请求指标。
 //
 // 它必须排在最外层：被拒绝的请求同样需要留痕，否则无法回答
 // "是谁在反复尝试越权"。
-func withTraceID(next http.Handler) http.Handler {
+//
+// 三种 RPC 协议（Connect / gRPC / gRPC-Web）的元数据都落在 HTTP 头里，
+// 因此**只有这一处提取点**，一次实现同时覆盖三种协议。
+type telemetryMiddleware struct {
+	metrics *observability.Metrics
+	logger  *zap.Logger
+	// registeredPaths 是注册到 mux 的全部路径，用于把请求路径归一成有界取值。
+	registeredPaths []string
+}
+
+func (m *telemetryMiddleware) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := observability.EnsureTraceID(r.Context())
-		if incoming := r.Header.Get(observability.TraceIDHeader); incoming != "" {
-			ctx = observability.WithTraceID(ctx, incoming)
-		}
-		next.ServeHTTP(w, r.WithContext(ctx))
+		procedure := m.procedureOf(r.URL.Path)
+		ctx, _ := observability.StartServerSpan(r.Context(), r.Header, procedure)
+
+		// 响应头必须在写出任何响应字节之前设置，否则会被丢弃。
+		// 跨域部署时还需要配合 Access-Control-Expose-Headers 把它们暴露给浏览器
+		// （见 docs/observability.md）。
+		observability.WriteTraceHeaders(ctx, w.Header())
+
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		started := time.Now()
+		defer func() {
+			elapsed := time.Since(started)
+			observability.EndServerSpan(ctx, rec.status)
+			m.metrics.ServerRequest(ctx, procedure, strconv.Itoa(rec.status), elapsed)
+			m.logRequest(ctx, procedure, rec.status, elapsed)
+		}()
+
+		next.ServeHTTP(rec, r.WithContext(ctx))
 	})
 }
+
+// logRequest 为每个完成的请求留一行。
+//
+// 这是"拿着 trace_id 就能搜到东西"的前提。在这之前，服务端唯一会写 trace_id
+// 的地方是 RBAC 判定留痕，于是 Login / Refresh / WhoAmI / GetSessionPermissions
+// 这些不走判定的请求虽然起了 span、也回写了响应头，却一行日志都没有——
+// 拿着它们返回的 trace_id 去搜日志会一无所获，而浏览器打开页面时最先发的
+// 恰恰就是这几个方法。
+//
+// 只记过程名、结果码、耗时与主体标识，**不记请求体**：Login 的请求体里装的
+// 就是凭证，而凭证绝不允许进日志（见 docs/design/config/credentials.md）。
+func (m *telemetryMiddleware) logRequest(ctx context.Context, procedure string, status int, elapsed time.Duration) {
+	logger := observability.SpanLogger(ctx, m.logger)
+	if logger == nil {
+		return
+	}
+	fields := []zap.Field{
+		zap.String("procedure", procedure),
+		zap.Int("status", status),
+		// 毫秒而不是 zap.Duration 的秒：秒的浮点数（0.000617208）要数零才读得出，
+		// 而毫秒既可读、又能直接用查询语句比较。键名带单位，避免读者去猜。
+		zap.Float64("duration_ms", elapsed.Seconds()*1000),
+	}
+	if subject, ok := interceptor.SubjectFromContext(ctx); ok {
+		fields = append(fields, zap.String("subject_id", subject.ID))
+	}
+
+	// 高频探针与未匹配到任何服务的路径（扫描器、拼错的地址）降到 DEBUG：
+	// 它们同样需要可追溯，但不该把日志淹成心跳与噪声。
+	if isInfraProcedure(procedure) || procedure == procedureUnmatched {
+		logger.Debug("请求完成", fields...)
+		return
+	}
+	logger.Info("请求完成", fields...)
+}
+
+// procedureOf 把请求路径归一成有界的指标属性值。
+func (m *telemetryMiddleware) procedureOf(path string) string {
+	for _, registered := range m.registeredPaths {
+		if strings.HasPrefix(path, registered) {
+			return path
+		}
+	}
+	return procedureUnmatched
+}
+
+// statusRecorder 记录响应状态码，供 span 与请求指标使用。
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	if !r.wrote {
+		r.status = code
+		r.wrote = true
+	}
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// Write 记录"已经写过响应"，避免后续的 WriteHeader 把状态码改掉。
+//
+// 不写响应头直接写体时，net/http 隐含 200，这里必须与之保持一致。
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	r.wrote = true
+	return r.ResponseWriter.Write(b)
+}
+
+// Unwrap 让 http.ResponseController 能找到被包装的 ResponseWriter，
+// 从而保住 Flusher 等可选接口。
+//
+// 少了它会直接坏掉流式响应——反射服务就是流式的，而它的失败方式
+// （连接挂住而不是报错）极难归因。
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // authMiddleware 在 HTTP 层完成认证。
 //
