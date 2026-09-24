@@ -17,13 +17,13 @@ import (
 // 边界：本服务只做认证（你是谁）。判定（你能做什么）由 RBAC 负责。
 // 认证失败与鉴权失败返回不同的错误码，见 docs/design/rbac/server-permissions.md。
 type IdentityService struct {
-	store  *rbac.MemoryStore
+	store  rbac.MutableStore
 	engine *rbac.Engine
 	authn  *interceptor.TokenAuthenticator
 }
 
 // NewIdentityService 构造认证面服务。
-func NewIdentityService(store *rbac.MemoryStore, engine *rbac.Engine) *IdentityService {
+func NewIdentityService(store rbac.MutableStore, engine *rbac.Engine) *IdentityService {
 	return &IdentityService{store: store, engine: engine}
 }
 

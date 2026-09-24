@@ -113,6 +113,20 @@ func TestValidateAssignment(t *testing.T) {
 			existing: []RoleBinding{{SubjectID: "u1", RoleID: "approver", Scope: "tenant/other"}},
 			roleID:   "executor",
 		},
+		{
+			// 同一条事实的重复授予是幂等的，不是互斥——把它算成互斥会让
+			// "再点一次保存"变成一个调用方无法与真冲突区分开的失败。
+			name:     "已持有同一角色不算互斥",
+			existing: []RoleBinding{{SubjectID: "u1", RoleID: "plain", Scope: scope}},
+			roleID:   "plain",
+		},
+		{
+			// 即使该角色自己出现在互斥名单里，重复授予它本身也不构成冲突：
+			// 互斥说的是"两个角色不能同时持有"。
+			name:     "已持有互斥名单中的角色本身不算互斥",
+			existing: []RoleBinding{{SubjectID: "u1", RoleID: "executor", Scope: scope}},
+			roleID:   "executor",
+		},
 	}
 
 	for _, tt := range tests {
@@ -166,19 +180,36 @@ func TestValidateRoleDeletion(t *testing.T) {
 	}
 }
 
-// TestMemoryStoreBuiltinProtection 覆盖内置角色的不可删除性。
-func TestMemoryStoreBuiltinProtection(t *testing.T) {
+// TestBuiltinRoleIsUndeletable 覆盖内置角色的不可删除性。
+//
+// 这条规则住在 ValidateRoleDeletion 里，而不是各存储实现的 DeleteRole 里：
+// 存储实现只执行不判定（见 MutableStore），否则内存实现与数据库实现会
+// 各自答一遍，而其中一份迟早会漏。
+func TestBuiltinRoleIsUndeletable(t *testing.T) {
+	roles := roleIndex(RoleDefinition{ID: RoleSystemAdmin, Builtin: true}, RoleDefinition{ID: "custom"})
+
+	if err := ValidateRoleDeletion(roles, nil, RoleSystemAdmin); !errors.Is(err, ErrBuiltinRoleUndeletable) {
+		t.Errorf("删除内置角色应报 ErrBuiltinRoleUndeletable，实际 %v", err)
+	}
+	if err := ValidateRoleDeletion(roles, nil, "custom"); err != nil {
+		t.Errorf("删除自定义角色不应报错，实际 %v", err)
+	}
+}
+
+// TestMemoryStoreDeleteRole 覆盖存储侧的删除语义：只执行、不判定。
+func TestMemoryStoreDeleteRole(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()
 
-	if err := store.DeleteRole(ctx, RoleSystemAdmin); err == nil {
-		t.Error("内置角色应不可删除")
-	}
 	if err := store.PutRole(ctx, RoleDefinition{ID: "custom"}); err != nil {
 		t.Fatalf("写入自定义角色失败: %v", err)
 	}
 	if err := store.DeleteRole(ctx, "custom"); err != nil {
 		t.Errorf("自定义角色应可删除，实际 %v", err)
+	}
+	// 删除不存在的角色必须报错：静默成功会把"拼错了角色标识"藏起来。
+	if err := store.DeleteRole(ctx, "custom"); !errors.Is(err, ErrRoleNotFound) {
+		t.Errorf("删除不存在的角色应报 ErrRoleNotFound，实际 %v", err)
 	}
 }
 
@@ -186,7 +217,7 @@ func TestMemoryStoreBuiltinProtection(t *testing.T) {
 func TestMemoryStoreBindIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()
-	store.RegisterSubject(Subject{ID: "u1"})
+	putSubjects(t, store, Subject{ID: "u1"})
 	binding := RoleBinding{SubjectID: "u1", RoleID: RoleViewer, Scope: "root"}
 
 	for range 3 {

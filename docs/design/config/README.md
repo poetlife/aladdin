@@ -137,6 +137,7 @@ aladdin 的两端进程都需要在启动时获得一份配置：服务端需要
 | 可观测性 | 配置提供日志级别与文件路径；取值集合与 [observability.md](../../observability.md) 一致 |
 | YAML 解析 | 配置文件的语法由 YAML 解析库提供；本模块只消费解析结果，不自行实现语法 |
 | 身份认证 | CLI 配置中的目标地址与凭证共同构成一次调用的上下文；凭证本身的来源优先级见 [../rbac/cli-permissions.md](../rbac/cli-permissions.md) |
+| 持久化 | 服务端配置中的后端类型与连接串由 [../persistence/](../persistence/README.md) 消费；本模块只保证它们按同一套分层规则被读到，不解释取值 |
 | RBAC | 配置**不**参与权限判定；默认作用域的权威来源是主体的绑定关系 |
 
 ## 代码实现索引
@@ -148,6 +149,7 @@ aladdin 的两端进程都需要在启动时获得一份配置：服务端需要
 | 两端配置的类型、默认值与环境变量名 | [internal/config/config.go](../../../internal/config/config.go) |
 | 配置文件的定位与解析（键集合、未知键报错） | [internal/config/file.go](../../../internal/config/file.go) |
 | 五层来源的合并与两端加载入口 | [internal/config/load.go](../../../internal/config/load.go) |
+| 数据库后端类型与连接串的消费（含脱敏） | [internal/database/](../../../internal/database/) |
 | 凭证的解析与持久化 | [internal/auth/credentials.go](../../../internal/auth/credentials.go) |
 | 服务端启动与配置消费 | [cmd/aladdin-server/main.go](../../../cmd/aladdin-server/main.go) |
 | CLI 全局参数与配置消费 | [cmd/aladdin/root.go](../../../cmd/aladdin/root.go) |

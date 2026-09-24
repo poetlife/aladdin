@@ -14,6 +14,8 @@ var (
 	ErrMutuallyExclusive = errors.New("角色互斥，不可同时授予")
 	// ErrRoleInUse 表示角色仍被其他角色继承或仍被主体持有，不可删除。
 	ErrRoleInUse = errors.New("角色仍被使用")
+	// ErrBuiltinRoleUndeletable 表示内置角色不可删除。
+	ErrBuiltinRoleUndeletable = errors.New("内置角色不可删除")
 	// ErrBuiltinRoleImmutable 表示内置角色的权限范围不可修改。
 	ErrBuiltinRoleImmutable = errors.New("内置角色的权限范围不可修改")
 )
@@ -84,10 +86,18 @@ func ValidateImmutable(existing RoleDefinition, candidate RoleDefinition) error 
 //
 // 互斥是对称的：任一方声明了互斥即生效，不需要两边都写。
 // 只在授予（grant）时校验；回收不可能引入新的互斥冲突。
+//
+// 已持有同一角色**不是**互斥：那是同一条事实的重复授予，存储侧本就按幂等
+// 处理（见 MutableStore.Bind）。把它算成互斥的错误在于，互斥说的是"两个
+// 角色不能同时持有"，而这里是同一个角色——按前者报错会让"再点一次保存"
+// 变成一个失败，而调用方没有任何办法区分它与真正的互斥冲突。
 func ValidateAssignment(roles map[string]RoleDefinition, existing []RoleBinding, candidate RoleBinding, scope Scope) error {
 	if role, ok := roles[candidate.RoleID]; ok {
 		for _, other := range existing {
 			if other.Scope != scope {
+				continue
+			}
+			if other.RoleID == candidate.RoleID {
 				continue
 			}
 			peers := append([]string{other.RoleID}, roles[other.RoleID].MutuallyExclusiveWith...)
@@ -106,8 +116,16 @@ func ValidateAssignment(roles map[string]RoleDefinition, existing []RoleBinding,
 	return nil
 }
 
-// ValidateRoleDeletion 校验角色未被继承且未被持有。
+// ValidateRoleDeletion 校验角色可以删除：内置角色不可删除，且角色未被继承、
+// 未被任何主体持有。
+//
+// 它是"这个角色能不能删"的**唯一入口**。存储实现的 DeleteRole 只执行不判定
+// （见 MutableStore），因此调用方必须先过这里——否则内置角色会随后端不同而
+// 有不同的命运。
 func ValidateRoleDeletion(roles map[string]RoleDefinition, bindings []RoleBinding, roleID string) error {
+	if role, ok := roles[roleID]; ok && role.Builtin {
+		return fmt.Errorf("%w: %q", ErrBuiltinRoleUndeletable, roleID)
+	}
 	for _, r := range roles {
 		for _, parent := range r.Inherits {
 			if parent == roleID {

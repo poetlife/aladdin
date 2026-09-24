@@ -11,9 +11,11 @@ import (
 func newTestEngine(t *testing.T) (*Engine, *MemoryStore) {
 	t.Helper()
 	store := NewMemoryStore()
-	store.RegisterSubject(Subject{ID: "u1", Type: SubjectTypeUser, DefaultScope: "tenant/acme"})
-	store.RegisterSubject(Subject{ID: "admin", Type: SubjectTypeUser, DefaultScope: GlobalScope})
-	store.RegisterSubject(Subject{ID: "nobody", Type: SubjectTypeUser, DefaultScope: "tenant/acme"})
+	putSubjects(t, store,
+		Subject{ID: "u1", Type: SubjectTypeUser, DefaultScope: "tenant/acme"},
+		Subject{ID: "admin", Type: SubjectTypeUser, DefaultScope: GlobalScope},
+		Subject{ID: "nobody", Type: SubjectTypeUser, DefaultScope: "tenant/acme"},
+	)
 	if err := store.Bind(context.Background(), RoleBinding{
 		SubjectID: "u1", RoleID: RoleViewer, Scope: "tenant/acme",
 	}); err != nil {
@@ -136,7 +138,7 @@ func TestEngineEffectivePermissionsUnknownSubject(t *testing.T) {
 func TestEngineInheritance(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()
-	store.RegisterSubject(Subject{ID: "u1", Type: SubjectTypeUser, DefaultScope: "root"})
+	putSubjects(t, store, Subject{ID: "u1", Type: SubjectTypeUser, DefaultScope: "root"})
 	putRole(t, store, ctx, RoleDefinition{
 		ID: "leaf", DisplayName: "叶子",
 		Permissions: []PermissionCode{PermissionAuditLogRead},
@@ -201,5 +203,16 @@ func putRole(t *testing.T, store *MemoryStore, ctx context.Context, role RoleDef
 	t.Helper()
 	if err := store.PutRole(ctx, role); err != nil {
 		t.Fatalf("写入角色 %q 失败: %v", role.ID, err)
+	}
+}
+
+// putSubjects 登记若干主体。未登记的主体在判定路径上等同不存在，
+// 因此判定类夹具几乎都要先过这一步。
+func putSubjects(t *testing.T, store *MemoryStore, subjects ...Subject) {
+	t.Helper()
+	for _, subject := range subjects {
+		if err := store.PutSubject(context.Background(), subject); err != nil {
+			t.Fatalf("写入主体 %q 失败: %v", subject.ID, err)
+		}
 	}
 }

@@ -19,6 +19,7 @@
 | 权限码是否已登记 | 权限目录 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
 | 前端当前会话是否持有某权限码（仅用于展示裁剪） | `usePermission()` | [web/src/auth/use-permission.ts](../web/src/auth/use-permission.ts) |
 | 一个 RPC 方法需要认证 / 需要哪个权限码 | `interceptor.Resolve` | [internal/server/interceptor/annotation.go](../internal/server/interceptor/annotation.go) |
+| 数据库后端类型的合法取值 | `database.ParseDialect` | [internal/database/dialect.go](../internal/database/dialect.go) |
 | 该读哪一个配置文件（显式指定 > 环境变量 > 默认位置） | `config.locateFile` | [internal/config/file.go](../internal/config/file.go) |
 | 配置文件里的键是否属于本端 | `config.readFileValues` | [internal/config/file.go](../internal/config/file.go) |
 | 凭证文件权限是否可接受（仅属主可读写） | 凭证文件权限校验 | [internal/auth/credentials.go](../internal/auth/credentials.go) |
@@ -42,6 +43,11 @@
 | 日志与链路的关联（`trace_id` / `span_id` 字段） | `observability.SpanLogger` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
 | 前端链路标识的生成与校验 | `newTraceparent` / `parseTraceparent` | [web/src/api/trace-context.ts](../web/src/api/trace-context.ts) |
 | 遥测实现（TracerProvider / MeterProvider）的构建 | `observability.NewProvider` | [internal/observability/provider.go](../internal/observability/provider.go) |
+| 数据库连接串的归一与脱敏摘要 | `database.NormalizeDSN` / `database.Describe` | [internal/database/dialect.go](../internal/database/dialect.go) |
+| 数据库连接的建立与连接池取值 | `database.Open` | [internal/database/database.go](../internal/database/database.go) |
+| 库结构演进到最新版本（迁移的执行与版本记录） | `migrate.Run` | [internal/database/migrate/migrate.go](../internal/database/migrate/migrate.go) |
+| 内置角色在库中的初始化 | `rbac.EnsureBuiltinRoles` | [internal/rbac/builtin_roles.go](../internal/rbac/builtin_roles.go) |
+| 角色列表与绑定列表的排序规则 | `rbac.SortRoles` / `rbac.SortBindings` | [internal/rbac/sort.go](../internal/rbac/sort.go) |
 
 > **链路标识只用 OTel 的传播实现**。仓库里不保留任何自研的 trace_id 生成、注入或继承逻辑：那会与 `traceparent` 形成两套并存的标识，而它们迟早会不一致（见 [docs/observability.md](observability.md)）。
 
@@ -70,7 +76,8 @@
 | 接口契约与消息定义（服务端 + 前端类型） | proto 定义，经 `buf generate` 同时派生出 Go 与 TS 两侧代码 | [api/proto/](../api/proto/) |
 | 拒绝原因枚举（Go / TypeScript / CLI 三端同源） | [api/proto/aladdin/rbac/v1/errors.proto](../api/proto/aladdin/rbac/v1/errors.proto) | 由 `buf generate` 派生，三端均引用生成常量 |
 | 权限码全集（Go 常量与前端常量同源） | 权限目录，经 `make gen` 双向派生 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
-| 角色 / 权限 / 主体关系的持久化数据 | `rbac.Store` 接口 | [internal/rbac/store.go](../internal/rbac/store.go) |
+| 角色 / 权限 / 主体关系的持久化数据 | `rbac.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/rbac/store.go](../internal/rbac/store.go) / [internal/rbac/gormstore/](../internal/rbac/gormstore/store.go) |
+| 表结构与迁移清单（库里长什么样） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/schema.go](../internal/database/schema.go) / [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |
 | 服务端配置（监听地址、日志级别与路径） | 服务端 `config.yml` + `config.local.yml`，经 `config.LoadServer` 读取 | [internal/config/load.go](../internal/config/load.go) |
 | CLI 配置（目标地址、超时、输出详细度） | CLI `config.yml` + `config.local.yml`，经 `config.LoadCLI` 读取 | [internal/config/load.go](../internal/config/load.go) |
 | 两端各自认识的配置键 | `serverKeys` / `cliKeys` | [internal/config/file.go](../internal/config/file.go) |

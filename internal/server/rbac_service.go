@@ -19,12 +19,12 @@ import (
 // 写一层适配器"（memo 的做法）：我们的服务实现本来就只是转发给
 // rbac.Engine 与 store，多一层适配只是多一份需要同步维护的样板。
 type RBACService struct {
-	store  *rbac.MemoryStore
+	store  rbac.MutableStore
 	engine *rbac.Engine
 }
 
 // NewRBACService 构造管理面服务。
-func NewRBACService(store *rbac.MemoryStore, engine *rbac.Engine) *RBACService {
+func NewRBACService(store rbac.MutableStore, engine *rbac.Engine) *RBACService {
 	return &RBACService{store: store, engine: engine}
 }
 
@@ -83,12 +83,19 @@ func (s *RBACService) PutRole(ctx context.Context, req *connect.Request[rbacv1.P
 }
 
 // DeleteRole 实现 RBACService。
+//
+// 校验用的是**库里的真实绑定**而不是请求里带来的信息：角色是否还被主体
+// 持有只有存储知道，而调用方（CLI、前端）看到的是可能已经过期的视图。
 func (s *RBACService) DeleteRole(ctx context.Context, req *connect.Request[rbacv1.DeleteRoleRequest]) (*connect.Response[rbacv1.DeleteRoleResponse], error) {
 	roles, err := s.roleIndex(ctx)
 	if err != nil {
 		return nil, toConnectError(err)
 	}
-	if err := rbac.ValidateRoleDeletion(roles, nil, req.Msg.GetRoleId()); err != nil {
+	bindings, err := s.store.BindingsOfRole(ctx, req.Msg.GetRoleId())
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	if err := rbac.ValidateRoleDeletion(roles, bindings, req.Msg.GetRoleId()); err != nil {
 		return nil, toConnectError(err)
 	}
 	if err := s.store.DeleteRole(ctx, req.Msg.GetRoleId()); err != nil {
@@ -100,6 +107,11 @@ func (s *RBACService) DeleteRole(ctx context.Context, req *connect.Request[rbacv
 }
 
 // AssignRole 实现 RBACService。
+//
+// 授予与回收走同一条路径（proto 上由 grant 区分），但走的校验不同：
+// 回收不可能引入新的互斥冲突，因此不做互斥校验——这正是
+// ValidateAssignment 只在授予侧调用的原因。两边共同的前提是角色存在：
+// 回收一个不存在的角色多半意味着调用方写错了角色标识，静默成功会把它藏起来。
 func (s *RBACService) AssignRole(ctx context.Context, req *connect.Request[rbacv1.AssignRoleRequest]) (*connect.Response[rbacv1.AssignRoleResponse], error) {
 	roles, err := s.roleIndex(ctx)
 	if err != nil {
@@ -108,16 +120,22 @@ func (s *RBACService) AssignRole(ctx context.Context, req *connect.Request[rbacv
 	if _, ok := roles[req.Msg.GetRoleId()]; !ok {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("角色不存在"))
 	}
-	if !req.Msg.GetGrant() {
-		// 回收不引入新的互斥冲突，骨架阶段不做删除，留待实现持久化存储时补全。
-		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("角色回收尚未实现"))
-	}
 
 	binding := rbac.RoleBinding{
 		SubjectID: req.Msg.GetSubjectId(),
 		RoleID:    req.Msg.GetRoleId(),
 		Scope:     rbac.Scope(req.Msg.GetScope()),
 	}
+	if !req.Msg.GetGrant() {
+		// 撤销是幂等的：绑定本来就不存在时 Unbind 不报错（见 MutableStore）。
+		if err := s.store.Unbind(ctx, binding); err != nil {
+			return nil, toConnectError(err)
+		}
+		return connect.NewResponse(&rbacv1.AssignRoleResponse{
+			ChangeId: changeID("binding", binding.SubjectID),
+		}), nil
+	}
+
 	existing, err := s.store.SubjectBindings(ctx, binding.SubjectID)
 	if err != nil && !errors.Is(err, rbac.ErrSubjectNotFound) {
 		return nil, toConnectError(err)

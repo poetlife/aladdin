@@ -13,7 +13,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/config"
+	"github.com/poetlife/aladdin/internal/database"
 	"github.com/poetlife/aladdin/internal/observability"
+	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
 )
 
@@ -50,6 +52,12 @@ func run() error {
 	}
 	defer func() { _ = logger.Sync() }()
 
+	// 信号上下文在这里就建起来，而不是等到监听之前：库结构迁移也在它的
+	// 覆盖范围之内。一次迁移可能跑上几秒，期间收到停止信号却继续跑下去，
+	// 就是"停不下来的进程"——那正是编排系统最终发 SIGKILL 的场景。
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// 遥测必须早于服务端构建：otel.Meter 取的是调用当时注册的实现，
 	// 晚一步取到的 meter 什么都不做，而且不会报错——只是指标永远为空。
 	telemetryOpts := cfg.TelemetryOptions(observability.ServiceServer, version)
@@ -66,22 +74,31 @@ func run() error {
 	// 生效配置留痕：这是回答"我改的配置文件到底有没有被读到"的唯一途径，
 	// 而它无法从"服务能启动"这个事实中推断出来。服务端配置中不含凭证，
 	// 因此可以整体入日志。
+	//
+	// 数据库一项是例外：连接串可能含口令，因此只记**脱敏摘要**。
+	// driver 仍记原值——摘要在取值非法时会省略内容，那时原值就是唯一的线索。
 	logger.Info("服务端配置已生效",
 		zap.String("address", cfg.Address),
 		zap.String("log_level", string(cfg.LogLevel)),
 		zap.String("log_file", cfg.LogFile),
 		zap.String("otel_endpoint", cfg.OTelEndpoint),
+		zap.String("database_driver", cfg.Database.Driver),
+		zap.String("database", database.Describe(cfg.Database)),
 	)
 
-	srv := server.New(cfg, logger, metrics)
+	// 打开库并迁移，全程发生在监听之前：迁移失败即拒绝启动，不会出现
+	// "服务在跑、表还没建好"的中间状态。内置角色的补齐也包含在里面
+	// （见 gormstore.Open）——这三步的先后顺序固化在那里，不在这里。
+	store, err := gormstore.Open(ctx, cfg.Database, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+
+	srv := server.New(cfg, logger, metrics, store)
 	if err := server.ApplyDevSeed(srv, logger); err != nil {
 		return err
 	}
-
-	// 监听的生命周期跟随信号上下文：收到 SIGINT/SIGTERM 时
-	// Listen 会被取消，而不是留下一个孤立的监听套接字。
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	serveErr := srv.ListenAndServe(ctx)
 

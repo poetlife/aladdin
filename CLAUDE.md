@@ -19,6 +19,7 @@
 | 文档 | 路径 | 说明 |
 |------|------|------|
 | RBAC 权限体系 | [docs/design/rbac/](docs/design/rbac/README.md) | 权限模型、决策语义、三端接入方式 |
+| 持久化 | [docs/design/persistence/](docs/design/persistence/README.md) | 库结构、迁移语义、后端选择与连接串 |
 | 全局配置与凭证 | [docs/design/config/](docs/design/config/README.md) | 配置来源分层与合并语义、服务端启动配置、CLI 配置与凭证保护 |
 | 可观测性总览 | [docs/observability.md](docs/observability.md) | 日志、指标、追踪的接入方式与规范 |
 | 测试指南 | [docs/testing.md](docs/testing.md) | 测试目录规范与运行命令 |

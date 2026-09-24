@@ -12,7 +12,7 @@
 
 三端之间的接口契约由 `api/proto/` 单一来源派生：服务端 handler、前端类型与 service descriptor 都出自同一次 `buf generate`。
 
-设计文档见 [docs/design/rbac/](docs/design/rbac/README.md)（权限体系）与 [docs/design/config/](docs/design/config/README.md)（配置与凭证）。
+设计文档见 [docs/design/rbac/](docs/design/rbac/README.md)（权限体系）、[docs/design/config/](docs/design/config/README.md)（配置与凭证）与 [docs/design/persistence/](docs/design/persistence/README.md)（落库与迁移）。
 
 ## 快速开始
 
@@ -69,6 +69,8 @@ make web-dev      # http://localhost:5173
 
 凭证**不放进配置文件**，而是单独存放（用户配置目录下的 `aladdin/credentials.json`，权限 0600，由 `aladdin login` 写入）：配置可以提交、可以共享、可以进镜像，凭证不可以。
 
+数据默认落在 **sqlite**：不写任何数据库配置时，服务端在工作目录下建 `aladdin.db`，结构迁移随启动自动完成（幂等）。换 MySQL 只需改 `database_driver` 与 `database_dsn`，业务代码与迁移都不用动。库结构与迁移语义见 [docs/design/persistence/](docs/design/persistence/README.md)。
+
 可观测性上报也走配置文件（`otel_endpoint` / `otel_insecure` / `otel_sample_ratio`，两端同名）。**留空只是不上报**：链路标识照常生成、经 W3C `traceparent` 传播、并在响应头回写，因此没有 Collector 的环境一样能用追踪。完整规则见 [docs/design/config/](docs/design/config/README.md) 与 [docs/observability.md](docs/observability.md)。
 
 ## 项目结构
@@ -86,10 +88,20 @@ aladdin/
 │   └── aladdin/                  # cobra CLI 入口
 ├── internal/
 │   ├── rbac/                     # 权限模型与决策引擎（服务端与 CLI 共用）
+│   │   ├── gormstore/            # rbac.Store 的 SQL 实现
+│   │   └── builtin_roles.go      # 内置角色在库中的初始化（只补缺失）
 │   ├── server/                   # Connect 服务装配与服务实现
 │   │   ├── middleware.go         # 链路标识与认证（HTTP 层）
 │   │   └── interceptor/          # 鉴权拦截器（协议无关）
 │   ├── auth/                     # CLI 侧凭证解析与持久化
+│   ├── database/                 # 数据库连接、方言与表结构定义（唯一入口）
+│   │   ├── dialect.go            # 后端类型、连接串归一与脱敏
+│   │   ├── database.go           # 连接的建立与连接池
+│   │   ├── schema.go             # 表结构定义（唯一信源）
+│   │   └── migrate/              # 迁移机制与迁移清单（只增不减）
+│   │       ├── migrate.go        # 迁移的执行与版本记录
+│   │       ├── migrations.go     # 有序迁移清单（唯一入口）
+│   │       └── migration_*.go    # 已发布的迁移，发布后不可修改
 │   ├── config/                   # 配置来源与合并（唯一入口）
 │   │   ├── config.go             # 两端类型、默认值、校验、环境变量名
 │   │   ├── file.go               # 配置文件定位与解析（键集合、未知键报错）

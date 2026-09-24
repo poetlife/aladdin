@@ -49,6 +49,8 @@ Go 侧常量与前端常量均由它派生（`make gen`），不允许任何一�
 
 互斥约束**在授权时即校验**，而不是等到使用时才拒绝——不合法的角色组合不应该被存进系统。
 
+互斥约束的是**两个不同角色**之间的关系。重复授予一个主体**已经持有**的角色不是冲突，而是一次幂等的重复写入：把它报成互斥，会让"再点一次保存"变成一个调用方无法与真冲突区分开的失败。回收则不需要校验互斥——撤销不可能引入新的冲突。
+
 ### 作用域的匹配规则
 
 - 作用域是路径式的层级结构，父作用域天然包含子作用域。
@@ -69,6 +71,8 @@ Go 侧常量与前端常量均由它派生（`make gen`），不允许任何一�
 > 骨架阶段只有上述四个内置角色——一个不持有任何权限的角色不是角色，是占位符。
 
 内置角色的**存在**是模型的一部分（代码可依赖其标识），其**具体权限绑定**可在部署时调整。
+
+**内置角色一律不可删除。** 删除一个内置角色等于让模型里承诺存在的标识消失，而依赖它的判断（例如"某个权限一定有人能授予"）会以各种间接方式失效。这条判断与"角色是否仍被继承或持有"同属删除前的约束校验，两者只有一个入口。
 
 ### 主体的权限来源
 
@@ -131,7 +135,7 @@ Go 侧常量与前端常量均由它派生（`make gen`），不允许任何一�
 | 依赖对象 | 交互方式 |
 |---------|---------|
 | 身份认证模块 | 只接收已确认的主体标识；本模块不解析凭证 |
-| 持久化存储 | 经 `rbac.Store` 抽象读写角色、权限、绑定关系 |
+| 持久化存储 | 经 `rbac.Store` 抽象读写角色、权限、绑定关系。落入 SQL 后，"角色是否存在""是否违反互斥"仍只在授权面校验一处，不复制成库约束（见 [../persistence/schema.md](../persistence/schema.md)） |
 | 权限目录 | 权限码全集来自 `api/permissions/catalog.yaml` |
 
 ## 代码实现索引
@@ -143,7 +147,11 @@ Go 侧常量与前端常量均由它派生（`make gen`），不允许任何一�
 | 权限码全集（唯一信源） | [api/permissions/catalog.yaml](../../../api/permissions/catalog.yaml) |
 | 角色/权限/主体关系定义 | [api/proto/aladdin/rbac/v1/rbac.proto](../../../api/proto/aladdin/rbac/v1/rbac.proto) |
 | 持久化抽象 | [internal/rbac/store.go](../../../internal/rbac/store.go) |
+| 持久化的 SQL 实现 | [internal/rbac/gormstore/](../../../internal/rbac/gormstore/) |
+| 内置角色的初始化（只补缺失） | [internal/rbac/builtin_roles.go](../../../internal/rbac/builtin_roles.go) |
 | 内置角色定义（由权限目录生成） | [internal/rbac/catalog_gen.go](../../../internal/rbac/catalog_gen.go) |
+| 表结构定义 | [internal/database/schema.go](../../../internal/database/schema.go) |
+| 迁移机制与迁移清单 | [internal/database/migrate/](../../../internal/database/migrate/) |
 | 前端权限码常量（由 proto 生成） | [web/src/gen/](../../../web/src/gen/) |
 
 ---

@@ -19,7 +19,10 @@ import (
 // "用默认值"这类断言就会在别人机器上莫名其妙地失败。
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{EnvAddress, EnvLogLevel, EnvLogFile, EnvTimeout, EnvConfig} {
+	for _, k := range []string{
+		EnvAddress, EnvLogLevel, EnvLogFile, EnvTimeout, EnvConfig,
+		EnvDatabaseDriver, EnvDatabaseDSN,
+	} {
 		t.Setenv(k, "")
 	}
 }
@@ -432,6 +435,11 @@ func TestValidate(t *testing.T) {
 		{"采样比例为零", func(c *ServerConfig) { c.OTelSampleRatio = 0 }, false},
 		{"采样比例大于 1", func(c *ServerConfig) { c.OTelSampleRatio = 1.5 }, false},
 		{"采样比例为负", func(c *ServerConfig) { c.OTelSampleRatio = -0.1 }, false},
+		{"数据库后端为空", func(c *ServerConfig) { c.Database.Driver = "" }, false},
+		{"数据库连接串为空", func(c *ServerConfig) { c.Database.DSN = "" }, false},
+		// 后端取值是否属于已知集合不在这里判：合法取值只有 internal/database
+		// 一份，在这里再列一遍就是第二个来源。拒绝发生在 database.Open，
+		// 仍早于监听端口打开，用例见 internal/database 与 test/e2e。
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -510,6 +518,43 @@ func TestDefaultAddressShared(t *testing.T) {
 	}
 }
 
+// 数据库的两个键必须各自独立合并。
+//
+// 串了线的表现是"改了连接串却连到别处"，而配置看起来完全正确——这正是
+// 五层合并里最难从现象反推回去的一类错误，因此单独守着。
+func TestDatabaseKeysMergeIndependently(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	write(t, filepath.Join(dir, FileName), "database_driver: sqlite\ndatabase_dsn: from-file.db\n")
+	write(t, filepath.Join(dir, "config.local.yml"), "database_dsn: from-local.db\n")
+
+	// 本地覆盖只写了 dsn：driver 必须保持主文件的值。
+	cfg, err := LoadServer(ServerFlags{})
+	if err != nil {
+		t.Fatalf("LoadServer: %v", err)
+	}
+	if cfg.Database.Driver != "sqlite" {
+		t.Errorf("driver = %q，期望沿用主文件的值", cfg.Database.Driver)
+	}
+	if cfg.Database.DSN != "from-local.db" {
+		t.Errorf("dsn = %q，期望取本地覆盖的值", cfg.Database.DSN)
+	}
+
+	// 环境变量只覆盖 dsn：driver 仍必须保持原值。
+	t.Setenv(EnvDatabaseDSN, "from-env.db")
+	cfg, err = LoadServer(ServerFlags{})
+	if err != nil {
+		t.Fatalf("LoadServer: %v", err)
+	}
+	if cfg.Database.Driver != "sqlite" {
+		t.Errorf("driver = %q，被环境变量串改了", cfg.Database.Driver)
+	}
+	if cfg.Database.DSN != "from-env.db" {
+		t.Errorf("dsn = %q，期望取环境变量的值", cfg.Database.DSN)
+	}
+}
+
 // 校验错误必须指认出错的键，否则用户不知道该改哪一项。
 func TestValidationErrorNamesKey(t *testing.T) {
 	bad := DefaultCLI()
@@ -563,6 +608,8 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyAddress:         "127.0.0.1:3101",
 			keyLogLevel:        "warn",
 			keyLogFile:         "/tmp/aladdin-test.log",
+			keyDatabaseDriver:  "mysql",
+			keyDatabaseDSN:     "aladdin@tcp(127.0.0.1:3306)/aladdin",
 			keyOTelEndpoint:    "collector:4318",
 			keyOTelInsecure:    "true",
 			keyOTelSampleRatio: "0.5",

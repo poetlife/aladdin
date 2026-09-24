@@ -3,7 +3,6 @@ package rbac
 import (
 	"context"
 	"errors"
-	"sort"
 	"sync"
 )
 
@@ -43,17 +42,36 @@ type Store interface {
 //
 // 它与 Store 分开，使判定路径只依赖只读能力——Engine 拿不到写方法，
 // 从类型上排除了"判定过程中顺手改数据"这类问题。
+//
+// 按角色反查绑定这类管理面才需要的查询也放在这一侧：判定路径用不到它，
+// 放进来只会让"判定依赖什么"变得不那么一目了然。
+//
+// 写方法一律**只执行、不判定**：约束校验（继承成环、静态互斥、内置角色
+// 不可删除、角色是否仍被占用）的唯一入口是 constraints.go 里的 Validate*。
+// 存储实现里再判一次，就是把同一份规则写成两份，而判定路径只有一个——
+// 这是本仓库最不能出现漂移的地方。
 type MutableStore interface {
 	Store
 
 	// PutRole 写入或覆盖角色定义。调用方需先完成约束校验。
 	PutRole(ctx context.Context, role RoleDefinition) error
 
-	// DeleteRole 删除角色。内置角色不可删除。
+	// DeleteRole 删除角色。调用方需先完成约束校验；角色不存在时返回
+	// ErrRoleNotFound。
 	DeleteRole(ctx context.Context, roleID string) error
 
-	// Bind 记录一次角色授予。
+	// PutSubject 写入或覆盖主体。未登记的主体在判定时返回 ErrSubjectNotFound。
+	PutSubject(ctx context.Context, subject Subject) error
+
+	// Bind 记录一次角色授予。已存在的同一绑定不重复写入，保证幂等。
 	Bind(ctx context.Context, binding RoleBinding) error
+
+	// Unbind 撤销一次角色授予。绑定不存在时不报错——重复撤销与撤销
+	// 一个本来就没有的绑定，结果一致，不该让调用方为此写判断。
+	Unbind(ctx context.Context, binding RoleBinding) error
+
+	// BindingsOfRole 返回持有该角色的全部绑定，用于删除角色前的占用校验。
+	BindingsOfRole(ctx context.Context, roleID string) ([]RoleBinding, error)
 }
 
 // MemoryStore 是 Store 的内存实现，用于测试与本地开发。
@@ -76,11 +94,12 @@ func NewMemoryStore() *MemoryStore {
 	return s
 }
 
-// RegisterSubject 登记一个主体。未登记的主体在判定时返回 ErrSubjectNotFound。
-func (s *MemoryStore) RegisterSubject(subject Subject) {
+// PutSubject 实现 MutableStore。未登记的主体在判定时返回 ErrSubjectNotFound。
+func (s *MemoryStore) PutSubject(_ context.Context, subject Subject) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.subjects[subject.ID] = subject
+	return nil
 }
 
 // PutRole 实现 MutableStore。
@@ -91,16 +110,16 @@ func (s *MemoryStore) PutRole(_ context.Context, role RoleDefinition) error {
 	return nil
 }
 
-// DeleteRole 实现 MutableStore。内置角色不可删除。
+// DeleteRole 实现 MutableStore。
+//
+// 与 PutRole 一样，它只执行、不判定：内置角色不可删除、角色仍被继承或
+// 仍被持有，都是**领域约束**，唯一入口是 ValidateRoleDeletion。
+// 在这里再判一次就是把同一份规则写成两份，而两份迟早会有一份漏掉。
 func (s *MemoryStore) DeleteRole(_ context.Context, roleID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	r, ok := s.roles[roleID]
-	if !ok {
+	if _, ok := s.roles[roleID]; !ok {
 		return ErrRoleNotFound
-	}
-	if r.Builtin {
-		return errors.New("内置角色不可删除")
 	}
 	delete(s.roles, roleID)
 	return nil
@@ -119,6 +138,33 @@ func (s *MemoryStore) Bind(_ context.Context, b RoleBinding) error {
 	return nil
 }
 
+// Unbind 实现 MutableStore。绑定不存在时不报错：重复撤销与撤销一个本来
+// 就没有的绑定，结果一致，不该让调用方为此写判断。
+func (s *MemoryStore) Unbind(_ context.Context, b RoleBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.bindings {
+		if existing == b {
+			s.bindings = append(s.bindings[:i], s.bindings[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+// BindingsOfRole 实现 MutableStore。
+func (s *MemoryStore) BindingsOfRole(_ context.Context, roleID string) ([]RoleBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []RoleBinding
+	for _, b := range s.bindings {
+		if b.RoleID == roleID {
+			out = append(out, b)
+		}
+	}
+	return SortBindings(out), nil
+}
+
 // Roles 实现 Store。
 func (s *MemoryStore) Roles(_ context.Context) ([]RoleDefinition, error) {
 	s.mu.RLock()
@@ -127,8 +173,7 @@ func (s *MemoryStore) Roles(_ context.Context) ([]RoleDefinition, error) {
 	for _, r := range s.roles {
 		out = append(out, r)
 	}
-	sortRoles(out)
-	return out, nil
+	return SortRoles(out), nil
 }
 
 // Role 实现 Store。
@@ -155,15 +200,10 @@ func (s *MemoryStore) SubjectBindings(_ context.Context, subjectID string) ([]Ro
 			out = append(out, b)
 		}
 	}
-	return out, nil
+	return SortBindings(out), nil
 }
 
 var (
 	_ Store        = (*MemoryStore)(nil)
 	_ MutableStore = (*MemoryStore)(nil)
 )
-
-// sortRoles 使角色列表顺序稳定，便于测试断言与前端差分。
-func sortRoles(roles []RoleDefinition) {
-	sort.Slice(roles, func(i, j int) bool { return roles[i].ID < roles[j].ID })
-}
