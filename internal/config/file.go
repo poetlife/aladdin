@@ -164,7 +164,7 @@ func readFileLayer(path string, required bool, parse func(string) (layer, error)
 			}
 			return layer{}, nil
 		}
-		return layer{}, fmt.Errorf("%w: 无法读取配置文件 %s: %v", ErrInvalid, path, err)
+		return layer{}, fmt.Errorf("%w: 无法读取配置文件 %s: %w", ErrInvalid, path, err)
 	}
 	return parse(path)
 }
@@ -194,7 +194,7 @@ func parseCLIFile(path string) (layer, error) {
 func readFileValues(path string, allowed []string) (fileValues, error) {
 	raw, err := os.ReadFile(path) //nolint:gosec // 路径来源受控，非用户输入
 	if err != nil {
-		return nil, fmt.Errorf("%w: 无法读取配置文件 %s: %v", ErrInvalid, path, err)
+		return nil, fmt.Errorf("%w: 无法读取配置文件 %s: %w", ErrInvalid, path, err)
 	}
 	// 空文件合法，等价于"一个键都没写"。
 	if strings.TrimSpace(string(raw)) == "" {
@@ -203,7 +203,7 @@ func readFileValues(path string, allowed []string) (fileValues, error) {
 
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("%w: 解析配置文件 %s 失败: %v", ErrInvalid, path, err)
+		return nil, fmt.Errorf("%w: 解析配置文件 %s 失败: %w", ErrInvalid, path, err)
 	}
 	root := &doc
 	if root.Kind == yaml.DocumentNode {
@@ -234,7 +234,7 @@ func readFileValues(path string, allowed []string) (fileValues, error) {
 		value := ""
 		if node := root.Content[i+1]; node.Tag != "!!null" {
 			if err := node.Decode(&value); err != nil {
-				return nil, fmt.Errorf("%w: 配置文件 %s 的 %s 取值无法解析: %v",
+				return nil, fmt.Errorf("%w: 配置文件 %s 的 %s 取值无法解析: %w",
 					ErrInvalid, path, key, err)
 			}
 		}

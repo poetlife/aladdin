@@ -8,12 +8,24 @@ BIN_DIR     := bin
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X main.version=$(VERSION)
 
-# 生成代码所需的工具。用 `go install` 固定版本，避免"我这能跑"。
+# 发布产物的形态（make release-build）。发版时 VERSION 由 tag 传入，
+# 与 LDFLAGS 共用同一处版本注入，不另起一份 -X。
+DIST_DIR    := dist
+PLATFORMS   := linux/amd64 darwin/arm64
+GO_BINS     := aladdin-server aladdin
+# 校验和工具名在两端不同：Linux 是 sha256sum，macOS 是 shasum -a 256。
+SHA256      := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
+
+# 生成代码与静态检查所需的工具。用 `go install` 固定版本，避免"我这能跑"。
+#
+# golangci-lint 也在这里，而不是"本机装了就用、没装就跳过"：CI 门禁里
+# 静默跳过等于没有门禁（见 make lint）。
 TOOLS := \
 	google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12 \
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest \
 	connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.0 \
-	github.com/bufbuild/buf/cmd/buf@v1.73.0
+	github.com/bufbuild/buf/cmd/buf@v1.73.0 \
+	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
 export PATH := $(shell go env GOPATH)/bin:$(PATH)
 
@@ -26,7 +38,7 @@ help: ## 显示本帮助
 ## ---------------------------------------------------------------- 依赖与生成
 
 .PHONY: tools
-tools: ## 安装代码生成工具
+tools: ## 安装代码生成与静态检查工具
 	@for t in $(TOOLS); do echo ">>> go install $$t"; go install $$t || exit 1; done
 
 .PHONY: gen
@@ -65,6 +77,10 @@ build: ## 构建服务端与 CLI
 install: ## 安装到 GOPATH/bin
 	go install -ldflags '$(LDFLAGS)' ./cmd/aladdin ./cmd/aladdin-server
 
+.PHONY: web-ci
+web-ci: ## 按 lockfile 安装前端依赖（CI 用，与 web-install 的区别是不更新 lockfile）
+	cd web && npm ci
+
 .PHONY: web-install
 web-install: ## 安装前端依赖
 	cd web && npm install
@@ -72,6 +88,23 @@ web-install: ## 安装前端依赖
 .PHONY: web-build
 web-build: ## 构建前端
 	cd web && npm run build
+
+.PHONY: release-build
+release-build: web-build ## 产出发布产物到 dist/（跨平台二进制、前端包、校验和）
+	@rm -rf $(DIST_DIR) && mkdir -p $(DIST_DIR)
+	@for p in $(PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; \
+		for b in $(GO_BINS); do \
+			echo ">>> $$os/$$arch $$b"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 \
+				go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST_DIR)/$$b ./cmd/$$b || exit 1; \
+			tar -czf $(DIST_DIR)/$${b}_$(VERSION)_$${os}_$${arch}.tar.gz -C $(DIST_DIR) $$b || exit 1; \
+			rm $(DIST_DIR)/$$b; \
+		done; \
+	done
+	tar -czf $(DIST_DIR)/aladdin-web_$(VERSION).tar.gz -C web dist
+	cd $(DIST_DIR) && $(SHA256) *.tar.gz > SHA256SUMS
+	@echo ">>> 已产出（VERSION=$(VERSION)）：" && ls -1 $(DIST_DIR)
 
 ## ---------------------------------------------------------------- 测试
 
@@ -130,4 +163,4 @@ web-dev: ## 启动前端开发服务器
 
 .PHONY: clean
 clean: ## 清理构建产物
-	rm -rf $(BIN_DIR) coverage.out coverage.html web/dist
+	rm -rf $(BIN_DIR) $(DIST_DIR) coverage.out coverage.html web/dist

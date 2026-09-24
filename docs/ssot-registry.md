@@ -22,6 +22,7 @@
 | 该读哪一个配置文件（显式指定 > 环境变量 > 默认位置） | `config.locateFile` | [internal/config/file.go](../internal/config/file.go) |
 | 配置文件里的键是否属于本端 | `config.readFileValues` | [internal/config/file.go](../internal/config/file.go) |
 | 凭证文件权限是否可接受（仅属主可读写） | 凭证文件权限校验 | [internal/auth/credentials.go](../internal/auth/credentials.go) |
+| 合入 / 发版前的门禁范围（跑哪些检查） | 可复用工作流 | [.github/workflows/gate.yml](../.github/workflows/gate.yml) |
 
 > **配置不得成为权限的来源**。主体、角色、权限码、作用域一律不得由配置提供；默认作用域只能来自主体的绑定关系。见 [docs/design/config/README.md](design/config/README.md)。
 
@@ -60,6 +61,7 @@
 | 每个请求留一行可检索的日志（含 trace_id / 过程名 / 结果码 / 耗时） | `telemetryMiddleware.logRequest` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 遥测数据的导出与退出前冲刷 | `observability.Provider` 的 `Shutdown`（导出失败不影响业务） | [internal/observability/provider.go](../internal/observability/provider.go) |
 | 指标名、属性键与记录入口 | 常量定义 + `observability.Metrics` 的方法 | [internal/observability/metrics.go](../internal/observability/metrics.go) |
+| 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
 
 ## 数据源类（Data Sources）
 

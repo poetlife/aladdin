@@ -1,0 +1,25 @@
+# 常规 CI：让问题在合入前暴露，而不是等到发版才暴露。
+#
+# 跑什么由 .github/workflows/gate.yml 定义，这里只负责触发与并发策略——
+# 发布流水线（release.yml）调用的是同一份定义。
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # 同一个分支/PR 连续推送时取消上一次：旧的那次已经不代表当前代码。
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    uses: ./.github/workflows/gate.yml
+    permissions:
+      contents: read
