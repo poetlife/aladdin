@@ -89,6 +89,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      # 必须检出仓库：--generate-notes 靠 git 历史与前一个 tag 算变更日志，
+      # 没有 .git 时 gh 会直接报 "not a git repository"。
+      # fetch-tags 显式打开，否则找不到上一个 tag，变更日志会退化成"从第一个提交开始"。
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - name: 下载产物
         uses: actions/download-artifact@v4
         with:
@@ -131,12 +140,15 @@ jobs:
         #   · 数量未超过 KEEP 时什么也不做
         #   · isLatest 无论如何不删
         #   · 读不到列表就中止，绝不把"什么也没看见"当成"全都该删"
+        #
+        # 每条 gh 命令都显式带 -R：本 job 不检仓库，仓库上下文全靠环境变量推，
+        # 而"环境里应该有"正是上一版 publish 出错的原因，不再依赖它。
         run: |
           set -euo pipefail
 
           # 候选集 = 本流水线会创建的 Release：非草稿、非预发布、tag 形如 vX.Y.Z。
           # 这里的 tag 形状判断同时保护了"非本流水线创建的 Release"。
-          if ! releases=$(gh release list --limit 1000 \
+          if ! releases=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1000 \
                 --exclude-drafts --exclude-pre-releases \
                 --json tagName,createdAt,isLatest); then
             echo "读取 Release 列表失败，本次放弃清理。" >&2
@@ -169,9 +181,10 @@ jobs:
           while IFS= read -r tag; do
             [ -n "$tag" ] || continue
             # 幂等：并发下已被删掉的条目不应让整个 job 失败。
-            gh release delete "$tag" --yes >/dev/null \
+            gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes >/dev/null \
               || echo "  ${tag}：删除失败或已不存在，跳过" >&2
           done <<<"$to_delete"
 
-          echo "清理完成，当前 Release 数：$(gh release list --limit 1000 \
-            --exclude-drafts --exclude-pre-releases --json tagName --jq 'length')"
+          echo "清理完成，当前 Release 数：$(gh release list -R "$GITHUB_REPOSITORY" \
+            --limit 1000 --exclude-drafts --exclude-pre-releases \
+            --json tagName --jq 'length')"
