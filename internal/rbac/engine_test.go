@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -131,6 +132,70 @@ func TestEngineEffectivePermissionsUnknownSubject(t *testing.T) {
 	if _, _, err := engine.EffectivePermissions(context.Background(),
 		Subject{ID: "ghost"}, "tenant/acme"); err == nil {
 		t.Error("未登记的主体应返回错误")
+	}
+}
+
+// TestEngineEffectivePermissionsExpandsWildcard 断言通配在**下发之前**被展开。
+//
+// 前端只做集合成员判断、不解释通配（见 docs/design/rbac/frontend-permissions.md），
+// 因此这里少展开一条，界面上就少一个进得去的入口。系统管理员是最极端的一例：
+// 它持有的整个权限集合就是 "*" 这一个写法。
+func TestEngineEffectivePermissionsExpandsWildcard(t *testing.T) {
+	engine, _ := newTestEngine(t)
+
+	permissions, roles, err := engine.EffectivePermissions(context.Background(),
+		Subject{ID: "admin"}, GlobalScope)
+	if err != nil {
+		t.Fatalf("展开失败: %v", err)
+	}
+	if len(roles) != 1 || roles[0] != RoleSystemAdmin {
+		t.Errorf("角色 = %v, want [%s]", roles, RoleSystemAdmin)
+	}
+	for _, want := range AllPermissionCodes {
+		if !slices.Contains(permissions, want) {
+			t.Errorf("目录里的 %q 未出现在展开结果 %v 中", want, permissions)
+		}
+	}
+	if len(permissions) != len(AllPermissionCodes) {
+		t.Errorf("权限数 = %d (%v), want %d：既不该漏，也不该有重复",
+			len(permissions), permissions, len(AllPermissionCodes))
+	}
+}
+
+// TestEngineEffectivePermissionsExpandsSegmentWildcard 断言末段通配同样被展开。
+//
+// 只处理 "*" 是不够的：目录会长，"rbac.*" 覆盖的是**当下**目录里同领域的每一条。
+// 因此展开必须走通配匹配本身，不能写成针对 "*" 的特判。
+func TestEngineEffectivePermissionsExpandsSegmentWildcard(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	putSubjects(t, store, Subject{ID: "u1", Type: SubjectTypeUser, DefaultScope: GlobalScope})
+	putRole(t, store, ctx, RoleDefinition{
+		ID: "rbac.operator", DisplayName: "RBAC 运维",
+		Permissions: []PermissionCode{"rbac.*"},
+	})
+	if err := store.Bind(ctx, RoleBinding{
+		SubjectID: "u1", RoleID: "rbac.operator", Scope: GlobalScope,
+	}); err != nil {
+		t.Fatalf("绑定失败: %v", err)
+	}
+
+	permissions, _, err := NewEngine(store, nil, nil).
+		EffectivePermissions(ctx, Subject{ID: "u1"}, GlobalScope)
+	if err != nil {
+		t.Fatalf("展开失败: %v", err)
+	}
+	for _, want := range []PermissionCode{
+		PermissionRbacRoleRead, PermissionRbacRoleWrite,
+		PermissionRbacSubjectRead, PermissionRbacSubjectAssign,
+		PermissionRbacPolicyPublish,
+	} {
+		if !slices.Contains(permissions, want) {
+			t.Errorf("rbac.* 覆盖的 %q 未出现在展开结果 %v 中", want, permissions)
+		}
+	}
+	if slices.Contains(permissions, PermissionAuditLogRead) {
+		t.Errorf("rbac.* 不应覆盖 %q，实际结果 %v", PermissionAuditLogRead, permissions)
 	}
 }
 

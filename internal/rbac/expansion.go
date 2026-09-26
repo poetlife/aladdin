@@ -3,6 +3,7 @@ package rbac
 import (
 	"context"
 	"fmt"
+	"slices"
 )
 
 // maxInheritanceDepth 是角色继承链的深度上限。
@@ -55,19 +56,49 @@ func expand(ctx context.Context, store Store, rootRoleIDs []string) ([]string, [
 		}
 	}
 
-	out := make([]PermissionCode, 0, len(permissions))
+	held := make([]PermissionCode, 0, len(permissions))
+	for p := range permissions {
+		held = append(held, p)
+	}
+	sortPermissions(held)
+
+	// 先按目录顺序输出**已展开**的具体权限码：持有项里的通配（"*"、"rbac.role.*"）
+	// 在这里落成它覆盖的每一条。
+	//
+	// 展开不是为了让判定好写——判定有 Matches。它是为了让这份集合能**原样下发**
+	// 给前端做展示裁剪，而前端只做集合成员判断、不解释通配
+	// （见 docs/design/rbac/frontend-permissions.md）。不展开的话，系统管理员
+	// 到手的是一串孤零零的 "*"，界面上任何一个入口都进不去。
+	out := make([]PermissionCode, 0, len(AllPermissionCodes)+len(held))
 	for _, p := range AllPermissionCodes {
-		if permissions[p] {
+		if covers(held, p) {
 			out = append(out, p)
-			delete(permissions, p)
 		}
 	}
-	// 目录之外的权限码（例如存储中被手工写入的脏数据）仍应参与判定，
-	// 但排在目录顺序之后，保证输出对同一输入稳定可比较。
-	rest := make([]PermissionCode, 0, len(permissions))
-	for p := range permissions {
-		rest = append(rest, p)
+
+	// 目录之外的持有项原样保留，排在具体权限码之后。
+	//
+	// 一是存储里可能有目录尚未登记的权限码（脏数据），判定仍要能匹配到它；
+	// 二是通配自身也在其中，保留它使"目录之外的权限码"对持有 "*" 的主体继续成立。
+	// 输出因此是原持有集合的**超集**——只增不减，判定的结论一字不变。
+	rest := make([]PermissionCode, 0, len(held))
+	for _, p := range held {
+		if !slices.Contains(AllPermissionCodes, p) {
+			rest = append(rest, p)
+		}
 	}
-	sortPermissions(rest)
 	return ordered, append(out, rest...), nil
+}
+
+// covers 报告持有集合中是否存在覆盖 requested 的权限码。
+//
+// 复用 Matches 而不是另写一遍前缀比较：通配匹配只有一处实现
+// （见 docs/ssot-registry.md）。
+func covers(held []PermissionCode, requested PermissionCode) bool {
+	for _, h := range held {
+		if Matches(h, requested) {
+			return true
+		}
+	}
+	return false
 }

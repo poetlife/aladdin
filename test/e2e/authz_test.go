@@ -166,30 +166,53 @@ func TestWhoAmI(t *testing.T) {
 // TestSessionPermissionsAreExpanded 验证前端拿到的是**展开后**的权限码集合。
 //
 // 这是前端能保持"只做集合成员判断"的前提：继承与作用域展开在服务端完成。
+// 通配也在展开之列——它是最容易被漏掉的一条，因为它在服务端判定里本来就有
+// 另一处实现（Matches），漏展开时判定照常放行，只有前端会一片空白。
 func TestSessionPermissionsAreExpanded(t *testing.T) {
-	h := startServer(t, rbac.RoleViewer, testScope)
-	c := h.dial(t, testToken, testScope)
-
-	ctx, cancel := c.Context()
-	defer cancel()
-
-	resp, err := identityv1.NewIdentityServiceClient(c.Conn()).
-		GetSessionPermissions(ctx, &identityv1.GetSessionPermissionsRequest{})
-	if err != nil {
-		t.Fatalf("GetSessionPermissions 失败: %v", err)
+	tests := []struct {
+		name string
+		role string
+		want []rbac.PermissionCode
+	}{
+		{
+			name: "具体权限码原样下发",
+			role: rbac.RoleViewer,
+			want: []rbac.PermissionCode{rbac.PermissionRbacRoleRead, rbac.PermissionRbacSubjectRead},
+		},
+		{
+			name: "整个集合就是一个通配",
+			role: rbac.RoleSystemAdmin,
+			want: rbac.AllPermissionCodes,
+		},
 	}
 
-	want := map[string]bool{
-		rbac.PermissionRbacRoleRead.String():    true,
-		rbac.PermissionRbacSubjectRead.String(): true,
-	}
-	if len(resp.GetPermissions()) != len(want) {
-		t.Fatalf("权限码 = %v, want %d 条", resp.GetPermissions(), len(want))
-	}
-	for _, p := range resp.GetPermissions() {
-		if !want[p] {
-			t.Errorf("出现非预期权限码 %q", p)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := startServer(t, tt.role, testScope)
+			c := h.dial(t, testToken, testScope)
+
+			ctx, cancel := c.Context()
+			defer cancel()
+
+			resp, err := identityv1.NewIdentityServiceClient(c.Conn()).
+				GetSessionPermissions(ctx, &identityv1.GetSessionPermissionsRequest{})
+			if err != nil {
+				t.Fatalf("GetSessionPermissions 失败: %v", err)
+			}
+
+			want := map[string]bool{}
+			for _, p := range tt.want {
+				want[p.String()] = true
+			}
+			if len(resp.GetPermissions()) != len(want) {
+				t.Fatalf("权限码 = %v, want %d 条", resp.GetPermissions(), len(want))
+			}
+			for _, p := range resp.GetPermissions() {
+				if !want[p] {
+					t.Errorf("出现非预期权限码 %q", p)
+				}
+			}
+		})
 	}
 }
 
