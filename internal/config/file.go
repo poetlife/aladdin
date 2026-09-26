@@ -29,6 +29,7 @@ var otelKeys = []string{keyOTelEndpoint, keyOTelInsecure, keyOTelSampleRatio}
 var (
 	serverKeys = append([]string{
 		keyAddress, keyLogLevel, keyLogFile, keyDatabaseDriver, keyDatabaseDSN,
+		keyCOSBucketURL,
 		keyGoogleClientID, keyBootstrapAdminSubject, keyBootstrapAdminEmail, keyBootstrapAdminScope,
 	}, otelKeys...)
 	cliKeys = append([]string{keyAddress, keyLogLevel, keyTimeout}, otelKeys...)
@@ -56,6 +57,7 @@ func serverLayer(v fileValues) (layer, error) {
 		logFile:               v.str(keyLogFile),
 		databaseDriver:        v.str(keyDatabaseDriver),
 		databaseDSN:           v.str(keyDatabaseDSN),
+		cosBucketURL:          v.str(keyCOSBucketURL),
 		googleClientID:        v.str(keyGoogleClientID),
 		bootstrapAdminSubject: v.str(keyBootstrapAdminSubject),
 		bootstrapAdminEmail:   v.str(keyBootstrapAdminEmail),

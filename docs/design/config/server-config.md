@@ -17,6 +17,7 @@
 | `log_file` | 日志文件路径；为空表示写标准错误 | 空（写标准错误） |
 | `database_driver` | 数据库后端，取值集合见 [../persistence/README.md](../persistence/README.md) | `sqlite` |
 | `database_dsn` | 数据库连接串，形状随后端而异 | `aladdin.db` |
+| `cos_bucket_url` | 头像存放的 COS 桶地址（含 APPID 与地域的完整主机名）；为空表示**未启用**头像 | 空 |
 | `google_client_id` | Google 登录的客户端标识；为空表示**未启用**该登录方式 | 空 |
 | `bootstrap_admin_subject` | 引导时用来指认主体的**主体标识**；与 `bootstrap_admin_email` 互斥 | 空 |
 | `bootstrap_admin_email` | 引导时用来指认主体的**邮箱**，按已登记身份查、恰好命中一个才生效；与 `bootstrap_admin_subject` 互斥 | 空 |
@@ -32,6 +33,28 @@
 `database_driver` 与 `database_dsn` 描述进程把数据存在哪。它们的取值集合、连接串的两种形态与失败语义见 [../persistence/schema.md](../persistence/schema.md)。
 
 **连接串可能含口令，因此它不进日志。** 这一项与配置模块的"配置可以进启动日志、凭证不可以"是同一条规则的两面：连接串在本端的地位等同于 CLIENT 端的凭证文件。启动日志里出现的是脱敏摘要——后端类型与不含口令的定位信息，足以回答"我改的那一行到底有没有被读到"。
+
+### 头像存储
+
+`cos_bucket_url` 指向一个腾讯云 COS 桶，头像字节存在那里（见 [../profile/avatar-storage.md](../profile/avatar-storage.md)）。它是完整的桶主机名，形如 `https://<桶名>-<APPID>.cos.<地域>.myqcloud.com`。
+
+**密钥不是配置键，只从环境变量读。** 需要两项：`ALADDIN_COS_SECRET_ID` 与 `ALADDIN_COS_SECRET_KEY`。
+
+把它们做成配置键，就等于允许它们出现在 `config.yml` 里，而那个文件会进版本库、进镜像、被贴给别人排查问题——这正是 [credentials.md](credentials.md) 划出的界线："配置文件中不得出现令牌字段。"桶地址不是秘密（它只是一个主机名，没有签名取不到东西），因此它留在配置文件里。
+
+这与开发种子旁路"只从环境变量开启、不在 `config.yml` 提供键"是同一种做法，理由也相同：**一个开关一旦能写进配置文件，它就会在某个人手上的生产环境里被写进去。**
+
+| 情形 | 行为 |
+|------|------|
+| 桶地址与密钥都为空 | 不启用头像。这是默认情形，服务端照常启动 |
+| 桶地址非空，两项密钥都在 | 启用头像 |
+| 桶地址非空，缺任一项密钥 | **拒绝启动**，信息里指出缺的是哪一项 |
+| 两项密钥都在，桶地址为空 | **拒绝启动**：密钥有主、桶没主 |
+| 桶地址不是合法的 https 地址 | **拒绝启动** |
+
+> 头像未启用**不影响**昵称与简介：档案的其余部分照常可用，前端只是不渲染头像上传区（见 [../profile/README.md](../profile/README.md)）。
+
+**密钥不进启动日志，也不进任何错误信息与脱敏摘要。** 桶地址进启动日志——它与数据库的定位信息同类，用来回答"我改的那一行到底有没有被读到"。
 
 ### 登录方式
 
@@ -101,6 +124,9 @@
 - `address` 不是合法的 `host:port`、端口不是数字、端口超出 0–65535、或**主机名为空**
 - `log_level` 不在允许的取值集合内
 - `database_driver` 不在允许的取值集合内，或 `database_dsn` 为空
+- `cos_bucket_url` 不是合法的 https 地址
+- `cos_bucket_url` 非空而 COS 的任一项密钥缺失（半套头像配置）
+- COS 的两项密钥都存在而 `cos_bucket_url` 为空（半套头像配置：密钥有主、桶没主）
 - `bootstrap_admin_subject` 与 `bootstrap_admin_email` **同时给出**（不知道以谁为准）
 - `bootstrap_admin_email` 与 `bootstrap_admin_subject` 都为空，而 `bootstrap_admin_scope` 非空（作用域有主、主体没主）
 - 身份指认非空而 `bootstrap_admin_scope` 为空（半套引导）
@@ -121,7 +147,7 @@
 
 ### 生效值的可见性
 
-启动时必须输出一条包含最终生效配置的日志（**不含凭证，配置中也不应有凭证**），至少包含监听地址、日志级别，以及数据库后端与脱敏后的定位信息。这条日志的作用是回答"我改的那个文件到底有没有被读到"——这是配置类问题排查中最高频的疑问，而它无法从"服务能启动"这个事实中推断出来。数据库这一项尤其如此：连到另一个库的表现形式是"数据看起来全丢了"，不写出来就只能靠猜。
+启动时必须输出一条包含最终生效配置的日志（**不含凭证，配置中也不应有凭证，环境变量里的凭证同样不出现**），至少包含监听地址、日志级别、数据库后端与脱敏后的定位信息，以及头像存储是否启用（含桶地址，不含密钥）。这条日志的作用是回答"我改的那个文件到底有没有被读到"——这是配置类问题排查中最高频的疑问，而它无法从"服务能启动"这个事实中推断出来。数据库这一项尤其如此：连到另一个库的表现形式是"数据看起来全丢了"，不写出来就只能靠猜。
 
 ### 开发用种子数据不属于配置体系
 
@@ -179,6 +205,10 @@
 | 全局作用域可表达 | `bootstrap_admin_scope: "<global>"` 解析为全局作用域并建立全局绑定（`internal/config` 与 `internal/server` 测试） |
 | 引导留痕 | 生效时产出 `warn` 级日志，含被授予的主体与作用域（`internal/server` 测试） |
 | 登录方式可缺省 | `google_client_id` 为空时不构成一条可用的登录方式，且不影响其余配置加载（`internal/config` 测试） |
+| 头像可缺省 | 桶地址与密钥都为空时不构成一条可用的头像存储，且不影响其余配置加载（`internal/config` 测试）；此时昵称与简介照常可用（`internal/profile` 测试） |
+| 头像半套拒绝启动 | 只配桶地址、或只配密钥时启动失败，错误信息指出缺的是哪一项（`internal/config` 测试） |
+| 密钥不入日志 | 启动日志、错误信息与脱敏摘要中不出现 COS 密钥（`internal/config` 测试 + 启动冒烟） |
+| 密钥不可由配置提供 | 配置文件的键集合里没有承载 COS 密钥的键（`internal/config` 测试：键集合与示例一致） |
 
 ## 依赖关系
 
@@ -201,6 +231,7 @@
 | 数据库连接的建立 | [internal/database/database.go](../../../internal/database/database.go) |
 | 结构迁移的执行 | [internal/database/migrate/migrate.go](../../../internal/database/migrate/migrate.go) |
 | 开发用种子数据旁路 | [internal/server/devseed.go](../../../internal/server/devseed.go) |
+| 头像存储的装配 | [internal/profile/cosstore/](../../../internal/profile/cosstore/) |
 | 引导第一个管理员的生效 | [internal/server/bootstrap.go](../../../internal/server/bootstrap.go) |
 
 ---

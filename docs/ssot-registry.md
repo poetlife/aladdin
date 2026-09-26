@@ -28,6 +28,8 @@
 | 一个渠道身份属于哪个主体 | 身份的解析入口（按（来源，身份标识）查别名，未命中才登记主体） | [internal/identity/identity_resolver.go](../internal/identity/identity_resolver.go) |
 | 一份会话凭证是否有效、代表谁 | 会话存储的查询入口 | [internal/identity/session.go](../internal/identity/session.go) |
 | 某个邮箱（展示值）对应哪些已登记身份 | 身份别名的按展示值查询 | [internal/identity/identity.go](../internal/identity/identity.go) |
+| 一个主体的展示名（昵称，未设则回退到渠道标识，再回退到主体标识） | 档案的展示名解析入口 | [internal/profile/profiles.go](../internal/profile/profiles.go) |
+| 一段头像字节是不是一张可接受的图片 | 头像的类型嗅探与白名单（唯一入口，不接受上传方声明的类型） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
 
 > **配置不得成为权限的来源**。主体、角色、权限码、作用域一律不得由配置提供；默认作用域只能来自主体的绑定关系。见 [docs/design/config/README.md](design/config/README.md)。
 
@@ -71,6 +73,7 @@
 | 前端出站请求：凭证注入、链路标识注入、线格式选择、会话失效处理 | `createTransport`（前端出站请求的唯一出口） | [web/src/api/transport.ts](../web/src/api/transport.ts) |
 | 鉴权决策留痕（含 subject/permission/decision/reason） | `rbac.Engine.Check` 内部统一埋点 | [internal/rbac/engine.go](../internal/rbac/engine.go) |
 | 登录、绑定与解绑的留痕（含主体标识与渠道，**不含令牌**） | `IdentityService` 的对应处理方法 | [internal/server/identity_service.go](../internal/server/identity_service.go) |
+| 档案变更的留痕（含主体标识与改了哪一项，**不含头像字节与简介全文**） | `ProfileService` 的对应处理方法 | [internal/server/profile_service.go](../internal/server/profile_service.go) |
 | 拒绝结论到 RPC 错误码与错误详情的转换 | `reject` / `DenyByAnnotation` | [internal/server/interceptor/rejection.go](../internal/server/interceptor/rejection.go) |
 | 按客户端协议写出错误响应（中间件层） | `connect.ErrorWriter` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 服务端为每个请求起 span、回写 `traceparent` 与 `x-trace-id` 响应头 | `observability.StartServerSpan` / `WriteTraceHeaders` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
@@ -92,6 +95,8 @@
 | 角色 / 权限 / 主体关系的持久化数据 | `rbac.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/rbac/store.go](../internal/rbac/store.go) / [internal/rbac/gormstore/](../internal/rbac/gormstore/store.go) |
 | 会话（谁、到什么时候为止、作用域）的持久化数据 | 会话存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/session.go](../internal/identity/session.go) / [internal/identity/gormstore/](../internal/identity/gormstore/store.go) |
 | 身份别名（（来源，身份标识）→ 主体）的持久化数据 | 身份别名的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/identity.go](../internal/identity/identity.go) / [internal/identity/gormstore/identity.go](../internal/identity/gormstore/identity.go) |
+| 档案（昵称、简介、头像对象键）的持久化数据 | 档案的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/profile/profile.go](../internal/profile/profile.go) / [internal/profile/gormstore/profile.go](../internal/profile/gormstore/profile.go) |
+| 头像字节与它的读取地址 | 头像存储接口（生产实现是 COS，测试注入假实现） | [internal/profile/avatar.go](../internal/profile/avatar.go) / [internal/profile/cosstore/avatar.go](../internal/profile/cosstore/avatar.go) |
 | 表结构与迁移清单（库里长什么样） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/schema.go](../internal/database/schema.go) / [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |
 | 服务端配置（监听地址、日志级别与路径） | 服务端 `config.yml` + `config.local.yml`，经 `config.LoadServer` 读取 | [internal/config/load.go](../internal/config/load.go) |
 | CLI 配置（目标地址、超时、输出详细度） | CLI `config.yml` + `config.local.yml`，经 `config.LoadCLI` 读取 | [internal/config/load.go](../internal/config/load.go) |

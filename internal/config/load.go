@@ -22,6 +22,8 @@ type layer struct {
 	databaseDriver *string
 	databaseDSN    *string
 
+	cosBucketURL *string
+
 	googleClientID        *string
 	bootstrapAdminSubject *string
 	bootstrapAdminEmail   *string
@@ -92,6 +94,11 @@ func serverEnvOverrides() (layer, error) {
 	}
 	if v := os.Getenv(EnvDatabaseDSN); v != "" {
 		l.databaseDSN = &v
+	}
+	// 桶地址走环境变量这一层；密钥不走——它们没有配置键，因此不参与分层，
+	// 由 LoadServer 在合并完成后单独读取（见 cosSecretsFromEnv）。
+	if v := os.Getenv(EnvCOSBucketURL); v != "" {
+		l.cosBucketURL = &v
 	}
 	if v := os.Getenv(EnvGoogleClientID); v != "" {
 		l.googleClientID = &v
@@ -171,6 +178,9 @@ func mergeServer(cfg ServerConfig, l layer) ServerConfig {
 	if l.databaseDSN != nil {
 		cfg.Database.DSN = *l.databaseDSN
 	}
+	if l.cosBucketURL != nil {
+		cfg.COS.BucketURL = *l.cosBucketURL
+	}
 	if l.googleClientID != nil {
 		cfg.GoogleClientID = *l.googleClientID
 	}
@@ -246,7 +256,23 @@ func LoadServer(f ServerFlags) (ServerConfig, error) {
 	}
 	cfg = mergeServer(cfg, env)
 
+	// 密钥不参与分层：它们没有配置键，只从环境变量读。
+	cfg.COS.SecretID, cfg.COS.SecretKey = cosSecretsFromEnv()
+
 	return cfg, cfg.Validate()
+}
+
+// cosSecretsFromEnv 读取头像存储的密钥。
+//
+// **这是本仓库唯一一组"只有环境变量、没有配置键"的取值**，与开发种子旁路
+// 同类。理由不是"分层对它们没用"，而是让它们**无法**出现在配置文件里：
+// 配置文件会进版本库、进镜像、被贴给别人排查问题，而凭证不可以
+// （见 docs/design/config/credentials.md）。
+//
+// 它们是空的与"未启用头像"是两件事：前者在桶地址非空时构成半套配置，
+// 由 validateCOS 拒绝启动。
+func cosSecretsFromEnv() (secretID, secretKey string) {
+	return os.Getenv(EnvCOSSecretID), os.Getenv(EnvCOSSecretKey)
 }
 
 // LoadCLI 合并出 CLI 运行配置。

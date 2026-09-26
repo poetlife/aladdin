@@ -11,6 +11,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,17 @@ const (
 	EnvDatabaseDriver = "ALADDIN_DATABASE_DRIVER"
 	EnvDatabaseDSN    = "ALADDIN_DATABASE_DSN"
 
+	EnvCOSBucketURL = "ALADDIN_COS_BUCKET_URL"
+	// EnvCOSSecretID 与 EnvCOSSecretKey 是头像存储的子账号密钥。
+	//
+	// **它们是本仓库唯一一组"只有环境变量、没有配置键"的取值**，与开发种子
+	// 旁路同类：一个开关一旦能写进配置文件，它就会在某个人手上的生产环境里
+	// 被写进去。配置文件会进版本库、进镜像、被贴给别人排查问题，而凭证不可以
+	// （见 docs/design/config/credentials.md）。
+	// 这里是**环境变量名**，不是凭证值——gosec 按名字里的单词误报了。
+	EnvCOSSecretID  = "ALADDIN_COS_SECRET_ID"  //nolint:gosec // 取值是变量名本身
+	EnvCOSSecretKey = "ALADDIN_COS_SECRET_KEY" //nolint:gosec // 取值是变量名本身
+
 	EnvGoogleClientID        = "ALADDIN_GOOGLE_CLIENT_ID"
 	EnvBootstrapAdminSubject = "ALADDIN_BOOTSTRAP_ADMIN_SUBJECT"
 	EnvBootstrapAdminEmail   = "ALADDIN_BOOTSTRAP_ADMIN_EMAIL"
@@ -58,6 +70,8 @@ const (
 
 	keyDatabaseDriver = "database_driver"
 	keyDatabaseDSN    = "database_dsn"
+
+	keyCOSBucketURL = "cos_bucket_url"
 
 	keyGoogleClientID        = "google_client_id"
 	keyBootstrapAdminSubject = "bootstrap_admin_subject"
@@ -109,6 +123,44 @@ type DatabaseConfig struct {
 	// DSN 是连接串。**可能含口令，因此不得进日志**——
 	// 它的地位与 CLI 的凭证文件相同（见 docs/design/config/README.md）。
 	DSN string
+}
+
+// COSConfig 描述头像存放的对象存储。
+//
+// 它**可以整体为空**：头像存储是可选能力，未配置时昵称与简介照常可用，前端
+// 只是不渲染头像上传区。但它**不能只配一半**——半套配置的失败方式是"看起来
+// 配好了"，而它要到第一次上传时才以一次权限错误暴露（见
+// docs/design/profile/avatar-storage.md）。
+type COSConfig struct {
+	// BucketURL 是完整的桶主机名，形如
+	// https://<桶名>-<APPID>.cos.<地域>.myqcloud.com。
+	//
+	// 它**不是秘密**：没有签名取不到桶里的任何东西，因此它留在配置文件里。
+	BucketURL string
+	// SecretID 与 SecretKey 是子账号密钥。
+	//
+	// **只从环境变量来，没有对应的配置键**（见 EnvCOSSecretID）。因此它们
+	// 也**不得进日志**——描述本结构时用 Describe，不要把它整体丢进日志。
+	SecretID  string
+	SecretKey string
+}
+
+// Enabled 表示这个部署配置了头像存储。
+//
+// 它只在配置**校验通过**之后才有意义：半套配置不会走到这里（Validate 会拒绝
+// 启动），因此这里不需要再回答"配了一半算不算"。
+func (c COSConfig) Enabled() bool { return c.BucketURL != "" }
+
+// Describe 描述这项配置，**不含密钥**。
+//
+// 与 database.Describe 同理：启动日志要能回答"我改的那一行到底有没有被读到"，
+// 而这一项里有一半是凭证。给一个专门的描述入口，好过指望每个调用方都记得
+// 别把整个结构体丢进日志。
+func (c COSConfig) Describe() string {
+	if !c.Enabled() {
+		return "未启用"
+	}
+	return c.BucketURL
 }
 
 // BootstrapConfig 描述如何建立系统里的第一个管理员。
@@ -166,6 +218,8 @@ type ServerConfig struct {
 	LogFile string
 	// Database 是数据的存放位置。
 	Database DatabaseConfig
+	// COS 是头像存放的对象存储。零值表示未启用头像。
+	COS COSConfig
 	// GoogleClientID 是 Google 登录用的客户端标识；为空表示未启用该登录方式。
 	//
 	// 它**不是秘密**：这个值明文出现在浏览器里，是这类登录方式的设计前提，
@@ -267,6 +321,9 @@ func (c ServerConfig) Validate() error {
 	if err := validateDatabase(c.Database); err != nil {
 		return err
 	}
+	if err := validateCOS(c.COS); err != nil {
+		return err
+	}
 	if err := validateBootstrap(c.Bootstrap); err != nil {
 		return err
 	}
@@ -343,6 +400,44 @@ func validateDatabase(db DatabaseConfig) error {
 	}
 	if db.DSN == "" {
 		return invalidKey(keyDatabaseDSN, EnvDatabaseDSN, "不能为空")
+	}
+	return nil
+}
+
+// validateCOS 校验头像存储配置。
+//
+// 只有两种情形放行：**全空**（不启用头像）与**全给**（启用头像）。部分给出
+// 一律拒绝启动——半套配置在这里是最该拦下的一类，因为它的失败方式既不是"没
+// 启用"（界面会渲染一个传不上去的上传区），也不是"配错了"（启动时就能看见），
+// 而是"看起来配好了"，直到第一次上传才以一次 403 暴露。
+//
+// 桶地址必须是 https：用明文把密钥与图片送出去，与"桶私有"这个前提直接冲突。
+func validateCOS(cos COSConfig) error {
+	missingSecrets := make([]string, 0, 2)
+	if cos.SecretID == "" {
+		missingSecrets = append(missingSecrets, EnvCOSSecretID)
+	}
+	if cos.SecretKey == "" {
+		missingSecrets = append(missingSecrets, EnvCOSSecretKey)
+	}
+	hasBucket := cos.BucketURL != ""
+	hasAnySecret := cos.SecretID != "" || cos.SecretKey != ""
+
+	switch {
+	case !hasBucket && !hasAnySecret:
+		return nil // 未启用头像。这是默认情形
+	case !hasBucket:
+		return fmt.Errorf("%w: 已设置 %s 与 %s，但配置项 %s（%s）为空：密钥有主、桶没主",
+			ErrInvalid, EnvCOSSecretID, EnvCOSSecretKey, keyCOSBucketURL, EnvCOSBucketURL)
+	case len(missingSecrets) > 0:
+		return fmt.Errorf("%w: 已配置 %s（%s），但缺少 %s：桶地址与密钥必须同时给出",
+			ErrInvalid, keyCOSBucketURL, EnvCOSBucketURL, strings.Join(missingSecrets, " 与 "))
+	}
+
+	bucket, err := url.Parse(cos.BucketURL)
+	if err != nil || bucket.Scheme != "https" || bucket.Host == "" {
+		return invalidKey(keyCOSBucketURL, EnvCOSBucketURL,
+			fmt.Sprintf("必须是带主机名的 https 地址，当前 %q", cos.BucketURL))
 	}
 	return nil
 }

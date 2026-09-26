@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,6 +31,8 @@ import (
 	"github.com/poetlife/aladdin/internal/identity"
 	identitygormstore "github.com/poetlife/aladdin/internal/identity/gormstore"
 	"github.com/poetlife/aladdin/internal/observability"
+	"github.com/poetlife/aladdin/internal/profile"
+	profilegormstore "github.com/poetlife/aladdin/internal/profile/gormstore"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
@@ -44,6 +48,12 @@ const (
 // harness 是一次端到端测试的全部依赖。
 type harness struct {
 	address string
+	// logs 是服务端在内置接线上吐出的日志。
+	//
+	// 它是可读的观察点，用来断言"某样东西**没有**进日志"——凭证、口令、
+	// 头像字节都属于这一类，而它们的价值恰在于"没出现"，只有真去读一遍
+	// 才能守住。
+	logs *observer.ObservedLogs
 }
 
 // startServer 在随机端口上启动服务端，并注入一个测试主体。
@@ -61,7 +71,10 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, verifier ide
 
 	cfg := config.DefaultServer()
 	cfg.Address = "127.0.0.1:0"
-	logger := zap.NewNop()
+	// 只记录、不输出：不需要日志的用例读不出差别，需要断言"某样东西没进日志"
+	// 的用例则有了观察点（见 harness.logs）。
+	core, logs := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
 
 	// 遥测必须真的建起来：otel.Tracer 取的是调用当时注册的实现，
 	// 没有 provider 时 span 无效，响应头也就不会被回写——
@@ -95,6 +108,14 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, verifier ide
 		Identities: identity.NewIdentities(identityStore, store),
 		Sessions:   identity.NewSessions(identitygormstore.New(store.DB())),
 		Verifier:   verifier,
+	}, server.ProfileStores{
+		// 档案的存储同样落在真实连接上。
+		Profiles: profilegormstore.New(store.DB()),
+		// 头像字节用一个内存实现替代对象存储：契约要求测试不访问任何网络
+		// （见 docs/design/profile/avatar-storage.md）。它带来的另一个好处是
+		// 头像功能在端到端测试里是**启用**的，于是"上传—下发地址"这条路径
+		// 会被真的走一遍，而不是因为没配对象存储整条跳过。
+		Avatars: profile.NewMemoryAvatarStore(),
 	})
 	if err := srv.Store().PutSubject(context.Background(), rbac.Subject{
 		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,
@@ -128,7 +149,7 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, verifier ide
 		}
 	})
 
-	return harness{address: lis.Addr().String()}
+	return harness{address: lis.Addr().String(), logs: logs}
 }
 
 // dial 构造一个已注入凭证的客户端。

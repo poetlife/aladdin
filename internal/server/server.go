@@ -24,10 +24,12 @@ import (
 	"go.uber.org/zap"
 
 	identityv1connect "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
+	profilev1connect "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1/profilev1connect"
 	rbacv1connect "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/observability"
+	"github.com/poetlife/aladdin/internal/profile"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
@@ -66,6 +68,29 @@ type IdentityStores struct {
 	Verifier identity.TokenVerifier
 }
 
+// ProfileStores 是个人档案模块的存储，由入口进程构造后传入。
+//
+// 与认证模块同理：档案表由同一份迁移建好，因此它的实现必须长在同一条连接上。
+type ProfileStores struct {
+	// Profiles 是档案的持久化存储。
+	Profiles profile.Store
+	// Avatars 是头像字节的存储。**为 nil 表示这个部署没有配置对象存储**：
+	// 头像功能整体缺席，而不是退化成一个"什么都存不下"的实现——前端据此
+	// 不渲染上传区（见 docs/design/profile/avatar-storage.md）。
+	Avatars profile.AvatarStore
+}
+
+// profileReadMaxBytes 是档案服务的单条消息读上限。
+//
+// 必须显式设：connect-go 的默认是**不限制大小**，而头像上传是本服务端唯一
+// 一个由客户端决定大小的入口。没有它，一个几百 MB 的请求体在被
+// profile.Profiles 拒绝之前就已经整份读进内存了。
+//
+// 取领域上限的两倍：请求体除了字节本身还有消息外壳，而走 JSON 线格式时
+// bytes 字段还会被 base64 撑大三分之一。宁可在这里留宽一点，也不要让"换一种
+// 线格式"变成一次莫名的大小上限失败。
+const profileReadMaxBytes = 2 * profile.AvatarMaxBytes
+
 // New 按配置装配服务端。
 //
 // store 由调用方提供而不是在这里构造：存储的打开与迁移属于**启动顺序**
@@ -74,7 +99,7 @@ type IdentityStores struct {
 //
 // metrics 为 nil 时不记录请求指标；遥测的 provider 生命周期由调用方
 // （入口进程）管理，服务端只消费它建好的全局实现。
-func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores) *Server {
+func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores, prof ProfileStores) *Server {
 	engine := rbac.NewEngine(store, logger, metrics)
 	machine := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
@@ -87,6 +112,22 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		GoogleClientID: cfg.GoogleClientID,
 		Logger:         logger,
 	})
+
+	// 档案对身份模块的依赖是**只读**的：展示名回退的第二步要取该主体的渠道
+	// 列表。身份模块不感知档案，依赖方向单向。
+	//
+	// 身份模块缺席时（只服务机器凭证的部署）不设这个字段，而不是塞一个空实现：
+	// 回退的第二步没有数据可用，展示名直接落到主体标识。
+	profileDeps := profile.ProfilesDeps{
+		Store:    prof.Profiles,
+		Subjects: store,
+		Avatars:  prof.Avatars,
+		Logger:   logger,
+	}
+	if ident.Identities != nil {
+		profileDeps.Identities = ident.Identities
+	}
+	profileSrv := NewProfileService(profile.NewProfiles(profileDeps), logger)
 
 	// 请求凭证的认证入口：机器凭证与会话凭证两条路径合到一处，
 	// 见 credential_authenticator.go。
@@ -113,11 +154,20 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	identityPath, identityHandler := identityv1connect.NewIdentityServiceHandler(identitySrv, opts...)
 	register(identityPath, identityHandler)
 
+	// 档案服务单独一组 handler options：它是唯一一个由客户端决定请求体大小的
+	// 入口（头像上传），因此显式设了读上限（见 profileReadMaxBytes）。
+	profileOpts := append([]connect.HandlerOption{
+		connect.WithReadMaxBytes(profileReadMaxBytes),
+	}, opts...)
+	profilePath, profileHandler := profilev1connect.NewProfileServiceHandler(profileSrv, profileOpts...)
+	register(profilePath, profileHandler)
+
 	// 健康检查与反射：不参与业务鉴权，由 authMiddleware 的
 	// infraProcedurePrefixes 显式放行。
 	serviceNames := []string{
 		rbacv1connect.RBACServiceName,
 		identityv1connect.IdentityServiceName,
+		profilev1connect.ProfileServiceName,
 	}
 	healthPath, healthHandler := grpchealth.NewHandler(grpchealth.NewStaticChecker(serviceNames...))
 	register(healthPath, healthHandler)

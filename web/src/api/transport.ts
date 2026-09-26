@@ -3,6 +3,7 @@ import type { Interceptor, Transport } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
 
 import { IdentityService } from '../gen/proto/aladdin/identity/v1/identity_pb'
+import { ProfileService } from '../gen/proto/aladdin/profile/v1/profile_pb'
 import { RBACService } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
 
 /**
@@ -149,4 +150,9 @@ export function identityClient() {
 /** 权限管理服务的客户端。 */
 export function rbacClient() {
   return createClient(RBACService, getTransport())
+}
+
+/** 个人档案服务的客户端。 */
+export function profileClient() {
+  return createClient(ProfileService, getTransport())
 }

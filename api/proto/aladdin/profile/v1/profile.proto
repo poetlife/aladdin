@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package aladdin.profile.v1;
+
+import "aladdin/rbac/v1/annotations.proto";
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1;profilev1";
+
+// ProfileService 是个人档案面：主体自己的展示信息（昵称、简介、头像）。
+//
+// 边界：它回答"这个主体叫什么、长什么样"，既不回答"你是谁"（认证，
+// 见 IdentityService），也不回答"你能做什么"（RBAC）。**档案不参与
+// 任何一次判定**，也不是一条身份路径——不能按昵称查人，昵称也不唯一。
+//
+// **每个方法都只作用于调用者自己。** 接口面上刻意不存在任何带目标主体
+// 标识的方法：归属由凭证决定，不由请求里的字段决定。由此得到的结论是
+// 准入门槛为"已认证"而非某个权限码——不存在以他人为目标的形状，也就
+// 不存在可被滥用的授权面。
+//
+// 若将来要加"管理员查看或编辑他人档案"，那是一个以他人为目标的动作，
+// 必须带权限码，并且**不得**与本服务的自服务方法混在一个入口里。
+service ProfileService {
+  // 读取当前主体的档案。
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 设置当前主体的昵称与简介。
+  //
+  // 请求表达的是**期望的完整状态**，不是一次增量修改：空字符串表示清空
+  // 该项。因为没有"只改一个字段"的形状，也就不需要区分"没传"与"传空"。
+  rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 上传或替换当前主体的头像。
+  //
+  // **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
+  // 内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
+  // 一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
+  // 看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
+  // 时以谁为准"这个问题。
+  //
+  // 一个主体一个对象，替换即原地覆盖。
+  rpc UpdateAvatar(UpdateAvatarRequest) returns (UpdateAvatarResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 删除当前主体的头像。没有头像时也成功（幂等）。
+  rpc DeleteAvatar(DeleteAvatarRequest) returns (DeleteAvatarResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+}
+
+// Profile 是一个主体的展示信息。
+//
+// **没有任何一个字段参与判定**，也没有任何一个字段是身份键。它们只影响
+// 界面上显示什么。
+message Profile {
+  // 主体自己设置的昵称。为空表示未设置——此时 display_name 会回退。
+  string nickname = 1;
+
+  // 界面应当显示的名字，由服务端按回退规则算好，客户端**不得**自行拼接。
+  //
+  // 规则：昵称非空则用昵称；否则取该主体渠道列表里第一条非空的渠道可读
+  // 标识（如邮箱）；否则用主体标识。回退只有这一处实现——两端各写一份
+  // 必然漂移，表现为页头与服务端日志里这个人叫两个名字。
+  //
+  // 它**只用于展示**：不参与判定，也不能被当作身份来查人。
+  string display_name = 2;
+
+  // 简介。为空表示未填写。
+  string bio = 3;
+
+  // 头像的**短时有效**预签名读取地址，客户端直接放进 <img src>。
+  //
+  // 为空表示"当前没有可显示的头像"：既可能是真的没设，也可能是头像存储
+  // 未启用或暂时取不到地址。
+  //
+  // **这个地址在有效期内谁拿到都能用**，它是一份短期凭证。这正是"头像
+  // 里不得承载任何秘密"这条约束的来源——它本来就是要显示给人看的。
+  // 地址过期后重新调用本服务即可拿到新地址。
+  //
+  // 刻意**不给"头像更新时间"**：预签名地址每次生成都不同，缓存失效不需要
+  // 额外的版本字段；而档案行的更新时间是整行的（改昵称也会动它），拿它当
+  // 头像时间会显示一个与头像无关的时间。
+  string avatar_url = 4;
+
+  // 头像上传功能在当前部署里是否可用（即服务端是否配置了对象存储）。
+  //
+  // 为假时客户端**不渲染**上传控件，而不是渲染一个点了报错的按钮——与
+  // "未配置 Google 客户端标识时不渲染登录入口"同一取向：能力由服务端下发，
+  // 客户端不猜。为假不影响 nickname 与 bio。
+  bool avatar_upload_enabled = 5;
+
+  // 头像的字节上限。
+  //
+  // 它是这条上限的**唯一声明处**：客户端据此在选文件时就早退，免得把一个
+  // 几十 MB 的文件整个传上来只为了被拒。服务端仍然是权威——客户端的这一
+  // 判断只是省一次往返，不是一条安全边界，前端不得把它当成校验。
+  //
+  // 取 uint32 而不是 int64：客户端拿到的是一个普通数字，不必为一个几百 KB
+  // 量级的取值去处理大整数。
+  uint32 avatar_max_bytes = 6;
+}
+
+message GetProfileRequest {}
+
+message GetProfileResponse {
+  Profile profile = 1;
+}
+
+message UpdateProfileRequest {
+  // 期望的完整状态。空字符串表示清空该项并回退到展示名的下一条规则。
+  string nickname = 1;
+  // 期望的完整状态。空字符串表示清空。
+  string bio = 2;
+}
+
+// 返回更新之后的完整档案，而不是一个"成功"标志。
+//
+// 客户端刚做过一次会改变现状的操作，让它在同一次往返里拿到新现状，比再多
+// 发一次查询更省事，也不会读到两次请求之间的中间态。display_name 与
+// avatar_url 都按新状态重新计算。
+message UpdateProfileResponse {
+  Profile profile = 1;
+}
+
+message UpdateAvatarRequest {
+  // 图片字节。类型由服务端嗅探决定，此处不存在"声明类型"的字段。
+  // 超出大小上限时拒绝。
+  bytes image = 1;
+}
+
+message UpdateAvatarResponse {
+  Profile profile = 1;
+}
+
+message DeleteAvatarRequest {}
+
+message DeleteAvatarResponse {
+  Profile profile = 1;
+}

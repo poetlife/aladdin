@@ -23,6 +23,7 @@ aladdin 是前端（React + antd）、服务端（Go + gRPC）、命令行（cob
 | 问题 | 归属 |
 |------|------|
 | 你是谁 | **本模块** |
+| 你叫什么、长什么样（展示信息，不进判定） | [../profile/](../profile/README.md) |
 | 你能做什么 | [../rbac/](../rbac/README.md) |
 | 主体、角色、绑定、会话存在哪 | [../persistence/](../persistence/README.md) |
 | 登录方式与各项配置从哪来 | [../config/](../config/README.md) |
