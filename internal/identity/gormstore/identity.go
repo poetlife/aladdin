@@ -146,6 +146,22 @@ func (s *IdentityStore) ListBySubject(ctx context.Context, subjectID string) ([]
 	return list, nil
 }
 
+// ListByDisplay 实现 identity.IdentityStore。
+//
+// 与 ListBySubject 同理，不排序：顺序由调用方定。
+func (s *IdentityStore) ListByDisplay(ctx context.Context, display string) ([]identity.Identity, error) {
+	var recs []database.IdentityRecord
+	if err := s.db.WithContext(ctx).
+		Where("display = ?", display).Find(&recs).Error; err != nil {
+		return nil, identityUnavailable("按展示值读取身份", err)
+	}
+	list := make([]identity.Identity, 0, len(recs))
+	for _, rec := range recs {
+		list = append(list, toIdentity(rec))
+	}
+	return list, nil
+}
+
 // toIdentity 把记录翻译成领域类型。
 //
 // 转换只在这一处：记录里加一列不会悄悄改变认证看到的东西，

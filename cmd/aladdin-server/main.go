@@ -101,7 +101,12 @@ func run() error {
 	// 因此它们的实现必须长在这条连接上，而不是各开一次库——两份可写副本
 	// 意味着一次撤销可能只落到其中一份上（见 docs/design/persistence/schema.md）。
 	sessions := identity.NewSessions(identitygormstore.New(store.DB()))
-	identities := identity.NewIdentities(identitygormstore.NewIdentityStore(store.DB()), store)
+
+	// 身份存储单独持有：引导要用它按邮箱解析主体，而那是**存储层**的哑查询。
+	// 刻意不经过 Identities——那一层负责"这次登录该归到谁"的判断，引导只需要
+	// "这个邮箱登记在哪些身份上"，把注册语义引进来只会多一条没人想要的路径。
+	identityStore := identitygormstore.NewIdentityStore(store.DB())
+	identities := identity.NewIdentities(identityStore, store)
 
 	srv := server.New(cfg, logger, metrics, store, server.IdentityStores{
 		Identities: identities,
@@ -112,7 +117,7 @@ func run() error {
 	})
 
 	// 引导先于种子：它只在存储里一条绑定都没有时生效，而种子会写入绑定。
-	if err := server.ApplyBootstrap(ctx, store, cfg.Bootstrap, logger); err != nil {
+	if err := server.ApplyBootstrap(ctx, store, identityStore, cfg.Bootstrap, logger); err != nil {
 		return err
 	}
 	if err := server.ApplyDevSeed(srv, logger); err != nil {

@@ -280,6 +280,63 @@ func TestIdentityContractListBySubject(t *testing.T) {
 	})
 }
 
+// 按展示值查身份：**可能命中多条**。
+//
+// 这条是引导那条"恰好一个才生效"的前提——本库刻意允许同一个邮箱字符串分别
+// 挂在两个身份上，所以"按邮箱找主体"在形状上就无法保证唯一。存储这一层只
+// 如实返回全部命中，不挑；挑不挑是上层的事，而那里定的是"不挑，拒绝启动"。
+func TestIdentityContractListByDisplayMayMatchSeveral(t *testing.T) {
+	forEachIdentityStore(t, func(t *testing.T, store identity.IdentityStore) {
+		ctx := context.Background()
+		shared := "same@example.com"
+		both := []identity.Identity{
+			testIdentity("usr_a", "google-sub-a", shared),
+			testIdentity("usr_b", "google-sub-b", shared),
+		}
+		for _, ident := range append(both, testIdentity("usr_c", "google-sub-c", "other@example.com")) {
+			if err := store.Put(ctx, ident); err != nil {
+				t.Fatalf("写入身份失败: %v", err)
+			}
+		}
+
+		list, err := store.ListByDisplay(ctx, shared)
+		if err != nil {
+			t.Fatalf("按展示值读取身份失败: %v", err)
+		}
+		sort.Slice(list, func(a, b int) bool { return list[a].ExternalID < list[b].ExternalID })
+		sort.Slice(both, func(a, b int) bool { return both[a].ExternalID < both[b].ExternalID })
+		if len(list) != len(both) {
+			t.Fatalf("命中条数 = %d，期望 %d", len(list), len(both))
+		}
+		for i := range both {
+			if list[i] != both[i] {
+				t.Errorf("第 %d 条 = %+v，期望 %+v", i, list[i], both[i])
+			}
+		}
+	})
+}
+
+// 按展示值查不到时返回空列表，而不是错误。
+//
+// "没有这个人"是正常结论，怎么处理由调用方定（引导那边是拒绝启动并说明
+// 原因）。把它做成错误会让"存储不可用"与"查无此人"混成同一类。
+func TestIdentityContractListByDisplayNoMatch(t *testing.T) {
+	forEachIdentityStore(t, func(t *testing.T, store identity.IdentityStore) {
+		ctx := context.Background()
+		if err := store.Put(ctx, testIdentity("usr_a", "google-sub-a", "a@example.com")); err != nil {
+			t.Fatalf("写入身份失败: %v", err)
+		}
+
+		list, err := store.ListByDisplay(ctx, "nobody@example.com")
+		if err != nil {
+			t.Fatalf("按展示值读取身份失败: %v", err)
+		}
+		if len(list) != 0 {
+			t.Errorf("命中条数 = %d，期望 0", len(list))
+		}
+	})
+}
+
 // 没有任何身份的主体返回空列表，而不是错误。
 //
 // 它对应的是"这个人还没绑过任何渠道"，属于正常状态。

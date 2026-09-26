@@ -87,6 +87,18 @@ type IdentityStore interface {
 
 	// ListBySubject 返回该主体的全部身份。顺序不作保证，排序在调用方。
 	ListBySubject(ctx context.Context, subjectID string) ([]Identity, error)
+
+	// ListByDisplay 返回展示值等于给定值的全部身份。
+	//
+	// 只按展示值这一个字段查，不带来源条件：调用方拿到的是一个邮箱字符串，
+	// 没有来源可用，而"该查哪个来源"是判断，属于上层而不是这一层。
+	//
+	// **展示值在本库里不唯一**——同一个邮箱字符串可以分别挂在两个身份上，
+	// 这是刻意允许的。因此它返回的是**列表**而不是单个身份：调用方必须自己
+	// 处理"命中几个"，而那条判断只有一处（引导），取向是"不是一个就拒绝"。
+	//
+	// 顺序不作保证，排序在调用方。
+	ListByDisplay(ctx context.Context, display string) ([]Identity, error)
 }
 
 // MemoryIdentityStore 是 IdentityStore 的内存实现。
@@ -172,6 +184,23 @@ func (s *MemoryIdentityStore) ListBySubject(_ context.Context, subjectID string)
 	list := make([]Identity, 0, len(keys))
 	for key := range keys {
 		list = append(list, s.byKey[key])
+	}
+	return list, nil
+}
+
+// ListByDisplay 实现 IdentityStore。
+//
+// 直接遍历，不额外维护一个按展示值组织的索引：展示值不是身份键，为它建索引
+// 等于把"它可能被当成键来用"写进数据结构里，而它恰恰不是。
+func (s *MemoryIdentityStore) ListByDisplay(_ context.Context, display string) ([]Identity, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var list []Identity
+	for _, ident := range s.byKey {
+		if ident.Display == display {
+			list = append(list, ident)
+		}
 	}
 	return list, nil
 }

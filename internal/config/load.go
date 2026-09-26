@@ -24,6 +24,7 @@ type layer struct {
 
 	googleClientID        *string
 	bootstrapAdminSubject *string
+	bootstrapAdminEmail   *string
 	bootstrapAdminScope   *string
 
 	otelEndpoint    *string
@@ -97,6 +98,9 @@ func serverEnvOverrides() (layer, error) {
 	}
 	if v := os.Getenv(EnvBootstrapAdminSubject); v != "" {
 		l.bootstrapAdminSubject = &v
+	}
+	if v := os.Getenv(EnvBootstrapAdminEmail); v != "" {
+		l.bootstrapAdminEmail = &v
 	}
 	if v := os.Getenv(EnvBootstrapAdminScope); v != "" {
 		l.bootstrapAdminScope = &v
@@ -172,6 +176,9 @@ func mergeServer(cfg ServerConfig, l layer) ServerConfig {
 	}
 	if l.bootstrapAdminSubject != nil {
 		cfg.Bootstrap.Subject = *l.bootstrapAdminSubject
+	}
+	if l.bootstrapAdminEmail != nil {
+		cfg.Bootstrap.Email = *l.bootstrapAdminEmail
 	}
 	if l.bootstrapAdminScope != nil {
 		cfg.Bootstrap.Scope = *l.bootstrapAdminScope

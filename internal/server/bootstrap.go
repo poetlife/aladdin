@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/config"
+	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -17,15 +18,22 @@ import (
 // 授予自己角色，于是"第一个管理员从哪来"没有答案。
 //
 // 它是**初始化**的输入，不是判定的输入：写入的是一条真实的角色绑定，
-// 判定路径只读存储、从不读配置。因此生效之后删掉这两个键，**不会**撤销
-// 已经建立的绑定；改这两个键也不改变任何一次判定结果（见 CLAUDE.md 第 7 条）。
+// 判定路径只读存储、从不读配置。因此生效之后删掉这些键，**不会**撤销
+// 已经建立的绑定；改这些键也不改变任何一次判定结果（见 CLAUDE.md 第 7 条）。
 //
 // 四条边界在下面逐条落实：
 //   - 物化：写的是真实绑定，不是一条"信任这个来源"的规则；
 //   - 一次性：只在存储里一条绑定都没有时生效；
 //   - 留痕：生效时以 warn 级记录被授予的主体与作用域；
-//   - 按不可复用的标识：取值原样使用，不推导、不规范——尤其不按邮箱。
-func ApplyBootstrap(ctx context.Context, store rbac.MutableStore, cfg config.BootstrapConfig, logger *zap.Logger) error {
+//   - 落点是不可复用的主体标识：身份指认可以写成主体标识，也可以写成邮箱，
+//     但邮箱只在这里被解析**一次**，绑定落在主体上（见 resolveBootstrapSubject）。
+func ApplyBootstrap(
+	ctx context.Context,
+	store rbac.MutableStore,
+	identities identity.IdentityStore,
+	cfg config.BootstrapConfig,
+	logger *zap.Logger,
+) error {
 	if cfg.Empty() {
 		return nil
 	}
@@ -38,29 +46,80 @@ func ApplyBootstrap(ctx context.Context, store rbac.MutableStore, cfg config.Boo
 		// 存储里已经有绑定了，引导配置**不生效**：它是一次性的初始化动作，
 		// 不是每次启动都重新施加一遍的规则。
 		logger.Info("存储中已有角色绑定，引导配置不生效",
-			zap.String("subject_id", cfg.Subject))
+			zap.String("subject_id", cfg.Subject),
+			zap.String("email", cfg.Email))
 		return nil
 	}
 
-	if err := ensureBootstrapSubject(ctx, store, cfg.Subject, rbac.Scope(cfg.Scope)); err != nil {
+	subject, err := resolveBootstrapSubject(ctx, identities, cfg)
+	if err != nil {
+		return err
+	}
+	scope := rbac.ParseScope(cfg.Scope)
+
+	if err := ensureBootstrapSubject(ctx, store, subject, scope); err != nil {
 		return err
 	}
 	if err := store.Bind(ctx, rbac.RoleBinding{
-		SubjectID: cfg.Subject,
+		SubjectID: subject,
 		RoleID:    rbac.RoleSystemAdmin,
-		Scope:     rbac.Scope(cfg.Scope),
+		Scope:     scope,
 	}); err != nil {
 		return fmt.Errorf("建立引导绑定失败: %w", err)
 	}
 
 	// 大声留痕：与开发种子旁路同级。这条在正常部署里只会出现一次，
 	// 因此"它出现了"本身就是可检索、可告警的事件。
+	//
+	// 邮箱也记下来是刻意的：主体标识是一串不透明的值，而"当初是谁"只有
+	// 这一行能回答。它只用于事后追溯，不参与任何判定。
 	logger.Warn("已按引导配置建立第一个管理员",
-		zap.String("subject_id", cfg.Subject),
+		zap.String("subject_id", subject),
+		zap.String("email", cfg.Email),
 		zap.String("role_id", rbac.RoleSystemAdmin),
-		zap.String("scope", cfg.Scope),
+		zap.String("scope", scope.String()),
 	)
 	return nil
+}
+
+// resolveBootstrapSubject 把配置里的"身份指认"解析成主体标识。
+//
+// 两种写法：主体标识原样使用，不做任何推导或规范化；邮箱则按**已登记的
+// 身份**查，且**必须恰好命中一个**。
+//
+// **不猜是刻意的。** 命中 0 个或多个时一律返回错误、由调用方拒绝启动——
+// 猜一个等于把一次配置错误变成一次无声授权，而它不会在启动时说任何话。
+//
+// 0 个命中有个具体成因值得写进提示：邮箱与主体的对应关系是**登录时**才
+// 产生的，所以还没登录过就用邮箱指认，注定查不到。不说这一点的话，
+// 运维看到的是一句"没找到"，而他会认为自己明明填对了。
+func resolveBootstrapSubject(
+	ctx context.Context,
+	identities identity.IdentityStore,
+	cfg config.BootstrapConfig,
+) (string, error) {
+	if cfg.Email == "" {
+		return cfg.Subject, nil
+	}
+
+	matches, err := identities.ListByDisplay(ctx, cfg.Email)
+	if err != nil {
+		return "", fmt.Errorf("按邮箱查身份失败: %w", err)
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0].SubjectID, nil
+	case 0:
+		return "", fmt.Errorf(
+			"引导配置里的邮箱 %q 没有命中任何已登记身份。"+
+				"邮箱与主体的对应关系是登录时才产生的：请先用该账号登录一次，再重启服务端",
+			cfg.Email)
+	default:
+		return "", fmt.Errorf(
+			"引导配置里的邮箱 %q 命中了 %d 个已登记身份，无法确定是哪一个（同一个邮箱"+
+				"可以分别挂在两个身份上）。请改用主体标识显式指定",
+			cfg.Email, len(matches))
+	}
 }
 
 // ensureBootstrapSubject 保证引导主体存在，并把它默认作用域设为引导作用域。

@@ -445,8 +445,20 @@ func TestValidate(t *testing.T) {
 		{"引导两项齐全", func(c *ServerConfig) {
 			c.Bootstrap = BootstrapConfig{Subject: "google:1", Scope: "root"}
 		}, true},
+		{"引导用邮箱指认主人", func(c *ServerConfig) {
+			c.Bootstrap = BootstrapConfig{Email: "admin@example.com", Scope: "root"}
+		}, true},
+		{"引导作用域写全局哨兵", func(c *ServerConfig) {
+			c.Bootstrap = BootstrapConfig{Email: "admin@example.com", Scope: "<global>"}
+		}, true},
+		{"引导两种身份指认同时给出", func(c *ServerConfig) {
+			c.Bootstrap = BootstrapConfig{Subject: "google:1", Email: "admin@example.com", Scope: "root"}
+		}, false},
 		{"引导只填主体", func(c *ServerConfig) {
 			c.Bootstrap = BootstrapConfig{Subject: "google:1"}
+		}, false},
+		{"引导只填邮箱", func(c *ServerConfig) {
+			c.Bootstrap = BootstrapConfig{Email: "admin@example.com"}
 		}, false},
 		{"引导只填作用域", func(c *ServerConfig) {
 			c.Bootstrap = BootstrapConfig{Scope: "root"}
@@ -624,15 +636,17 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyDatabaseDSN:           "aladdin@tcp(127.0.0.1:3306)/aladdin",
 			keyGoogleClientID:        "1234567890.apps.googleusercontent.com",
 			keyBootstrapAdminSubject: "google:110000000000000000001",
+			keyBootstrapAdminEmail:   "admin@example.com",
 			keyBootstrapAdminScope:   "root",
 			keyOTelEndpoint:          "collector:4318",
 			keyOTelInsecure:          "true",
 			keyOTelSampleRatio:       "0.5",
 		}
-		// 引导的两项必须成对出现。单独写一项会被校验拒绝，那样这个用例测的
-		// 就成了"半套配置被拒吗"——那是另一回事，另有专门的用例守着。
+		// 身份指认与作用域必须成对出现。单独写一项会被校验拒绝，那样这个用例
+		// 测的就成了"半套配置被拒吗"——那是另一回事，另有专门的用例守着。
 		companions := map[string]string{
 			keyBootstrapAdminSubject: keyBootstrapAdminScope + ": root\n",
+			keyBootstrapAdminEmail:   keyBootstrapAdminScope + ": root\n",
 			keyBootstrapAdminScope:   keyBootstrapAdminSubject + ": google:110000000000000000001\n",
 		}
 		for _, key := range serverKeys {

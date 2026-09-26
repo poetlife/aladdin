@@ -41,6 +41,7 @@ const (
 
 	EnvGoogleClientID        = "ALADDIN_GOOGLE_CLIENT_ID"
 	EnvBootstrapAdminSubject = "ALADDIN_BOOTSTRAP_ADMIN_SUBJECT"
+	EnvBootstrapAdminEmail   = "ALADDIN_BOOTSTRAP_ADMIN_EMAIL"
 	EnvBootstrapAdminScope   = "ALADDIN_BOOTSTRAP_ADMIN_SCOPE"
 
 	EnvOTelEndpoint    = "ALADDIN_OTEL_ENDPOINT"
@@ -60,6 +61,7 @@ const (
 
 	keyGoogleClientID        = "google_client_id"
 	keyBootstrapAdminSubject = "bootstrap_admin_subject"
+	keyBootstrapAdminEmail   = "bootstrap_admin_email"
 	keyBootstrapAdminScope   = "bootstrap_admin_scope"
 
 	keyOTelEndpoint    = "otel_endpoint"
@@ -115,25 +117,43 @@ type DatabaseConfig struct {
 // 判定路径只读存储、从不读配置，因此它不是权限的来源（见
 // docs/design/config/README.md 的"唯一例外：引导"）。
 //
-// 两项必须同时给出或同时留空：半套引导的失败方式是"看起来生效了"——
-// 要么建出一条作用域不明的绑定，要么建出一条主体不明的绑定。
+// 身份指认与作用域必须同时给出或同时留空：半套引导的失败方式是"看起来
+// 生效了"——要么建出一条作用域不明的绑定，要么建出一条主体不明的绑定。
 type BootstrapConfig struct {
-	// Subject 是获得首个管理员角色的主体标识。
+	// Subject 是获得首个管理员角色的**主体标识**。
 	//
-	// 取值必须是**主体标识**（由 aladdin 分配、分配即冻结），不是邮箱，
-	// 也不是渠道上的身份标识：邮箱在渠道侧可改名、可回收，回收给另一个
-	// 人的那天就是一次无痕提权。
+	// 由 aladdin 分配、分配即冻结，原样使用，不推导、不规范。登录之后界面上
+	// 就显示它，不必去日志里找。
 	Subject string
-	// Scope 是这次授予的作用域。
+	// Email 是用**邮箱**指认主体的便利写法，与 Subject 互斥。
+	//
+	// 它只在该邮箱**恰好命中一个已登记身份**时生效——0 个或多个一律拒绝启动，
+	// 不猜（同一个邮箱字符串可以分别挂在两个身份上，这是刻意允许的）。
+	//
+	// 它**不意味着身份可以按邮箱确定**：解析只发生一次、绑定落在主体上，
+	// 此后的任何判定都不看邮箱。见 docs/design/identity/google-login.md 与
+	// CLAUDE.md 第 7 条。
+	Email string
+	// Scope 是这次授予的作用域，**文本形式**：写 "<global>" 表示全局作用域。
+	//
+	// 全局作用域的内部值是空串，而空串在这里表示"没填"——两者不能共用一种
+	// 写法，否则一次手滑漏填就会静默变成全局管理员。
 	Scope string
 }
 
 // Empty 表示不引导。这是默认情形。
-func (b BootstrapConfig) Empty() bool { return b.Subject == "" && b.Scope == "" }
+func (b BootstrapConfig) Empty() bool {
+	return b.Subject == "" && b.Email == "" && b.Scope == ""
+}
 
-// Partial 表示只给出了两项中的一项——必须拒绝启动。
+// Ambiguous 表示两种身份指认同时给出——不知道以谁为准，必须拒绝启动。
+func (b BootstrapConfig) Ambiguous() bool {
+	return b.Subject != "" && b.Email != ""
+}
+
+// Partial 表示身份指认与作用域只给出了其中一项——必须拒绝启动。
 func (b BootstrapConfig) Partial() bool {
-	return (b.Subject == "") != (b.Scope == "")
+	return (b.Subject == "" && b.Email == "") != (b.Scope == "")
 }
 
 // ServerConfig 是服务端启动配置。
@@ -332,9 +352,14 @@ func validateDatabase(db DatabaseConfig) error {
 // 与 validateDatabase 同理，这里只判"形状"：引导是否**真的**生效取决于
 // 存储中是否存在绑定，那是服务端启动时才知道的事。
 func validateBootstrap(b BootstrapConfig) error {
+	if b.Ambiguous() {
+		return invalidKey(keyBootstrapAdminEmail, EnvBootstrapAdminEmail,
+			"与 "+keyBootstrapAdminSubject+"（"+EnvBootstrapAdminSubject+"）互斥，只能给出一个：两个都给等于没说清以谁为准")
+	}
 	if b.Partial() {
 		return invalidKey(keyBootstrapAdminSubject, EnvBootstrapAdminSubject,
-			"与 "+keyBootstrapAdminScope+"（"+EnvBootstrapAdminScope+"）必须同时给出或同时留空")
+			"身份指认（"+keyBootstrapAdminSubject+" 或 "+keyBootstrapAdminEmail+
+				"）与 "+keyBootstrapAdminScope+"（"+EnvBootstrapAdminScope+"）必须同时给出或同时留空")
 	}
 	return nil
 }
