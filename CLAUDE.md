@@ -25,6 +25,7 @@
 | 可观测性总览 | [docs/observability.md](docs/observability.md) | 日志、指标、追踪的接入方式与规范 |
 | 测试指南 | [docs/testing.md](docs/testing.md) | 测试目录规范与运行命令 |
 | 发布与 CI | [docs/release.md](docs/release.md) | 发版触发方式、门禁范围、产物形态与旧版本清理策略 |
+| 部署 | [docs/deploy.md](docs/deploy.md) | 生产拓扑、一次性前置、发布与回滚、首次引导管理员、备份、CLI 接入 |
 | SSOT 注册表 | [docs/ssot-registry.md](docs/ssot-registry.md) | 同一件事唯一入口的登记表 |
 | 历史排障记录 | [docs/debugging/registry.md](docs/debugging/registry.md) | 查问题前先检索同质症状 |
 

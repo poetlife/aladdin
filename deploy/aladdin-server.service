@@ -1,0 +1,46 @@
+[Unit]
+Description=aladdin 权限服务端
+Documentation=https://github.com/poetlife/aladdin/blob/main/docs/deploy.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aladdin
+Group=aladdin
+WorkingDirectory=/opt/aladdin
+
+# 配置路径显式写出，不依赖"工作目录下的 config.yml"这个默认位置。
+# 默认位置是按启动时的工作目录解析的（见 docs/design/config/server-config.md
+# "配置文件的查找"），而工作目录由部署方式决定——显式指定后，
+# "我改的那个文件到底有没有被读到"就不再是一个需要猜的问题。
+ExecStart=/opt/aladdin/bin/aladdin-server -config /opt/aladdin/config.yml
+
+Restart=on-failure
+RestartSec=5s
+
+# 日志走标准错误，由 journald 收走。不配 log_file：
+# 服务端刻意让"日志写不进去"不升级成"服务不可用"，
+# 那就不该在生产环境把日志交给一个可能写不进去的文件。
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aladdin-server
+
+# 内存上限。
+#
+# 这不是"够用"的估算——服务端常驻只有几十 MB——而是保险丝：一台机器上通常
+# 不止这一个服务，而 aladdin 远没有重要到可以让同机的其它服务陪葬。
+# 触发上限时进程被内核干掉并由 Restart=on-failure 拉起，影响面有界。
+MemoryMax=256M
+
+# 加固：除 /opt/aladdin 外一律只读。
+# 产物是 CGO_ENABLED=0 的静态二进制（见 docs/release.md），
+# 唯一的写路径就是数据目录，因此这条不需要任何例外。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/aladdin
+
+[Install]
+WantedBy=multi-user.target
