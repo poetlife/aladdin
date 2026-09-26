@@ -1,0 +1,78 @@
+# 门禁（Gate）—— 「什么算通过」的唯一定义处。
+#
+# 常规 CI（PR / push main）与发布（tag）都调用本文件，而不是各自复制一份步骤：
+# 两份定义迟早漂移，例如有人只给其中一份加了前端测试。
+# 要调整门禁范围，只需改这里（见 docs/release.md 与 docs/ssot-registry.md）。
+
+name: gate
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: 门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          # 需要完整历史：make check-gen 用 git diff 判断生成产物是否同步，
+          # 浅克隆会让这个判断失真。
+          fetch-depth: 0
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # 顺序有两处依赖，别随手调换：
+      #   1. tools 必须先于 lint（buf lint）与 check-gen（buf generate）；
+      #   2. 所有 Go 步骤必须先于 web-ci —— `go test ./...` 会走进
+      #      web/node_modules，而那里有 npm 包自带 Go 文件（flatted 就是）。
+      #      先装前端依赖会把第三方 JS 依赖里的 Go 代码卷进 Go 检查。
+      - name: 安装代码生成与静态检查工具
+        run: make tools
+
+      - name: 确认 golangci-lint 已就位
+        # make lint 在工具缺失时会静默跳过 golangci-lint。门禁里静默跳过
+        # 等于没有门禁，所以这里显式断言，让"跳过"变成失败。
+        run: |
+          if ! command -v golangci-lint >/dev/null; then
+            echo "golangci-lint 未安装，make lint 会静默跳过它，门禁不成立" >&2
+            exit 1
+          fi
+          golangci-lint --version
+
+      - name: 静态检查
+        run: make lint
+
+      - name: 后端单元测试（含竞态检测）
+        run: make test
+
+      - name: 端到端测试
+        run: make test-e2e
+
+      - name: 生成产物同步校验
+        run: make check-gen
+
+      - name: 安装前端依赖
+        run: make web-ci
+
+      - name: 前端单元测试
+        run: make test-web
+
+      - name: 构建前端
+        run: make web-build

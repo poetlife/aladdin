@@ -24,6 +24,7 @@
 | 全局配置与凭证 | [docs/design/config/](docs/design/config/README.md) | 配置来源分层与合并语义、服务端启动配置、CLI 配置与凭证保护 |
 | 可观测性总览 | [docs/observability.md](docs/observability.md) | 日志、指标、追踪的接入方式与规范 |
 | 测试指南 | [docs/testing.md](docs/testing.md) | 测试目录规范与运行命令 |
+| 发布与 CI | [docs/release.md](docs/release.md) | 发版触发方式、门禁范围、产物形态与旧版本清理策略 |
 | SSOT 注册表 | [docs/ssot-registry.md](docs/ssot-registry.md) | 同一件事唯一入口的登记表 |
 | 历史排障记录 | [docs/debugging/registry.md](docs/debugging/registry.md) | 查问题前先检索同质症状 |
 
@@ -34,6 +35,7 @@
 ```bash
 make gen        # 由 proto 与权限目录生成两端代码（唯一生成入口）
 make build      # 构建服务端与 CLI
+make release-build  # 产出发布产物到 dist/（跨平台二进制、前端包、校验和）
 make test       # Go 全量测试（含竞态检测）
 make test-e2e   # 端到端测试
 make test-web   # 前端测试
