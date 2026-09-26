@@ -21,7 +21,12 @@ import (
 //
 // 期望值按 **sqlite** 记录。换后端时这里会整体变化——那时应当再留一份
 // 该后端的快照，而不是把这份改成两边都不像。
-const wantSchema = `table role_bindings
+const wantSchema = `table identities
+  display text pk=false null=true
+  external_id text pk=true null=true
+  source text pk=true null=true
+  subject_id text pk=false null=true
+table role_bindings
   role_id text pk=true null=true
   scope text pk=true null=true
   subject_id text pk=true null=true
@@ -34,6 +39,13 @@ table roles
   permissions text pk=false null=true
 table schema_migrations
   id text pk=true null=true
+table sessions
+  default_scope text pk=false null=true
+  expires_at datetime pk=false null=true
+  issued_at datetime pk=false null=true
+  subject_id text pk=false null=true
+  subject_type text pk=false null=true
+  token_hash text pk=true null=true
 table subjects
   default_scope text pk=false null=true
   id text pk=true null=true

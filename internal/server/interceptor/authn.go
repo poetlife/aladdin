@@ -25,6 +25,14 @@ var (
 	ErrNoCredential = errors.New("请求未携带凭证")
 	// ErrInvalidCredential 表示凭证存在但无法解析或已失效。
 	ErrInvalidCredential = errors.New("凭证无效或已失效")
+
+	// ErrStoreUnavailable 表示认证所依赖的存储不可用。
+	//
+	// 它与上面两个**不是一类**：那两个是"这份凭证不成立"，这个是"我们这边
+	// 出问题了"。混为一谈会把一次数据库故障表现成一次全站登录失效——
+	// 客户端会引导所有人重新登录，而重新登录同样失败，运维看到的是
+	// "大家都登不上了"，于是去查认证配置（见 docs/design/identity/session-token.md）。
+	ErrStoreUnavailable = errors.New("认证存储不可用")
 )
 
 // Authenticator 从请求头中确认主体。
@@ -41,8 +49,13 @@ type Authenticator interface {
 
 // TokenAuthenticator 是按不透明 token 查表认证的实现。
 //
-// 这是骨架自带的开发用实现：它把 token 到主体的映射放在内存里。
-// 生产环境应替换为签名凭证或外部身份服务，替换点只有这一个类型。
+// 它只服务**有界的、运维配置的**凭证集合：机器凭证（CLI、CI、服务账号）
+// 与开发种子注入的开发凭证。集合有界是它的前提——查它是一次内存查找，
+// 不会碰到库。人的会话凭证不在这里：那是无界的，必须查存储
+// （见 docs/design/identity/session-token.md）。
+//
+// 它自己不构成完整的认证路径：请求凭证先查它、再落回会话存储，
+// 那个次序由 internal/server 的认证入口决定。
 type TokenAuthenticator struct {
 	// Tokens 是 token 到主体的映射。
 	Tokens map[string]rbac.Subject
@@ -58,13 +71,22 @@ func (a *TokenAuthenticator) Add(token string, subject rbac.Subject) {
 	a.Tokens[token] = subject
 }
 
+// Lookup 按 token 取出主体。
+//
+// 它给"先查机器凭证、再落回会话存储"的认证入口用：先查有界的这一侧，
+// 不命中才值得去碰存储。
+func (a *TokenAuthenticator) Lookup(token string) (rbac.Subject, bool) {
+	subject, ok := a.Tokens[token]
+	return subject, ok
+}
+
 // Authenticate 实现 Authenticator。
 func (a *TokenAuthenticator) Authenticate(_ context.Context, header http.Header) (rbac.Subject, error) {
 	token, err := BearerToken(header)
 	if err != nil {
 		return rbac.Subject{}, err
 	}
-	subject, ok := a.Tokens[token]
+	subject, ok := a.Lookup(token)
 	if !ok {
 		return rbac.Subject{}, ErrInvalidCredential
 	}

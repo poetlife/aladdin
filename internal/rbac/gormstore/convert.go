@@ -42,14 +42,22 @@ func fromRoleDefinition(role rbac.RoleDefinition) database.RoleRecord {
 	}
 }
 
-// 主体只有写入方向：当前没有"按标识读回主体"的需求——判定用的是凭证里
-// 已确认的主体，存储侧只回答"这个主体登记过没有"。等真出现读回需求时
-// 再补反向转换，而不是先写一个没人调用的函数放着。
+// 主体两个方向都要：写方向是登记，读方向是签发会话时把主体的当前属性
+// 冻结进凭证。读方向刻意只服务签发路径——判定用的是凭证里那个已确认的
+// 主体，它不回查主体表（见 docs/design/identity/session-token.md）。
 func fromSubject(subject rbac.Subject) database.SubjectRecord {
 	return database.SubjectRecord{
 		ID:           subject.ID,
 		Type:         string(subject.Type),
 		DefaultScope: string(subject.DefaultScope),
+	}
+}
+
+func toSubject(rec database.SubjectRecord) rbac.Subject {
+	return rbac.Subject{
+		ID:           rec.ID,
+		Type:         rbac.SubjectType(rec.Type),
+		DefaultScope: rbac.Scope(rec.DefaultScope),
 	}
 }
 

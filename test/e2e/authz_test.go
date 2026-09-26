@@ -26,6 +26,8 @@ import (
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/identity"
+	identitygormstore "github.com/poetlife/aladdin/internal/identity/gormstore"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
@@ -46,6 +48,15 @@ type harness struct {
 
 // startServer 在随机端口上启动服务端，并注入一个测试主体。
 func startServer(t *testing.T, roleID string, scope rbac.Scope) harness {
+	t.Helper()
+	return startServerWith(t, roleID, scope, nil)
+}
+
+// startServerWith 允许注入身份令牌校验器，供认证链路的用例使用。
+//
+// verifier 为 nil 时那条登录路径整体缺席：机器凭证照常可用，Google 登录
+// 返回"未实现"——未启用的登录方式不该退化成一个可用的后门。
+func startServerWith(t *testing.T, roleID string, scope rbac.Scope, verifier identity.TokenVerifier) harness {
 	t.Helper()
 
 	cfg := config.DefaultServer()
@@ -77,7 +88,14 @@ func startServer(t *testing.T, roleID string, scope rbac.Scope) harness {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	srv := server.New(cfg, logger, nil, store)
+	// 认证模块的存储同样落在真实连接上：会话与身份别名是这条链路上的
+	// 一等数据，用内存实现在这里等于把"表没建、写入没落盘"挡在测试之外。
+	identityStore := identitygormstore.NewIdentityStore(store.DB())
+	srv := server.New(cfg, logger, nil, store, server.IdentityStores{
+		Identities: identity.NewIdentities(identityStore, store),
+		Sessions:   identity.NewSessions(identitygormstore.New(store.DB())),
+		Verifier:   verifier,
+	})
 	if err := srv.Store().PutSubject(context.Background(), rbac.Subject{
 		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,
 	}); err != nil {

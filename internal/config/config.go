@@ -39,6 +39,10 @@ const (
 	EnvDatabaseDriver = "ALADDIN_DATABASE_DRIVER"
 	EnvDatabaseDSN    = "ALADDIN_DATABASE_DSN"
 
+	EnvGoogleClientID        = "ALADDIN_GOOGLE_CLIENT_ID"
+	EnvBootstrapAdminSubject = "ALADDIN_BOOTSTRAP_ADMIN_SUBJECT"
+	EnvBootstrapAdminScope   = "ALADDIN_BOOTSTRAP_ADMIN_SCOPE"
+
 	EnvOTelEndpoint    = "ALADDIN_OTEL_ENDPOINT"
 	EnvOTelInsecure    = "ALADDIN_OTEL_INSECURE"
 	EnvOTelSampleRatio = "ALADDIN_OTEL_SAMPLE_RATIO"
@@ -53,6 +57,10 @@ const (
 
 	keyDatabaseDriver = "database_driver"
 	keyDatabaseDSN    = "database_dsn"
+
+	keyGoogleClientID        = "google_client_id"
+	keyBootstrapAdminSubject = "bootstrap_admin_subject"
+	keyBootstrapAdminScope   = "bootstrap_admin_scope"
 
 	keyOTelEndpoint    = "otel_endpoint"
 	keyOTelInsecure    = "otel_insecure"
@@ -101,6 +109,33 @@ type DatabaseConfig struct {
 	DSN string
 }
 
+// BootstrapConfig 描述如何建立系统里的第一个管理员。
+//
+// 它**只在存储中不存在任何角色绑定时生效**，且写入的是一条真实的角色绑定；
+// 判定路径只读存储、从不读配置，因此它不是权限的来源（见
+// docs/design/config/README.md 的"唯一例外：引导"）。
+//
+// 两项必须同时给出或同时留空：半套引导的失败方式是"看起来生效了"——
+// 要么建出一条作用域不明的绑定，要么建出一条主体不明的绑定。
+type BootstrapConfig struct {
+	// Subject 是获得首个管理员角色的主体标识。
+	//
+	// 取值必须是**主体标识**（由 aladdin 分配、分配即冻结），不是邮箱，
+	// 也不是渠道上的身份标识：邮箱在渠道侧可改名、可回收，回收给另一个
+	// 人的那天就是一次无痕提权。
+	Subject string
+	// Scope 是这次授予的作用域。
+	Scope string
+}
+
+// Empty 表示不引导。这是默认情形。
+func (b BootstrapConfig) Empty() bool { return b.Subject == "" && b.Scope == "" }
+
+// Partial 表示只给出了两项中的一项——必须拒绝启动。
+func (b BootstrapConfig) Partial() bool {
+	return (b.Subject == "") != (b.Scope == "")
+}
+
 // ServerConfig 是服务端启动配置。
 type ServerConfig struct {
 	// Address 是**监听**地址，不是目标地址。
@@ -111,6 +146,14 @@ type ServerConfig struct {
 	LogFile string
 	// Database 是数据的存放位置。
 	Database DatabaseConfig
+	// GoogleClientID 是 Google 登录用的客户端标识；为空表示未启用该登录方式。
+	//
+	// 它**不是秘密**：这个值明文出现在浏览器里，是这类登录方式的设计前提，
+	// 因此放在配置里不违反"配置中不得出现凭证"。真正需要保密的是客户端
+	// 密钥，而浏览器登录流程不使用它（见 docs/design/identity/google-login.md）。
+	GoogleClientID string
+	// Bootstrap 描述如何建立第一个管理员。
+	Bootstrap BootstrapConfig
 	// OTelEndpoint 是 OTLP/HTTP 端点。为空表示不上报——
 	// 但链路标识照常生成、传播、回写响应头（见 docs/observability.md）。
 	OTelEndpoint string
@@ -204,6 +247,9 @@ func (c ServerConfig) Validate() error {
 	if err := validateDatabase(c.Database); err != nil {
 		return err
 	}
+	if err := validateBootstrap(c.Bootstrap); err != nil {
+		return err
+	}
 	return validateTelemetry(c.OTelEndpoint, c.OTelSampleRatio)
 }
 
@@ -277,6 +323,18 @@ func validateDatabase(db DatabaseConfig) error {
 	}
 	if db.DSN == "" {
 		return invalidKey(keyDatabaseDSN, EnvDatabaseDSN, "不能为空")
+	}
+	return nil
+}
+
+// validateBootstrap 校验引导配置两项齐全。
+//
+// 与 validateDatabase 同理，这里只判"形状"：引导是否**真的**生效取决于
+// 存储中是否存在绑定，那是服务端启动时才知道的事。
+func validateBootstrap(b BootstrapConfig) error {
+	if b.Partial() {
+		return invalidKey(keyBootstrapAdminSubject, EnvBootstrapAdminSubject,
+			"与 "+keyBootstrapAdminScope+"（"+EnvBootstrapAdminScope+"）必须同时给出或同时留空")
 	}
 	return nil
 }

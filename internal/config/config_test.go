@@ -22,6 +22,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		EnvAddress, EnvLogLevel, EnvLogFile, EnvTimeout, EnvConfig,
 		EnvDatabaseDriver, EnvDatabaseDSN,
+		EnvGoogleClientID, EnvBootstrapAdminSubject, EnvBootstrapAdminScope,
 	} {
 		t.Setenv(k, "")
 	}
@@ -440,6 +441,17 @@ func TestValidate(t *testing.T) {
 		// 后端取值是否属于已知集合不在这里判：合法取值只有 internal/database
 		// 一份，在这里再列一遍就是第二个来源。拒绝发生在 database.Open，
 		// 仍早于监听端口打开，用例见 internal/database 与 test/e2e。
+		{"引导不配置", func(c *ServerConfig) { c.Bootstrap = BootstrapConfig{} }, true},
+		{"引导两项齐全", func(c *ServerConfig) {
+			c.Bootstrap = BootstrapConfig{Subject: "google:1", Scope: "root"}
+		}, true},
+		{"引导只填主体", func(c *ServerConfig) {
+			c.Bootstrap = BootstrapConfig{Subject: "google:1"}
+		}, false},
+		{"引导只填作用域", func(c *ServerConfig) {
+			c.Bootstrap = BootstrapConfig{Scope: "root"}
+		}, false},
+		{"客户端标识为空即未启用", func(c *ServerConfig) { c.GoogleClientID = "" }, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -605,14 +617,23 @@ func TestExampleConfigsMatchSchema(t *testing.T) {
 func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 	t.Run("服务端", func(t *testing.T) {
 		samples := map[string]string{
-			keyAddress:         "127.0.0.1:3101",
-			keyLogLevel:        "warn",
-			keyLogFile:         "/tmp/aladdin-test.log",
-			keyDatabaseDriver:  "mysql",
-			keyDatabaseDSN:     "aladdin@tcp(127.0.0.1:3306)/aladdin",
-			keyOTelEndpoint:    "collector:4318",
-			keyOTelInsecure:    "true",
-			keyOTelSampleRatio: "0.5",
+			keyAddress:               "127.0.0.1:3101",
+			keyLogLevel:              "warn",
+			keyLogFile:               "/tmp/aladdin-test.log",
+			keyDatabaseDriver:        "mysql",
+			keyDatabaseDSN:           "aladdin@tcp(127.0.0.1:3306)/aladdin",
+			keyGoogleClientID:        "1234567890.apps.googleusercontent.com",
+			keyBootstrapAdminSubject: "google:110000000000000000001",
+			keyBootstrapAdminScope:   "root",
+			keyOTelEndpoint:          "collector:4318",
+			keyOTelInsecure:          "true",
+			keyOTelSampleRatio:       "0.5",
+		}
+		// 引导的两项必须成对出现。单独写一项会被校验拒绝，那样这个用例测的
+		// 就成了"半套配置被拒吗"——那是另一回事，另有专门的用例守着。
+		companions := map[string]string{
+			keyBootstrapAdminSubject: keyBootstrapAdminScope + ": root\n",
+			keyBootstrapAdminScope:   keyBootstrapAdminSubject + ": google:110000000000000000001\n",
 		}
 		for _, key := range serverKeys {
 			sample, ok := samples[key]
@@ -623,7 +644,7 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			clearEnv(t)
 			dir := t.TempDir()
 			t.Chdir(dir)
-			write(t, filepath.Join(dir, FileName), key+": "+sample+"\n")
+			write(t, filepath.Join(dir, FileName), key+": "+sample+"\n"+companions[key])
 
 			cfg, err := LoadServer(ServerFlags{})
 			if err != nil {

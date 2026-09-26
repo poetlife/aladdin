@@ -19,5 +19,8 @@ import (
 func migrations() []*gormigrate.Migration {
 	return []*gormigrate.Migration{
 		migration0001RBACTables,
+		migration0002SessionTable,
+		migration0003IdentitiesTable,
+		migration0004SessionSubjectType,
 	}
 }

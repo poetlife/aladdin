@@ -22,6 +22,10 @@ type layer struct {
 	databaseDriver *string
 	databaseDSN    *string
 
+	googleClientID        *string
+	bootstrapAdminSubject *string
+	bootstrapAdminScope   *string
+
 	otelEndpoint    *string
 	otelInsecure    *bool
 	otelSampleRatio *float64
@@ -88,6 +92,15 @@ func serverEnvOverrides() (layer, error) {
 	if v := os.Getenv(EnvDatabaseDSN); v != "" {
 		l.databaseDSN = &v
 	}
+	if v := os.Getenv(EnvGoogleClientID); v != "" {
+		l.googleClientID = &v
+	}
+	if v := os.Getenv(EnvBootstrapAdminSubject); v != "" {
+		l.bootstrapAdminSubject = &v
+	}
+	if v := os.Getenv(EnvBootstrapAdminScope); v != "" {
+		l.bootstrapAdminScope = &v
+	}
 	return l, nil
 }
 
@@ -153,6 +166,15 @@ func mergeServer(cfg ServerConfig, l layer) ServerConfig {
 	}
 	if l.databaseDSN != nil {
 		cfg.Database.DSN = *l.databaseDSN
+	}
+	if l.googleClientID != nil {
+		cfg.GoogleClientID = *l.googleClientID
+	}
+	if l.bootstrapAdminSubject != nil {
+		cfg.Bootstrap.Subject = *l.bootstrapAdminSubject
+	}
+	if l.bootstrapAdminScope != nil {
+		cfg.Bootstrap.Scope = *l.bootstrapAdminScope
 	}
 	cfg.OTelEndpoint, cfg.OTelInsecure, cfg.OTelSampleRatio = mergeTelemetry(
 		cfg.OTelEndpoint, cfg.OTelInsecure, cfg.OTelSampleRatio, l)

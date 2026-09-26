@@ -26,6 +26,7 @@ import (
 	identityv1connect "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
 	rbacv1connect "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
 	"github.com/poetlife/aladdin/internal/config"
+	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
@@ -39,29 +40,57 @@ const shutdownGrace = 10 * time.Second
 
 // Server 是 aladdin 的 RPC 服务端。
 type Server struct {
-	cfg        config.ServerConfig
-	logger     *zap.Logger
-	store      rbac.MutableStore
-	engine     *rbac.Engine
-	authn      interceptor.Authenticator
+	cfg      config.ServerConfig
+	logger   *zap.Logger
+	store    rbac.MutableStore
+	engine   *rbac.Engine
+	machine  *interceptor.TokenAuthenticator
+	sessions *identity.Sessions
+
 	httpServer *http.Server
+}
+
+// IdentityStores 是认证模块的入口，由入口进程用同一条连接构造后传入。
+//
+// 与 rbac 的 store 同理：连接的打开与结构迁移属于**启动顺序**的一部分，
+// 只能发生在入口进程里，这里拿到的是已经可用的实例。
+//
+// 三个字段都可以为零值：一个只服务机器凭证、不做人类登录的部署不需要它们，
+// 此时会话路径整体缺席，而不是退化成一个"什么都通过"的校验。
+type IdentityStores struct {
+	// Identities 是身份归属的唯一入口（登录时解析、绑定时写入）。
+	Identities *identity.Identities
+	// Sessions 是会话凭证的签发与失效入口。
+	Sessions *identity.Sessions
+	// Verifier 校验渠道签发的身份令牌；为 nil 表示该登录方式未启用。
+	Verifier identity.TokenVerifier
 }
 
 // New 按配置装配服务端。
 //
 // store 由调用方提供而不是在这里构造：存储的打开与迁移属于**启动顺序**
 // 的一部分（要在监听之前完成，失败即拒绝启动），而那件事只能发生在入口
-// 进程里。服务端拿到的是一个已经可用、已经迁移完毕的存储。
+// 进程里。服务端拿到的是一个已经可用、已经迁移完毕的存储。ident 同理。
 //
 // metrics 为 nil 时不记录请求指标；遥测的 provider 生命周期由调用方
 // （入口进程）管理，服务端只消费它建好的全局实现。
-func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore) *Server {
+func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores) *Server {
 	engine := rbac.NewEngine(store, logger, metrics)
-	authenticator := interceptor.NewTokenAuthenticator()
+	machine := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
 
-	identitySrv := NewIdentityService(store, engine)
-	identitySrv.SetAuthenticator(authenticator)
+	identitySrv := NewIdentityService(store, engine, IdentityDeps{
+		Machine:        machine,
+		Identities:     ident.Identities,
+		Sessions:       ident.Sessions,
+		Verifier:       ident.Verifier,
+		GoogleClientID: cfg.GoogleClientID,
+		Logger:         logger,
+	})
+
+	// 请求凭证的认证入口：机器凭证与会话凭证两条路径合到一处，
+	// 见 credential_authenticator.go。
+	authenticator := &credentialAuthenticator{machine: machine, sessions: ident.Sessions}
 
 	mux := http.NewServeMux()
 
@@ -132,7 +161,8 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		logger:     logger,
 		store:      store,
 		engine:     engine,
-		authn:      authenticator,
+		machine:    machine,
+		sessions:   ident.Sessions,
 		httpServer: httpServer,
 	}
 }
@@ -142,6 +172,13 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 // ctx 必须同时覆盖监听与运行：只用它做监听会导致进程收到 SIGTERM 后
 // 套接字已关闭、服务却仍在运行的假死状态。
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	// 回收已过期的会话行，然后才开门。
+	//
+	// 正确性**不依赖**它：过期的凭证本来就校验不过。它存在的唯一目的是
+	// 不让会话表无限增长，因此失败只记日志、不拒绝启动——一次回收失败
+	// 没有理由让整个权限平台起不来（见 docs/design/identity/session-token.md）。
+	s.reclaimExpiredSessions(ctx)
+
 	var lc net.ListenConfig
 	lis, err := lc.Listen(ctx, "tcp", s.cfg.Address)
 	if err != nil {
@@ -196,11 +233,28 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // Store 暴露存储，供本地开发与测试注入初始数据。
 func (s *Server) Store() rbac.MutableStore { return s.store }
 
-// Authenticator 暴露认证器，供本地开发签发开发用 token。
-func (s *Server) Authenticator() *interceptor.TokenAuthenticator {
-	auth, ok := s.authn.(*interceptor.TokenAuthenticator)
-	if !ok {
-		return nil
+// Authenticator 暴露机器凭证的认证器，供本地开发签发开发用 token。
+//
+// 返回的是**机器凭证那一侧**，不是请求认证的入口：会话凭证是登录时签发的，
+// 没有任何本地注入的入口。
+func (s *Server) Authenticator() *interceptor.TokenAuthenticator { return s.machine }
+
+// reclaimExpiredSessions 回收已过期的会话行。
+//
+// 它只在启动时跑一次，不引入后台循环：那会新增一个需要被监控、被优雅关闭、
+// 异常时可能静默死掉的进程内任务，而它换来的只是"表在两次重启之间增长得
+// 慢一点"。真到了单次运行周期内就涨到需要中途清理的量级，那时该重新审视
+// 有效期长度，而不是加一个循环（见 docs/design/identity/session-token.md）。
+func (s *Server) reclaimExpiredSessions(ctx context.Context) {
+	if s.sessions == nil {
+		return
 	}
-	return auth
+	removed, err := s.sessions.Cleanup(ctx)
+	if err != nil {
+		s.logger.Warn("回收过期会话失败，服务照常启动", zap.Error(err))
+		return
+	}
+	if removed > 0 {
+		s.logger.Info("已回收过期会话", zap.Int64("removed", removed))
+	}
 }
