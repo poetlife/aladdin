@@ -29,7 +29,31 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          # 关掉 setup-go 自带的缓存，改用下面那一步。它自带的缓存 key 只看
+          # go.sum 的哈希、且按 git ref 隔离，既没有回退 key 又被分支切分，
+          # 实测五条缓存条目里只有一条被复用过——等于没有缓存。
+          # 而 Go 的编译开销正是门禁的主要成本：热缓存下 make test 是 0.8s，
+          # 冷缓存下是 49s；make lint 是 1.5s 对 30s。
+          cache: false
+
+      - name: 缓存 Go 模块与构建缓存
+        # 相比 setup-go 自带的缓存，这里只多了一件事：restore-keys 回退。
+        # 回退在这里是安全的，而且比在别处更安全——GOMODCACHE 是不可变的
+        # 版本目录，GOCACHE 由输入哈希寻址，所以旧缓存只可能"没命中"，
+        # 不可能算出错误结果。它省掉的只有时间。
+        #
+        # key 用 go.sum 的哈希而不是提交号，与 setup-go 的默认取法一致：
+        # 同一个 key 只存一次，不会每跑一次就堆一个 800MB 的新条目。
+        # 代价是缓存停在首次保存时的那份，仓库自身的包仍要重编——
+        # 但编译开销的大头是 otel/gRPC/gorm 这些永不改变的三方依赖，
+        # 它们从头到尾都在缓存里。
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-
 
       - name: 安装 Node
         uses: actions/setup-node@v4
@@ -37,6 +61,27 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
+
+      - name: 缓存已装好的工具
+        # buf 与 golangci-lint 都是大二进制，从源码编译合计 100s 上下，
+        # 占了门禁的一半，而它们的版本只在 Makefile 的 TOOLS 里变。
+        #
+        # key 取 Makefile 的哈希：Makefile 一改 key 就变，最坏是多装一次，
+        # 不会读到旧工具。版本仍然只有 Makefile 一个来源——这里只是缓存 key，
+        # 不是第二份版本定义。
+        #
+        # restore-keys 回退到最近一次任意 key：命中旧缓存时，make tools 会逐条
+        # 比对版本戳记，只重装真正变了的那一个。这条回退之所以安全，正是因为
+        # 那个逐条比对存在；没有它，回退就等于允许门禁跑到旧版本的工具上。
+        #
+        # 有意不缓存 golangci-lint 自己的分析结果（~/.cache/golangci-lint）。
+        # 上面两个缓存过期了只是慢一点，那一个过期了可能让一条 finding 不再出现，
+        # 而门禁里"少报一条"和"没有门禁"是一回事。
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: go-tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          restore-keys: go-tools-${{ runner.os }}-
 
       # 顺序有两处依赖，别随手调换：
       #   1. tools 必须先于 lint（buf lint）与 check-gen（buf generate）；

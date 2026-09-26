@@ -96,3 +96,4 @@
 | 两端各自认识的配置键 | `serverKeys` / `cliKeys` | [internal/config/file.go](../internal/config/file.go) |
 | CLI 凭证（令牌、绑定作用域、过期时间） | 用户配置目录下的 `credentials.json`，经 `auth.Resolve` 读取 | [internal/auth/credentials.go](../internal/auth/credentials.go) |
 | 环境变量名（`ALADDIN_` 前缀） | 各模块内集中定义：配置项在 config、凭证在 auth、开发旁路在 server；调用方不得手写字符串字面量 | [internal/config/config.go](../internal/config/config.go) |
+| 代码生成与静态检查工具的版本（本机安装与 CI 缓存 key 都由此派生） | Makefile 的 `TOOLS` 清单 | [Makefile](../Makefile) |
