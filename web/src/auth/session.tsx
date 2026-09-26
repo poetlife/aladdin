@@ -21,8 +21,10 @@ export interface SessionState {
   permissions: PermissionSet
   /** 加载失败时的错误信息。 */
   error: string | null
-  /** 使用凭证登录。 */
+  /** 使用机器凭证或访问令牌登录。 */
   signIn: (token: string) => Promise<void>
+  /** 使用 Google 签发的身份令牌登录。 */
+  signInWithGoogle: (idToken: string) => Promise<void>
   /** 清除本地凭证。 */
   signOut: () => void
   /** 切换作用域并重新拉取权限码。 */
@@ -140,13 +142,29 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     onUnauthenticated(clear)
   }, [clear])
 
-  const signIn = useCallback(
-    async (token: string): Promise<void> => {
-      const response = await identityApi.login(token)
+  // 两条登录路径的差别只在"拿什么去换凭证"，换到之后的动作完全相同：
+  // 落盘、再拉一次会话与权限码。抽出来是为了让"登录成功后要做什么"只有一份，
+  // 将来加第三种登录方式时不会漏掉其中一步。
+  const adoptCredential = useCallback(
+    async (response: { accessToken: string }): Promise<void> => {
       writeToken(response.accessToken)
       await load()
     },
     [load],
+  )
+
+  const signIn = useCallback(
+    async (token: string): Promise<void> => {
+      await adoptCredential(await identityApi.login(token))
+    },
+    [adoptCredential],
+  )
+
+  const signInWithGoogle = useCallback(
+    async (idToken: string): Promise<void> => {
+      await adoptCredential(await identityApi.loginWithGoogle(idToken))
+    },
+    [adoptCredential],
   )
 
   const setScope = useCallback(
@@ -170,11 +188,12 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
       permissions,
       error,
       signIn,
+      signInWithGoogle,
       signOut: clear,
       setScope,
       refresh: load,
     }),
-    [status, subject, scope, permissions, error, signIn, clear, setScope, load],
+    [status, subject, scope, permissions, error, signIn, signInWithGoogle, clear, setScope, load],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

@@ -1,5 +1,6 @@
 export { SessionProvider, useSession, tokenStorage } from './session'
 export type { SessionState, SessionStatus } from './session'
+export { GoogleSignInButton } from './google-sign-in-button'
 export { usePermission, useAnyPermission, useAllPermissions, usePermissionSet } from './use-permission'
 export { PermissionGate } from './permission-gate'
 export { RequirePermission } from './require-permission'

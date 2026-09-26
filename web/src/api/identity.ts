@@ -28,3 +28,27 @@ export async function whoAmI() {
 export async function getSessionPermissions(scope: string) {
   return identityClient().getSessionPermissions({ scope })
 }
+
+/**
+ * 查询服务端当前启用了哪些登录方式。
+ *
+ * 公开方法，不需要凭证——调用方尚未认证，而这正是它要回答的问题的前提。
+ *
+ * 前端**不得**把客户端标识写进构建产物。它是服务端配置的派生结果，编一份
+ * 进来就会与配置漂移，而漂移的表现是"改了服务端配置，前端还在用旧的"。
+ */
+export async function getAuthMethods() {
+  return identityClient().getAuthMethods({})
+}
+
+/**
+ * 用 Google 签发的身份令牌换取会话凭证。
+ *
+ * 令牌由 Google 在浏览器内签发（见 ../auth/google-identity），这里只是搬运：
+ * 它的可信度完全由服务端校验，前端的任何字段都不参与信任决策。
+ */
+export async function loginWithGoogle(idToken: string) {
+  return identityClient().login({
+    credential: { case: 'google', value: { idToken } },
+  })
+}
