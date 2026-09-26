@@ -17,6 +17,9 @@ import (
 	"github.com/poetlife/aladdin/internal/identity"
 	identitygormstore "github.com/poetlife/aladdin/internal/identity/gormstore"
 	"github.com/poetlife/aladdin/internal/observability"
+	"github.com/poetlife/aladdin/internal/profile"
+	"github.com/poetlife/aladdin/internal/profile/cosstore"
+	profilegormstore "github.com/poetlife/aladdin/internal/profile/gormstore"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
 )
@@ -86,6 +89,8 @@ func run() error {
 		zap.String("otel_endpoint", cfg.OTelEndpoint),
 		zap.String("database_driver", cfg.Database.Driver),
 		zap.String("database", database.Describe(cfg.Database)),
+		// 头像存储同理：只记桶地址，**不记密钥**（见 config.COSConfig.Describe）。
+		zap.String("cos", cfg.COS.Describe()),
 	)
 
 	// 打开库并迁移，全程发生在监听之前：迁移失败即拒绝启动，不会出现
@@ -108,12 +113,23 @@ func run() error {
 	identityStore := identitygormstore.NewIdentityStore(store.DB())
 	identities := identity.NewIdentities(identityStore, store)
 
+	// 头像存储是可选能力。未配置时返回一个**真正的 nil**：头像功能整体缺席，
+	// 而不是退化成一个"什么都存不下"的实现——服务端据此把"头像功能不可用"
+	// 下发给前端，前端不渲染上传区（见 docs/design/profile/avatar-storage.md）。
+	avatars, err := newAvatarStore(cfg.COS)
+	if err != nil {
+		return err
+	}
+
 	srv := server.New(cfg, logger, metrics, store, server.IdentityStores{
 		Identities: identities,
 		Sessions:   sessions,
 		// 未配置客户端标识时这里是一个真正的 nil：那条登录路径整体缺席，
 		// 而不是退化成一个"什么都通过"的校验器。
 		Verifier: identity.NewGoogleVerifier(cfg.GoogleClientID),
+	}, server.ProfileStores{
+		Profiles: profilegormstore.New(store.DB()),
+		Avatars:  avatars,
 	})
 
 	// 引导先于种子：它只在存储里一条绑定都没有时生效，而种子会写入绑定。
@@ -135,4 +151,26 @@ func run() error {
 	}
 
 	return serveErr
+}
+
+// newAvatarStore 按配置构造头像存储；未配置时返回真正的 nil。
+//
+// 返回 nil 而不是一个"空实现"，是为了让"这个部署有没有头像功能"在
+// server.ProfileStores 里是一个**可判定的布尔事实**，而不是一个总是成功、
+// 但什么也存不下的实现——后者会让前端渲染出一个传不上去的上传区。
+//
+// 半套配置不会走到这里：config.LoadServer 已经拒绝启动了。
+func newAvatarStore(cos config.COSConfig) (profile.AvatarStore, error) {
+	if !cos.Enabled() {
+		return nil, nil
+	}
+	store, err := cosstore.New(cosstore.Config{
+		BucketURL: cos.BucketURL,
+		SecretID:  cos.SecretID,
+		SecretKey: cos.SecretKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("构造头像存储失败: %w", err)
+	}
+	return store, nil
 }

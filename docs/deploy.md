@@ -45,7 +45,11 @@ aladdin 的服务端是一个只讲 RPC 的进程：它不托管静态文件、�
                                    ▼
                         aladdin-server（systemd，仅回环 :9090）
                           /opt/aladdin/config.yml
+                          /opt/aladdin/cos.env（0600，可选）
                           /opt/aladdin/data/aladdin.db（sqlite）
+                                   │
+                                   └─▶ COS 桶（私有读写，头像；可选）
+   浏览器 ──〈用预签名地址直连取头像〉──▶ 同一个 COS 桶
 
    CLI ── ssh -L 9090:127.0.0.1:9090 <主机别名> ──▶ 同一个回环端口
 ```
@@ -137,7 +141,34 @@ database_dsn: /opt/aladdin/data/aladdin.db
 
 > `/opt/aladdin/data` 必须已存在：服务端**不自动建目录**，这是刻意的——免得路径拼错时在一个奇怪的地方建出一个空库，看起来像数据全丢了。
 
-### 7. 装部署文件与 systemd 单元
+### 7. 建头像桶（可选）
+
+头像存在腾讯云 COS 上（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)）。**不做这一步服务端照样跑**：昵称与简介照常可用，只是前端不渲染头像上传区。
+
+要做就一次做完。**半套配置会让服务端拒绝启动**——只配桶地址不给密钥、或只给密钥不配桶地址，都在启动时报错并指出缺的是哪一项。
+
+1. **建一个桶，读写权限设为私有读写。** 公开读的桶等于把所有人的头像公开可列举，而"预签名地址"这个设计的前提正是桶私有。
+2. **建一个子账号（CAM），只授予这一个桶的权限，且尽量收窄到头像前缀。** 不要用主账号密钥：主账号密钥能操作该账号下的全部云资源，而服务端只需要碰一个桶里的一段前缀。
+3. **把密钥写进一个仅属主可读的文件**，交给 systemd 读：
+
+```bash
+sudo tee /opt/aladdin/cos.env >/dev/null <<'EOF'
+ALADDIN_COS_SECRET_ID=<子账号 SecretId>
+ALADDIN_COS_SECRET_KEY=<子账号 SecretKey>
+EOF
+sudo chown aladdin:aladdin /opt/aladdin/cos.env
+sudo chmod 0600 /opt/aladdin/cos.env
+```
+
+密钥**不进 `config.yml`**：那个文件会进版本库、进镜像、被贴给别人排查问题（见 [design/config/credentials.md](design/config/credentials.md)）。这与"生产机上不出现 `ALADDIN_DEV_SEED`"是同一条理由的两面。
+
+4. 在 `/opt/aladdin/config.yml` 填 `cos_bucket_url`——**完整桶主机名**（含 APPID 与地域，形如 `https://<桶名>-<APPID>.cos.<地域>.myqcloud.com`），然后重启。
+
+> **桶上不需要配 CORS。** 前端用 `<img src>` 直接取图，浏览器不发跨域读请求。将来若改成用 `fetch` 取字节再转 blob，就必须在桶上配 CORS——那时的表现是控制台报 CORS 错误、图片不显示。
+
+> **对象键是 `avatars/<主体标识>`，前缀是常量。** 换桶等于所有存量头像在新桶里都不存在（表现是所有人头像都不显示），而档案本身没有被动过——重新上传即可。
+
+### 8. 装部署文件与 systemd 单元
 
 在**本机**的仓库里执行：
 
@@ -158,7 +189,9 @@ sudo systemctl enable aladdin-server
 
 单元文件里**没有** `ALADDIN_DEV_SEED` 这类环境变量，也不应该有：那是绕过真实认证的开发旁路，且它写进去的主体与绑定会**落库**，一次误开在库里留下的是长期存在的真实数据，取消环境变量并不会清除它们（见 [design/config/server-config.md](design/config/server-config.md)）。
 
-### 8. 发布第一个版本
+单元文件里有 `EnvironmentFile=-/opt/aladdin/cos.env`。**`-` 前缀是有意的**：文件不存在时 systemd 不报错，因此没做第 7 步的部署照常启动，头像功能保持未启用。COS 密钥是这里唯一需要走环境变量的凭证——它不能进配置文件（理由同上），而 `cos.env` 是 0600、属主是服务账号，与 CLI 侧凭证文件的保护方式一致。
+
+### 9. 发布第一个版本
 
 仓库里还没有任何 tag 时，Release 是不存在的。先按 [release.md](release.md) 打一个 `vX.Y.Z` 的 tag 推上去，等流水线产出 Release，然后：
 
@@ -166,7 +199,7 @@ sudo systemctl enable aladdin-server
 sudo /opt/aladdin/deploy.sh
 ```
 
-### 9. 首次引导管理员
+### 10. 首次引导管理员
 
 系统里还没有任何角色绑定时，需要建立第一个管理员。**机器凭证在生产不可用**——它只能由开发种子旁路产生，而生产不开那个旁路。因此第一个管理员必须走真实登录：
 
@@ -270,6 +303,10 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 数据"看起来全丢了" | 验证真实的数据路径：`sudo journalctl -u aladdin-server \| grep -i 数据库`——启动日志有脱敏后的定位信息 |
 | 服务被 OOM 杀掉后自动重启 | `journalctl -u aladdin-server \| grep -i memory`；单元里的 `MemoryMax` 是保险丝，不是估算 |
 | 改了 nginx 配置没生效 | 需要 `sudo nginx -t && sudo systemctl reload nginx`；反过来，**只换静态产物不需要 reload** |
+| 头像不显示，昵称与简介正常 | 桶地址与密钥是否配好（`sudo journalctl -u aladdin-server \| grep -i 头像`）；预签名地址是否已过有效期——刷新页面即拿到新地址 |
+| 服务端起不来且日志说缺 COS 密钥 | 半套头像配置：只配了 `cos_bucket_url` 没给密钥，或反之。这是有意拒绝启动，不是故障 |
+| 控制台报 CORS 错误、头像不显示 | 前端是不是改成了 `fetch` 取字节；`<img src>` 不需要 CORS，`fetch` 需要 |
+| 换了桶之后所有人头像都不显示 | 对象键在新桶里不存在；档案本身没被动过，重新上传即可 |
 
 ## 依赖关系
 
@@ -281,6 +318,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 身份认证 | 首次引导依赖一次真实登录产出的主体标识（见 [design/identity/google-login.md](design/identity/google-login.md)） |
 | 反向代理 | 提供 TLS 终止、静态托管与到 9090 的转发；具体用什么、443 上还有没有别人，由宿主决定 |
 | 可观测性 | 日志走 journald；`otel_endpoint` 留空表示不上报，链路标识照常生成与传播 |
+| 头像存储 | COS 私有桶；桶地址由 `cos_bucket_url` 给出，密钥由 systemd 的 `EnvironmentFile` 提供（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)） |
 
 ## 可验证性与长程执行
 
@@ -298,6 +336,9 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 证书可续期 | `certbot renew --dry-run` 通过；`:80` 的 ACME location 仍在 |
 | 生产无认证旁路 | 生产机上 `ALADDIN_DEV_SEED` 未出现在 systemd 单元与环境中 |
 | 备份可用 | `VACUUM INTO` 产出的快照能被一个新进程打开并读到既有数据 |
+| 密钥文件仅属主可读 | `/opt/aladdin/cos.env` 权限为 0600、属主为 aladdin（部署后核对） |
+| 桶为私有读写 | 去掉预签名参数直接访问对象地址被拒（部署后冒烟） |
+| 头像功能可缺省 | 未做第 7 步的部署照常启动，前端不渲染头像上传区（部署后冒烟） |
 | 仓库不含实例值 | `git log --all -p \| grep -iE "真实域名\|主机别名\|公网 IP"` 无命中（长期项：**每次提交前**都要成立） |
 
 ---

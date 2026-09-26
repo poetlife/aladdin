@@ -46,6 +46,12 @@ table sessions
   subject_id text pk=false null=true
   subject_type text pk=false null=true
   token_hash text pk=true null=true
+table subject_profiles
+  avatar_key text pk=false null=true
+  bio text pk=false null=true
+  nickname text pk=false null=true
+  subject_id text pk=true null=true
+  updated_at datetime pk=false null=true
 table subjects
   default_scope text pk=false null=true
   id text pk=true null=true

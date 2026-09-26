@@ -22,6 +22,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		EnvAddress, EnvLogLevel, EnvLogFile, EnvTimeout, EnvConfig,
 		EnvDatabaseDriver, EnvDatabaseDSN,
+		EnvCOSBucketURL, EnvCOSSecretID, EnvCOSSecretKey,
 		EnvGoogleClientID, EnvBootstrapAdminSubject, EnvBootstrapAdminScope,
 	} {
 		t.Setenv(k, "")
@@ -634,6 +635,7 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyLogFile:               "/tmp/aladdin-test.log",
 			keyDatabaseDriver:        "mysql",
 			keyDatabaseDSN:           "aladdin@tcp(127.0.0.1:3306)/aladdin",
+			keyCOSBucketURL:          "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com",
 			keyGoogleClientID:        "1234567890.apps.googleusercontent.com",
 			keyBootstrapAdminSubject: "google:110000000000000000001",
 			keyBootstrapAdminEmail:   "admin@example.com",
@@ -649,6 +651,16 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyBootstrapAdminEmail:   keyBootstrapAdminScope + ": root\n",
 			keyBootstrapAdminScope:   keyBootstrapAdminSubject + ": google:110000000000000000001\n",
 		}
+		// 生效前提来自环境变量的键。头像桶地址本身不是秘密、可以写进配置文件，
+		// 但它的两项密钥只有环境变量这一个来源（见 EnvCOSSecretID），因此这个
+		// 键必须连环境变量一起给出——否则走的是"半套配置拒绝启动"那条路径，
+		// 而那是另一回事，另有专门的用例守着。
+		envCompanions := map[string]map[string]string{
+			keyCOSBucketURL: {
+				EnvCOSSecretID:  "test-secret-id",
+				EnvCOSSecretKey: "test-secret-key",
+			},
+		}
 		for _, key := range serverKeys {
 			sample, ok := samples[key]
 			if !ok {
@@ -656,6 +668,9 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			}
 
 			clearEnv(t)
+			for name, value := range envCompanions[key] {
+				t.Setenv(name, value)
+			}
 			dir := t.TempDir()
 			t.Chdir(dir)
 			write(t, filepath.Join(dir, FileName), key+": "+sample+"\n"+companions[key])
@@ -734,6 +749,146 @@ func checkKeys(t *testing.T, raw string, declared []string) {
 		if !inFile[k] {
 			t.Errorf("实现声明的键 %q 没有出现在示例里", k)
 		}
+	}
+}
+
+// 头像存储的四种情形：全空不启用、全给启用，两种半套都拒绝启动。
+func TestValidateCOS(t *testing.T) {
+	const bucket = "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
+	full := COSConfig{BucketURL: bucket, SecretID: "id", SecretKey: "key"}
+
+	t.Run("全空即未启用", func(t *testing.T) {
+		if err := validateCOS(COSConfig{}); err != nil {
+			t.Errorf("err = %v，期望不启用且不报错", err)
+		}
+	})
+
+	t.Run("全给即启用", func(t *testing.T) {
+		if err := validateCOS(full); err != nil {
+			t.Errorf("err = %v，期望通过", err)
+		}
+	})
+
+	t.Run("有桶没密钥", func(t *testing.T) {
+		cos := full
+		cos.SecretID, cos.SecretKey = "", ""
+		err := validateCOS(cos)
+		if err == nil {
+			t.Fatal("期望拒绝启动")
+		}
+		// 错误信息必须指出缺的是哪一项，否则用户只知道"配错了"。
+		for _, want := range []string{EnvCOSSecretID, EnvCOSSecretKey} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("错误信息 %q 缺少 %q", err, want)
+			}
+		}
+	})
+
+	t.Run("只缺一项密钥", func(t *testing.T) {
+		cos := full
+		cos.SecretKey = ""
+		err := validateCOS(cos)
+		if err == nil {
+			t.Fatal("期望拒绝启动")
+		}
+		if !strings.Contains(err.Error(), EnvCOSSecretKey) {
+			t.Errorf("错误信息 %q 应当指出缺的是 %s", err, EnvCOSSecretKey)
+		}
+	})
+
+	t.Run("有密钥没桶", func(t *testing.T) {
+		cos := full
+		cos.BucketURL = ""
+		err := validateCOS(cos)
+		if err == nil {
+			t.Fatal("期望拒绝启动：密钥有主、桶没主")
+		}
+		if !strings.Contains(err.Error(), keyCOSBucketURL) {
+			t.Errorf("错误信息 %q 应当指出 %s 为空", err, keyCOSBucketURL)
+		}
+	})
+
+	t.Run("桶地址不是 https", func(t *testing.T) {
+		for _, bad := range []string{
+			"http://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com",
+			"aladdin-1250000000.cos.ap-guangzhou.myqcloud.com",
+			"https://",
+		} {
+			cos := full
+			cos.BucketURL = bad
+			if err := validateCOS(cos); err == nil {
+				t.Errorf("桶地址 %q 被接受了，期望拒绝启动", bad)
+			}
+		}
+	})
+}
+
+// 密钥只从环境变量来，且半套配置在真实加载路径上就拒绝启动。
+func TestCOSSecretsComeFromEnv(t *testing.T) {
+	const bucket = "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
+	dir := t.TempDir()
+	t.Chdir(dir)
+	clearEnv(t)
+
+	t.Setenv(EnvCOSBucketURL, bucket)
+	t.Setenv(EnvCOSSecretID, "the-id")
+	if _, err := LoadServer(ServerFlags{}); err == nil {
+		t.Fatal("只给了 SecretID，期望拒绝启动")
+	} else if !strings.Contains(err.Error(), EnvCOSSecretKey) {
+		t.Errorf("错误信息 %q 应当指出缺的是 %s", err, EnvCOSSecretKey)
+	}
+
+	t.Setenv(EnvCOSSecretKey, "the-key")
+	cfg, err := LoadServer(ServerFlags{})
+	if err != nil {
+		t.Fatalf("三项齐全仍加载失败: %v", err)
+	}
+	if !cfg.COS.Enabled() {
+		t.Error("三项齐全时头像应当已启用")
+	}
+	if cfg.COS.BucketURL != bucket || cfg.COS.SecretID != "the-id" || cfg.COS.SecretKey != "the-key" {
+		t.Errorf("cfg.COS = %+v，与设置的不一致", cfg.COS)
+	}
+}
+
+// **密钥不可由配置提供。**
+//
+// 这条不是风格偏好：一旦它们有了配置键，它们就会出现在某个人的 config.yml 里，
+// 而那个文件会进版本库、进镜像、被贴给别人排查问题。因此写进配置文件必须被
+// 当成"无法识别的键"拒绝，而不是被静默接受。
+func TestCOSSecretsAreNotConfigKeys(t *testing.T) {
+	for _, key := range []string{"cos_secret_id", "cos_secret_key"} {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		clearEnv(t)
+		write(t, filepath.Join(dir, FileName), key+": some-secret\n")
+
+		if _, err := LoadServer(ServerFlags{}); !errors.Is(err, ErrInvalid) {
+			t.Errorf("把 %s 写进配置文件 = %v，期望 ErrInvalid（未知键）", key, err)
+		}
+	}
+}
+
+// Describe 是"把这项配置写进启动日志"的唯一安全入口：含桶地址，不含密钥。
+func TestCOSDescribeHidesSecrets(t *testing.T) {
+	cos := COSConfig{
+		BucketURL: "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com",
+		SecretID:  "the-id",
+		SecretKey: "the-key",
+	}
+
+	got := cos.Describe()
+	for _, secret := range []string{"the-id", "the-key"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("Describe = %q，不该含密钥", got)
+		}
+	}
+	if !strings.Contains(got, cos.BucketURL) {
+		t.Errorf("Describe = %q，应当含桶地址——那是回答「这一项到底有没有被读到」的唯一线索", got)
+	}
+
+	if empty := (COSConfig{}).Describe(); empty != "未启用" {
+		t.Errorf("未启用时 Describe = %q，期望 %q", empty, "未启用")
 	}
 }
 
