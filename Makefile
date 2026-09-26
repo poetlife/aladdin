@@ -18,16 +18,25 @@ SHA256      := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum ||
 
 # 生成代码与静态检查所需的工具。用 `go install` 固定版本，避免"我这能跑"。
 #
+# 五条一律钉到具体版本，不留 @latest：留一个，本机与 CI 就可能装到不同的版本，
+# "我这能跑"只是从本机搬到了 CI，而且失败会发生在没人动过 proto 的日子里
+# （protoc-gen-go-grpc 的输出会随之改变，make check-gen 因此报不同步）。
+#
+# 这份清单同时是 CI 工具缓存的失效依据（见 .github/workflows/gate.yml）：
+# 改这里会让缓存 key 变化。缓存 key 是派生物，版本仍然只有这一处来源。
+#
 # golangci-lint 也在这里，而不是"本机装了就用、没装就跳过"：CI 门禁里
 # 静默跳过等于没有门禁（见 make lint）。
 TOOLS := \
 	google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12 \
-	google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest \
+	google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2 \
 	connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.0 \
 	github.com/bufbuild/buf/cmd/buf@v1.73.0 \
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
-export PATH := $(shell go env GOPATH)/bin:$(PATH)
+TOOL_BIN := $(shell go env GOPATH)/bin
+
+export PATH := $(TOOL_BIN):$(PATH)
 
 .DEFAULT_GOAL := help
 .PHONY: help
@@ -38,8 +47,23 @@ help: ## 显示本帮助
 ## ---------------------------------------------------------------- 依赖与生成
 
 .PHONY: tools
-tools: ## 安装代码生成与静态检查工具
-	@for t in $(TOOLS); do echo ">>> go install $$t"; go install $$t || exit 1; done
+tools: ## 安装代码生成与静态检查工具（已装且版本一致则跳过）
+	@# 逐个工具比对：二进制在、且戳记里的版本与 TOOLS 一致，才跳过。
+	@# 两条都要判——只看戳记会让"二进制被人删了"变成静默跳过，
+	@# 而门禁里静默跳过等于没有门禁（同上）。
+	@# 逐条判断而非整体判断，是为了让"只升了 golangci-lint"不连累 buf 重编 1 分钟。
+	@for t in $(TOOLS); do \
+		name=$$(printf '%s' "$$t" | sed -e 's/@.*//' -e 's#.*/##'); \
+		marker="$(TOOL_BIN)/.tool-$$name"; \
+		if [ -x "$(TOOL_BIN)/$$name" ] && [ -f "$$marker" ] \
+			&& [ "$$(cat "$$marker")" = "$$t" ]; then \
+			echo ">>> 已就绪 $$name（$$t）"; \
+			continue; \
+		fi; \
+		echo ">>> go install $$t"; \
+		go install "$$t" || exit 1; \
+		printf '%s' "$$t" > "$$marker"; \
+	done
 
 .PHONY: gen
 gen: ## 由 proto 与权限目录生成两端代码（唯一生成入口）

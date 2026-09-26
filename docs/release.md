@@ -27,6 +27,19 @@
 8. `make test-web`
 9. `make web-build`
 
+工具版本只有一处来源：Makefile 的 `TOOLS`。全部钉到具体版本，不留 `@latest`——留一个，本机与 CI 就可能装到不同版本，失败还会发生在没人动过 proto 的日子里。`make tools` 逐个工具比对"二进制在不在 + 版本一不一致"，一致就跳过：`buf` 与 `golangci-lint` 都是大二进制，从源码编译合计 100s 上下，占了门禁一半的时间。
+
+### 时间花在哪里
+
+门禁的成本大头是**编译**，不是测试本身。同一份代码在本机热缓存下：`make test` 0.8s、`make lint` 1.5s、`make test-e2e` 0.3s、前端两步各 2s 上下。CI 冷缓存下 `make test` 是 49s、`make lint` 是 30s。所以 `gate.yml` 里那两处缓存比任何步骤优化都重要：
+
+- **Go 模块与构建缓存**（`~/go/pkg/mod` + `~/.cache/go-build`）。`setup-go` 自带的缓存 key 只看 `go.sum` 的哈希、且按 git ref 隔离、又没有回退，实测五条缓存条目里只有一条被复用过，因此关掉它，改用显式的 `actions/cache` 加 `restore-keys`。
+- **装好的工具**（`~/go/bin`）。key 取 Makefile 的哈希。**缓存 key 是派生物，不是第二份版本定义**；回退到旧缓存也安全，因为 `make tools` 会逐条比对版本戳记，只重装真正变了的那一个。
+
+这两处缓存回退之所以放心，是因为它们过期只意味着"多编译一遍"：`GOMODCACHE` 是不可变的版本目录，`GOCACHE` 由输入哈希寻址，旧条目只可能 miss、不可能算错。
+
+**有意不缓存 `~/.cache/golangci-lint`**：那一个过期了可能让一条 finding 不再出现，而"少报一条"与"没有门禁"是一回事。判据是缓存过期后损失的是时间还是正确性——只损失时间的才缓存。
+
 两处顺序不能随手调换：
 
 - **`make tools` 先于 `make lint` 与 `make check-gen`**：前者要 `buf lint`，后者要 `buf generate`。
@@ -107,5 +120,5 @@ git tag v0.1.0 && git push origin v0.1.0
 | `make check-gen` 报生成产物不同步 | 忘了跑 `make gen` 并提交；也可能是 `buf.gen.yaml` 的远程插件版本变了 |
 | 门禁卡在 `buf` 相关步骤 | `buf.gen.yaml` 用了远程插件 `buf.build/bufbuild/es`，需要能访问 Buf Schema Registry |
 | tag 推上去了但没产出 Release | 先看 `validate` 是否因 tag 形状被拒 |
-| 门禁跑得慢 | `make tools` 每次要从源码装 buf 与 golangci-lint。Go 构建缓存由 setup-go 复用，首次最慢，之后明显变快 |
+| 门禁跑得慢 | 日志里出现成片的 `>>> go install`，说明工具缓存没命中（正常情况下 `make tools` 全是 `>>> 已就绪`）。看 `缓存已装好的工具` 那一步是 hit 还是 miss；`setup-go` 自己的缓存只按 `go.sum` 哈希与 git ref 隔离，加个依赖或换个分支就会 miss，不必指望它 |
 | Release 数量没有收敛到 5 | 看 `prune` 步骤的日志：它每次都会打印候选集与将要删除的列表 |
