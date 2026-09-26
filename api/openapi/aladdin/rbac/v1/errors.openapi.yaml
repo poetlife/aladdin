@@ -1,0 +1,116 @@
+openapi: 3.1.0
+info:
+  title: aladdin.rbac.v1
+paths: {}
+components:
+  schemas:
+    aladdin.rbac.v1.DenialReason:
+      type: string
+      title: DenialReason
+      enum:
+        - DENIAL_REASON_UNSPECIFIED
+        - DENIAL_REASON_ALLOW
+        - DENIAL_REASON_NO_MATCHING_GRANT
+        - DENIAL_REASON_SCOPE_MISMATCH
+        - DENIAL_REASON_SESSION_EXPIRED
+        - DENIAL_REASON_SUBJECT_NOT_FOUND
+        - DENIAL_REASON_STORE_UNAVAILABLE
+        - DENIAL_REASON_ANNOTATION_MISSING
+      description: DenialReason 是一次鉴权结论的固定原因。
+    aladdin.rbac.v1.DenialDetail:
+      type: object
+      properties:
+        reason:
+          allOf:
+            - title: reason
+            - $ref: '#/components/schemas/aladdin.rbac.v1.DenialReason'
+        detail:
+          type: string
+          title: detail
+          description: |-
+            人类可读的补充说明。**客户端不得据此分支**——需要分支的信息
+             应当进 reason 或 metadata，而不是靠匹配这句话。
+        metadata:
+          type: object
+          title: metadata
+          additionalProperties:
+            type: string
+            title: value
+          description: |-
+            结构化补充信息。服务端配置缺陷（注解缺失）时携带
+             method / detail 两个键，便于在几秒内定位到是哪个方法漏了声明。
+      title: DenialDetail
+      additionalProperties: false
+      description: |-
+        DenialDetail 是附带在 RPC 错误上的结构化拒绝原因。
+
+         它作为 google.protobuf.Any 挂在错误详情里，三端都从同一个
+         生成类型读取，不做任何文本匹配。
+    aladdin.rbac.v1.DenialDetail.MetadataEntry:
+      type: object
+      properties:
+        key:
+          type: string
+          title: key
+        value:
+          type: string
+          title: value
+      title: MetadataEntry
+      additionalProperties: false
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      enum:
+        - 1
+      description: Define the version of the Connect protocol
+      const: 1
+    connect-timeout-header:
+      type: number
+      title: Connect-Timeout-Ms
+      description: Define the timeout, in ms
+    connect.error:
+      type: object
+      properties:
+        code:
+          type: string
+          examples:
+            - CodeNotFound
+          enum:
+            - CodeCanceled
+            - CodeUnknown
+            - CodeInvalidArgument
+            - CodeDeadlineExceeded
+            - CodeNotFound
+            - CodeAlreadyExists
+            - CodePermissionDenied
+            - CodeResourceExhausted
+            - CodeFailedPrecondition
+            - CodeAborted
+            - CodeOutOfRange
+            - CodeInternal
+            - CodeUnavailable
+            - CodeDataLoss
+            - CodeUnauthenticated
+          description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+        message:
+          type: string
+          description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+        detail:
+          $ref: '#/components/schemas/google.protobuf.Any'
+      title: Connect Error
+      additionalProperties: true
+      description: 'Error type returned by Connect: https://connectrpc.com/docs/go/errors/#http-representation'
+    google.protobuf.Any:
+      type: object
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+          format: binary
+        debug:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+security: []

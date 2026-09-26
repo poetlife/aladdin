@@ -9,7 +9,18 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
+	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/rbac"
+)
+
+// scopeSource 是作用域来源的短别名，避免每处都写完整的包名前缀。
+// 注解的解析在 rbac 包；这里只保留"如何按来源取到作用域"这一层。
+type scopeSource = rbacv1.ScopeSource
+
+const (
+	scopeSourceRequestField = rbacv1.ScopeSource_SCOPE_SOURCE_REQUEST_FIELD
+	scopeSourceMetadata     = rbacv1.ScopeSource_SCOPE_SOURCE_METADATA
+	scopeSourceCredential   = rbacv1.ScopeSource_SCOPE_SOURCE_CREDENTIAL
 )
 
 // Authorizer 持有鉴权所需的依赖。
@@ -30,14 +41,14 @@ func (a *Authorizer) Interceptor() connect.UnaryInterceptorFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			procedure := req.Spec().Procedure
 
-			rule, err := Resolve(procedure)
+			rule, err := rbac.Resolve(procedure)
 			if err != nil {
 				return nil, DenyByAnnotation(procedure, err.Error())
 			}
-			if rule.Kind == KindDenied {
+			if rule.Kind == rbac.KindDenied {
 				return nil, DenyByAnnotation(procedure, rule.Reason)
 			}
-			if rule.Kind == KindPublic {
+			if rule.Kind == rbac.KindPublic {
 				return next(ctx, req)
 			}
 
@@ -47,7 +58,7 @@ func (a *Authorizer) Interceptor() connect.UnaryInterceptorFunc {
 			if !ok {
 				return nil, reject(rbac.ReasonSessionExpired)
 			}
-			if rule.Kind == KindAuthenticatedOnly {
+			if rule.Kind == rbac.KindAuthenticatedOnly {
 				return next(ctx, req)
 			}
 

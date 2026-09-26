@@ -22,6 +22,7 @@
 | 持久化 | [docs/design/persistence/](docs/design/persistence/README.md) | 库结构、迁移语义、后端选择与连接串 |
 | 身份认证 | [docs/design/identity/](docs/design/identity/README.md) | 登录方式、主体标识的确定、会话凭证的签发与失效 |
 | 个人档案 | [docs/design/profile/](docs/design/profile/README.md) | 主体的展示信息（昵称、头像、简介）：存放、下发与边界 |
+| API 文档 | [docs/design/api-docs/](docs/design/api-docs/README.md) | OpenAPI 文档的生成方式、鉴权扩展契约与产物管理 |
 | 全局配置与凭证 | [docs/design/config/](docs/design/config/README.md) | 配置来源分层与合并语义、服务端启动配置、CLI 配置与凭证保护 |
 | 可观测性总览 | [docs/observability.md](docs/observability.md) | 日志、指标、追踪的接入方式与规范 |
 | 测试指南 | [docs/testing.md](docs/testing.md) | 测试目录规范与运行命令 |
@@ -36,6 +37,7 @@
 
 ```bash
 make gen        # 由 proto 与权限目录生成两端代码（唯一生成入口）
+make api-docs   # 生成 OpenAPI 文档（含鉴权扩展），供对外查阅
 make build      # 构建服务端与 CLI
 make release-build  # 产出发布产物到 dist/（跨平台二进制、前端包、校验和）
 make test       # Go 全量测试（含竞态检测）

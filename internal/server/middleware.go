@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/observability"
+	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
@@ -179,16 +180,16 @@ func (m *authMiddleware) wrap(next http.Handler) http.Handler {
 			return
 		}
 
-		rule, err := interceptor.Resolve(path)
+		rule, err := rbac.Resolve(path)
 		if err != nil {
 			m.reject(w, r, interceptor.DenyByAnnotation(path, err.Error()))
 			return
 		}
 		switch rule.Kind {
-		case interceptor.KindDenied:
+		case rbac.KindDenied:
 			m.reject(w, r, interceptor.DenyByAnnotation(path, rule.Reason))
 			return
-		case interceptor.KindPublic:
+		case rbac.KindPublic:
 			// 公开方法不需要认证，直接交给 handler。
 			next.ServeHTTP(w, r)
 			return

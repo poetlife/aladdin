@@ -113,6 +113,9 @@ jobs:
       - name: 生成产物同步校验
         run: make check-gen
 
+      - name: OpenAPI 文档同步校验
+        run: make check-api-docs
+
       - name: 安装前端依赖
         run: make web-ci
 

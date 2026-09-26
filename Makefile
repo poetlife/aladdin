@@ -31,6 +31,7 @@ TOOLS := \
 	google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12 \
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2 \
 	connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.0 \
+	github.com/sudorandom/protoc-gen-connect-openapi@v0.14.2 \
 	github.com/bufbuild/buf/cmd/buf@v1.73.0 \
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
@@ -83,6 +84,31 @@ check-gen: ## 校验生成产物与源定义同步（CI 用）
 			exit 1; \
 		fi; \
 		echo "生成产物与 proto 同步"; \
+	fi
+
+.PHONY: api-docs
+api-docs: ## 生成 OpenAPI 文档（含鉴权扩展），供对外查阅
+	@# 两步缺一不可：第一步产出标准 OpenAPI，第二步补上 aladdin 自己的
+	@# 鉴权注解（生成器看不见私有注解，见 internal/tools/openapigen）。
+	@# 第二步顺带产出一份合并文档供渲染页使用——渲染器只认单份 spec。
+	buf generate --template buf.gen.openapi.yaml
+	go run ./internal/tools/openapigen -merge-out web/public/api-docs/openapi.yaml
+
+.PHONY: check-api-docs
+check-api-docs: ## 校验 OpenAPI 文档与 proto 同步（CI 用）
+	@# 与 check-gen 同一个套路，但用 git status 而非 git diff：
+	@# 新增一个服务会多出**未跟踪**的文档文件，而 git diff 看不见未跟踪文件，
+	@# 那会让"忘了为新服务生成文档"逃过校验。代价是刚 add 还没 commit 时
+	@# 这一步也会报错——它校验的正是"已提交的文档与 proto 一致"。
+	buf generate --template buf.gen.openapi.yaml
+	go run ./internal/tools/openapigen -merge-out web/public/api-docs/openapi.yaml
+	@if git rev-parse --git-dir >/dev/null 2>&1; then \
+		if [ -n "$$(git status --porcelain -- api/openapi web/public/api-docs/openapi.yaml)" ]; then \
+			echo "OpenAPI 文档与已提交版本有差异，请运行 make api-docs 并提交结果："; \
+			git status --porcelain -- api/openapi web/public/api-docs/openapi.yaml; \
+			exit 1; \
+		fi; \
+		echo "OpenAPI 文档与 proto 同步"; \
 	fi
 
 .PHONY: tidy

@@ -14,6 +14,8 @@ web/dist/
 web/.vite/
 web/*.tsbuildinfo
 web/node_modules/.vite/
+# API 文档页的 Redoc 运行时：由 npm run sync-redoc 从 node_modules 复制（predev/prebuild）
+web/public/api-docs/redoc.standalone.js
 
 # 本地配置与凭证
 # config.yml 是团队共享的，可以提交；下面这些是个人本机改动与密钥，不可提交。
