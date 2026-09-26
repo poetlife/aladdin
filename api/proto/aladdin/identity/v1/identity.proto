@@ -22,6 +22,16 @@ service IdentityService {
     option (aladdin.rbac.v1.public) = true;
   }
 
+  // 返回当前启用的登录方式。前端据此决定渲染哪些登录入口。
+  //
+  // 公开是必须的：调用方尚未认证，而这正是它要回答的问题的前提。它之所以
+  // 能公开，是因为返回的内容本来就会出现在浏览器里（客户端标识不是秘密）——
+  // 一个不公开的"有哪些登录方式"不保护任何东西，只会迫使前端硬编码一份
+  // 会漂移的副本。若它将来开始返回需要保护的内容，就必须移出公开清单。
+  rpc GetAuthMethods(GetAuthMethodsRequest) returns (GetAuthMethodsResponse) {
+    option (aladdin.rbac.v1.public) = true;
+  }
+
   // 返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
@@ -35,13 +45,44 @@ service IdentityService {
     option (aladdin.rbac.v1.authenticated_only) = true;
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
+
+  // 把一个登录渠道绑到当前主体上。
+  //
+  // **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
+  // 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
+  // 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
+  //
+  // 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
+  // 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
+  // 正常绑定没有区别。
+  rpc BindIdentity(BindIdentityRequest) returns (BindIdentityResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+  }
+
+  // 从当前主体上摘掉一个登录渠道。
+  //
+  // 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
+  // 没有任何进入方式，而它的角色绑定还在，没有人能进来清理。
+  //
+  // 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
+  // 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
+  rpc UnbindIdentity(UnbindIdentityRequest) returns (UnbindIdentityResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+  }
+
+  // 列出当前主体已绑定的全部登录渠道。
+  rpc ListIdentities(ListIdentitiesRequest) returns (ListIdentitiesResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+  }
 }
 
 message LoginRequest {
-  // 人类用户使用用户名口令；机器凭证使用 token 换取短期访问凭证。
+  // 人类用户使用用户名口令；机器凭证使用 token 换取短期访问凭证；
+  // 人类用户也可用外部身份源签发的身份令牌换取会话凭证。
   oneof credential {
     PasswordCredential password = 1;
     TokenCredential token = 2;
+    GoogleCredential google = 3;
   }
 }
 
@@ -52,6 +93,28 @@ message PasswordCredential {
 
 message TokenCredential {
   string token = 1;
+}
+
+// GoogleCredential 是 Google Identity Services 在浏览器内返回的身份令牌。
+//
+// 它由前端搬运、由服务端校验，前端的任何字段都不参与信任决策。服务端必须
+// 校验签名、签发方、受众与有效期，其中**受众必须严格等于本服务配置的客户端
+// 标识**——漏掉这一条意味着任何 Google 应用的令牌都能登录本服务。
+//
+// 这份令牌**不得进入日志、错误信息与 --debug 输出**：它与口令同级。
+message GoogleCredential {
+  string id_token = 1;
+}
+
+message GetAuthMethodsRequest {}
+
+// GetAuthMethodsResponse 描述服务端当前启用了哪些登录方式。
+//
+// 只承载公开信息：这里出现的一切都会明文送到浏览器，因此不得放入任何
+// 需要保护的取值。
+message GetAuthMethodsResponse {
+  // Google 登录的客户端标识；为空表示未启用该登录方式，前端不渲染对应入口。
+  string google_client_id = 1;
 }
 
 message LoginResponse {
@@ -88,4 +151,51 @@ message GetSessionPermissionsResponse {
   string scope = 1;
   // 已展开的最终权限码集合。
   repeated string permissions = 2;
+}
+
+message BindIdentityRequest {
+  // 要绑定的渠道身份。校验要求与登录**完全相同**——复用同一个校验器，
+  // 不为绑定另写一套：两套会让"哪条路径校验得更松"只能靠比对代码回答。
+  oneof credential {
+    GoogleCredential google = 1;
+  }
+}
+
+// BindIdentityResponse 返回绑定之后该主体的全部渠道。
+//
+// 返回整份现状而不是一个"成功"标志：客户端刚做过一次会改变现状的操作，
+// 让它在同一次往返里拿到新现状，比再多发一次查询更省事，也不会读到
+// 两次请求之间的中间态。
+message BindIdentityResponse {
+  repeated Identity identities = 1;
+}
+
+message UnbindIdentityRequest {
+  // 渠道来源，如 google。
+  string source = 1;
+  // 该渠道上的身份标识。
+  string external_id = 2;
+}
+
+message UnbindIdentityResponse {
+  repeated Identity identities = 1;
+}
+
+message ListIdentitiesRequest {}
+
+message ListIdentitiesResponse {
+  repeated Identity identities = 1;
+}
+
+// Identity 是一个已绑定的登录渠道。
+//
+// **没有任何一个字段参与判定**，它们只用于展示与解绑时定位。
+message Identity {
+  // 渠道来源，如 google。
+  string source = 1;
+  // 该渠道上的身份标识。用于发起解绑；它本身不是秘密——拿到它也冒充不了
+  // 谁，登录仍要过渠道自己的校验。
+  string external_id = 2;
+  // 该渠道给出的可读标识（如邮箱），仅供展示。
+  string display = 3;
 }

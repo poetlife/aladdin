@@ -71,7 +71,14 @@ func DenyByAnnotation(procedure, reason string) error {
 //
 // 认证失败统一映射为 Unauthenticated：无论"没带凭证"还是"凭证无效"，
 // 客户端要做的都是引导用户重新登录，区分这两者对用户没有价值。
+//
+// **但存储故障不是认证失败。** 把它映射成 Unauthenticated，会让所有客户端
+// 同时被引导重新登录，而重新登录同样失败——一次数据库抖动于是被放大成
+// 一次全站登录风暴。它必须单独成类，让客户端退避重试。
 func RejectAuthFailure(err error) error {
+	if errors.Is(err, ErrStoreUnavailable) {
+		return reject(rbac.ReasonStoreUnavailable)
+	}
 	if errors.Is(err, ErrNoCredential) || errors.Is(err, ErrInvalidCredential) {
 		return reject(rbac.ReasonSessionExpired)
 	}

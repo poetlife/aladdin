@@ -36,6 +36,14 @@ type Store interface {
 	// 才能区分"确实没有这条权限"与"有但作用域不够"。
 	// 主体不存在时返回 ErrSubjectNotFound。
 	SubjectBindings(ctx context.Context, subjectID string) ([]RoleBinding, error)
+
+	// Subject 返回已登记主体在**当前**的属性，未登记时返回 ErrSubjectNotFound。
+	//
+	// 判定路径不需要它：判定消费的是凭证里那个已确认的主体。它是**签发**
+	// 路径要的——会话在签发那一刻把主体的类型与默认作用域冻结下来，
+	// 从此不再回头查（见 docs/design/identity/session-token.md）。
+	// 因此这个读必须走本抽象，而不是由认证模块自己查一次库。
+	Subject(ctx context.Context, subjectID string) (Subject, error)
 }
 
 // MutableStore 是管理接口所需的可写存储。
@@ -185,6 +193,17 @@ func (s *MemoryStore) Role(_ context.Context, roleID string) (RoleDefinition, er
 		return RoleDefinition{}, ErrRoleNotFound
 	}
 	return r, nil
+}
+
+// Subject 实现 Store。
+func (s *MemoryStore) Subject(_ context.Context, subjectID string) (Subject, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	subject, ok := s.subjects[subjectID]
+	if !ok {
+		return Subject{}, ErrSubjectNotFound
+	}
+	return subject, nil
 }
 
 // SubjectBindings 实现 Store。

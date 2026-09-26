@@ -199,6 +199,10 @@ func (failingStore) SubjectBindings(context.Context, string) ([]RoleBinding, err
 	return nil, ErrStoreUnavailable
 }
 
+func (failingStore) Subject(context.Context, string) (Subject, error) {
+	return Subject{}, ErrStoreUnavailable
+}
+
 func putRole(t *testing.T, store *MemoryStore, ctx context.Context, role RoleDefinition) {
 	t.Helper()
 	if err := store.PutRole(ctx, role); err != nil {

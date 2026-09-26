@@ -39,7 +39,7 @@ aladdin 是前端（React + antd）、服务端（Go + gRPC）、命令行（cob
 
 | 依赖对象 | 交互方式 |
 |---------|---------|
-| 身份认证（Authentication） | 本模块只消费"已确认的主体标识"，不负责登录、口令校验、令牌签发。认证失败在鉴权之前拦截 |
+| 身份认证（Authentication） | 本模块只消费"已确认的主体标识"，不负责登录、口令校验、令牌签发。认证失败在鉴权之前拦截。见 [../identity/](../identity/README.md) |
 | 持久化存储 | 通过 `rbac.Store` 抽象读取角色/权限/绑定关系；本模块不关心底层是内存、SQL 还是外部目录服务。SQL 实现与库结构见 [../persistence/](../persistence/README.md) |
 | proto 定义 | 受控接口、消息与拒绝原因在 `api/proto/` 中声明，经 `buf generate` 同时派生 Go 与 TypeScript 代码 |
 | 权限目录 | 权限码全集在 `api/permissions/catalog.yaml` 中定义，经 `make gen` 派生 Go 与 TS 常量 |
@@ -59,7 +59,7 @@ aladdin 是前端（React + antd）、服务端（Go + gRPC）、命令行（cob
 |------|---------|-------------|
 | 决策结果缓存位置 | 进程内缓存 + 变更时主动失效 | 只影响 `internal/rbac` 的缓存实现 |
 | 角色变更的传播延迟容忍度 | 秒级（可接受短暂不一致） | 影响缓存 TTL 与失效策略 |
-| 凭证形态 | 不透明 token（骨架内置） | 只影响 `internal/server/interceptor/authn.go` 的认证器实现 |
+| 凭证形态 | 服务端签发的**不透明会话令牌 + 会话存储**（**已定**，见 [../identity/session-token.md](../identity/session-token.md)） | 已不再是本模块的开放问题；改形态只影响认证模块 |
 
 ---
 

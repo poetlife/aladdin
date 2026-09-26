@@ -2,6 +2,7 @@ package gormstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -60,6 +61,14 @@ func Open(ctx context.Context, cfg config.DatabaseConfig, logger *zap.Logger) (*
 	}
 	return store, nil
 }
+
+// DB 返回底层连接，供入口进程装配**其它模块**的存储实现。
+//
+// 它是一个装配用的接缝，不是查询入口：连接只在这里打开一次、迁移只在这里
+// 推进一次，而认证模块的会话表与身份别名表由同一份迁移建好，因此它们的
+// 存储实现必须复用这一条连接。业务代码不得用它绕开各模块自己的存储抽象
+// 去直接查库（见 docs/ssot-registry.md 的数据源类）。
+func (s *Store) DB() *gorm.DB { return s.db }
 
 // Close 释放连接池。
 func (s *Store) Close() error {
@@ -126,6 +135,22 @@ func (s *Store) SubjectBindings(ctx context.Context, subjectID string) ([]rbac.R
 		return nil, unavailable("读取主体 "+subjectID+" 的角色绑定", err)
 	}
 	return rbac.SortBindings(toBindings(recs)), nil
+}
+
+// Subject 实现 rbac.Store。
+//
+// 只有签发会话的路径读它：会话要把主体在**签发那一刻**的类型与默认作用域
+// 冻结下来，此后校验只读会话表，不再回头查主体。因此这不是判定路径上的
+// 一次查询，而是"登记之后读回当前值"的入口。
+func (s *Store) Subject(ctx context.Context, subjectID string) (rbac.Subject, error) {
+	var rec database.SubjectRecord
+	if err := s.db.WithContext(ctx).First(&rec, "id = ?", subjectID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return rbac.Subject{}, fmt.Errorf("%w: %s", rbac.ErrSubjectNotFound, subjectID)
+		}
+		return rbac.Subject{}, subjectLookupError(err, subjectID)
+	}
+	return toSubject(rec), nil
 }
 
 // PutRole 实现 rbac.MutableStore。

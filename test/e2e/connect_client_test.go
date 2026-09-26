@@ -176,9 +176,13 @@ func TestConnectAndGRPCSeeIdenticalDecisions(t *testing.T) {
 
 // gRPC 与 Connect 的错误码取值一一对应，因此可以统一成整数直接比较。
 const (
-	codeOK               = 0
-	codeUnauthenticated  = 16
-	codePermissionDenied = 7
+	codeOK                 = 0
+	codeAlreadyExists      = 6
+	codePermissionDenied   = 7
+	codeFailedPrecondition = 9
+	codeUnimplemented      = 12
+	codeUnavailable        = 14
+	codeUnauthenticated    = 16
 )
 
 // rpcCode 把任意 RPC 错误归一化为状态码。

@@ -21,8 +21,12 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	IdentityService_Login_FullMethodName                 = "/aladdin.identity.v1.IdentityService/Login"
 	IdentityService_Refresh_FullMethodName               = "/aladdin.identity.v1.IdentityService/Refresh"
+	IdentityService_GetAuthMethods_FullMethodName        = "/aladdin.identity.v1.IdentityService/GetAuthMethods"
 	IdentityService_WhoAmI_FullMethodName                = "/aladdin.identity.v1.IdentityService/WhoAmI"
 	IdentityService_GetSessionPermissions_FullMethodName = "/aladdin.identity.v1.IdentityService/GetSessionPermissions"
+	IdentityService_BindIdentity_FullMethodName          = "/aladdin.identity.v1.IdentityService/BindIdentity"
+	IdentityService_UnbindIdentity_FullMethodName        = "/aladdin.identity.v1.IdentityService/UnbindIdentity"
+	IdentityService_ListIdentities_FullMethodName        = "/aladdin.identity.v1.IdentityService/ListIdentities"
 )
 
 // IdentityServiceClient is the client API for IdentityService service.
@@ -39,12 +43,39 @@ type IdentityServiceClient interface {
 	Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error)
 	// 刷新访问凭证。
 	Refresh(ctx context.Context, in *RefreshRequest, opts ...grpc.CallOption) (*RefreshResponse, error)
+	// 返回当前启用的登录方式。前端据此决定渲染哪些登录入口。
+	//
+	// 公开是必须的：调用方尚未认证，而这正是它要回答的问题的前提。它之所以
+	// 能公开，是因为返回的内容本来就会出现在浏览器里（客户端标识不是秘密）——
+	// 一个不公开的"有哪些登录方式"不保护任何东西，只会迫使前端硬编码一份
+	// 会漂移的副本。若它将来开始返回需要保护的内容，就必须移出公开清单。
+	GetAuthMethods(ctx context.Context, in *GetAuthMethodsRequest, opts ...grpc.CallOption) (*GetAuthMethodsResponse, error)
 	// 返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
 	WhoAmI(ctx context.Context, in *WhoAmIRequest, opts ...grpc.CallOption) (*WhoAmIResponse, error)
 	// 返回当前主体在其可及作用域下展开后的权限码集合。
 	// 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
 	// 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
 	GetSessionPermissions(ctx context.Context, in *GetSessionPermissionsRequest, opts ...grpc.CallOption) (*GetSessionPermissionsResponse, error)
+	// 把一个登录渠道绑到当前主体上。
+	//
+	// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
+	// 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
+	// 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
+	//
+	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
+	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
+	// 正常绑定没有区别。
+	BindIdentity(ctx context.Context, in *BindIdentityRequest, opts ...grpc.CallOption) (*BindIdentityResponse, error)
+	// 从当前主体上摘掉一个登录渠道。
+	//
+	// 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
+	// 没有任何进入方式，而它的角色绑定还在，没有人能进来清理。
+	//
+	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
+	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
+	UnbindIdentity(ctx context.Context, in *UnbindIdentityRequest, opts ...grpc.CallOption) (*UnbindIdentityResponse, error)
+	// 列出当前主体已绑定的全部登录渠道。
+	ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error)
 }
 
 type identityServiceClient struct {
@@ -75,6 +106,16 @@ func (c *identityServiceClient) Refresh(ctx context.Context, in *RefreshRequest,
 	return out, nil
 }
 
+func (c *identityServiceClient) GetAuthMethods(ctx context.Context, in *GetAuthMethodsRequest, opts ...grpc.CallOption) (*GetAuthMethodsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAuthMethodsResponse)
+	err := c.cc.Invoke(ctx, IdentityService_GetAuthMethods_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *identityServiceClient) WhoAmI(ctx context.Context, in *WhoAmIRequest, opts ...grpc.CallOption) (*WhoAmIResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WhoAmIResponse)
@@ -95,6 +136,36 @@ func (c *identityServiceClient) GetSessionPermissions(ctx context.Context, in *G
 	return out, nil
 }
 
+func (c *identityServiceClient) BindIdentity(ctx context.Context, in *BindIdentityRequest, opts ...grpc.CallOption) (*BindIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BindIdentityResponse)
+	err := c.cc.Invoke(ctx, IdentityService_BindIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) UnbindIdentity(ctx context.Context, in *UnbindIdentityRequest, opts ...grpc.CallOption) (*UnbindIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnbindIdentityResponse)
+	err := c.cc.Invoke(ctx, IdentityService_UnbindIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListIdentitiesResponse)
+	err := c.cc.Invoke(ctx, IdentityService_ListIdentities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IdentityServiceServer is the server API for IdentityService service.
 // All implementations must embed UnimplementedIdentityServiceServer
 // for forward compatibility.
@@ -109,12 +180,39 @@ type IdentityServiceServer interface {
 	Login(context.Context, *LoginRequest) (*LoginResponse, error)
 	// 刷新访问凭证。
 	Refresh(context.Context, *RefreshRequest) (*RefreshResponse, error)
+	// 返回当前启用的登录方式。前端据此决定渲染哪些登录入口。
+	//
+	// 公开是必须的：调用方尚未认证，而这正是它要回答的问题的前提。它之所以
+	// 能公开，是因为返回的内容本来就会出现在浏览器里（客户端标识不是秘密）——
+	// 一个不公开的"有哪些登录方式"不保护任何东西，只会迫使前端硬编码一份
+	// 会漂移的副本。若它将来开始返回需要保护的内容，就必须移出公开清单。
+	GetAuthMethods(context.Context, *GetAuthMethodsRequest) (*GetAuthMethodsResponse, error)
 	// 返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
 	WhoAmI(context.Context, *WhoAmIRequest) (*WhoAmIResponse, error)
 	// 返回当前主体在其可及作用域下展开后的权限码集合。
 	// 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
 	// 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
 	GetSessionPermissions(context.Context, *GetSessionPermissionsRequest) (*GetSessionPermissionsResponse, error)
+	// 把一个登录渠道绑到当前主体上。
+	//
+	// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
+	// 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
+	// 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
+	//
+	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
+	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
+	// 正常绑定没有区别。
+	BindIdentity(context.Context, *BindIdentityRequest) (*BindIdentityResponse, error)
+	// 从当前主体上摘掉一个登录渠道。
+	//
+	// 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
+	// 没有任何进入方式，而它的角色绑定还在，没有人能进来清理。
+	//
+	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
+	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
+	UnbindIdentity(context.Context, *UnbindIdentityRequest) (*UnbindIdentityResponse, error)
+	// 列出当前主体已绑定的全部登录渠道。
+	ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error)
 	mustEmbedUnimplementedIdentityServiceServer()
 }
 
@@ -131,11 +229,23 @@ func (UnimplementedIdentityServiceServer) Login(context.Context, *LoginRequest) 
 func (UnimplementedIdentityServiceServer) Refresh(context.Context, *RefreshRequest) (*RefreshResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Refresh not implemented")
 }
+func (UnimplementedIdentityServiceServer) GetAuthMethods(context.Context, *GetAuthMethodsRequest) (*GetAuthMethodsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAuthMethods not implemented")
+}
 func (UnimplementedIdentityServiceServer) WhoAmI(context.Context, *WhoAmIRequest) (*WhoAmIResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WhoAmI not implemented")
 }
 func (UnimplementedIdentityServiceServer) GetSessionPermissions(context.Context, *GetSessionPermissionsRequest) (*GetSessionPermissionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSessionPermissions not implemented")
+}
+func (UnimplementedIdentityServiceServer) BindIdentity(context.Context, *BindIdentityRequest) (*BindIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BindIdentity not implemented")
+}
+func (UnimplementedIdentityServiceServer) UnbindIdentity(context.Context, *UnbindIdentityRequest) (*UnbindIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnbindIdentity not implemented")
+}
+func (UnimplementedIdentityServiceServer) ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListIdentities not implemented")
 }
 func (UnimplementedIdentityServiceServer) mustEmbedUnimplementedIdentityServiceServer() {}
 func (UnimplementedIdentityServiceServer) testEmbeddedByValue()                         {}
@@ -194,6 +304,24 @@ func _IdentityService_Refresh_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityService_GetAuthMethods_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAuthMethodsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).GetAuthMethods(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_GetAuthMethods_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).GetAuthMethods(ctx, req.(*GetAuthMethodsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _IdentityService_WhoAmI_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(WhoAmIRequest)
 	if err := dec(in); err != nil {
@@ -230,6 +358,60 @@ func _IdentityService_GetSessionPermissions_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityService_BindIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).BindIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_BindIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).BindIdentity(ctx, req.(*BindIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_UnbindIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnbindIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).UnbindIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_UnbindIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).UnbindIdentity(ctx, req.(*UnbindIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_ListIdentities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListIdentitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).ListIdentities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_ListIdentities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).ListIdentities(ctx, req.(*ListIdentitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IdentityService_ServiceDesc is the grpc.ServiceDesc for IdentityService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -246,12 +428,28 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _IdentityService_Refresh_Handler,
 		},
 		{
+			MethodName: "GetAuthMethods",
+			Handler:    _IdentityService_GetAuthMethods_Handler,
+		},
+		{
 			MethodName: "WhoAmI",
 			Handler:    _IdentityService_WhoAmI_Handler,
 		},
 		{
 			MethodName: "GetSessionPermissions",
 			Handler:    _IdentityService_GetSessionPermissions_Handler,
+		},
+		{
+			MethodName: "BindIdentity",
+			Handler:    _IdentityService_BindIdentity_Handler,
+		},
+		{
+			MethodName: "UnbindIdentity",
+			Handler:    _IdentityService_UnbindIdentity_Handler,
+		},
+		{
+			MethodName: "ListIdentities",
+			Handler:    _IdentityService_ListIdentities_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

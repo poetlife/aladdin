@@ -37,11 +37,23 @@ const (
 	IdentityServiceLoginProcedure = "/aladdin.identity.v1.IdentityService/Login"
 	// IdentityServiceRefreshProcedure is the fully-qualified name of the IdentityService's Refresh RPC.
 	IdentityServiceRefreshProcedure = "/aladdin.identity.v1.IdentityService/Refresh"
+	// IdentityServiceGetAuthMethodsProcedure is the fully-qualified name of the IdentityService's
+	// GetAuthMethods RPC.
+	IdentityServiceGetAuthMethodsProcedure = "/aladdin.identity.v1.IdentityService/GetAuthMethods"
 	// IdentityServiceWhoAmIProcedure is the fully-qualified name of the IdentityService's WhoAmI RPC.
 	IdentityServiceWhoAmIProcedure = "/aladdin.identity.v1.IdentityService/WhoAmI"
 	// IdentityServiceGetSessionPermissionsProcedure is the fully-qualified name of the
 	// IdentityService's GetSessionPermissions RPC.
 	IdentityServiceGetSessionPermissionsProcedure = "/aladdin.identity.v1.IdentityService/GetSessionPermissions"
+	// IdentityServiceBindIdentityProcedure is the fully-qualified name of the IdentityService's
+	// BindIdentity RPC.
+	IdentityServiceBindIdentityProcedure = "/aladdin.identity.v1.IdentityService/BindIdentity"
+	// IdentityServiceUnbindIdentityProcedure is the fully-qualified name of the IdentityService's
+	// UnbindIdentity RPC.
+	IdentityServiceUnbindIdentityProcedure = "/aladdin.identity.v1.IdentityService/UnbindIdentity"
+	// IdentityServiceListIdentitiesProcedure is the fully-qualified name of the IdentityService's
+	// ListIdentities RPC.
+	IdentityServiceListIdentitiesProcedure = "/aladdin.identity.v1.IdentityService/ListIdentities"
 )
 
 // IdentityServiceClient is a client for the aladdin.identity.v1.IdentityService service.
@@ -51,12 +63,39 @@ type IdentityServiceClient interface {
 	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error)
 	// 刷新访问凭证。
 	Refresh(context.Context, *connect.Request[v1.RefreshRequest]) (*connect.Response[v1.RefreshResponse], error)
+	// 返回当前启用的登录方式。前端据此决定渲染哪些登录入口。
+	//
+	// 公开是必须的：调用方尚未认证，而这正是它要回答的问题的前提。它之所以
+	// 能公开，是因为返回的内容本来就会出现在浏览器里（客户端标识不是秘密）——
+	// 一个不公开的"有哪些登录方式"不保护任何东西，只会迫使前端硬编码一份
+	// 会漂移的副本。若它将来开始返回需要保护的内容，就必须移出公开清单。
+	GetAuthMethods(context.Context, *connect.Request[v1.GetAuthMethodsRequest]) (*connect.Response[v1.GetAuthMethodsResponse], error)
 	// 返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
 	WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error)
 	// 返回当前主体在其可及作用域下展开后的权限码集合。
 	// 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
 	// 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
 	GetSessionPermissions(context.Context, *connect.Request[v1.GetSessionPermissionsRequest]) (*connect.Response[v1.GetSessionPermissionsResponse], error)
+	// 把一个登录渠道绑到当前主体上。
+	//
+	// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
+	// 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
+	// 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
+	//
+	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
+	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
+	// 正常绑定没有区别。
+	BindIdentity(context.Context, *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error)
+	// 从当前主体上摘掉一个登录渠道。
+	//
+	// 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
+	// 没有任何进入方式，而它的角色绑定还在，没有人能进来清理。
+	//
+	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
+	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
+	UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error)
+	// 列出当前主体已绑定的全部登录渠道。
+	ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error)
 }
 
 // NewIdentityServiceClient constructs a client for the aladdin.identity.v1.IdentityService service.
@@ -82,6 +121,12 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("Refresh")),
 			connect.WithClientOptions(opts...),
 		),
+		getAuthMethods: connect.NewClient[v1.GetAuthMethodsRequest, v1.GetAuthMethodsResponse](
+			httpClient,
+			baseURL+IdentityServiceGetAuthMethodsProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("GetAuthMethods")),
+			connect.WithClientOptions(opts...),
+		),
 		whoAmI: connect.NewClient[v1.WhoAmIRequest, v1.WhoAmIResponse](
 			httpClient,
 			baseURL+IdentityServiceWhoAmIProcedure,
@@ -94,6 +139,24 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("GetSessionPermissions")),
 			connect.WithClientOptions(opts...),
 		),
+		bindIdentity: connect.NewClient[v1.BindIdentityRequest, v1.BindIdentityResponse](
+			httpClient,
+			baseURL+IdentityServiceBindIdentityProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("BindIdentity")),
+			connect.WithClientOptions(opts...),
+		),
+		unbindIdentity: connect.NewClient[v1.UnbindIdentityRequest, v1.UnbindIdentityResponse](
+			httpClient,
+			baseURL+IdentityServiceUnbindIdentityProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("UnbindIdentity")),
+			connect.WithClientOptions(opts...),
+		),
+		listIdentities: connect.NewClient[v1.ListIdentitiesRequest, v1.ListIdentitiesResponse](
+			httpClient,
+			baseURL+IdentityServiceListIdentitiesProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("ListIdentities")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -101,8 +164,12 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type identityServiceClient struct {
 	login                 *connect.Client[v1.LoginRequest, v1.LoginResponse]
 	refresh               *connect.Client[v1.RefreshRequest, v1.RefreshResponse]
+	getAuthMethods        *connect.Client[v1.GetAuthMethodsRequest, v1.GetAuthMethodsResponse]
 	whoAmI                *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
 	getSessionPermissions *connect.Client[v1.GetSessionPermissionsRequest, v1.GetSessionPermissionsResponse]
+	bindIdentity          *connect.Client[v1.BindIdentityRequest, v1.BindIdentityResponse]
+	unbindIdentity        *connect.Client[v1.UnbindIdentityRequest, v1.UnbindIdentityResponse]
+	listIdentities        *connect.Client[v1.ListIdentitiesRequest, v1.ListIdentitiesResponse]
 }
 
 // Login calls aladdin.identity.v1.IdentityService.Login.
@@ -115,6 +182,11 @@ func (c *identityServiceClient) Refresh(ctx context.Context, req *connect.Reques
 	return c.refresh.CallUnary(ctx, req)
 }
 
+// GetAuthMethods calls aladdin.identity.v1.IdentityService.GetAuthMethods.
+func (c *identityServiceClient) GetAuthMethods(ctx context.Context, req *connect.Request[v1.GetAuthMethodsRequest]) (*connect.Response[v1.GetAuthMethodsResponse], error) {
+	return c.getAuthMethods.CallUnary(ctx, req)
+}
+
 // WhoAmI calls aladdin.identity.v1.IdentityService.WhoAmI.
 func (c *identityServiceClient) WhoAmI(ctx context.Context, req *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error) {
 	return c.whoAmI.CallUnary(ctx, req)
@@ -125,6 +197,21 @@ func (c *identityServiceClient) GetSessionPermissions(ctx context.Context, req *
 	return c.getSessionPermissions.CallUnary(ctx, req)
 }
 
+// BindIdentity calls aladdin.identity.v1.IdentityService.BindIdentity.
+func (c *identityServiceClient) BindIdentity(ctx context.Context, req *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error) {
+	return c.bindIdentity.CallUnary(ctx, req)
+}
+
+// UnbindIdentity calls aladdin.identity.v1.IdentityService.UnbindIdentity.
+func (c *identityServiceClient) UnbindIdentity(ctx context.Context, req *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error) {
+	return c.unbindIdentity.CallUnary(ctx, req)
+}
+
+// ListIdentities calls aladdin.identity.v1.IdentityService.ListIdentities.
+func (c *identityServiceClient) ListIdentities(ctx context.Context, req *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error) {
+	return c.listIdentities.CallUnary(ctx, req)
+}
+
 // IdentityServiceHandler is an implementation of the aladdin.identity.v1.IdentityService service.
 type IdentityServiceHandler interface {
 	// 登录并换取访问凭证。
@@ -132,12 +219,39 @@ type IdentityServiceHandler interface {
 	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error)
 	// 刷新访问凭证。
 	Refresh(context.Context, *connect.Request[v1.RefreshRequest]) (*connect.Response[v1.RefreshResponse], error)
+	// 返回当前启用的登录方式。前端据此决定渲染哪些登录入口。
+	//
+	// 公开是必须的：调用方尚未认证，而这正是它要回答的问题的前提。它之所以
+	// 能公开，是因为返回的内容本来就会出现在浏览器里（客户端标识不是秘密）——
+	// 一个不公开的"有哪些登录方式"不保护任何东西，只会迫使前端硬编码一份
+	// 会漂移的副本。若它将来开始返回需要保护的内容，就必须移出公开清单。
+	GetAuthMethods(context.Context, *connect.Request[v1.GetAuthMethodsRequest]) (*connect.Response[v1.GetAuthMethodsResponse], error)
 	// 返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
 	WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error)
 	// 返回当前主体在其可及作用域下展开后的权限码集合。
 	// 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
 	// 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
 	GetSessionPermissions(context.Context, *connect.Request[v1.GetSessionPermissionsRequest]) (*connect.Response[v1.GetSessionPermissionsResponse], error)
+	// 把一个登录渠道绑到当前主体上。
+	//
+	// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
+	// 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
+	// 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
+	//
+	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
+	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
+	// 正常绑定没有区别。
+	BindIdentity(context.Context, *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error)
+	// 从当前主体上摘掉一个登录渠道。
+	//
+	// 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
+	// 没有任何进入方式，而它的角色绑定还在，没有人能进来清理。
+	//
+	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
+	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
+	UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error)
+	// 列出当前主体已绑定的全部登录渠道。
+	ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error)
 }
 
 // NewIdentityServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -159,6 +273,12 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("Refresh")),
 		connect.WithHandlerOptions(opts...),
 	)
+	identityServiceGetAuthMethodsHandler := connect.NewUnaryHandler(
+		IdentityServiceGetAuthMethodsProcedure,
+		svc.GetAuthMethods,
+		connect.WithSchema(identityServiceMethods.ByName("GetAuthMethods")),
+		connect.WithHandlerOptions(opts...),
+	)
 	identityServiceWhoAmIHandler := connect.NewUnaryHandler(
 		IdentityServiceWhoAmIProcedure,
 		svc.WhoAmI,
@@ -171,16 +291,42 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("GetSessionPermissions")),
 		connect.WithHandlerOptions(opts...),
 	)
+	identityServiceBindIdentityHandler := connect.NewUnaryHandler(
+		IdentityServiceBindIdentityProcedure,
+		svc.BindIdentity,
+		connect.WithSchema(identityServiceMethods.ByName("BindIdentity")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceUnbindIdentityHandler := connect.NewUnaryHandler(
+		IdentityServiceUnbindIdentityProcedure,
+		svc.UnbindIdentity,
+		connect.WithSchema(identityServiceMethods.ByName("UnbindIdentity")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceListIdentitiesHandler := connect.NewUnaryHandler(
+		IdentityServiceListIdentitiesProcedure,
+		svc.ListIdentities,
+		connect.WithSchema(identityServiceMethods.ByName("ListIdentities")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/aladdin.identity.v1.IdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IdentityServiceLoginProcedure:
 			identityServiceLoginHandler.ServeHTTP(w, r)
 		case IdentityServiceRefreshProcedure:
 			identityServiceRefreshHandler.ServeHTTP(w, r)
+		case IdentityServiceGetAuthMethodsProcedure:
+			identityServiceGetAuthMethodsHandler.ServeHTTP(w, r)
 		case IdentityServiceWhoAmIProcedure:
 			identityServiceWhoAmIHandler.ServeHTTP(w, r)
 		case IdentityServiceGetSessionPermissionsProcedure:
 			identityServiceGetSessionPermissionsHandler.ServeHTTP(w, r)
+		case IdentityServiceBindIdentityProcedure:
+			identityServiceBindIdentityHandler.ServeHTTP(w, r)
+		case IdentityServiceUnbindIdentityProcedure:
+			identityServiceUnbindIdentityHandler.ServeHTTP(w, r)
+		case IdentityServiceListIdentitiesProcedure:
+			identityServiceListIdentitiesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -198,10 +344,26 @@ func (UnimplementedIdentityServiceHandler) Refresh(context.Context, *connect.Req
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.Refresh is not implemented"))
 }
 
+func (UnimplementedIdentityServiceHandler) GetAuthMethods(context.Context, *connect.Request[v1.GetAuthMethodsRequest]) (*connect.Response[v1.GetAuthMethodsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.GetAuthMethods is not implemented"))
+}
+
 func (UnimplementedIdentityServiceHandler) WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.WhoAmI is not implemented"))
 }
 
 func (UnimplementedIdentityServiceHandler) GetSessionPermissions(context.Context, *connect.Request[v1.GetSessionPermissionsRequest]) (*connect.Response[v1.GetSessionPermissionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.GetSessionPermissions is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) BindIdentity(context.Context, *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.BindIdentity is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.UnbindIdentity is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.ListIdentities is not implemented"))
 }

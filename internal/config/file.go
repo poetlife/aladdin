@@ -29,6 +29,7 @@ var otelKeys = []string{keyOTelEndpoint, keyOTelInsecure, keyOTelSampleRatio}
 var (
 	serverKeys = append([]string{
 		keyAddress, keyLogLevel, keyLogFile, keyDatabaseDriver, keyDatabaseDSN,
+		keyGoogleClientID, keyBootstrapAdminSubject, keyBootstrapAdminScope,
 	}, otelKeys...)
 	cliKeys = append([]string{keyAddress, keyLogLevel, keyTimeout}, otelKeys...)
 )
@@ -50,12 +51,15 @@ func (v fileValues) str(key string) *string {
 
 func serverLayer(v fileValues) (layer, error) {
 	l := layer{
-		address:        v.str(keyAddress),
-		logLevel:       v.str(keyLogLevel),
-		logFile:        v.str(keyLogFile),
-		databaseDriver: v.str(keyDatabaseDriver),
-		databaseDSN:    v.str(keyDatabaseDSN),
-		otelEndpoint:   v.str(keyOTelEndpoint),
+		address:               v.str(keyAddress),
+		logLevel:              v.str(keyLogLevel),
+		logFile:               v.str(keyLogFile),
+		databaseDriver:        v.str(keyDatabaseDriver),
+		databaseDSN:           v.str(keyDatabaseDSN),
+		googleClientID:        v.str(keyGoogleClientID),
+		bootstrapAdminSubject: v.str(keyBootstrapAdminSubject),
+		bootstrapAdminScope:   v.str(keyBootstrapAdminScope),
+		otelEndpoint:          v.str(keyOTelEndpoint),
 	}
 	if err := applyTelemetryScalars(v, &l); err != nil {
 		return layer{}, err

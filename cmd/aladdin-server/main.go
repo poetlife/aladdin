@@ -14,6 +14,8 @@ import (
 
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/identity"
+	identitygormstore "github.com/poetlife/aladdin/internal/identity/gormstore"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
@@ -95,7 +97,24 @@ func run() error {
 	}
 	defer func() { _ = store.Close() }()
 
-	srv := server.New(cfg, logger, metrics, store)
+	// 认证模块的存储复用同一条连接：会话表与身份别名表由同一份迁移建好，
+	// 因此它们的实现必须长在这条连接上，而不是各开一次库——两份可写副本
+	// 意味着一次撤销可能只落到其中一份上（见 docs/design/persistence/schema.md）。
+	sessions := identity.NewSessions(identitygormstore.New(store.DB()))
+	identities := identity.NewIdentities(identitygormstore.NewIdentityStore(store.DB()), store)
+
+	srv := server.New(cfg, logger, metrics, store, server.IdentityStores{
+		Identities: identities,
+		Sessions:   sessions,
+		// 未配置客户端标识时这里是一个真正的 nil：那条登录路径整体缺席，
+		// 而不是退化成一个"什么都通过"的校验器。
+		Verifier: identity.NewGoogleVerifier(cfg.GoogleClientID),
+	})
+
+	// 引导先于种子：它只在存储里一条绑定都没有时生效，而种子会写入绑定。
+	if err := server.ApplyBootstrap(ctx, store, cfg.Bootstrap, logger); err != nil {
+		return err
+	}
 	if err := server.ApplyDevSeed(srv, logger); err != nil {
 		return err
 	}
