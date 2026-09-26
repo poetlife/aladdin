@@ -1,6 +1,5 @@
-// 本文件位于外部测试包 rbac_test，因为它需要同时 import
-// rbac（权限目录）与 server/interceptor（注解解析）——
-// 放在 rbac 包内会构成 import cycle。
+// 本文件是 rbac 的外部测试包：校验 proto 注解、权限目录与判定语义三者一致。
+// 走外部包是为了只依赖 rbac 的公开 API，不触达包内实现。
 package rbac_test
 
 import (
@@ -17,7 +16,6 @@ import (
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/rbac"
-	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
 // protoPrefix 限定只检查本仓库自己的 proto，不检查 google/protobuf 等依赖。
@@ -113,12 +111,12 @@ func TestProtoAnnotationsReferenceKnownPermissions(t *testing.T) {
 // 运行时拒绝，本测试把它提前到构建期。
 func TestEveryMethodIsClassified(t *testing.T) {
 	eachMethod(t, func(fullMethod string, _ *descriptorpb.MethodOptions) {
-		rule, err := interceptor.Resolve(fullMethod)
+		rule, err := rbac.Resolve(fullMethod)
 		if err != nil {
 			t.Errorf("方法 %s 解析注解失败: %v", fullMethod, err)
 			return
 		}
-		if rule.Kind == interceptor.KindDenied {
+		if rule.Kind == rbac.KindDenied {
 			t.Errorf("方法 %s 未被分类：%s", fullMethod, rule.Reason)
 		}
 	})
@@ -139,8 +137,8 @@ func TestPublicMethodsAreAllowlisted(t *testing.T) {
 	}
 	got := map[string]bool{}
 	eachMethod(t, func(fullMethod string, _ *descriptorpb.MethodOptions) {
-		rule, err := interceptor.Resolve(fullMethod)
-		if err == nil && rule.Kind == interceptor.KindPublic {
+		rule, err := rbac.Resolve(fullMethod)
+		if err == nil && rule.Kind == rbac.KindPublic {
 			got[fullMethod] = true
 		}
 	})

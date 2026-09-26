@@ -1,12 +1,4 @@
-// Package interceptor 实现 gRPC/Connect 的鉴权拦截。
-//
-// 本包只做三件事：解析注解、取得主体、调用决策引擎。
-// 它**不得**包含任何业务判断——出现"如果是某类用户就放行"这类写法，
-// 说明权限模型缺少一个角色或权限码，应在权限目录与 proto 中补齐。
-//
-// 认证不在这里：它由 internal/server 的 HTTP 中间件完成，原因见
-// docs/design/rbac/server-permissions.md。
-package interceptor
+package rbac
 
 import (
 	"fmt"
@@ -18,17 +10,17 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
-	"github.com/poetlife/aladdin/internal/rbac"
 )
 
-// scopeSource 是作用域来源的短别名，避免每处都写完整的包名前缀。
-type scopeSource = rbacv1.ScopeSource
-
-const (
-	scopeSourceRequestField = rbacv1.ScopeSource_SCOPE_SOURCE_REQUEST_FIELD
-	scopeSourceMetadata     = rbacv1.ScopeSource_SCOPE_SOURCE_METADATA
-	scopeSourceCredential   = rbacv1.ScopeSource_SCOPE_SOURCE_CREDENTIAL
-)
+// 本文件是方法级鉴权注解的唯一读取入口。
+//
+// 受控方法所需的权限码与作用域来源**声明在 proto 方法上**
+// （api/proto/aladdin/rbac/v1/annotations.proto），这里从方法描述符读回，
+// 因此新增受控接口只需要改 proto，不需要记得同步修改任何 Go 代码。
+//
+// 它住在 rbac 而不是拦截器包里，因为"这个方法属于哪一类"是权限语义，
+// 不是传输层的事。至少有三类调用方要问同一个问题：Connect 拦截器、
+// HTTP 中间件，以及文档生成器——答案只有一份，谁都不得另写一份。
 
 // Kind 是一个受控方法在鉴权维度上的分类。
 //
@@ -47,10 +39,28 @@ const (
 	KindRequires
 )
 
+// String 返回该分类的稳定标识符。
+//
+// 它是对外契约（文档扩展、日志），取值不要随文案调整而变。
+func (k Kind) String() string {
+	switch k {
+	case KindDenied:
+		return "denied"
+	case KindPublic:
+		return "public"
+	case KindAuthenticatedOnly:
+		return "authenticated_only"
+	case KindRequires:
+		return "requires"
+	default:
+		return "unknown"
+	}
+}
+
 // MethodRule 是解析一个 RPC 方法注解后的结果。
 type MethodRule struct {
 	Kind       Kind
-	Permission rbac.PermissionCode
+	Permission PermissionCode
 	ScopeFrom  rbacv1.ScopeSource
 	// Reason 在 Kind 为 KindDenied 时说明拒因，用于排查注解遗漏。
 	Reason string
@@ -58,12 +68,13 @@ type MethodRule struct {
 
 // Resolve 从 RPC 过程名解析出鉴权规则。
 //
-// procedure 形如 "/aladdin.rbac.v1.RBACService/GetRole"。
-// gRPC 的 info.FullMethod 与 Connect 的 req.Spec().Procedure 是同一格式，
-// 因此本函数对两种传输都适用，不需要各写一份。
+// procedure 形如 "/aladdin.rbac.v1.RBACService/GetRole"。这个格式对三种
+// 调用方是同一个：gRPC 的 info.FullMethod、Connect 的 req.Spec().Procedure，
+// 以及 HTTP 中间件手上的 r.URL.Path（Connect 的路径格式与 procedure 相同）。
+// 因此本函数只写一份。
 //
 // 注解定义在 api/proto/aladdin/rbac/v1/annotations.proto，
-// 这里是它唯一的读取入口——拦截器不得硬编码任何方法到权限码的映射。
+// 这里是它唯一的读取入口——任何调用方都不得硬编码方法到权限码的映射。
 func Resolve(procedure string) (MethodRule, error) {
 	opts, err := methodOptions(procedure)
 	if err != nil {
@@ -74,7 +85,7 @@ func Resolve(procedure string) (MethodRule, error) {
 		return MethodRule{Kind: KindPublic}, nil
 	}
 
-	permission := rbac.PermissionCode(proto.GetExtension(opts, rbacv1.E_RequiredPermission).(string))
+	permission := PermissionCode(proto.GetExtension(opts, rbacv1.E_RequiredPermission).(string))
 	authenticatedOnly := proto.GetExtension(opts, rbacv1.E_AuthenticatedOnly).(bool)
 	scopeFrom := proto.GetExtension(opts, rbacv1.E_ScopeSource).(rbacv1.ScopeSource)
 

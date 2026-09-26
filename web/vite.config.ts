@@ -1,8 +1,26 @@
 import { defineConfig } from 'vitest/config'
+import type { Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// dev 下让 /api-docs/ 落到目录里的 index.html。
+//
+// 生产由 nginx 的 try_files $uri $uri/ 处理，dev 不会——Vite 对目录请求会走
+// SPA fallback，返回业务前端的 index.html（表现为打开文档页却看到登录页）。
+// 补上这一步，开发和线上访问的是同一个地址。
+function serveApiDocsIndex(): Plugin {
+  return {
+    name: 'serve-api-docs-index',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url === '/api-docs/') req.url = '/api-docs/index.html'
+        next()
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), serveApiDocsIndex()],
   server: {
     port: 5173,
     // 开发期把 RPC 请求转发到后端。

@@ -7,8 +7,9 @@ package server
 //
 // 路径约定：Connect handler 挂在过程名本身（如
 // /aladdin.rbac.v1.RBACService/ListRoles），**不加 /api 之类的统一前缀**。
-// 这样 authMiddleware 里的 interceptor.Resolve(r.URL.Path) 可以直接拿到
-// 过程名，不需要先剥前缀——少一处两侧必须对齐的魔法字符串。
+// 这样 authMiddleware 里的 rbac.Resolve(r.URL.Path) 可以直接拿到
+// 过程名，不需要先剥前缀——少一处两侧必须对齐的魔法字符串。文档生成器
+// 同样靠这条约定：OpenAPI 的 path 就是过程名，可以直接喂给 rbac.Resolve。
 //
 // 前端相应的 baseUrl 为空（同源），vite 开发代理按 /aladdin. 前缀转发，
 // 见 web/vite.config.ts。

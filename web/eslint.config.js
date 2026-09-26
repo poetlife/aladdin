@@ -3,7 +3,10 @@ import tseslint from 'typescript-eslint'
 import jsdoc from 'eslint-plugin-jsdoc'
 
 export default [
-  { ignores: ['dist', 'src/gen', 'node_modules'] },
+  // public 下的文件原样进产物、不经过构建，属于静态资源而非源码。
+  // 其中 api-docs/redoc.standalone.js 是第三方压缩产物，lint 它只会刷屏
+  // （三千多条报错），而它并不该被我们修改。
+  { ignores: ['dist', 'src/gen', 'node_modules', 'public'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -7,8 +7,12 @@ version: v2
 #   - CLI 走原生 gRPC（pkg/client，grpc-go 客户端）
 # 两者打的是同一个地址，不存在两套服务端。
 #
-# 有意不生成 grpc-gateway 与 OpenAPI：同一个方法两条调用路径会带来
-# "文档说 REST、实现走 Connect"这类漂移。需要对外 REST 文档时再加。
+# 有意不生成 grpc-gateway：那会为同一个方法再开一条 REST 路径，
+# 带来"文档说 REST、实现走 Connect"这类漂移。
+#
+# OpenAPI 文档不在这里，而在 buf.gen.openapi.yaml（make api-docs）。分开是因为
+# 它描述的就是 Connect 路径本身，不开第二条调用路径，因此不违反上面这条理由；
+# 分开也让日常 make gen 不必带上文档生成的成本。
 plugins:
   # Go 侧三个插件都用本地二进制（make tools 安装），离线可用。
   - local: protoc-gen-go

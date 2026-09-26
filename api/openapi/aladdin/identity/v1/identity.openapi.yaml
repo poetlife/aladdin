@@ -1,0 +1,695 @@
+openapi: 3.1.0
+info:
+  title: aladdin.identity.v1
+paths:
+  /aladdin.identity.v1.IdentityService/Login:
+    post:
+      x-aladdin-auth:
+        kind: public
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: Login
+      description: |-
+        **鉴权**：公开接口，无需认证。
+
+        登录并换取访问凭证。
+         这是极少数公开方法之一，必须显式标记 public，否则鉴权拦截器默认拒绝。
+      operationId: aladdin.identity.v1.IdentityService.Login
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.LoginRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.LoginResponse'
+  /aladdin.identity.v1.IdentityService/Refresh:
+    post:
+      x-aladdin-auth:
+        kind: public
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: Refresh
+      description: |-
+        **鉴权**：公开接口，无需认证。
+
+        刷新访问凭证。
+      operationId: aladdin.identity.v1.IdentityService.Refresh
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.RefreshRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.RefreshResponse'
+  /aladdin.identity.v1.IdentityService/GetAuthMethods:
+    post:
+      x-aladdin-auth:
+        kind: public
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: GetAuthMethods
+      description: |-
+        **鉴权**：公开接口，无需认证。
+
+        返回当前启用的登录方式。前端据此决定渲染哪些登录入口。
+
+         公开是必须的：调用方尚未认证，而这正是它要回答的问题的前提。它之所以
+         能公开，是因为返回的内容本来就会出现在浏览器里（客户端标识不是秘密）——
+         一个不公开的"有哪些登录方式"不保护任何东西，只会迫使前端硬编码一份
+         会漂移的副本。若它将来开始返回需要保护的内容，就必须移出公开清单。
+      operationId: aladdin.identity.v1.IdentityService.GetAuthMethods
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.GetAuthMethodsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.GetAuthMethodsResponse'
+  /aladdin.identity.v1.IdentityService/WhoAmI:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: WhoAmI
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
+      operationId: aladdin.identity.v1.IdentityService.WhoAmI
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.WhoAmIRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.WhoAmIResponse'
+  /aladdin.identity.v1.IdentityService/GetSessionPermissions:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: GetSessionPermissions
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        返回当前主体在其可及作用域下展开后的权限码集合。
+         这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
+         因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
+      operationId: aladdin.identity.v1.IdentityService.GetSessionPermissions
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.GetSessionPermissionsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.GetSessionPermissionsResponse'
+  /aladdin.identity.v1.IdentityService/BindIdentity:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: BindIdentity
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        把一个登录渠道绑到当前主体上。
+
+         **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
+         因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
+         的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
+
+         该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
+         该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
+         正常绑定没有区别。
+      operationId: aladdin.identity.v1.IdentityService.BindIdentity
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.BindIdentityRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.BindIdentityResponse'
+  /aladdin.identity.v1.IdentityService/UnbindIdentity:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: UnbindIdentity
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        从当前主体上摘掉一个登录渠道。
+
+         同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
+         没有任何进入方式，而它的角色绑定还在，没有人能进来清理。
+
+         摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
+         的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
+      operationId: aladdin.identity.v1.IdentityService.UnbindIdentity
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.UnbindIdentityRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.UnbindIdentityResponse'
+  /aladdin.identity.v1.IdentityService/ListIdentities:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: ListIdentities
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        列出当前主体已绑定的全部登录渠道。
+      operationId: aladdin.identity.v1.IdentityService.ListIdentities
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.ListIdentitiesRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.ListIdentitiesResponse'
+components:
+  schemas:
+    aladdin.identity.v1.BindIdentityRequest:
+      type: object
+      allOf:
+        - anyOf:
+            - required:
+                - google
+            - not:
+                anyOf:
+                  - required:
+                      - google
+      anyOf:
+        - required:
+            - google
+        - not:
+            anyOf:
+              - required:
+                  - google
+      properties:
+        google:
+          allOf:
+            - title: google
+            - $ref: '#/components/schemas/aladdin.identity.v1.GoogleCredential'
+      title: BindIdentityRequest
+      additionalProperties: false
+    aladdin.identity.v1.BindIdentityResponse:
+      type: object
+      properties:
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.identity.v1.Identity'
+          title: identities
+      title: BindIdentityResponse
+      additionalProperties: false
+      description: |-
+        BindIdentityResponse 返回绑定之后该主体的全部渠道。
+
+         返回整份现状而不是一个"成功"标志：客户端刚做过一次会改变现状的操作，
+         让它在同一次往返里拿到新现状，比再多发一次查询更省事，也不会读到
+         两次请求之间的中间态。
+    aladdin.identity.v1.GetAuthMethodsRequest:
+      type: object
+      title: GetAuthMethodsRequest
+      additionalProperties: false
+    aladdin.identity.v1.GetAuthMethodsResponse:
+      type: object
+      properties:
+        googleClientId:
+          type: string
+          title: google_client_id
+          description: Google 登录的客户端标识；为空表示未启用该登录方式，前端不渲染对应入口。
+      title: GetAuthMethodsResponse
+      additionalProperties: false
+      description: |-
+        GetAuthMethodsResponse 描述服务端当前启用了哪些登录方式。
+
+         只承载公开信息：这里出现的一切都会明文送到浏览器，因此不得放入任何
+         需要保护的取值。
+    aladdin.identity.v1.GetSessionPermissionsRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+          description: 期望的作用域。留空时使用凭证的默认作用域。
+      title: GetSessionPermissionsRequest
+      additionalProperties: false
+    aladdin.identity.v1.GetSessionPermissionsResponse:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+        permissions:
+          type: array
+          items:
+            type: string
+          title: permissions
+          description: 已展开的最终权限码集合。
+      title: GetSessionPermissionsResponse
+      additionalProperties: false
+    aladdin.identity.v1.GoogleCredential:
+      type: object
+      properties:
+        idToken:
+          type: string
+          title: id_token
+      title: GoogleCredential
+      additionalProperties: false
+      description: |-
+        GoogleCredential 是 Google Identity Services 在浏览器内返回的身份令牌。
+
+         它由前端搬运、由服务端校验，前端的任何字段都不参与信任决策。服务端必须
+         校验签名、签发方、受众与有效期，其中**受众必须严格等于本服务配置的客户端
+         标识**——漏掉这一条意味着任何 Google 应用的令牌都能登录本服务。
+
+         这份令牌**不得进入日志、错误信息与 --debug 输出**：它与口令同级。
+    aladdin.identity.v1.Identity:
+      type: object
+      properties:
+        source:
+          type: string
+          title: source
+          description: 渠道来源，如 google。
+        externalId:
+          type: string
+          title: external_id
+          description: |-
+            该渠道上的身份标识。用于发起解绑；它本身不是秘密——拿到它也冒充不了
+             谁，登录仍要过渠道自己的校验。
+        display:
+          type: string
+          title: display
+          description: 该渠道给出的可读标识（如邮箱），仅供展示。
+      title: Identity
+      additionalProperties: false
+      description: |-
+        Identity 是一个已绑定的登录渠道。
+
+         **没有任何一个字段参与判定**，它们只用于展示与解绑时定位。
+    aladdin.identity.v1.ListIdentitiesRequest:
+      type: object
+      title: ListIdentitiesRequest
+      additionalProperties: false
+    aladdin.identity.v1.ListIdentitiesResponse:
+      type: object
+      properties:
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.identity.v1.Identity'
+          title: identities
+      title: ListIdentitiesResponse
+      additionalProperties: false
+    aladdin.identity.v1.LoginRequest:
+      type: object
+      allOf:
+        - anyOf:
+            - required:
+                - google
+            - required:
+                - password
+            - required:
+                - token
+            - not:
+                anyOf:
+                  - required:
+                      - google
+                  - required:
+                      - password
+                  - required:
+                      - token
+      anyOf:
+        - required:
+            - google
+        - required:
+            - password
+        - required:
+            - token
+        - not:
+            anyOf:
+              - required:
+                  - google
+              - required:
+                  - password
+              - required:
+                  - token
+      properties:
+        password:
+          allOf:
+            - title: password
+            - $ref: '#/components/schemas/aladdin.identity.v1.PasswordCredential'
+        token:
+          allOf:
+            - title: token
+            - $ref: '#/components/schemas/aladdin.identity.v1.TokenCredential'
+        google:
+          allOf:
+            - title: google
+            - $ref: '#/components/schemas/aladdin.identity.v1.GoogleCredential'
+      title: LoginRequest
+      additionalProperties: false
+    aladdin.identity.v1.LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          title: access_token
+        expiresAt:
+          type: string
+          title: expires_at
+          description: ISO 8601 UTC 时间。CLI 依据它做本地过期预检（见 cli-permissions.md）。
+      title: LoginResponse
+      additionalProperties: false
+    aladdin.identity.v1.PasswordCredential:
+      type: object
+      properties:
+        username:
+          type: string
+          title: username
+        password:
+          type: string
+          title: password
+      title: PasswordCredential
+      additionalProperties: false
+    aladdin.identity.v1.RefreshRequest:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          title: access_token
+      title: RefreshRequest
+      additionalProperties: false
+    aladdin.identity.v1.RefreshResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          title: access_token
+        expiresAt:
+          type: string
+          title: expires_at
+      title: RefreshResponse
+      additionalProperties: false
+    aladdin.identity.v1.TokenCredential:
+      type: object
+      properties:
+        token:
+          type: string
+          title: token
+      title: TokenCredential
+      additionalProperties: false
+    aladdin.identity.v1.UnbindIdentityRequest:
+      type: object
+      properties:
+        source:
+          type: string
+          title: source
+          description: 渠道来源，如 google。
+        externalId:
+          type: string
+          title: external_id
+          description: 该渠道上的身份标识。
+      title: UnbindIdentityRequest
+      additionalProperties: false
+    aladdin.identity.v1.UnbindIdentityResponse:
+      type: object
+      properties:
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.identity.v1.Identity'
+          title: identities
+      title: UnbindIdentityResponse
+      additionalProperties: false
+    aladdin.identity.v1.WhoAmIRequest:
+      type: object
+      title: WhoAmIRequest
+      additionalProperties: false
+    aladdin.identity.v1.WhoAmIResponse:
+      type: object
+      properties:
+        subjectId:
+          type: string
+          title: subject_id
+        subjectType:
+          type: string
+          title: subject_type
+          description: 主体类型：user / service_account / machine。
+        defaultScope:
+          type: string
+          title: default_scope
+          description: 凭证自身绑定的默认作用域。
+      title: WhoAmIResponse
+      additionalProperties: false
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      enum:
+        - 1
+      description: Define the version of the Connect protocol
+      const: 1
+    connect-timeout-header:
+      type: number
+      title: Connect-Timeout-Ms
+      description: Define the timeout, in ms
+    connect.error:
+      type: object
+      properties:
+        code:
+          type: string
+          examples:
+            - CodeNotFound
+          enum:
+            - CodeCanceled
+            - CodeUnknown
+            - CodeInvalidArgument
+            - CodeDeadlineExceeded
+            - CodeNotFound
+            - CodeAlreadyExists
+            - CodePermissionDenied
+            - CodeResourceExhausted
+            - CodeFailedPrecondition
+            - CodeAborted
+            - CodeOutOfRange
+            - CodeInternal
+            - CodeUnavailable
+            - CodeDataLoss
+            - CodeUnauthenticated
+          description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+        message:
+          type: string
+          description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+        detail:
+          $ref: '#/components/schemas/google.protobuf.Any'
+      title: Connect Error
+      additionalProperties: true
+      description: 'Error type returned by Connect: https://connectrpc.com/docs/go/errors/#http-representation'
+    google.protobuf.Any:
+      type: object
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+          format: binary
+        debug:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+security: []
+tags:
+  - name: aladdin.identity.v1.IdentityService
+    description: |-
+      IdentityService 是身份认证面。
+
+       边界：本服务只做认证（你是谁）。判定（你能做什么）由 RBAC 负责。
+       认证失败与鉴权失败必须返回不同的状态码，见 grpc-interceptor.md 的拒绝语义。

@@ -1,0 +1,14 @@
+version: v2
+# 只产 OpenAPI 文档，与 buf.gen.yaml 的代码生成分开。
+#
+# 分开的理由：代码是每次改 proto 都要重生成的（make gen，且被 check-gen
+# 校验同步），文档是查阅与发布时才需要的。合在一起会让日常 gen 变慢，
+# 也会让文档产物的噪音混进代码提交。
+#
+# 注意：这个插件只认公开的注解族（gnostic / protovalidate / google.api.http），
+# 看不见 aladdin 自己的鉴权注解——所以它产出的文档还没有鉴权信息，
+# 必须再经 openapigen 补上 x-aladdin-auth。make api-docs 已把两步串好，
+# 不要只跑这一步。
+plugins:
+  - local: protoc-gen-connect-openapi
+    out: api/openapi

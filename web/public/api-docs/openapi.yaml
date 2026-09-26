@@ -1,0 +1,1611 @@
+openapi: 3.1.0
+info:
+  title: aladdin API
+  version: v1
+  description: |-
+    由 `make api-docs` 从 proto 生成，请勿手改。
+
+    每个方法的鉴权要求写在它说明的开头；同一份信息也以 `x-aladdin-auth` 扩展给出，供机器读取。
+paths:
+  /aladdin.identity.v1.IdentityService/Login:
+    post:
+      x-aladdin-auth:
+        kind: public
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: Login
+      description: |-
+        **鉴权**：公开接口，无需认证。
+
+        登录并换取访问凭证。
+         这是极少数公开方法之一，必须显式标记 public，否则鉴权拦截器默认拒绝。
+      operationId: aladdin.identity.v1.IdentityService.Login
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.LoginRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.LoginResponse'
+  /aladdin.identity.v1.IdentityService/Refresh:
+    post:
+      x-aladdin-auth:
+        kind: public
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: Refresh
+      description: |-
+        **鉴权**：公开接口，无需认证。
+
+        刷新访问凭证。
+      operationId: aladdin.identity.v1.IdentityService.Refresh
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.RefreshRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.RefreshResponse'
+  /aladdin.identity.v1.IdentityService/GetAuthMethods:
+    post:
+      x-aladdin-auth:
+        kind: public
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: GetAuthMethods
+      description: |-
+        **鉴权**：公开接口，无需认证。
+
+        返回当前启用的登录方式。前端据此决定渲染哪些登录入口。
+
+         公开是必须的：调用方尚未认证，而这正是它要回答的问题的前提。它之所以
+         能公开，是因为返回的内容本来就会出现在浏览器里（客户端标识不是秘密）——
+         一个不公开的"有哪些登录方式"不保护任何东西，只会迫使前端硬编码一份
+         会漂移的副本。若它将来开始返回需要保护的内容，就必须移出公开清单。
+      operationId: aladdin.identity.v1.IdentityService.GetAuthMethods
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.GetAuthMethodsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.GetAuthMethodsResponse'
+  /aladdin.identity.v1.IdentityService/WhoAmI:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: WhoAmI
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
+      operationId: aladdin.identity.v1.IdentityService.WhoAmI
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.WhoAmIRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.WhoAmIResponse'
+  /aladdin.identity.v1.IdentityService/GetSessionPermissions:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: GetSessionPermissions
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        返回当前主体在其可及作用域下展开后的权限码集合。
+         这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
+         因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
+      operationId: aladdin.identity.v1.IdentityService.GetSessionPermissions
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.GetSessionPermissionsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.GetSessionPermissionsResponse'
+  /aladdin.identity.v1.IdentityService/BindIdentity:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: BindIdentity
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        把一个登录渠道绑到当前主体上。
+
+         **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
+         因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
+         的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
+
+         该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
+         该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
+         正常绑定没有区别。
+      operationId: aladdin.identity.v1.IdentityService.BindIdentity
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.BindIdentityRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.BindIdentityResponse'
+  /aladdin.identity.v1.IdentityService/UnbindIdentity:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: UnbindIdentity
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        从当前主体上摘掉一个登录渠道。
+
+         同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
+         没有任何进入方式，而它的角色绑定还在，没有人能进来清理。
+
+         摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
+         的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
+      operationId: aladdin.identity.v1.IdentityService.UnbindIdentity
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.UnbindIdentityRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.UnbindIdentityResponse'
+  /aladdin.identity.v1.IdentityService/ListIdentities:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.identity.v1.IdentityService
+      summary: ListIdentities
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        列出当前主体已绑定的全部登录渠道。
+      operationId: aladdin.identity.v1.IdentityService.ListIdentities
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.identity.v1.ListIdentitiesRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.identity.v1.ListIdentitiesResponse'
+  /aladdin.profile.v1.ProfileService/GetProfile:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.profile.v1.ProfileService
+      summary: GetProfile
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        读取当前主体的档案。
+      operationId: aladdin.profile.v1.ProfileService.GetProfile
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.profile.v1.GetProfileRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.profile.v1.GetProfileResponse'
+  /aladdin.profile.v1.ProfileService/UpdateProfile:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.profile.v1.ProfileService
+      summary: UpdateProfile
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        设置当前主体的昵称与简介。
+
+         请求表达的是**期望的完整状态**，不是一次增量修改：空字符串表示清空
+         该项。因为没有"只改一个字段"的形状，也就不需要区分"没传"与"传空"。
+      operationId: aladdin.profile.v1.ProfileService.UpdateProfile
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.profile.v1.UpdateProfileRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.profile.v1.UpdateProfileResponse'
+  /aladdin.profile.v1.ProfileService/UpdateAvatar:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.profile.v1.ProfileService
+      summary: UpdateAvatar
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        上传或替换当前主体的头像。
+
+         **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
+         内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
+         一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
+         看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
+         时以谁为准"这个问题。
+
+         一个主体一个对象，替换即原地覆盖。
+      operationId: aladdin.profile.v1.ProfileService.UpdateAvatar
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.profile.v1.UpdateAvatarRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.profile.v1.UpdateAvatarResponse'
+  /aladdin.profile.v1.ProfileService/DeleteAvatar:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.profile.v1.ProfileService
+      summary: DeleteAvatar
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        删除当前主体的头像。没有头像时也成功（幂等）。
+      operationId: aladdin.profile.v1.ProfileService.DeleteAvatar
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.profile.v1.DeleteAvatarRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.profile.v1.DeleteAvatarResponse'
+  /aladdin.rbac.v1.RBACService/GetRole:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: rbac.role.read
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.rbac.v1.RBACService
+      summary: GetRole
+      description: |-
+        **鉴权**：需要权限 `rbac.role.read`；作用域取自请求字段。
+
+        读取角色定义。
+      operationId: aladdin.rbac.v1.RBACService.GetRole
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.rbac.v1.GetRoleRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.rbac.v1.GetRoleResponse'
+  /aladdin.rbac.v1.RBACService/ListRoles:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: rbac.role.read
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.rbac.v1.RBACService
+      summary: ListRoles
+      description: |-
+        **鉴权**：需要权限 `rbac.role.read`；作用域取自请求字段。
+
+        列出某个作用域下可见的角色。
+      operationId: aladdin.rbac.v1.RBACService.ListRoles
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.rbac.v1.ListRolesRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.rbac.v1.ListRolesResponse'
+  /aladdin.rbac.v1.RBACService/PutRole:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: rbac.role.write
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.rbac.v1.RBACService
+      summary: PutRole
+      description: |-
+        **鉴权**：需要权限 `rbac.role.write`；作用域取自请求字段。
+
+        创建或更新角色。属于不可逆操作，调用方需二次确认。
+      operationId: aladdin.rbac.v1.RBACService.PutRole
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.rbac.v1.PutRoleRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.rbac.v1.PutRoleResponse'
+  /aladdin.rbac.v1.RBACService/DeleteRole:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: rbac.role.write
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.rbac.v1.RBACService
+      summary: DeleteRole
+      description: |-
+        **鉴权**：需要权限 `rbac.role.write`；作用域取自请求字段。
+
+        删除角色。不可逆。
+      operationId: aladdin.rbac.v1.RBACService.DeleteRole
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.rbac.v1.DeleteRoleRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.rbac.v1.DeleteRoleResponse'
+  /aladdin.rbac.v1.RBACService/AssignRole:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: rbac.subject.assign
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.rbac.v1.RBACService
+      summary: AssignRole
+      description: |-
+        **鉴权**：需要权限 `rbac.subject.assign`；作用域取自请求字段。
+
+        为主体授予或回收角色。
+      operationId: aladdin.rbac.v1.RBACService.AssignRole
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.rbac.v1.AssignRoleRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.rbac.v1.AssignRoleResponse'
+  /aladdin.rbac.v1.RBACService/ListSubjectBindings:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: rbac.subject.read
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.rbac.v1.RBACService
+      summary: ListSubjectBindings
+      description: |-
+        **鉴权**：需要权限 `rbac.subject.read`；作用域取自请求字段。
+
+        列出某个主体持有的角色绑定。
+      operationId: aladdin.rbac.v1.RBACService.ListSubjectBindings
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.rbac.v1.ListSubjectBindingsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.rbac.v1.ListSubjectBindingsResponse'
+  /aladdin.rbac.v1.RBACService/PublishPolicy:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: rbac.policy.publish
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.rbac.v1.RBACService
+      summary: PublishPolicy
+      description: |-
+        **鉴权**：需要权限 `rbac.policy.publish`；作用域取自请求字段。
+
+        使一次角色变更正式生效（缓存失效 + 生效确认）。
+         对应 docs/design/rbac/role-model.md 的"生效确认"阶段。
+      operationId: aladdin.rbac.v1.RBACService.PublishPolicy
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.rbac.v1.PublishPolicyRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.rbac.v1.PublishPolicyResponse'
+components:
+  schemas:
+    aladdin.identity.v1.BindIdentityRequest:
+      type: object
+      allOf:
+        - anyOf:
+            - required:
+                - google
+            - not:
+                anyOf:
+                  - required:
+                      - google
+      anyOf:
+        - required:
+            - google
+        - not:
+            anyOf:
+              - required:
+                  - google
+      properties:
+        google:
+          allOf:
+            - title: google
+            - $ref: '#/components/schemas/aladdin.identity.v1.GoogleCredential'
+      title: BindIdentityRequest
+      additionalProperties: false
+    aladdin.identity.v1.BindIdentityResponse:
+      type: object
+      properties:
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.identity.v1.Identity'
+          title: identities
+      title: BindIdentityResponse
+      additionalProperties: false
+      description: |-
+        BindIdentityResponse 返回绑定之后该主体的全部渠道。
+
+         返回整份现状而不是一个"成功"标志：客户端刚做过一次会改变现状的操作，
+         让它在同一次往返里拿到新现状，比再多发一次查询更省事，也不会读到
+         两次请求之间的中间态。
+    aladdin.identity.v1.GetAuthMethodsRequest:
+      type: object
+      title: GetAuthMethodsRequest
+      additionalProperties: false
+    aladdin.identity.v1.GetAuthMethodsResponse:
+      type: object
+      properties:
+        googleClientId:
+          type: string
+          title: google_client_id
+          description: Google 登录的客户端标识；为空表示未启用该登录方式，前端不渲染对应入口。
+      title: GetAuthMethodsResponse
+      additionalProperties: false
+      description: |-
+        GetAuthMethodsResponse 描述服务端当前启用了哪些登录方式。
+
+         只承载公开信息：这里出现的一切都会明文送到浏览器，因此不得放入任何
+         需要保护的取值。
+    aladdin.identity.v1.GetSessionPermissionsRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+          description: 期望的作用域。留空时使用凭证的默认作用域。
+      title: GetSessionPermissionsRequest
+      additionalProperties: false
+    aladdin.identity.v1.GetSessionPermissionsResponse:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+        permissions:
+          type: array
+          items:
+            type: string
+          title: permissions
+          description: 已展开的最终权限码集合。
+      title: GetSessionPermissionsResponse
+      additionalProperties: false
+    aladdin.identity.v1.GoogleCredential:
+      type: object
+      properties:
+        idToken:
+          type: string
+          title: id_token
+      title: GoogleCredential
+      additionalProperties: false
+      description: |-
+        GoogleCredential 是 Google Identity Services 在浏览器内返回的身份令牌。
+
+         它由前端搬运、由服务端校验，前端的任何字段都不参与信任决策。服务端必须
+         校验签名、签发方、受众与有效期，其中**受众必须严格等于本服务配置的客户端
+         标识**——漏掉这一条意味着任何 Google 应用的令牌都能登录本服务。
+
+         这份令牌**不得进入日志、错误信息与 --debug 输出**：它与口令同级。
+    aladdin.identity.v1.Identity:
+      type: object
+      properties:
+        source:
+          type: string
+          title: source
+          description: 渠道来源，如 google。
+        externalId:
+          type: string
+          title: external_id
+          description: |-
+            该渠道上的身份标识。用于发起解绑；它本身不是秘密——拿到它也冒充不了
+             谁，登录仍要过渠道自己的校验。
+        display:
+          type: string
+          title: display
+          description: 该渠道给出的可读标识（如邮箱），仅供展示。
+      title: Identity
+      additionalProperties: false
+      description: |-
+        Identity 是一个已绑定的登录渠道。
+
+         **没有任何一个字段参与判定**，它们只用于展示与解绑时定位。
+    aladdin.identity.v1.ListIdentitiesRequest:
+      type: object
+      title: ListIdentitiesRequest
+      additionalProperties: false
+    aladdin.identity.v1.ListIdentitiesResponse:
+      type: object
+      properties:
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.identity.v1.Identity'
+          title: identities
+      title: ListIdentitiesResponse
+      additionalProperties: false
+    aladdin.identity.v1.LoginRequest:
+      type: object
+      allOf:
+        - anyOf:
+            - required:
+                - google
+            - required:
+                - password
+            - required:
+                - token
+            - not:
+                anyOf:
+                  - required:
+                      - google
+                  - required:
+                      - password
+                  - required:
+                      - token
+      anyOf:
+        - required:
+            - google
+        - required:
+            - password
+        - required:
+            - token
+        - not:
+            anyOf:
+              - required:
+                  - google
+              - required:
+                  - password
+              - required:
+                  - token
+      properties:
+        password:
+          allOf:
+            - title: password
+            - $ref: '#/components/schemas/aladdin.identity.v1.PasswordCredential'
+        token:
+          allOf:
+            - title: token
+            - $ref: '#/components/schemas/aladdin.identity.v1.TokenCredential'
+        google:
+          allOf:
+            - title: google
+            - $ref: '#/components/schemas/aladdin.identity.v1.GoogleCredential'
+      title: LoginRequest
+      additionalProperties: false
+    aladdin.identity.v1.LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          title: access_token
+        expiresAt:
+          type: string
+          title: expires_at
+          description: ISO 8601 UTC 时间。CLI 依据它做本地过期预检（见 cli-permissions.md）。
+      title: LoginResponse
+      additionalProperties: false
+    aladdin.identity.v1.PasswordCredential:
+      type: object
+      properties:
+        username:
+          type: string
+          title: username
+        password:
+          type: string
+          title: password
+      title: PasswordCredential
+      additionalProperties: false
+    aladdin.identity.v1.RefreshRequest:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          title: access_token
+      title: RefreshRequest
+      additionalProperties: false
+    aladdin.identity.v1.RefreshResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          title: access_token
+        expiresAt:
+          type: string
+          title: expires_at
+      title: RefreshResponse
+      additionalProperties: false
+    aladdin.identity.v1.TokenCredential:
+      type: object
+      properties:
+        token:
+          type: string
+          title: token
+      title: TokenCredential
+      additionalProperties: false
+    aladdin.identity.v1.UnbindIdentityRequest:
+      type: object
+      properties:
+        source:
+          type: string
+          title: source
+          description: 渠道来源，如 google。
+        externalId:
+          type: string
+          title: external_id
+          description: 该渠道上的身份标识。
+      title: UnbindIdentityRequest
+      additionalProperties: false
+    aladdin.identity.v1.UnbindIdentityResponse:
+      type: object
+      properties:
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.identity.v1.Identity'
+          title: identities
+      title: UnbindIdentityResponse
+      additionalProperties: false
+    aladdin.identity.v1.WhoAmIRequest:
+      type: object
+      title: WhoAmIRequest
+      additionalProperties: false
+    aladdin.identity.v1.WhoAmIResponse:
+      type: object
+      properties:
+        subjectId:
+          type: string
+          title: subject_id
+        subjectType:
+          type: string
+          title: subject_type
+          description: 主体类型：user / service_account / machine。
+        defaultScope:
+          type: string
+          title: default_scope
+          description: 凭证自身绑定的默认作用域。
+      title: WhoAmIResponse
+      additionalProperties: false
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      enum:
+        - 1
+      description: Define the version of the Connect protocol
+      const: 1
+    connect-timeout-header:
+      type: number
+      title: Connect-Timeout-Ms
+      description: Define the timeout, in ms
+    connect.error:
+      type: object
+      properties:
+        code:
+          type: string
+          examples:
+            - CodeNotFound
+          enum:
+            - CodeCanceled
+            - CodeUnknown
+            - CodeInvalidArgument
+            - CodeDeadlineExceeded
+            - CodeNotFound
+            - CodeAlreadyExists
+            - CodePermissionDenied
+            - CodeResourceExhausted
+            - CodeFailedPrecondition
+            - CodeAborted
+            - CodeOutOfRange
+            - CodeInternal
+            - CodeUnavailable
+            - CodeDataLoss
+            - CodeUnauthenticated
+          description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+        message:
+          type: string
+          description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+        detail:
+          $ref: '#/components/schemas/google.protobuf.Any'
+      title: Connect Error
+      additionalProperties: true
+      description: 'Error type returned by Connect: https://connectrpc.com/docs/go/errors/#http-representation'
+    google.protobuf.Any:
+      type: object
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+          format: binary
+        debug:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+    aladdin.profile.v1.DeleteAvatarRequest:
+      type: object
+      title: DeleteAvatarRequest
+      additionalProperties: false
+    aladdin.profile.v1.DeleteAvatarResponse:
+      type: object
+      properties:
+        profile:
+          allOf:
+            - title: profile
+            - $ref: '#/components/schemas/aladdin.profile.v1.Profile'
+      title: DeleteAvatarResponse
+      additionalProperties: false
+    aladdin.profile.v1.GetProfileRequest:
+      type: object
+      title: GetProfileRequest
+      additionalProperties: false
+    aladdin.profile.v1.GetProfileResponse:
+      type: object
+      properties:
+        profile:
+          allOf:
+            - title: profile
+            - $ref: '#/components/schemas/aladdin.profile.v1.Profile'
+      title: GetProfileResponse
+      additionalProperties: false
+    aladdin.profile.v1.Profile:
+      type: object
+      properties:
+        nickname:
+          type: string
+          title: nickname
+          description: 主体自己设置的昵称。为空表示未设置——此时 display_name 会回退。
+        displayName:
+          type: string
+          title: display_name
+          description: |-
+            界面应当显示的名字，由服务端按回退规则算好，客户端**不得**自行拼接。
+
+             规则：昵称非空则用昵称；否则取该主体渠道列表里第一条非空的渠道可读
+             标识（如邮箱）；否则用主体标识。回退只有这一处实现——两端各写一份
+             必然漂移，表现为页头与服务端日志里这个人叫两个名字。
+
+             它**只用于展示**：不参与判定，也不能被当作身份来查人。
+        bio:
+          type: string
+          title: bio
+          description: 简介。为空表示未填写。
+        avatarUrl:
+          type: string
+          title: avatar_url
+          description: |-
+            头像的**短时有效**预签名读取地址，客户端直接放进 <img src>。
+
+             为空表示"当前没有可显示的头像"：既可能是真的没设，也可能是头像存储
+             未启用或暂时取不到地址。
+
+             **这个地址在有效期内谁拿到都能用**，它是一份短期凭证。这正是"头像
+             里不得承载任何秘密"这条约束的来源——它本来就是要显示给人看的。
+             地址过期后重新调用本服务即可拿到新地址。
+
+             刻意**不给"头像更新时间"**：预签名地址每次生成都不同，缓存失效不需要
+             额外的版本字段；而档案行的更新时间是整行的（改昵称也会动它），拿它当
+             头像时间会显示一个与头像无关的时间。
+        avatarUploadEnabled:
+          type: boolean
+          title: avatar_upload_enabled
+          description: |-
+            头像上传功能在当前部署里是否可用（即服务端是否配置了对象存储）。
+
+             为假时客户端**不渲染**上传控件，而不是渲染一个点了报错的按钮——与
+             "未配置 Google 客户端标识时不渲染登录入口"同一取向：能力由服务端下发，
+             客户端不猜。为假不影响 nickname 与 bio。
+        avatarMaxBytes:
+          type: integer
+          title: avatar_max_bytes
+          description: |-
+            头像的字节上限。
+
+             它是这条上限的**唯一声明处**：客户端据此在选文件时就早退，免得把一个
+             几十 MB 的文件整个传上来只为了被拒。服务端仍然是权威——客户端的这一
+             判断只是省一次往返，不是一条安全边界，前端不得把它当成校验。
+
+             取 uint32 而不是 int64：客户端拿到的是一个普通数字，不必为一个几百 KB
+             量级的取值去处理大整数。
+      title: Profile
+      additionalProperties: false
+      description: |-
+        Profile 是一个主体的展示信息。
+
+         **没有任何一个字段参与判定**，也没有任何一个字段是身份键。它们只影响
+         界面上显示什么。
+    aladdin.profile.v1.UpdateAvatarRequest:
+      type: object
+      properties:
+        image:
+          type: string
+          title: image
+          format: byte
+          description: |-
+            图片字节。类型由服务端嗅探决定，此处不存在"声明类型"的字段。
+             超出大小上限时拒绝。
+      title: UpdateAvatarRequest
+      additionalProperties: false
+    aladdin.profile.v1.UpdateAvatarResponse:
+      type: object
+      properties:
+        profile:
+          allOf:
+            - title: profile
+            - $ref: '#/components/schemas/aladdin.profile.v1.Profile'
+      title: UpdateAvatarResponse
+      additionalProperties: false
+    aladdin.profile.v1.UpdateProfileRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          title: nickname
+          description: 期望的完整状态。空字符串表示清空该项并回退到展示名的下一条规则。
+        bio:
+          type: string
+          title: bio
+          description: 期望的完整状态。空字符串表示清空。
+      title: UpdateProfileRequest
+      additionalProperties: false
+    aladdin.profile.v1.UpdateProfileResponse:
+      type: object
+      properties:
+        profile:
+          allOf:
+            - title: profile
+            - $ref: '#/components/schemas/aladdin.profile.v1.Profile'
+      title: UpdateProfileResponse
+      additionalProperties: false
+      description: |-
+        返回更新之后的完整档案，而不是一个"成功"标志。
+
+         客户端刚做过一次会改变现状的操作，让它在同一次往返里拿到新现状，比再多
+         发一次查询更省事，也不会读到两次请求之间的中间态。display_name 与
+         avatar_url 都按新状态重新计算。
+    aladdin.rbac.v1.ScopeSource:
+      type: string
+      title: ScopeSource
+      enum:
+        - SCOPE_SOURCE_UNSPECIFIED
+        - SCOPE_SOURCE_REQUEST_FIELD
+        - SCOPE_SOURCE_METADATA
+        - SCOPE_SOURCE_CREDENTIAL
+      description: 作用域的解析来源。
+    aladdin.rbac.v1.DenialReason:
+      type: string
+      title: DenialReason
+      enum:
+        - DENIAL_REASON_UNSPECIFIED
+        - DENIAL_REASON_ALLOW
+        - DENIAL_REASON_NO_MATCHING_GRANT
+        - DENIAL_REASON_SCOPE_MISMATCH
+        - DENIAL_REASON_SESSION_EXPIRED
+        - DENIAL_REASON_SUBJECT_NOT_FOUND
+        - DENIAL_REASON_STORE_UNAVAILABLE
+        - DENIAL_REASON_ANNOTATION_MISSING
+      description: DenialReason 是一次鉴权结论的固定原因。
+    aladdin.rbac.v1.DenialDetail:
+      type: object
+      properties:
+        reason:
+          allOf:
+            - title: reason
+            - $ref: '#/components/schemas/aladdin.rbac.v1.DenialReason'
+        detail:
+          type: string
+          title: detail
+          description: |-
+            人类可读的补充说明。**客户端不得据此分支**——需要分支的信息
+             应当进 reason 或 metadata，而不是靠匹配这句话。
+        metadata:
+          type: object
+          title: metadata
+          additionalProperties:
+            type: string
+            title: value
+          description: |-
+            结构化补充信息。服务端配置缺陷（注解缺失）时携带
+             method / detail 两个键，便于在几秒内定位到是哪个方法漏了声明。
+      title: DenialDetail
+      additionalProperties: false
+      description: |-
+        DenialDetail 是附带在 RPC 错误上的结构化拒绝原因。
+
+         它作为 google.protobuf.Any 挂在错误详情里，三端都从同一个
+         生成类型读取，不做任何文本匹配。
+    aladdin.rbac.v1.DenialDetail.MetadataEntry:
+      type: object
+      properties:
+        key:
+          type: string
+          title: key
+        value:
+          type: string
+          title: value
+      title: MetadataEntry
+      additionalProperties: false
+    aladdin.rbac.v1.AssignRoleRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+        subjectId:
+          type: string
+          title: subject_id
+          description: 目标主体标识。
+        roleId:
+          type: string
+          title: role_id
+        grant:
+          type: boolean
+          title: grant
+          description: true 为授予，false 为回收。
+      title: AssignRoleRequest
+      additionalProperties: false
+    aladdin.rbac.v1.AssignRoleResponse:
+      type: object
+      properties:
+        changeId:
+          type: string
+          title: change_id
+      title: AssignRoleResponse
+      additionalProperties: false
+    aladdin.rbac.v1.DeleteRoleRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+        roleId:
+          type: string
+          title: role_id
+      title: DeleteRoleRequest
+      additionalProperties: false
+    aladdin.rbac.v1.DeleteRoleResponse:
+      type: object
+      properties:
+        changeId:
+          type: string
+          title: change_id
+      title: DeleteRoleResponse
+      additionalProperties: false
+    aladdin.rbac.v1.GetRoleRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+        roleId:
+          type: string
+          title: role_id
+      title: GetRoleRequest
+      additionalProperties: false
+    aladdin.rbac.v1.GetRoleResponse:
+      type: object
+      properties:
+        role:
+          allOf:
+            - title: role
+            - $ref: '#/components/schemas/aladdin.rbac.v1.Role'
+      title: GetRoleResponse
+      additionalProperties: false
+    aladdin.rbac.v1.ListRolesRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+      title: ListRolesRequest
+      additionalProperties: false
+    aladdin.rbac.v1.ListRolesResponse:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.rbac.v1.Role'
+          title: roles
+      title: ListRolesResponse
+      additionalProperties: false
+    aladdin.rbac.v1.ListSubjectBindingsRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+        subjectId:
+          type: string
+          title: subject_id
+      title: ListSubjectBindingsRequest
+      additionalProperties: false
+    aladdin.rbac.v1.ListSubjectBindingsResponse:
+      type: object
+      properties:
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.rbac.v1.RoleBinding'
+          title: bindings
+        effectivePermissions:
+          type: array
+          items:
+            type: string
+          title: effective_permissions
+          description: 展开后的最终权限码集合。前端会话权限即来源于此（见 frontend-permissions.md）。
+      title: ListSubjectBindingsResponse
+      additionalProperties: false
+    aladdin.rbac.v1.PublishPolicyRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+        changeId:
+          type: string
+          title: change_id
+          description: 要发布的变更标识。留空表示发布该作用域下全部未发布的变更。
+      title: PublishPolicyRequest
+      additionalProperties: false
+    aladdin.rbac.v1.PublishPolicyResponse:
+      type: object
+      properties:
+        changeId:
+          type: string
+          title: change_id
+        invalidatedEntries:
+          type: integer
+          title: invalidated_entries
+          format: int32
+          description: 实际失效的缓存条目数，用于外部确认"缓存失效"阶段已完成。
+      title: PublishPolicyResponse
+      additionalProperties: false
+    aladdin.rbac.v1.PutRoleRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+        role:
+          allOf:
+            - title: role
+            - $ref: '#/components/schemas/aladdin.rbac.v1.Role'
+      title: PutRoleRequest
+      additionalProperties: false
+    aladdin.rbac.v1.PutRoleResponse:
+      type: object
+      properties:
+        role:
+          allOf:
+            - title: role
+            - $ref: '#/components/schemas/aladdin.rbac.v1.Role'
+        changeId:
+          type: string
+          title: change_id
+          description: 本次变更的标识，可作为进度查询的键（见 role-model.md 的检查点约定）。
+      title: PutRoleResponse
+      additionalProperties: false
+    aladdin.rbac.v1.Role:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+          description: 角色标识。一经发布不可更改；标识变更等同于"删除旧角色 + 新建角色"。
+        displayName:
+          type: string
+          title: display_name
+          description: 展示名，可修改。
+        permissions:
+          type: array
+          items:
+            type: string
+          title: permissions
+          description: 角色直接持有的权限码，取值必须存在于权限目录中。
+        inherits:
+          type: array
+          items:
+            type: string
+          title: inherits
+          description: 被继承的角色标识。
+        mutuallyExclusiveWith:
+          type: array
+          items:
+            type: string
+          title: mutually_exclusive_with
+          description: 静态互斥（SSD）的角色标识：不可与这些角色同时授予同一主体。
+        builtin:
+          type: boolean
+          title: builtin
+          description: 是否内置角色。内置角色不可删除，且权限范围不可修改。
+      title: Role
+      additionalProperties: false
+    aladdin.rbac.v1.RoleBinding:
+      type: object
+      properties:
+        subjectId:
+          type: string
+          title: subject_id
+        roleId:
+          type: string
+          title: role_id
+        scope:
+          type: string
+          title: scope
+      title: RoleBinding
+      additionalProperties: false
+tags:
+  - name: aladdin.identity.v1.IdentityService
+    description: |-
+      IdentityService 是身份认证面。
+
+       边界：本服务只做认证（你是谁）。判定（你能做什么）由 RBAC 负责。
+       认证失败与鉴权失败必须返回不同的状态码，见 grpc-interceptor.md 的拒绝语义。
+  - name: aladdin.profile.v1.ProfileService
+    description: |-
+      ProfileService 是个人档案面：主体自己的展示信息（昵称、简介、头像）。
+
+       边界：它回答"这个主体叫什么、长什么样"，既不回答"你是谁"（认证，
+       见 IdentityService），也不回答"你能做什么"（RBAC）。**档案不参与
+       任何一次判定**，也不是一条身份路径——不能按昵称查人，昵称也不唯一。
+
+       **每个方法都只作用于调用者自己。** 接口面上刻意不存在任何带目标主体
+       标识的方法：归属由凭证决定，不由请求里的字段决定。由此得到的结论是
+       准入门槛为"已认证"而非某个权限码——不存在以他人为目标的形状，也就
+       不存在可被滥用的授权面。
+
+       若将来要加"管理员查看或编辑他人档案"，那是一个以他人为目标的动作，
+       必须带权限码，并且**不得**与本服务的自服务方法混在一个入口里。
+  - name: aladdin.rbac.v1.RBACService
+    description: |-
+      RBACService 是权限体系的管理面。
+
+       注意：本服务只负责**管理**角色与授权关系，不负责判定。
+       判定发生在每个业务方法的入口（由鉴权拦截器统一执行），
+       因此本服务自身的方法同样受注解约束。

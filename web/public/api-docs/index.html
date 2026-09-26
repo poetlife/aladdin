@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>aladdin API</title>
+  <style>
+    body { margin: 0; padding: 0; }
+  </style>
+</head>
+<body>
+  <div id="redoc"></div>
+
+  <!-- redoc.standalone.js 由 npm run sync-redoc 从 node_modules 同步，不进版本库。 -->
+  <script src="./redoc.standalone.js"></script>
+  <script>
+    // openapi.yaml 由 make api-docs 生成（合并版），不要手改。
+    //
+    // 每个方法的鉴权要求写在它的 description 里，所以这里不需要额外配置：
+    // Redoc 默认不渲染自定义扩展，而 x-aladdin-auth 是留给机器读的
+    // （要开也能开，但显示出来是原始 JSON，对读文档的人不如一行文字）。
+    Redoc.init('./openapi.yaml', {}, document.getElementById('redoc'))
+  </script>
+</body>
+</html>
