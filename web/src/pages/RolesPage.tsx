@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Empty, Space, Table, Tag, Typography } from 'antd'
 import type { TableProps } from 'antd'
+import { RefreshCw, ShieldCheck } from 'lucide-react'
 
 import * as rbacApi from '../api/rbac'
 import { messageOf, traceIdOf } from '../api/errors'
@@ -77,13 +78,20 @@ export function RolesPage(): React.ReactNode {
 
   return (
     <Card
-      title="角色"
+      title={
+        <Space size={8}>
+          <ShieldCheck size={16} />
+          角色
+        </Space>
+      }
       extra={
         <Space>
           <PermissionGate require={PermissionCodes.RbacPolicyPublish}>
             <Button onClick={() => void load()}>发布变更</Button>
           </PermissionGate>
-          <Button onClick={() => void load()}>刷新</Button>
+          <Button icon={<RefreshCw size={16} />} onClick={() => void load()}>
+            刷新
+          </Button>
         </Space>
       }
     >
@@ -101,7 +109,18 @@ export function RolesPage(): React.ReactNode {
           style={{ marginBottom: 16 }}
         />
       )}
-      <Table<Role> rowKey="id" columns={columns} dataSource={roles} loading={loading} pagination={false} />
+      <Table<Role>
+        rowKey="id"
+        columns={columns}
+        dataSource={roles}
+        loading={loading}
+        pagination={false}
+        locale={{
+          emptyText: (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前作用域下没有角色" />
+          ),
+        }}
+      />
     </Card>
   )
 }

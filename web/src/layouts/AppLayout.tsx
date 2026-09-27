@@ -1,12 +1,16 @@
-import { Avatar, Layout, Menu, Space, Tag, Typography, Button, Input } from 'antd'
+import { Layout, Menu, theme } from 'antd'
+import { CircleUserRound, Lamp, LayoutDashboard, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 
-import { useAnyPermission, useSession } from '../auth'
+import { useAnyPermission } from '../auth'
 import { PermissionCodes } from '../gen/permission-codes'
-import { ProfileProvider, avatarFallbackInitial, useProfile } from '../profile'
+import { ProfileProvider } from '../profile'
+import { AppHeader } from './AppHeader'
 
-const { Header, Sider, Content } = Layout
+const { Sider, Content } = Layout
+
+const ICON_SIZE = 16
 
 /**
  * 应用外壳。
@@ -30,78 +34,77 @@ export function AppLayout(): React.ReactNode {
 function AppShell(): React.ReactNode {
   const navigate = useNavigate()
   const location = useLocation()
-  const { subject, scope, setScope, signOut } = useSession()
-  const { profile } = useProfile()
   const canReadRoles = useAnyPermission([PermissionCodes.RbacRoleRead])
 
-  const [scopeDraft, setScopeDraft] = useState(scope)
+  const [collapsed, setCollapsed] = useState(false)
 
   const items = [
-    { key: '/', label: '概览' },
+    { key: '/', label: '概览', icon: <LayoutDashboard size={ICON_SIZE} /> },
     // 个人资料不需要权限码：它只作用于自己（见 docs/design/profile/README.md）。
-    { key: '/profile', label: '个人资料' },
-    ...(canReadRoles ? [{ key: '/roles', label: '角色' }] : []),
+    { key: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
+    ...(canReadRoles
+      ? [{ key: '/roles', label: '角色', icon: <ShieldCheck size={ICON_SIZE} /> }]
+      : []),
   ]
-
-  // 展示名由服务端算好（未设昵称时回退到渠道标识）。它还没到时先显示主体
-  // 标识——那正是回退规则的最后一档，因此不是一个"错的中间态"，
-  // 只是暂时停在了最后一档。
-  const displayName = profile?.displayName ?? subject?.subjectId ?? '未登录'
-  const avatarUrl = profile?.avatarUrl ?? ''
-
-  async function applyScope(): Promise<void> {
-    if (scopeDraft !== scope) {
-      await setScope(scopeDraft)
-    }
-  }
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <Typography.Title level={4} style={{ color: '#fff', margin: 0, whiteSpace: 'nowrap' }}>
-          阿拉丁神灯
-        </Typography.Title>
-        <Space style={{ marginLeft: 'auto' }} align="center">
-          <Input
-            value={scopeDraft}
-            onChange={(e) => setScopeDraft(e.target.value)}
-            onBlur={() => void applyScope()}
-            onPressEnter={() => void applyScope()}
-            placeholder="作用域，如 tenant/acme"
-            style={{ width: 220 }}
-            aria-label="当前作用域"
-          />
-          <Space size="small" align="center">
-            <Avatar size="small" src={avatarUrl === '' ? undefined : avatarUrl}>
-              {avatarFallbackInitial(displayName)}
-            </Avatar>
-            <Tag>{displayName}</Tag>
-          </Space>
-          <Button
-            size="small"
-            onClick={() => {
-              signOut()
-              void navigate('/login')
-            }}
-          >
-            退出
-          </Button>
-        </Space>
-      </Header>
+      {/* theme="light" 的底色是 colorBgContainer，它随明暗算法走——
+          这里不写死色值，暗色下侧边栏自然比内容区更亮一层。 */}
+      <Sider
+        theme="light"
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        trigger={null}
+        breakpoint="lg"
+        width={220}
+        collapsedWidth={64}
+      >
+        <Brand collapsed={collapsed} />
+        <Menu
+          mode="inline"
+          selectedKeys={[location.pathname]}
+          items={items}
+          onClick={({ key }) => void navigate(key)}
+        />
+      </Sider>
       <Layout>
-        <Sider width={180} theme="light">
-          <Menu
-            mode="inline"
-            selectedKeys={[location.pathname]}
-            items={items}
-            onClick={({ key }) => void navigate(key)}
-            style={{ height: '100%', borderInlineEnd: 0 }}
-          />
-        </Sider>
+        <AppHeader collapsed={collapsed} onToggleCollapsed={() => setCollapsed((prev) => !prev)} />
         <Content style={{ padding: 24 }}>
           <Outlet />
         </Content>
       </Layout>
     </Layout>
+  )
+}
+
+/**
+ * 侧边栏顶部的品牌区。
+ *
+ * 高度取自 `controlHeight * 2`——与 antd 的页头默认高度同一个算式，
+ * 于是品牌区与页头始终齐平，中间那条分隔线是连续的一根。
+ */
+function Brand({ collapsed }: { collapsed: boolean }): React.ReactNode {
+  const { token } = theme.useToken()
+
+  return (
+    <div
+      style={{
+        height: token.controlHeight * 2,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: 8,
+        paddingInline: collapsed ? 0 : 20,
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        overflow: 'hidden',
+      }}
+    >
+      <Lamp size={20} color={token.colorPrimary} />
+      {!collapsed && (
+        <span style={{ fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap' }}>阿拉丁神灯</span>
+      )}
+    </div>
   )
 }

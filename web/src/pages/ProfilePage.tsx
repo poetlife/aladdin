@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alert, Avatar, Button, Card, Divider, Form, Input, Space, Typography, Upload } from 'antd'
+import { CircleUserRound, ImageUp, Info, Pencil, Trash2 } from 'lucide-react'
 
 import { messageOf } from '../api/errors'
 import { useSession } from '../auth'
@@ -123,18 +124,25 @@ export function ProfilePage(): React.ReactNode {
   }
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-      <Card title="头像">
+    <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+      <Card
+        title={
+          <Space size={8}>
+            <CircleUserRound size={16} />
+            头像
+          </Space>
+        }
+      >
         {avatarError !== null && (
           <Alert type="error" message={avatarError} style={{ marginBottom: 16 }} />
         )}
-        <Space size="large" align="center">
+        <Space size={24} align="center">
           <Avatar size={96} src={profile.avatarUrl === '' ? undefined : profile.avatarUrl}>
             {avatarFallbackInitial(profile.displayName)}
           </Avatar>
 
           {profile.avatarUploadEnabled ? (
-            <Space direction="vertical">
+            <Space orientation="vertical" size={8}>
               <Space>
                 <Upload
                   accept="image/png,image/jpeg,image/gif"
@@ -146,10 +154,17 @@ export function ProfilePage(): React.ReactNode {
                     return false
                   }}
                 >
-                  <Button loading={avatarBusy}>上传头像</Button>
+                  <Button icon={<ImageUp size={16} />} loading={avatarBusy}>
+                    上传头像
+                  </Button>
                 </Upload>
                 {profile.avatarUrl !== '' && (
-                  <Button danger loading={avatarBusy} onClick={() => void handleDeleteAvatar()}>
+                  <Button
+                    danger
+                    icon={<Trash2 size={16} />}
+                    loading={avatarBusy}
+                    onClick={() => void handleDeleteAvatar()}
+                  >
                     删除头像
                   </Button>
                 )}
@@ -166,7 +181,14 @@ export function ProfilePage(): React.ReactNode {
         </Space>
       </Card>
 
-      <Card title="昵称与简介">
+      <Card
+        title={
+          <Space size={8}>
+            <Pencil size={16} />
+            昵称与简介
+          </Space>
+        }
+      >
         {saveError !== null && (
           <Alert type="error" message={saveError} style={{ marginBottom: 16 }} />
         )}
@@ -193,16 +215,19 @@ export function ProfilePage(): React.ReactNode {
       <IdentityCard />
 
       <Card>
-        <Typography.Text type="secondary">
-          界面上的名字与头像由服务端算好下发：未设置昵称时回退到登录渠道标识。
-          档案
-          <Typography.Text strong>不参与任何权限判定</Typography.Text>
-          ，改它不会改变你能做什么。
-        </Typography.Text>
-        <Divider style={{ margin: '12px 0' }} />
-        <Typography.Text type="secondary">
-          主体标识：{subject?.subjectId ?? '—'}
-        </Typography.Text>
+        <Space align="start" size={8}>
+          <Info size={16} style={{ marginTop: 4, flexShrink: 0 }} />
+          <div>
+            <Typography.Text type="secondary">
+              界面上的名字与头像由服务端算好下发：未设置昵称时回退到登录渠道标识。
+              档案
+              <Typography.Text strong>不参与任何权限判定</Typography.Text>
+              ，改它不会改变你能做什么。
+            </Typography.Text>
+            <Divider style={{ margin: '12px 0' }} />
+            <Typography.Text type="secondary">主体标识：{subject?.subjectId ?? '—'}</Typography.Text>
+          </div>
+        </Space>
       </Card>
     </Space>
   )

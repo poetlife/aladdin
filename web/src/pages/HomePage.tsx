@@ -1,4 +1,5 @@
 import { Card, Descriptions, Empty, Space, Tag, Typography } from 'antd'
+import { LayoutDashboard, ShieldCheck } from 'lucide-react'
 
 import { usePermissionSet, useSession } from '../auth'
 import { useProfile } from '../profile'
@@ -16,9 +17,16 @@ export function HomePage(): React.ReactNode {
   const codes = permissions.toArray()
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-      <Card title="当前会话">
-        <Descriptions column={2} size="small">
+    <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+      <Card
+        title={
+          <Space size={8}>
+            <LayoutDashboard size={16} />
+            当前会话
+          </Space>
+        }
+      >
+        <Descriptions column={{ xs: 1, sm: 1, md: 2 }} size="small">
           {/* 展示名由服务端算好：未设昵称时回退到登录渠道标识。把它与主体标识
               并排显示，是因为排障时常常需要把界面上看到的名字对应回库里那一行。 */}
           <Descriptions.Item label="显示名">{profile?.displayName ?? '—'}</Descriptions.Item>
@@ -32,8 +40,12 @@ export function HomePage(): React.ReactNode {
       </Card>
 
       <Card
-        title="生效权限"
-        extra={<Typography.Text type="secondary">由服务端展开，前端不做推导</Typography.Text>}
+        title={
+          <Space size={8}>
+            <ShieldCheck size={16} />
+            生效权限
+          </Space>
+        }
       >
         {codes.length === 0 ? (
           <Empty description="当前作用域下没有生效权限" />
@@ -44,6 +56,11 @@ export function HomePage(): React.ReactNode {
             ))}
           </Space>
         )}
+        {/* 这句话原先挂在卡片右上角。窄屏下它会与标题争同一行、把标题挤成省略号，
+            所以改为一律放在内容之后的说明行。 */}
+        <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
+          由服务端展开，前端不做推导
+        </Typography.Paragraph>
       </Card>
     </Space>
   )
