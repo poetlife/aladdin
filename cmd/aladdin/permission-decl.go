@@ -83,7 +83,9 @@ func isDangerous(cmd *cobra.Command) bool {
 // 新增成员需要在评审中说明理由。
 var publicCommands = map[string]bool{
 	"aladdin version": true,
-	"aladdin login":   true,
+	// 升级只作用于调用者自己的那个文件，不碰服务端，也不需要凭证。
+	"aladdin update": true,
+	"aladdin login":  true,
 }
 
 // publicCommandPrefixes 是免鉴权命令的**子树**前缀。

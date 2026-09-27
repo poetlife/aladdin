@@ -28,6 +28,10 @@ const (
 	IdentityService_UnbindIdentity_FullMethodName          = "/aladdin.identity.v1.IdentityService/UnbindIdentity"
 	IdentityService_CompleteIdentityBinding_FullMethodName = "/aladdin.identity.v1.IdentityService/CompleteIdentityBinding"
 	IdentityService_ListIdentities_FullMethodName          = "/aladdin.identity.v1.IdentityService/ListIdentities"
+	IdentityService_StartDeviceLogin_FullMethodName        = "/aladdin.identity.v1.IdentityService/StartDeviceLogin"
+	IdentityService_PollDeviceLogin_FullMethodName         = "/aladdin.identity.v1.IdentityService/PollDeviceLogin"
+	IdentityService_ApproveDeviceLogin_FullMethodName      = "/aladdin.identity.v1.IdentityService/ApproveDeviceLogin"
+	IdentityService_DenyDeviceLogin_FullMethodName         = "/aladdin.identity.v1.IdentityService/DenyDeviceLogin"
 )
 
 // IdentityServiceClient is the client API for IdentityService service.
@@ -89,6 +93,37 @@ type IdentityServiceClient interface {
 	CompleteIdentityBinding(ctx context.Context, in *CompleteIdentityBindingRequest, opts ...grpc.CallOption) (*CompleteIdentityBindingResponse, error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error)
+	// 发起一次命令行的设备码登录。
+	//
+	// 公开是必须的：调用方正是那个还没登录的终端。它拿到一个给人看的短码与
+	// 一个给终端保管的设备码，后者是这台设备在批准之前的唯一凭据来源。
+	//
+	// 未配置对外地址时**本路径整体缺席**，返回"未实现"而不是"设备码无效"——
+	// 把配置缺失说成凭证问题，会让排障的人去查终端拿的是什么。
+	StartDeviceLogin(ctx context.Context, in *StartDeviceLoginRequest, opts ...grpc.CallOption) (*StartDeviceLoginResponse, error)
+	// 轮询一次设备码登录的结果。
+	//
+	// 公开，理由同上。**结果是一个状态，不是一个错误**：把"还没批准"表达成
+	// 一个错误码，会让"这一次轮询没结果"与"你未认证"变成同一个结论，而它们
+	// 该有完全不同的走向——前者该继续等，后者该重新登录。
+	//
+	// 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
+	// 非已批准的状态（见 docs/design/identity/device-login.md）。
+	PollDeviceLogin(ctx context.Context, in *PollDeviceLoginRequest, opts ...grpc.CallOption) (*PollDeviceLoginResponse, error)
+	// 批准一次设备码登录。
+	//
+	// **归属只由当前凭证决定**：请求里只有短码，没有主体——不存在"替某个主体
+	// 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定
+	// 的账号（见 docs/design/identity/device-login.md）。
+	//
+	// 交付的会话其作用域是**当前主体既有的默认作用域快照**：本方法不为这次
+	// 登录新算作用域，也不接受请求里给的作用域，因此不需要声明作用域来源。
+	ApproveDeviceLogin(ctx context.Context, in *ApproveDeviceLoginRequest, opts ...grpc.CallOption) (*ApproveDeviceLoginResponse, error)
+	// 拒绝一次设备码登录。
+	//
+	// 与批准同一条归属规则。拒绝是**给使用者的出口**：短码被误输入、或这次
+	// 登录不是自己发起的，人需要一个明确的"不"。
+	DenyDeviceLogin(ctx context.Context, in *DenyDeviceLoginRequest, opts ...grpc.CallOption) (*DenyDeviceLoginResponse, error)
 }
 
 type identityServiceClient struct {
@@ -189,6 +224,46 @@ func (c *identityServiceClient) ListIdentities(ctx context.Context, in *ListIden
 	return out, nil
 }
 
+func (c *identityServiceClient) StartDeviceLogin(ctx context.Context, in *StartDeviceLoginRequest, opts ...grpc.CallOption) (*StartDeviceLoginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartDeviceLoginResponse)
+	err := c.cc.Invoke(ctx, IdentityService_StartDeviceLogin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) PollDeviceLogin(ctx context.Context, in *PollDeviceLoginRequest, opts ...grpc.CallOption) (*PollDeviceLoginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PollDeviceLoginResponse)
+	err := c.cc.Invoke(ctx, IdentityService_PollDeviceLogin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) ApproveDeviceLogin(ctx context.Context, in *ApproveDeviceLoginRequest, opts ...grpc.CallOption) (*ApproveDeviceLoginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApproveDeviceLoginResponse)
+	err := c.cc.Invoke(ctx, IdentityService_ApproveDeviceLogin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) DenyDeviceLogin(ctx context.Context, in *DenyDeviceLoginRequest, opts ...grpc.CallOption) (*DenyDeviceLoginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DenyDeviceLoginResponse)
+	err := c.cc.Invoke(ctx, IdentityService_DenyDeviceLogin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IdentityServiceServer is the server API for IdentityService service.
 // All implementations must embed UnimplementedIdentityServiceServer
 // for forward compatibility.
@@ -248,6 +323,37 @@ type IdentityServiceServer interface {
 	CompleteIdentityBinding(context.Context, *CompleteIdentityBindingRequest) (*CompleteIdentityBindingResponse, error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error)
+	// 发起一次命令行的设备码登录。
+	//
+	// 公开是必须的：调用方正是那个还没登录的终端。它拿到一个给人看的短码与
+	// 一个给终端保管的设备码，后者是这台设备在批准之前的唯一凭据来源。
+	//
+	// 未配置对外地址时**本路径整体缺席**，返回"未实现"而不是"设备码无效"——
+	// 把配置缺失说成凭证问题，会让排障的人去查终端拿的是什么。
+	StartDeviceLogin(context.Context, *StartDeviceLoginRequest) (*StartDeviceLoginResponse, error)
+	// 轮询一次设备码登录的结果。
+	//
+	// 公开，理由同上。**结果是一个状态，不是一个错误**：把"还没批准"表达成
+	// 一个错误码，会让"这一次轮询没结果"与"你未认证"变成同一个结论，而它们
+	// 该有完全不同的走向——前者该继续等，后者该重新登录。
+	//
+	// 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
+	// 非已批准的状态（见 docs/design/identity/device-login.md）。
+	PollDeviceLogin(context.Context, *PollDeviceLoginRequest) (*PollDeviceLoginResponse, error)
+	// 批准一次设备码登录。
+	//
+	// **归属只由当前凭证决定**：请求里只有短码，没有主体——不存在"替某个主体
+	// 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定
+	// 的账号（见 docs/design/identity/device-login.md）。
+	//
+	// 交付的会话其作用域是**当前主体既有的默认作用域快照**：本方法不为这次
+	// 登录新算作用域，也不接受请求里给的作用域，因此不需要声明作用域来源。
+	ApproveDeviceLogin(context.Context, *ApproveDeviceLoginRequest) (*ApproveDeviceLoginResponse, error)
+	// 拒绝一次设备码登录。
+	//
+	// 与批准同一条归属规则。拒绝是**给使用者的出口**：短码被误输入、或这次
+	// 登录不是自己发起的，人需要一个明确的"不"。
+	DenyDeviceLogin(context.Context, *DenyDeviceLoginRequest) (*DenyDeviceLoginResponse, error)
 	mustEmbedUnimplementedIdentityServiceServer()
 }
 
@@ -284,6 +390,18 @@ func (UnimplementedIdentityServiceServer) CompleteIdentityBinding(context.Contex
 }
 func (UnimplementedIdentityServiceServer) ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListIdentities not implemented")
+}
+func (UnimplementedIdentityServiceServer) StartDeviceLogin(context.Context, *StartDeviceLoginRequest) (*StartDeviceLoginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartDeviceLogin not implemented")
+}
+func (UnimplementedIdentityServiceServer) PollDeviceLogin(context.Context, *PollDeviceLoginRequest) (*PollDeviceLoginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PollDeviceLogin not implemented")
+}
+func (UnimplementedIdentityServiceServer) ApproveDeviceLogin(context.Context, *ApproveDeviceLoginRequest) (*ApproveDeviceLoginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApproveDeviceLogin not implemented")
+}
+func (UnimplementedIdentityServiceServer) DenyDeviceLogin(context.Context, *DenyDeviceLoginRequest) (*DenyDeviceLoginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DenyDeviceLogin not implemented")
 }
 func (UnimplementedIdentityServiceServer) mustEmbedUnimplementedIdentityServiceServer() {}
 func (UnimplementedIdentityServiceServer) testEmbeddedByValue()                         {}
@@ -468,6 +586,78 @@ func _IdentityService_ListIdentities_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityService_StartDeviceLogin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartDeviceLoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).StartDeviceLogin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_StartDeviceLogin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).StartDeviceLogin(ctx, req.(*StartDeviceLoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_PollDeviceLogin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PollDeviceLoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).PollDeviceLogin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_PollDeviceLogin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).PollDeviceLogin(ctx, req.(*PollDeviceLoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_ApproveDeviceLogin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApproveDeviceLoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).ApproveDeviceLogin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_ApproveDeviceLogin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).ApproveDeviceLogin(ctx, req.(*ApproveDeviceLoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_DenyDeviceLogin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DenyDeviceLoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).DenyDeviceLogin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_DenyDeviceLogin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).DenyDeviceLogin(ctx, req.(*DenyDeviceLoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IdentityService_ServiceDesc is the grpc.ServiceDesc for IdentityService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -510,6 +700,22 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListIdentities",
 			Handler:    _IdentityService_ListIdentities_Handler,
+		},
+		{
+			MethodName: "StartDeviceLogin",
+			Handler:    _IdentityService_StartDeviceLogin_Handler,
+		},
+		{
+			MethodName: "PollDeviceLogin",
+			Handler:    _IdentityService_PollDeviceLogin_Handler,
+		},
+		{
+			MethodName: "ApproveDeviceLogin",
+			Handler:    _IdentityService_ApproveDeviceLogin_Handler,
+		},
+		{
+			MethodName: "DenyDeviceLogin",
+			Handler:    _IdentityService_DenyDeviceLogin_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -940,7 +940,11 @@ func TestValidatePublicBaseURL(t *testing.T) {
 	})
 }
 
-// 重定向型渠道的三项必须同时给出：缺任何一项都拒绝启动，且错误信息指出缺的是哪一项。
+// GitHub 登录的标识与密钥必须成对给出：缺任何一项都拒绝启动，且错误信息指出
+// 缺的是哪一项。
+//
+// **对外地址不参与这一对**：它有自己的、与渠道无关的用途（命令行登录的批准页
+// 地址也由它构造），因此"只有对外地址"是合法配置。
 func TestValidateGithubLogin(t *testing.T) {
 	full := ServerConfig{
 		GithubClientID:     "Iv1.0123456789abcdef",
@@ -951,6 +955,13 @@ func TestValidateGithubLogin(t *testing.T) {
 	t.Run("全空即未启用", func(t *testing.T) {
 		if err := validateGithubLogin(ServerConfig{}); err != nil {
 			t.Errorf("err = %v，期望不启用且不报错", err)
+		}
+	})
+
+	t.Run("只有对外地址是合法配置", func(t *testing.T) {
+		// 这条路径是"只想要命令行登录"的部署：它不需要任何渠道凭据。
+		if err := validateGithubLogin(ServerConfig{PublicBaseURL: full.PublicBaseURL}); err != nil {
+			t.Errorf("err = %v，期望通过——对外地址不依赖 GitHub", err)
 		}
 	})
 

@@ -250,6 +250,24 @@ GitHub 是**重定向型**渠道：它交给浏览器的是一个授权码，服
 
 **GitHub 登录会得到一个零权限的新主体**，不会自动并入已有的 Google 账号：把两个渠道归到同一个主体是「绑定」这个动作，而绑定重定向型渠道目前尚未支持（见 [design/identity/github-login.md](design/identity/github-login.md) 的待定决策）。
 
+### 12. 命令行登录（设备码，可选）
+
+命令行登录不依赖任何一个渠道：终端打印一个短码，人在**自己已经登录的浏览器**里批准，终端随后拿到一份属于那个主体的会话（见 [design/identity/device-login.md](design/identity/device-login.md)）。
+
+只需要一个键，与 GitHub 登录是同一个：
+
+```yaml
+public_base_url: "https://<域名>"
+```
+
+服务端用它构造批准页地址。**没有它这条路径整体缺席**——`aladdin login` 会明确说未启用，而不是打印一个打不开的地址。
+
+nginx **不需要任何改动**：批准页 `/device` 是前端路由，落在 `location /` 的 SPA 兜底里（**不要**把它转发给服务端，转发会让浏览器拿到一份 HTML 之外的响应）。
+
+**这条路径不需要 `access_log off`**，与 `/auth/github/` 的区别正在这里：短码由人在页面上手动输入，不进 URL，因此不会进访问日志。这是刻意的——短码要由人与终端上显示的比对，把短码放进地址会消掉这次核对。
+
+用法是 `aladdin login`（不带 `--token`）。带 `--token` 时走的仍是机器凭证那条既有路径，两者不受彼此影响。
+
 ## 日常发布
 
 ```bash
@@ -336,6 +354,9 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | GitHub 登录曾正常、某次重装单元后失效 | 单元里是否丢了 `EnvironmentFile=-/opt/aladdin/secrets.env`，或密钥是否仍留在旧的 `github.env` 里（同一个键不会读两处，旧的不会再被读到）。**重新装了单元就必须核对这一行**——它是唯一会被"按仓库重装"覆盖掉的一行 |
 | 管理员登录后仍然"没有权限" | 引导是否生效：`sudo journalctl -u aladdin-server \| grep -i 引导`；引导只在存储中无任何绑定时生效 |
 | 数据"看起来全丢了" | 验证真实的数据路径：`sudo journalctl -u aladdin-server \| grep -i 数据库`——启动日志有脱敏后的定位信息 |
+| 命令行说"未启用设备码登录" | 配置里没有 `public_base_url`；这条路径在缺它时整体缺席（见"命令行登录"） |
+| 命令行打印的批准页地址打不开 | nginx 是否把 `/device` 也转发给了服务端；它必须由 `location /` 的 SPA 兜底接走 |
+| 命令行登录卡在等待批准 | 批准页要输入终端上显示的短码，且这一次登录有有效期；过期后终端会提示重新发起 |
 | 服务被 OOM 杀掉后自动重启 | `journalctl -u aladdin-server \| grep -i memory`；单元里的 `MemoryMax` 是保险丝，不是估算 |
 | 改了 nginx 配置没生效 | 需要 `sudo nginx -t && sudo systemctl reload nginx`；反过来，**只换静态产物不需要 reload** |
 | 头像不显示，昵称与简介正常 | 桶地址与密钥是否配好（`sudo journalctl -u aladdin-server \| grep -i 头像`）；预签名地址是否已过有效期——刷新页面即拿到新地址 |

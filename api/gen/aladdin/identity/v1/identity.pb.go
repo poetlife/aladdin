@@ -22,6 +22,72 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// DeviceLoginState 是一次轮询的结果。
+//
+// 它是一个**状态**而不是一组错误码：调用方据此决定继续等、停下、还是重新
+// 发起。四种取值互斥且穷尽——分不出类别的取值会让调用方只能猜。
+type DeviceLoginState int32
+
+const (
+	DeviceLoginState_DEVICE_LOGIN_STATE_UNSPECIFIED DeviceLoginState = 0
+	// 尚未批准。继续等。
+	DeviceLoginState_DEVICE_LOGIN_STATE_PENDING DeviceLoginState = 1
+	// 已批准。**只有这一次**返回凭证；此后同一份设备码只会得到 EXPIRED。
+	DeviceLoginState_DEVICE_LOGIN_STATE_APPROVED DeviceLoginState = 2
+	// 使用者拒绝了。
+	DeviceLoginState_DEVICE_LOGIN_STATE_DENIED DeviceLoginState = 3
+	// 已过期、已交付、或从未存在。对调用方是同一件事：重新发起。
+	//
+	// 三者合并为一个取值是刻意的：区分它们只会把一次失败的轮询变成对
+	// "这份设备码是否曾经有效"的探测。
+	DeviceLoginState_DEVICE_LOGIN_STATE_EXPIRED DeviceLoginState = 4
+)
+
+// Enum value maps for DeviceLoginState.
+var (
+	DeviceLoginState_name = map[int32]string{
+		0: "DEVICE_LOGIN_STATE_UNSPECIFIED",
+		1: "DEVICE_LOGIN_STATE_PENDING",
+		2: "DEVICE_LOGIN_STATE_APPROVED",
+		3: "DEVICE_LOGIN_STATE_DENIED",
+		4: "DEVICE_LOGIN_STATE_EXPIRED",
+	}
+	DeviceLoginState_value = map[string]int32{
+		"DEVICE_LOGIN_STATE_UNSPECIFIED": 0,
+		"DEVICE_LOGIN_STATE_PENDING":     1,
+		"DEVICE_LOGIN_STATE_APPROVED":    2,
+		"DEVICE_LOGIN_STATE_DENIED":      3,
+		"DEVICE_LOGIN_STATE_EXPIRED":     4,
+	}
+)
+
+func (x DeviceLoginState) Enum() *DeviceLoginState {
+	p := new(DeviceLoginState)
+	*p = x
+	return p
+}
+
+func (x DeviceLoginState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeviceLoginState) Descriptor() protoreflect.EnumDescriptor {
+	return file_aladdin_identity_v1_identity_proto_enumTypes[0].Descriptor()
+}
+
+func (DeviceLoginState) Type() protoreflect.EnumType {
+	return &file_aladdin_identity_v1_identity_proto_enumTypes[0]
+}
+
+func (x DeviceLoginState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeviceLoginState.Descriptor instead.
+func (DeviceLoginState) EnumDescriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{0}
+}
+
 type LoginRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 人类用户使用用户名口令；机器凭证使用 token 换取短期访问凭证；
@@ -317,9 +383,15 @@ type GetAuthMethodsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 已启用的登录渠道，顺序稳定。为空表示没有任何渠道登录方式可用，
 	// 前端据此不渲染任何渠道入口。
-	Methods       []*AuthMethod `protobuf:"bytes,1,rep,name=methods,proto3" json:"methods,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Methods []*AuthMethod `protobuf:"bytes,1,rep,name=methods,proto3" json:"methods,omitempty"`
+	// 命令行的设备码登录是否可用。
+	//
+	// 它**不是一个渠道**，因此不在 methods 里：它不引入任何渠道身份，只是把
+	// 一个已有主体的会话交给终端。不可用时命令行据此不去发起，而不是发起了
+	// 再收到一次"未实现"。
+	DeviceLoginEnabled bool `protobuf:"varint,2,opt,name=device_login_enabled,json=deviceLoginEnabled,proto3" json:"device_login_enabled,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *GetAuthMethodsResponse) Reset() {
@@ -357,6 +429,13 @@ func (x *GetAuthMethodsResponse) GetMethods() []*AuthMethod {
 		return x.Methods
 	}
 	return nil
+}
+
+func (x *GetAuthMethodsResponse) GetDeviceLoginEnabled() bool {
+	if x != nil {
+		return x.DeviceLoginEnabled
+	}
+	return false
 }
 
 // AuthMethod 是一个已启用的登录渠道。
@@ -1239,6 +1318,394 @@ func (x *Identity) GetDisplay() string {
 	return ""
 }
 
+type StartDeviceLoginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartDeviceLoginRequest) Reset() {
+	*x = StartDeviceLoginRequest{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartDeviceLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartDeviceLoginRequest) ProtoMessage() {}
+
+func (x *StartDeviceLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartDeviceLoginRequest.ProtoReflect.Descriptor instead.
+func (*StartDeviceLoginRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{23}
+}
+
+// StartDeviceLoginResponse 同时承载**两份凭据**与一个给人用的地址。
+type StartDeviceLoginResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 设备码：终端保管，用它轮询。不可人工输入，因此没有任何可读性要求。
+	// **不得进入日志**：它能换来一份会话。
+	DeviceCode string `protobuf:"bytes,1,opt,name=device_code,json=deviceCode,proto3" json:"device_code,omitempty"`
+	// 短码：给人读、给人打。大小写不敏感，连字符可有可无。
+	// 它与设备码同级——能换来一次批准，因此**不得进入日志**。
+	UserCode string `protobuf:"bytes,2,opt,name=user_code,json=userCode,proto3" json:"user_code,omitempty"`
+	// 批准页地址。**不含短码**：短码要由人与终端上显示的比对，把短码放进地址
+	// 会消掉这次核对，而那正是"受害者把终端登进攻击者账号"的唯一防线。
+	VerificationUri string `protobuf:"bytes,3,opt,name=verification_uri,json=verificationUri,proto3" json:"verification_uri,omitempty"`
+	// 建议的轮询间隔（秒）。
+	IntervalSeconds int32 `protobuf:"varint,4,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
+	// ISO 8601 UTC。终端的轮询不得越过它。
+	ExpiresAt     string `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartDeviceLoginResponse) Reset() {
+	*x = StartDeviceLoginResponse{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartDeviceLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartDeviceLoginResponse) ProtoMessage() {}
+
+func (x *StartDeviceLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartDeviceLoginResponse.ProtoReflect.Descriptor instead.
+func (*StartDeviceLoginResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *StartDeviceLoginResponse) GetDeviceCode() string {
+	if x != nil {
+		return x.DeviceCode
+	}
+	return ""
+}
+
+func (x *StartDeviceLoginResponse) GetUserCode() string {
+	if x != nil {
+		return x.UserCode
+	}
+	return ""
+}
+
+func (x *StartDeviceLoginResponse) GetVerificationUri() string {
+	if x != nil {
+		return x.VerificationUri
+	}
+	return ""
+}
+
+func (x *StartDeviceLoginResponse) GetIntervalSeconds() int32 {
+	if x != nil {
+		return x.IntervalSeconds
+	}
+	return 0
+}
+
+func (x *StartDeviceLoginResponse) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+type PollDeviceLoginRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 服务端在发起时交给终端的设备码。
+	DeviceCode    string `protobuf:"bytes,1,opt,name=device_code,json=deviceCode,proto3" json:"device_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PollDeviceLoginRequest) Reset() {
+	*x = PollDeviceLoginRequest{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PollDeviceLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PollDeviceLoginRequest) ProtoMessage() {}
+
+func (x *PollDeviceLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PollDeviceLoginRequest.ProtoReflect.Descriptor instead.
+func (*PollDeviceLoginRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *PollDeviceLoginRequest) GetDeviceCode() string {
+	if x != nil {
+		return x.DeviceCode
+	}
+	return ""
+}
+
+type PollDeviceLoginResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	State DeviceLoginState       `protobuf:"varint,1,opt,name=state,proto3,enum=aladdin.identity.v1.DeviceLoginState" json:"state,omitempty"`
+	// 仅 state 为 APPROVED 时存在：会话凭证与它的过期时间。
+	AccessToken   string `protobuf:"bytes,2,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	ExpiresAt     string `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PollDeviceLoginResponse) Reset() {
+	*x = PollDeviceLoginResponse{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PollDeviceLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PollDeviceLoginResponse) ProtoMessage() {}
+
+func (x *PollDeviceLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PollDeviceLoginResponse.ProtoReflect.Descriptor instead.
+func (*PollDeviceLoginResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *PollDeviceLoginResponse) GetState() DeviceLoginState {
+	if x != nil {
+		return x.State
+	}
+	return DeviceLoginState_DEVICE_LOGIN_STATE_UNSPECIFIED
+}
+
+func (x *PollDeviceLoginResponse) GetAccessToken() string {
+	if x != nil {
+		return x.AccessToken
+	}
+	return ""
+}
+
+func (x *PollDeviceLoginResponse) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+type ApproveDeviceLoginRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 要批准的短码。**不是归属输入**——目标主体只取当前凭证代表的主体。
+	UserCode      string `protobuf:"bytes,1,opt,name=user_code,json=userCode,proto3" json:"user_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveDeviceLoginRequest) Reset() {
+	*x = ApproveDeviceLoginRequest{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveDeviceLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveDeviceLoginRequest) ProtoMessage() {}
+
+func (x *ApproveDeviceLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveDeviceLoginRequest.ProtoReflect.Descriptor instead.
+func (*ApproveDeviceLoginRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ApproveDeviceLoginRequest) GetUserCode() string {
+	if x != nil {
+		return x.UserCode
+	}
+	return ""
+}
+
+type ApproveDeviceLoginResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveDeviceLoginResponse) Reset() {
+	*x = ApproveDeviceLoginResponse{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveDeviceLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveDeviceLoginResponse) ProtoMessage() {}
+
+func (x *ApproveDeviceLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveDeviceLoginResponse.ProtoReflect.Descriptor instead.
+func (*ApproveDeviceLoginResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{28}
+}
+
+type DenyDeviceLoginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserCode      string                 `protobuf:"bytes,1,opt,name=user_code,json=userCode,proto3" json:"user_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DenyDeviceLoginRequest) Reset() {
+	*x = DenyDeviceLoginRequest{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DenyDeviceLoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DenyDeviceLoginRequest) ProtoMessage() {}
+
+func (x *DenyDeviceLoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DenyDeviceLoginRequest.ProtoReflect.Descriptor instead.
+func (*DenyDeviceLoginRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *DenyDeviceLoginRequest) GetUserCode() string {
+	if x != nil {
+		return x.UserCode
+	}
+	return ""
+}
+
+type DenyDeviceLoginResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DenyDeviceLoginResponse) Reset() {
+	*x = DenyDeviceLoginResponse{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DenyDeviceLoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DenyDeviceLoginResponse) ProtoMessage() {}
+
+func (x *DenyDeviceLoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DenyDeviceLoginResponse.ProtoReflect.Descriptor instead.
+func (*DenyDeviceLoginResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{30}
+}
+
 var File_aladdin_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_aladdin_identity_v1_identity_proto_rawDesc = "" +
@@ -1257,9 +1724,10 @@ const file_aladdin_identity_v1_identity_proto_rawDesc = "" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"-\n" +
 	"\x10GoogleCredential\x12\x19\n" +
 	"\bid_token\x18\x01 \x01(\tR\aidToken\"\x17\n" +
-	"\x15GetAuthMethodsRequest\"S\n" +
+	"\x15GetAuthMethodsRequest\"\x85\x01\n" +
 	"\x16GetAuthMethodsResponse\x129\n" +
-	"\amethods\x18\x01 \x03(\v2\x1f.aladdin.identity.v1.AuthMethodR\amethods\"A\n" +
+	"\amethods\x18\x01 \x03(\v2\x1f.aladdin.identity.v1.AuthMethodR\amethods\x120\n" +
+	"\x14device_login_enabled\x18\x02 \x01(\bR\x12deviceLoginEnabled\"A\n" +
 	"\n" +
 	"AuthMethod\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x1b\n" +
@@ -1318,7 +1786,36 @@ const file_aladdin_identity_v1_identity_proto_rawDesc = "" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x1f\n" +
 	"\vexternal_id\x18\x02 \x01(\tR\n" +
 	"externalId\x12\x18\n" +
-	"\adisplay\x18\x03 \x01(\tR\adisplay2\xf6\a\n" +
+	"\adisplay\x18\x03 \x01(\tR\adisplay\"\x19\n" +
+	"\x17StartDeviceLoginRequest\"\xcd\x01\n" +
+	"\x18StartDeviceLoginResponse\x12\x1f\n" +
+	"\vdevice_code\x18\x01 \x01(\tR\n" +
+	"deviceCode\x12\x1b\n" +
+	"\tuser_code\x18\x02 \x01(\tR\buserCode\x12)\n" +
+	"\x10verification_uri\x18\x03 \x01(\tR\x0fverificationUri\x12)\n" +
+	"\x10interval_seconds\x18\x04 \x01(\x05R\x0fintervalSeconds\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\tR\texpiresAt\"9\n" +
+	"\x16PollDeviceLoginRequest\x12\x1f\n" +
+	"\vdevice_code\x18\x01 \x01(\tR\n" +
+	"deviceCode\"\x98\x01\n" +
+	"\x17PollDeviceLoginResponse\x12;\n" +
+	"\x05state\x18\x01 \x01(\x0e2%.aladdin.identity.v1.DeviceLoginStateR\x05state\x12!\n" +
+	"\faccess_token\x18\x02 \x01(\tR\vaccessToken\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\tR\texpiresAt\"8\n" +
+	"\x19ApproveDeviceLoginRequest\x12\x1b\n" +
+	"\tuser_code\x18\x01 \x01(\tR\buserCode\"\x1c\n" +
+	"\x1aApproveDeviceLoginResponse\"5\n" +
+	"\x16DenyDeviceLoginRequest\x12\x1b\n" +
+	"\tuser_code\x18\x01 \x01(\tR\buserCode\"\x19\n" +
+	"\x17DenyDeviceLoginResponse*\xb6\x01\n" +
+	"\x10DeviceLoginState\x12\"\n" +
+	"\x1eDEVICE_LOGIN_STATE_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aDEVICE_LOGIN_STATE_PENDING\x10\x01\x12\x1f\n" +
+	"\x1bDEVICE_LOGIN_STATE_APPROVED\x10\x02\x12\x1d\n" +
+	"\x19DEVICE_LOGIN_STATE_DENIED\x10\x03\x12\x1e\n" +
+	"\x1aDEVICE_LOGIN_STATE_EXPIRED\x10\x042\xd2\v\n" +
 	"\x0fIdentityService\x12T\n" +
 	"\x05Login\x12!.aladdin.identity.v1.LoginRequest\x1a\".aladdin.identity.v1.LoginResponse\"\x04\x98\x88'\x01\x12Z\n" +
 	"\aRefresh\x12#.aladdin.identity.v1.RefreshRequest\x1a$.aladdin.identity.v1.RefreshResponse\"\x04\x98\x88'\x01\x12o\n" +
@@ -1328,7 +1825,11 @@ const file_aladdin_identity_v1_identity_proto_rawDesc = "" +
 	"\fBindIdentity\x12(.aladdin.identity.v1.BindIdentityRequest\x1a).aladdin.identity.v1.BindIdentityResponse\"\x04\xa0\x88'\x01\x12o\n" +
 	"\x0eUnbindIdentity\x12*.aladdin.identity.v1.UnbindIdentityRequest\x1a+.aladdin.identity.v1.UnbindIdentityResponse\"\x04\xa0\x88'\x01\x12\x8a\x01\n" +
 	"\x17CompleteIdentityBinding\x123.aladdin.identity.v1.CompleteIdentityBindingRequest\x1a4.aladdin.identity.v1.CompleteIdentityBindingResponse\"\x04\xa0\x88'\x01\x12o\n" +
-	"\x0eListIdentities\x12*.aladdin.identity.v1.ListIdentitiesRequest\x1a+.aladdin.identity.v1.ListIdentitiesResponse\"\x04\xa0\x88'\x01BDZBgithub.com/poetlife/aladdin/api/gen/aladdin/identity/v1;identityv1b\x06proto3"
+	"\x0eListIdentities\x12*.aladdin.identity.v1.ListIdentitiesRequest\x1a+.aladdin.identity.v1.ListIdentitiesResponse\"\x04\xa0\x88'\x01\x12u\n" +
+	"\x10StartDeviceLogin\x12,.aladdin.identity.v1.StartDeviceLoginRequest\x1a-.aladdin.identity.v1.StartDeviceLoginResponse\"\x04\x98\x88'\x01\x12r\n" +
+	"\x0fPollDeviceLogin\x12+.aladdin.identity.v1.PollDeviceLoginRequest\x1a,.aladdin.identity.v1.PollDeviceLoginResponse\"\x04\x98\x88'\x01\x12{\n" +
+	"\x12ApproveDeviceLogin\x12..aladdin.identity.v1.ApproveDeviceLoginRequest\x1a/.aladdin.identity.v1.ApproveDeviceLoginResponse\"\x04\xa0\x88'\x01\x12r\n" +
+	"\x0fDenyDeviceLogin\x12+.aladdin.identity.v1.DenyDeviceLoginRequest\x1a,.aladdin.identity.v1.DenyDeviceLoginResponse\"\x04\xa0\x88'\x01BDZBgithub.com/poetlife/aladdin/api/gen/aladdin/identity/v1;identityv1b\x06proto3"
 
 var (
 	file_aladdin_identity_v1_identity_proto_rawDescOnce sync.Once
@@ -1342,65 +1843,84 @@ func file_aladdin_identity_v1_identity_proto_rawDescGZIP() []byte {
 	return file_aladdin_identity_v1_identity_proto_rawDescData
 }
 
-var file_aladdin_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_aladdin_identity_v1_identity_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_aladdin_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_aladdin_identity_v1_identity_proto_goTypes = []any{
-	(*LoginRequest)(nil),                    // 0: aladdin.identity.v1.LoginRequest
-	(*PasswordCredential)(nil),              // 1: aladdin.identity.v1.PasswordCredential
-	(*TokenCredential)(nil),                 // 2: aladdin.identity.v1.TokenCredential
-	(*GoogleCredential)(nil),                // 3: aladdin.identity.v1.GoogleCredential
-	(*GetAuthMethodsRequest)(nil),           // 4: aladdin.identity.v1.GetAuthMethodsRequest
-	(*GetAuthMethodsResponse)(nil),          // 5: aladdin.identity.v1.GetAuthMethodsResponse
-	(*AuthMethod)(nil),                      // 6: aladdin.identity.v1.AuthMethod
-	(*LoginResponse)(nil),                   // 7: aladdin.identity.v1.LoginResponse
-	(*RefreshRequest)(nil),                  // 8: aladdin.identity.v1.RefreshRequest
-	(*RefreshResponse)(nil),                 // 9: aladdin.identity.v1.RefreshResponse
-	(*WhoAmIRequest)(nil),                   // 10: aladdin.identity.v1.WhoAmIRequest
-	(*WhoAmIResponse)(nil),                  // 11: aladdin.identity.v1.WhoAmIResponse
-	(*GetSessionPermissionsRequest)(nil),    // 12: aladdin.identity.v1.GetSessionPermissionsRequest
-	(*GetSessionPermissionsResponse)(nil),   // 13: aladdin.identity.v1.GetSessionPermissionsResponse
-	(*BindIdentityRequest)(nil),             // 14: aladdin.identity.v1.BindIdentityRequest
-	(*BindIdentityResponse)(nil),            // 15: aladdin.identity.v1.BindIdentityResponse
-	(*CompleteIdentityBindingRequest)(nil),  // 16: aladdin.identity.v1.CompleteIdentityBindingRequest
-	(*CompleteIdentityBindingResponse)(nil), // 17: aladdin.identity.v1.CompleteIdentityBindingResponse
-	(*UnbindIdentityRequest)(nil),           // 18: aladdin.identity.v1.UnbindIdentityRequest
-	(*UnbindIdentityResponse)(nil),          // 19: aladdin.identity.v1.UnbindIdentityResponse
-	(*ListIdentitiesRequest)(nil),           // 20: aladdin.identity.v1.ListIdentitiesRequest
-	(*ListIdentitiesResponse)(nil),          // 21: aladdin.identity.v1.ListIdentitiesResponse
-	(*Identity)(nil),                        // 22: aladdin.identity.v1.Identity
+	(DeviceLoginState)(0),                   // 0: aladdin.identity.v1.DeviceLoginState
+	(*LoginRequest)(nil),                    // 1: aladdin.identity.v1.LoginRequest
+	(*PasswordCredential)(nil),              // 2: aladdin.identity.v1.PasswordCredential
+	(*TokenCredential)(nil),                 // 3: aladdin.identity.v1.TokenCredential
+	(*GoogleCredential)(nil),                // 4: aladdin.identity.v1.GoogleCredential
+	(*GetAuthMethodsRequest)(nil),           // 5: aladdin.identity.v1.GetAuthMethodsRequest
+	(*GetAuthMethodsResponse)(nil),          // 6: aladdin.identity.v1.GetAuthMethodsResponse
+	(*AuthMethod)(nil),                      // 7: aladdin.identity.v1.AuthMethod
+	(*LoginResponse)(nil),                   // 8: aladdin.identity.v1.LoginResponse
+	(*RefreshRequest)(nil),                  // 9: aladdin.identity.v1.RefreshRequest
+	(*RefreshResponse)(nil),                 // 10: aladdin.identity.v1.RefreshResponse
+	(*WhoAmIRequest)(nil),                   // 11: aladdin.identity.v1.WhoAmIRequest
+	(*WhoAmIResponse)(nil),                  // 12: aladdin.identity.v1.WhoAmIResponse
+	(*GetSessionPermissionsRequest)(nil),    // 13: aladdin.identity.v1.GetSessionPermissionsRequest
+	(*GetSessionPermissionsResponse)(nil),   // 14: aladdin.identity.v1.GetSessionPermissionsResponse
+	(*BindIdentityRequest)(nil),             // 15: aladdin.identity.v1.BindIdentityRequest
+	(*BindIdentityResponse)(nil),            // 16: aladdin.identity.v1.BindIdentityResponse
+	(*CompleteIdentityBindingRequest)(nil),  // 17: aladdin.identity.v1.CompleteIdentityBindingRequest
+	(*CompleteIdentityBindingResponse)(nil), // 18: aladdin.identity.v1.CompleteIdentityBindingResponse
+	(*UnbindIdentityRequest)(nil),           // 19: aladdin.identity.v1.UnbindIdentityRequest
+	(*UnbindIdentityResponse)(nil),          // 20: aladdin.identity.v1.UnbindIdentityResponse
+	(*ListIdentitiesRequest)(nil),           // 21: aladdin.identity.v1.ListIdentitiesRequest
+	(*ListIdentitiesResponse)(nil),          // 22: aladdin.identity.v1.ListIdentitiesResponse
+	(*Identity)(nil),                        // 23: aladdin.identity.v1.Identity
+	(*StartDeviceLoginRequest)(nil),         // 24: aladdin.identity.v1.StartDeviceLoginRequest
+	(*StartDeviceLoginResponse)(nil),        // 25: aladdin.identity.v1.StartDeviceLoginResponse
+	(*PollDeviceLoginRequest)(nil),          // 26: aladdin.identity.v1.PollDeviceLoginRequest
+	(*PollDeviceLoginResponse)(nil),         // 27: aladdin.identity.v1.PollDeviceLoginResponse
+	(*ApproveDeviceLoginRequest)(nil),       // 28: aladdin.identity.v1.ApproveDeviceLoginRequest
+	(*ApproveDeviceLoginResponse)(nil),      // 29: aladdin.identity.v1.ApproveDeviceLoginResponse
+	(*DenyDeviceLoginRequest)(nil),          // 30: aladdin.identity.v1.DenyDeviceLoginRequest
+	(*DenyDeviceLoginResponse)(nil),         // 31: aladdin.identity.v1.DenyDeviceLoginResponse
 }
 var file_aladdin_identity_v1_identity_proto_depIdxs = []int32{
-	1,  // 0: aladdin.identity.v1.LoginRequest.password:type_name -> aladdin.identity.v1.PasswordCredential
-	2,  // 1: aladdin.identity.v1.LoginRequest.token:type_name -> aladdin.identity.v1.TokenCredential
-	3,  // 2: aladdin.identity.v1.LoginRequest.google:type_name -> aladdin.identity.v1.GoogleCredential
-	6,  // 3: aladdin.identity.v1.GetAuthMethodsResponse.methods:type_name -> aladdin.identity.v1.AuthMethod
-	3,  // 4: aladdin.identity.v1.BindIdentityRequest.google:type_name -> aladdin.identity.v1.GoogleCredential
-	22, // 5: aladdin.identity.v1.BindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
-	22, // 6: aladdin.identity.v1.CompleteIdentityBindingResponse.identities:type_name -> aladdin.identity.v1.Identity
-	22, // 7: aladdin.identity.v1.UnbindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
-	22, // 8: aladdin.identity.v1.ListIdentitiesResponse.identities:type_name -> aladdin.identity.v1.Identity
-	0,  // 9: aladdin.identity.v1.IdentityService.Login:input_type -> aladdin.identity.v1.LoginRequest
-	8,  // 10: aladdin.identity.v1.IdentityService.Refresh:input_type -> aladdin.identity.v1.RefreshRequest
-	4,  // 11: aladdin.identity.v1.IdentityService.GetAuthMethods:input_type -> aladdin.identity.v1.GetAuthMethodsRequest
-	10, // 12: aladdin.identity.v1.IdentityService.WhoAmI:input_type -> aladdin.identity.v1.WhoAmIRequest
-	12, // 13: aladdin.identity.v1.IdentityService.GetSessionPermissions:input_type -> aladdin.identity.v1.GetSessionPermissionsRequest
-	14, // 14: aladdin.identity.v1.IdentityService.BindIdentity:input_type -> aladdin.identity.v1.BindIdentityRequest
-	18, // 15: aladdin.identity.v1.IdentityService.UnbindIdentity:input_type -> aladdin.identity.v1.UnbindIdentityRequest
-	16, // 16: aladdin.identity.v1.IdentityService.CompleteIdentityBinding:input_type -> aladdin.identity.v1.CompleteIdentityBindingRequest
-	20, // 17: aladdin.identity.v1.IdentityService.ListIdentities:input_type -> aladdin.identity.v1.ListIdentitiesRequest
-	7,  // 18: aladdin.identity.v1.IdentityService.Login:output_type -> aladdin.identity.v1.LoginResponse
-	9,  // 19: aladdin.identity.v1.IdentityService.Refresh:output_type -> aladdin.identity.v1.RefreshResponse
-	5,  // 20: aladdin.identity.v1.IdentityService.GetAuthMethods:output_type -> aladdin.identity.v1.GetAuthMethodsResponse
-	11, // 21: aladdin.identity.v1.IdentityService.WhoAmI:output_type -> aladdin.identity.v1.WhoAmIResponse
-	13, // 22: aladdin.identity.v1.IdentityService.GetSessionPermissions:output_type -> aladdin.identity.v1.GetSessionPermissionsResponse
-	15, // 23: aladdin.identity.v1.IdentityService.BindIdentity:output_type -> aladdin.identity.v1.BindIdentityResponse
-	19, // 24: aladdin.identity.v1.IdentityService.UnbindIdentity:output_type -> aladdin.identity.v1.UnbindIdentityResponse
-	17, // 25: aladdin.identity.v1.IdentityService.CompleteIdentityBinding:output_type -> aladdin.identity.v1.CompleteIdentityBindingResponse
-	21, // 26: aladdin.identity.v1.IdentityService.ListIdentities:output_type -> aladdin.identity.v1.ListIdentitiesResponse
-	18, // [18:27] is the sub-list for method output_type
-	9,  // [9:18] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	2,  // 0: aladdin.identity.v1.LoginRequest.password:type_name -> aladdin.identity.v1.PasswordCredential
+	3,  // 1: aladdin.identity.v1.LoginRequest.token:type_name -> aladdin.identity.v1.TokenCredential
+	4,  // 2: aladdin.identity.v1.LoginRequest.google:type_name -> aladdin.identity.v1.GoogleCredential
+	7,  // 3: aladdin.identity.v1.GetAuthMethodsResponse.methods:type_name -> aladdin.identity.v1.AuthMethod
+	4,  // 4: aladdin.identity.v1.BindIdentityRequest.google:type_name -> aladdin.identity.v1.GoogleCredential
+	23, // 5: aladdin.identity.v1.BindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
+	23, // 6: aladdin.identity.v1.CompleteIdentityBindingResponse.identities:type_name -> aladdin.identity.v1.Identity
+	23, // 7: aladdin.identity.v1.UnbindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
+	23, // 8: aladdin.identity.v1.ListIdentitiesResponse.identities:type_name -> aladdin.identity.v1.Identity
+	0,  // 9: aladdin.identity.v1.PollDeviceLoginResponse.state:type_name -> aladdin.identity.v1.DeviceLoginState
+	1,  // 10: aladdin.identity.v1.IdentityService.Login:input_type -> aladdin.identity.v1.LoginRequest
+	9,  // 11: aladdin.identity.v1.IdentityService.Refresh:input_type -> aladdin.identity.v1.RefreshRequest
+	5,  // 12: aladdin.identity.v1.IdentityService.GetAuthMethods:input_type -> aladdin.identity.v1.GetAuthMethodsRequest
+	11, // 13: aladdin.identity.v1.IdentityService.WhoAmI:input_type -> aladdin.identity.v1.WhoAmIRequest
+	13, // 14: aladdin.identity.v1.IdentityService.GetSessionPermissions:input_type -> aladdin.identity.v1.GetSessionPermissionsRequest
+	15, // 15: aladdin.identity.v1.IdentityService.BindIdentity:input_type -> aladdin.identity.v1.BindIdentityRequest
+	19, // 16: aladdin.identity.v1.IdentityService.UnbindIdentity:input_type -> aladdin.identity.v1.UnbindIdentityRequest
+	17, // 17: aladdin.identity.v1.IdentityService.CompleteIdentityBinding:input_type -> aladdin.identity.v1.CompleteIdentityBindingRequest
+	21, // 18: aladdin.identity.v1.IdentityService.ListIdentities:input_type -> aladdin.identity.v1.ListIdentitiesRequest
+	24, // 19: aladdin.identity.v1.IdentityService.StartDeviceLogin:input_type -> aladdin.identity.v1.StartDeviceLoginRequest
+	26, // 20: aladdin.identity.v1.IdentityService.PollDeviceLogin:input_type -> aladdin.identity.v1.PollDeviceLoginRequest
+	28, // 21: aladdin.identity.v1.IdentityService.ApproveDeviceLogin:input_type -> aladdin.identity.v1.ApproveDeviceLoginRequest
+	30, // 22: aladdin.identity.v1.IdentityService.DenyDeviceLogin:input_type -> aladdin.identity.v1.DenyDeviceLoginRequest
+	8,  // 23: aladdin.identity.v1.IdentityService.Login:output_type -> aladdin.identity.v1.LoginResponse
+	10, // 24: aladdin.identity.v1.IdentityService.Refresh:output_type -> aladdin.identity.v1.RefreshResponse
+	6,  // 25: aladdin.identity.v1.IdentityService.GetAuthMethods:output_type -> aladdin.identity.v1.GetAuthMethodsResponse
+	12, // 26: aladdin.identity.v1.IdentityService.WhoAmI:output_type -> aladdin.identity.v1.WhoAmIResponse
+	14, // 27: aladdin.identity.v1.IdentityService.GetSessionPermissions:output_type -> aladdin.identity.v1.GetSessionPermissionsResponse
+	16, // 28: aladdin.identity.v1.IdentityService.BindIdentity:output_type -> aladdin.identity.v1.BindIdentityResponse
+	20, // 29: aladdin.identity.v1.IdentityService.UnbindIdentity:output_type -> aladdin.identity.v1.UnbindIdentityResponse
+	18, // 30: aladdin.identity.v1.IdentityService.CompleteIdentityBinding:output_type -> aladdin.identity.v1.CompleteIdentityBindingResponse
+	22, // 31: aladdin.identity.v1.IdentityService.ListIdentities:output_type -> aladdin.identity.v1.ListIdentitiesResponse
+	25, // 32: aladdin.identity.v1.IdentityService.StartDeviceLogin:output_type -> aladdin.identity.v1.StartDeviceLoginResponse
+	27, // 33: aladdin.identity.v1.IdentityService.PollDeviceLogin:output_type -> aladdin.identity.v1.PollDeviceLoginResponse
+	29, // 34: aladdin.identity.v1.IdentityService.ApproveDeviceLogin:output_type -> aladdin.identity.v1.ApproveDeviceLoginResponse
+	31, // 35: aladdin.identity.v1.IdentityService.DenyDeviceLogin:output_type -> aladdin.identity.v1.DenyDeviceLoginResponse
+	23, // [23:36] is the sub-list for method output_type
+	10, // [10:23] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_aladdin_identity_v1_identity_proto_init() }
@@ -1421,13 +1941,14 @@ func file_aladdin_identity_v1_identity_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aladdin_identity_v1_identity_proto_rawDesc), len(file_aladdin_identity_v1_identity_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   23,
+			NumEnums:      1,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_aladdin_identity_v1_identity_proto_goTypes,
 		DependencyIndexes: file_aladdin_identity_v1_identity_proto_depIdxs,
+		EnumInfos:         file_aladdin_identity_v1_identity_proto_enumTypes,
 		MessageInfos:      file_aladdin_identity_v1_identity_proto_msgTypes,
 	}.Build()
 	File_aladdin_identity_v1_identity_proto = out.File

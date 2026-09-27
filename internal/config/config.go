@@ -555,11 +555,15 @@ func isLoopbackHost(host string) bool {
 //
 // 客户端密钥没有配置键、只从环境变量读，因此这里校验的是它**是否已被提供**，
 // 而不是它有没有出现在配置文件里。
+//
+// **对外地址不参与这一对。** 它有自己与渠道无关的用途——命令行登录的批准页
+// 地址也由它构造（见 docs/design/identity/device-login.md），因此"只给出对外
+// 地址"是合法配置（不启用 GitHub，但命令行登录可用）。把它绑进"三项必须同时
+// 给出"，会让"只想要命令行登录"变成一种配不出来的部署。
 func validateGithubLogin(c ServerConfig) error {
 	hasClientID := c.GithubClientID != ""
 	hasSecret := c.GithubClientSecret != ""
-	hasBaseURL := c.PublicBaseURL != ""
-	if !hasClientID && !hasSecret && !hasBaseURL {
+	if !hasClientID && !hasSecret {
 		return nil // 未启用 GitHub 登录。这是默认情形
 	}
 
@@ -570,11 +574,11 @@ func validateGithubLogin(c ServerConfig) error {
 	if !hasSecret {
 		missing = append(missing, EnvGithubClientSecret)
 	}
-	if !hasBaseURL {
+	if c.PublicBaseURL == "" {
 		missing = append(missing, keyPublicBaseURL)
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("%w: 重定向型登录渠道的配置不完整，缺少 %s：客户端标识、客户端密钥与对外地址必须同时给出",
+		return fmt.Errorf("%w: GitHub 登录的配置不完整，缺少 %s：客户端标识与客户端密钥必须同时给出，且启用它时对外地址不能为空",
 			ErrInvalid, strings.Join(missing, " 与 "))
 	}
 	return nil

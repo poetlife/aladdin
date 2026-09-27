@@ -110,14 +110,29 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	// 主体串行，否则会出现身份已移走、角色还留在原主体的搁浅（见
 	// subject_lifecycle_gate.go）。
 	lifecycleGate := &subjectLifecycleGate{}
+
+	// 命令行登录的批准页地址。两个前提合起来才是"这条路在不在"：
+	//
+	//   1. 服务端知道自己的对外地址——地址由它构造，不知道就给不出一个能用
+	//      浏览器打开的地址；
+	//   2. 有会话签发能力——交付的就是一份会话（只服务机器凭证的部署没有它）。
+	//
+	// 缺任一条时留空，认证面据此让这条路径整体缺席，而不是发起得了、交付不了。
+	deviceApprovalURL := ""
+	if ident.Sessions != nil && cfg.PublicBaseURL != "" {
+		deviceApprovalURL = cfg.PublicURL(DeviceApprovalPath)
+	}
+
 	identitySrv := NewIdentityService(store, engine, IdentityDeps{
-		Machine:         machine,
-		Identities:      ident.Identities,
-		Sessions:        ident.Sessions,
-		Channels:        ident.Channels,
-		Logger:          logger,
-		PendingBindings: newPendingBindings(time.Now, cfg.PublicScheme() == "https"),
-		LifecycleGate:   lifecycleGate,
+		Machine:           machine,
+		Identities:        ident.Identities,
+		Sessions:          ident.Sessions,
+		Channels:          ident.Channels,
+		Logger:            logger,
+		PendingBindings:   newPendingBindings(time.Now, cfg.PublicScheme() == "https"),
+		DeviceLogins:      newDeviceLogins(time.Now),
+		DeviceApprovalURL: deviceApprovalURL,
+		LifecycleGate:     lifecycleGate,
 	})
 
 	// 档案对身份模块的依赖是**只读**的：展示名回退的第二步要取该主体的渠道

@@ -90,6 +90,7 @@ func newRootCommand() *cobra.Command {
 
 	root.AddCommand(
 		newVersionCommand(),
+		newUpdateCommand(),
 		newLoginCommand(),
 		newWhoAmICommand(),
 		newPermissionsCommand(),

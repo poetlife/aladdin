@@ -126,14 +126,17 @@ func TestEveryMethodIsClassified(t *testing.T) {
 //
 // 公开方法数量只减不增；新增必须在评审中说明理由，因此这里把它固定下来。
 //
-// 三个成员各自为什么必须公开，见 docs/design/rbac/server-permissions.md。
+// 五个成员各自为什么必须公开，见 docs/design/rbac/server-permissions.md。
 // 其中"查询可用的登录方式"是这条规则的边界用例：它的返回内容本来就会
-// 出现在浏览器里，不公开不保护任何东西。
+// 出现在浏览器里，不公开不保护任何东西。命令行登录的两个方法则是与"登录"
+// 同一条循环依赖：调用方正是那个还没登录的终端。
 func TestPublicMethodsAreAllowlisted(t *testing.T) {
 	want := map[string]bool{
-		"/aladdin.identity.v1.IdentityService/Login":          true,
-		"/aladdin.identity.v1.IdentityService/Refresh":        true,
-		"/aladdin.identity.v1.IdentityService/GetAuthMethods": true,
+		"/aladdin.identity.v1.IdentityService/Login":            true,
+		"/aladdin.identity.v1.IdentityService/Refresh":          true,
+		"/aladdin.identity.v1.IdentityService/GetAuthMethods":   true,
+		"/aladdin.identity.v1.IdentityService/StartDeviceLogin": true,
+		"/aladdin.identity.v1.IdentityService/PollDeviceLogin":  true,
 	}
 	got := map[string]bool{}
 	eachMethod(t, func(fullMethod string, _ *descriptorpb.MethodOptions) {

@@ -38,6 +38,11 @@ type IdentityService struct {
 	machine *interceptor.TokenAuthenticator
 	// pendingBindings 是重定向型绑定的待绑定凭据表（见 pending_bindings.go）。
 	pendingBindings *pendingBindings
+	// deviceLogins 是命令行设备码登录的记录表（见 device_logins.go）。
+	deviceLogins *deviceLogins
+	// deviceApprovalURL 是批准页的对外地址。**为空表示这条路径整体缺席**：
+	// 服务端不知道自己的对外地址，就给不出一个能用浏览器打开的地址。
+	deviceApprovalURL string
 	// gate 让空主体认领与角色授予串行，避免认领检查完"没有角色"之后、
 	// 角色又被授予（见 subject_lifecycle_gate.go）。
 	gate *subjectLifecycleGate
@@ -52,6 +57,11 @@ type IdentityDeps struct {
 	Logger     *zap.Logger
 	// PendingBindings 是重定向型绑定的待绑定凭据表。
 	PendingBindings *pendingBindings
+	// DeviceLogins 是命令行设备码登录的记录表。
+	DeviceLogins *deviceLogins
+	// DeviceApprovalURL 是批准页的对外地址；为空表示未配置对外地址，
+	// 这条路径整体缺席（见 docs/design/identity/device-login.md）。
+	DeviceApprovalURL string
 	// LifecycleGate 与 RBAC 的授予路径共用，用于空主体认领。
 	LifecycleGate *subjectLifecycleGate
 }
@@ -59,16 +69,27 @@ type IdentityDeps struct {
 // NewIdentityService 构造认证面服务。
 func NewIdentityService(store rbac.MutableStore, engine *rbac.Engine, deps IdentityDeps) *IdentityService {
 	return &IdentityService{
-		store:           store,
-		engine:          engine,
-		logger:          deps.Logger,
-		channels:        deps.Channels,
-		identities:      deps.Identities,
-		sessions:        deps.Sessions,
-		machine:         deps.Machine,
-		pendingBindings: deps.PendingBindings,
-		gate:            deps.LifecycleGate,
+		store:             store,
+		engine:            engine,
+		logger:            deps.Logger,
+		channels:          deps.Channels,
+		identities:        deps.Identities,
+		sessions:          deps.Sessions,
+		machine:           deps.Machine,
+		pendingBindings:   deps.PendingBindings,
+		deviceLogins:      deps.DeviceLogins,
+		deviceApprovalURL: deps.DeviceApprovalURL,
+		gate:              deps.LifecycleGate,
 	}
+}
+
+// deviceLoginEnabled 报告命令行登录这条路在不在。
+//
+// 判据只有一条：服务端知不知道自己的对外地址。这不是权限判定——它不决定
+// 谁能拿到什么，只决定这条路在不在，与渠道的启用同属一类（配置是初始化的
+// 输入，不是判定的输入，见 CLAUDE.md 第 7 条）。
+func (s *IdentityService) deviceLoginEnabled() bool {
+	return s.deviceApprovalURL != ""
 }
 
 // Login 实现 IdentityService。
@@ -217,6 +238,10 @@ func (s *IdentityService) Refresh(_ context.Context, req *connect.Request[identi
 // 清单**由注册表派生**，不在这里逐渠道列举：列举一份就会与"实际装配了哪些
 // 渠道"有两个来源，而它们迟早会漂移，表现为"登录页渲染了一个点了报错的入口"。
 // 未启用的渠道不在注册表里，因此也就不在下发清单里——前端据此不渲染入口。
+//
+// 命令行登录**不是一个渠道**：它不引入任何渠道身份，只是把一个已有主体的
+// 会话交给终端（见 docs/design/identity/device-login.md），因此它不在渠道
+// 清单里，而是单独一个字段。
 func (s *IdentityService) GetAuthMethods(_ context.Context, _ *connect.Request[identityv1.GetAuthMethodsRequest]) (*connect.Response[identityv1.GetAuthMethodsResponse], error) {
 	channels := s.channels.Methods()
 	methods := make([]*identityv1.AuthMethod, 0, len(channels))
@@ -226,7 +251,138 @@ func (s *IdentityService) GetAuthMethods(_ context.Context, _ *connect.Request[i
 			ClientId: ch.ClientID,
 		})
 	}
-	return connect.NewResponse(&identityv1.GetAuthMethodsResponse{Methods: methods}), nil
+	return connect.NewResponse(&identityv1.GetAuthMethodsResponse{
+		Methods:            methods,
+		DeviceLoginEnabled: s.deviceLoginEnabled(),
+	}), nil
+}
+
+// StartDeviceLogin 实现 IdentityService。
+//
+// 公开方法：调用方正是那个还没登录的终端。
+func (s *IdentityService) StartDeviceLogin(_ context.Context, _ *connect.Request[identityv1.StartDeviceLoginRequest]) (*connect.Response[identityv1.StartDeviceLoginResponse], error) {
+	if !s.deviceLoginEnabled() {
+		// 与"渠道未启用"同一套语义：说"这条路没开"，不说"设备码无效"。
+		// 把配置缺失说成凭证问题，会让排障的人去查终端拿的是什么。
+		return nil, connect.NewError(connect.CodeUnimplemented,
+			errors.New("未启用命令行登录（服务端未配置对外地址）"))
+	}
+
+	issued, err := s.deviceLogins.start()
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("认证服务内部错误"))
+	}
+
+	// 只记"发起了一次"，**不记设备码与短码**：两者都与口令同级——一个能
+	// 换来一次批准，一个能换来一份会话。
+	s.logger.Info("已发起命令行登录",
+		zap.String("expires_at", issued.expiresAt.Format(time.RFC3339)))
+
+	return connect.NewResponse(&identityv1.StartDeviceLoginResponse{
+		DeviceCode: issued.deviceCode,
+		// 给出去的是给人看的形式（带连字符）；存放与比较用不带连字符的规范
+		// 形态，输入侧的折算见 normalizeUserCode。
+		UserCode:        formatUserCode(issued.userCode),
+		VerificationUri: s.deviceApprovalURL,
+		IntervalSeconds: int32(deviceLoginInterval / time.Second),
+		ExpiresAt:       issued.expiresAt.Format(time.RFC3339),
+	}), nil
+}
+
+// PollDeviceLogin 实现 IdentityService。
+//
+// 公开方法，理由同上。返回的是一个**状态**而不是错误码：把"还没批准"表达成
+// 错误会让"这一次轮询没结果"与"你未认证"变成同一个结论，而它们该有完全不同
+// 的走向——前者该继续等，后者该重新登录。
+//
+// 会话在**交付这一刻**签发：待批准期间服务端只记着"谁批准了它"，不持有任何
+// 明文令牌，与"服务端只存会话摘要"的既有性质一致（见 session-token.md）。
+// 交付恰好一次由记录表的取走动作保证。
+func (s *IdentityService) PollDeviceLogin(ctx context.Context, req *connect.Request[identityv1.PollDeviceLoginRequest]) (*connect.Response[identityv1.PollDeviceLoginResponse], error) {
+	deviceCode := req.Msg.GetDeviceCode()
+	if deviceCode == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("device_code 不能为空"))
+	}
+	if !s.deviceLoginEnabled() {
+		return nil, connect.NewError(connect.CodeUnimplemented,
+			errors.New("未启用命令行登录（服务端未配置对外地址）"))
+	}
+
+	state, subject := s.deviceLogins.poll(deviceCode)
+	resp := &identityv1.PollDeviceLoginResponse{State: toProtoDeviceLoginState(state)}
+	if state != deviceLoginApproved {
+		return connect.NewResponse(resp), nil
+	}
+
+	issued, err := s.sessions.Issue(ctx, subject)
+	if err != nil {
+		return nil, toIdentityConnectError(err)
+	}
+	resp.AccessToken = issued.Token
+	resp.ExpiresAt = issued.Session.ExpiresAt.Format(time.RFC3339)
+
+	s.logger.Info("已交付命令行登录的会话", zap.String("subject_id", subject.ID))
+	return connect.NewResponse(resp), nil
+}
+
+// ApproveDeviceLogin 实现 IdentityService。
+//
+// **归属只由当前凭证决定**：请求里只有短码，没有主体——不存在"替某个主体
+// 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定的
+// 账号（见 docs/design/identity/device-login.md）。
+func (s *IdentityService) ApproveDeviceLogin(ctx context.Context, req *connect.Request[identityv1.ApproveDeviceLoginRequest]) (*connect.Response[identityv1.ApproveDeviceLoginResponse], error) {
+	subject, ok := interceptor.SubjectFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("未认证"))
+	}
+	if !s.deviceLogins.approve(req.Msg.GetUserCode(), subject) {
+		return nil, deviceLoginFailed()
+	}
+	s.logger.Info("已批准命令行登录", zap.String("subject_id", subject.ID))
+	return connect.NewResponse(&identityv1.ApproveDeviceLoginResponse{}), nil
+}
+
+// DenyDeviceLogin 实现 IdentityService。
+//
+// 与批准同一条归属规则：短码决定"哪一次登录"，当前凭证决定"以谁的名义"。
+// 拒绝同样要求已认证——不要求的话，"猜一个短码把它拒掉"就成了谁都能做的
+// 一次打断。
+func (s *IdentityService) DenyDeviceLogin(ctx context.Context, req *connect.Request[identityv1.DenyDeviceLoginRequest]) (*connect.Response[identityv1.DenyDeviceLoginResponse], error) {
+	subject, ok := interceptor.SubjectFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("未认证"))
+	}
+	if !s.deviceLogins.deny(req.Msg.GetUserCode()) {
+		return nil, deviceLoginFailed()
+	}
+	s.logger.Info("已拒绝命令行登录", zap.String("subject_id", subject.ID))
+	return connect.NewResponse(&identityv1.DenyDeviceLoginResponse{}), nil
+}
+
+// deviceLoginFailed 是"这次批准或拒绝不能完成"的统一拒绝。
+//
+// 不区分缺失、过期、已交付、已被别人批准：区分它们只会把一次失败的批准
+// 变成对"这份短码是否曾经有效"的探测。
+func deviceLoginFailed() error {
+	return connect.NewError(connect.CodeFailedPrecondition,
+		errors.New("这个代码无效或已过期，请在终端上重新发起登录"))
+}
+
+// toProtoDeviceLoginState 把记录表的阶段翻成接口状态。
+//
+// deviceLoginNone（从未存在、已过期、已交付）落到 EXPIRED：三者对调用方是
+// 同一件事——重新发起。
+func toProtoDeviceLoginState(state deviceLoginState) identityv1.DeviceLoginState {
+	switch state {
+	case deviceLoginPending:
+		return identityv1.DeviceLoginState_DEVICE_LOGIN_STATE_PENDING
+	case deviceLoginApproved:
+		return identityv1.DeviceLoginState_DEVICE_LOGIN_STATE_APPROVED
+	case deviceLoginDenied:
+		return identityv1.DeviceLoginState_DEVICE_LOGIN_STATE_DENIED
+	default:
+		return identityv1.DeviceLoginState_DEVICE_LOGIN_STATE_EXPIRED
+	}
 }
 
 // BindIdentity 实现 IdentityService。

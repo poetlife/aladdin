@@ -36,6 +36,8 @@
 | 某个邮箱（展示值）对应哪些已登记身份 | 身份别名的按展示值查询 | [internal/identity/identity.go](../internal/identity/identity.go) |
 | 一个主体的展示名（昵称，未设则回退到渠道标识，再回退到主体标识） | 档案的展示名解析入口 | [internal/profile/profiles.go](../internal/profile/profiles.go) |
 | 一段头像字节是不是一张可接受的图片 | 头像的类型嗅探与白名单（唯一入口，不接受上传方声明的类型） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
+| 一份短码或设备码是否已获批准、是否已被交付 | `deviceLogins`（状态流转与交付） | [internal/server/device_logins.go](../internal/server/device_logins.go) |
+| 本机二进制相对最新发布是旧是新（要不要升级） | 严格版本的解析与比较入口 | [internal/upgrade/version.go](../internal/upgrade/version.go) |
 
 > **配置不得成为权限的来源**。主体、角色、权限码、作用域一律不得由配置提供；默认作用域只能来自主体的绑定关系。见 [docs/design/config/README.md](design/config/README.md)。
 
@@ -89,6 +91,7 @@
 | 指标名、属性键与记录入口 | 常量定义 + `observability.Metrics` 的方法 | [internal/observability/metrics.go](../internal/observability/metrics.go) |
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
 | 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh` | [deploy/deploy.sh](../deploy/deploy.sh) |
+| 本机命令行的替换（原子、按符号链接指向的真实文件） | `upgrade` 的替换入口 | [internal/upgrade/replace.go](../internal/upgrade/replace.go) |
 
 ## 数据源类（Data Sources）
 
@@ -110,4 +113,5 @@
 | 两端各自认识的配置键 | `serverKeys` / `cliKeys` | [internal/config/file.go](../internal/config/file.go) |
 | CLI 凭证（令牌、绑定作用域、过期时间） | 用户配置目录下的 `credentials.json`，经 `auth.Resolve` 读取 | [internal/auth/credentials.go](../internal/auth/credentials.go) |
 | 环境变量名（`ALADDIN_` 前缀） | 各模块内集中定义：配置项在 config、凭证在 auth、开发旁路在 server；调用方不得手写字符串字面量 | [internal/config/config.go](../internal/config/config.go) |
+| 发布产物清单与校验和（自更新的唯一来源） | `upgrade` 的发布源读取入口 | [internal/upgrade/release.go](../internal/upgrade/release.go) |
 | 代码生成与静态检查工具的版本（本机安装与 CI 缓存 key 都由此派生） | Makefile 的 `TOOLS` 清单 | [Makefile](../Makefile) |
