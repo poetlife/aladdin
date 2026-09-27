@@ -258,3 +258,151 @@ func sourceToClientID(methods []*identityv1.AuthMethod) map[string]string {
 	}
 	return out
 }
+
+// 先用 GitHub 单独登录过一次、再用 Google 登录并绑定 GitHub：
+// 空主体被认领，之后 GitHub 登录进的是 Google 那个主体。
+//
+// 这条把"绑定"与"登录"两条真实路径接起来：单测各自冻结一半，只有端到端
+// 才能证明"认领之后，下一次重定向登录真的落到目标主体"。
+func TestGithubBindReclaimsVacantSubjectEndToEnd(t *testing.T) {
+	h := startGithubServer(t)
+	client := noFollowClient()
+	base := "http://" + h.address
+
+	// 1. 先用 GitHub 单独登录一次，得到零权限主体 E。
+	standalone := githubLoginToken(t, client, base)
+	throwaway := whoAmISubject(t, h, standalone)
+
+	// 2. 再用 Google 登录，得到另一个主体 A。
+	anon := connectIdentity(t, h, "")
+	loginResp, err := anon.Login(context.Background(), connect.NewRequest(&identityv1.LoginRequest{
+		Credential: &identityv1.LoginRequest_Google{
+			Google: &identityv1.GoogleCredential{IdToken: "一份身份令牌"},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Google 登录失败: %v", err)
+	}
+	adminToken := loginResp.Msg.GetAccessToken()
+	admin := whoAmISubject(t, h, adminToken)
+	if admin == throwaway {
+		t.Fatal("两个渠道首次登录应当是不同主体——否则这条用例测不到认领")
+	}
+
+	// 3. 从管理员会话发起 GitHub 绑定，走完整的两段式：导航 + 已认证兑换。
+	pending := githubBindPendingCookie(t, client, base)
+	bindResp, err := connectIdentity(t, h, adminToken).CompleteIdentityBinding(
+		context.Background(), bindingRequest(pending))
+	if err != nil {
+		t.Fatalf("兑换待绑定凭据失败: %v", err)
+	}
+	if !bindResp.Msg.GetReclaimed() {
+		t.Error("该 GitHub 身份属于空主体，期望发生认领")
+	}
+	if cookies := bindResp.Header().Values("Set-Cookie"); len(cookies) == 0 || !strings.Contains(cookies[0], "aladdin_identity_binding=") {
+		t.Errorf("兑换成功后没有清掉浏览器侧凭据: %v", cookies)
+	}
+
+	// 4. 再用 GitHub 登录一次：这次必须落到 A，而不是原来的空主体 E。
+	again := githubLoginToken(t, client, base)
+	if got := whoAmISubject(t, h, again); got != admin {
+		t.Errorf("认领后 GitHub 登录得到 %q，期望 %q", got, admin)
+	}
+}
+
+// githubLoginToken 走一次完整的 GitHub 登录，返回交付的会话凭证。
+func githubLoginToken(t *testing.T, client *http.Client, base string) string {
+	t.Helper()
+
+	startResp, err := client.Get(base + identity.GithubStartPath)
+	if err != nil {
+		t.Fatalf("访问起点端点失败: %v", err)
+	}
+	_ = startResp.Body.Close()
+	state := stateCookie(t, startResp)
+	if state == "" {
+		t.Fatal("起点端点没有写下导航凭据")
+	}
+
+	callbackResp := githubCallback(t, client, base, state, false)
+	location := callbackResp.Header.Get("Location")
+	token := fragmentParam(t, location, "token")
+	if token == "" {
+		t.Fatalf("登录回调没有交付会话凭证: %q", location)
+	}
+	return token
+}
+
+// githubBindPendingCookie 走一次绑定起点 + 回调，返回待绑定凭据 cookie。
+func githubBindPendingCookie(t *testing.T, client *http.Client, base string) *http.Cookie {
+	t.Helper()
+
+	startResp, err := client.Get(base + identity.GithubStartPath + "?purpose=bind")
+	if err != nil {
+		t.Fatalf("访问绑定起点端点失败: %v", err)
+	}
+	_ = startResp.Body.Close()
+	state := stateCookie(t, startResp)
+	if state == "" {
+		t.Fatal("绑定起点没有写下导航凭据")
+	}
+
+	callbackResp := githubCallback(t, client, base, state, true)
+	location := callbackResp.Header.Get("Location")
+	if got := fragmentParam(t, location, "binding"); got != identity.SourceGithub {
+		t.Fatalf("绑定回调跳转目标 = %q，期望带 binding=github", location)
+	}
+	for _, cookie := range callbackResp.Cookies() {
+		if cookie.Name == "aladdin_identity_binding" {
+			return cookie
+		}
+	}
+	t.Fatal("绑定回调没有写下待绑定凭据 cookie")
+	return nil
+}
+
+// githubCallback 用给定的 state 访问回调端点；bind 只影响对返回形状的断言。
+func githubCallback(t *testing.T, client *http.Client, base, state string, bind bool) *http.Response {
+	t.Helper()
+
+	callbackURL := base + identity.GithubCallbackPath +
+		"?code=an-auth-code&state=" + url.QueryEscape(state)
+	req, err := http.NewRequest(http.MethodGet, callbackURL, nil)
+	if err != nil {
+		t.Fatalf("构造回调请求失败: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: "aladdin_github_state", Value: state})
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("访问回调端点失败: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("回调端点状态码 = %d，期望 302", resp.StatusCode)
+	}
+	if bind && strings.Contains(resp.Header.Get("Location"), "#token=") {
+		t.Error("绑定回调不得交付会话凭证")
+	}
+	return resp
+}
+
+// bindingRequest 造一份带待绑定 cookie 的兑换请求。
+//
+// Cookie 头的取值只取 name=value：resp.Cookies() 里的对象还带着 Path 等属性，
+// 直接把 String() 放进 Cookie 头会是一条非法请求。
+func bindingRequest(cookie *http.Cookie) *connect.Request[identityv1.CompleteIdentityBindingRequest] {
+	req := connect.NewRequest(&identityv1.CompleteIdentityBindingRequest{Source: identity.SourceGithub})
+	req.Header().Set("Cookie", cookie.Name+"="+cookie.Value)
+	return req
+}
+
+// whoAmISubject 用一份会话问出它代表的真实主体。
+func whoAmISubject(t *testing.T, h harness, token string) string {
+	t.Helper()
+	resp, err := connectIdentity(t, h, token).WhoAmI(
+		context.Background(), connect.NewRequest(&identityv1.WhoAmIRequest{}))
+	if err != nil {
+		t.Fatalf("WhoAmI 失败: %v", err)
+	}
+	return resp.Msg.GetSubjectId()
+}

@@ -69,3 +69,36 @@ export async function loginWithGoogle(idToken: string) {
     credential: { case: 'google', value: { idToken } },
   })
 }
+
+/** 列出当前主体已绑定的全部登录渠道。 */
+export async function listIdentities() {
+  return identityClient().listIdentities({})
+}
+
+/**
+ * 用 Google 签发的身份令牌把该渠道绑到**当前主体**。
+ *
+ * 这是搬运型渠道的绑定：令牌直接随请求到达服务端，由与登录相同的校验器
+ * 校验；归属只取当前会话的主体，请求里没有主体字段。
+ */
+export async function bindGoogleIdentity(idToken: string) {
+  return identityClient().bindIdentity({
+    credential: { case: 'google', value: { idToken } },
+  })
+}
+
+/**
+ * 兑换一份"待绑定凭据"（重定向型渠道的绑定）。
+ *
+ * 渠道凭证已经由服务端在浏览器回调里校验过，并记成一份只在 HttpOnly cookie
+ * 里的待绑定凭据；本调用只带 source，用来与凭据里记下的来源互相印证。
+ * **目标主体不在请求里**：服务端只认当前会话代表的主体。
+ */
+export async function completeIdentityBinding(source: string) {
+  return identityClient().completeIdentityBinding({ source })
+}
+
+/** 从当前主体上摘掉一个登录渠道。 */
+export async function unbindIdentity(source: string, externalId: string) {
+  return identityClient().unbindIdentity({ source, externalId })
+}

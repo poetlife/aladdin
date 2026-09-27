@@ -95,6 +95,58 @@ func (s *IdentityStore) Put(ctx context.Context, ident identity.Identity) error 
 	return nil
 }
 
+// Reclaim 实现 identity.IdentityStore。
+//
+// "是不是空主体"（原主体只有这一条身份）与移动必须在同一次事务里完成。
+// 分开写的话，两个并发认领会各查一次"只有一条"，然后把同一个主体的不同
+// 身份分别认领走，留下一个零身份、却还有角色的主体。
+func (s *IdentityStore) Reclaim(ctx context.Context, ident identity.Identity, fromSubjectID string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing database.IdentityRecord
+		err := tx.First(&existing, "source = ? AND external_id = ?",
+			ident.Source, ident.ExternalID).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			return identity.ErrIdentityNotFound
+		case err != nil:
+			return identityUnavailable("认领身份", err)
+		case existing.SubjectID != fromSubjectID:
+			return identityTaken(ident)
+		case ident.SubjectID == fromSubjectID:
+			// 同主体是幂等成功，不需要移动。
+			//
+			// 这一步**必须**排在存在性与归属校验之后（与内存实现一致）：
+			// 抢在前面返回 nil 会把"身份不存在"或"身份属于别人"报成成功。
+			return nil
+		}
+
+		var count int64
+		if err := tx.Model(&database.IdentityRecord{}).
+			Where("subject_id = ?", fromSubjectID).Count(&count).Error; err != nil {
+			return identityUnavailable("认领身份", err)
+		}
+		if count != 1 {
+			return fmt.Errorf("%w: %s", identity.ErrIdentityNotVacant, ident.Source)
+		}
+
+		result := tx.Model(&database.IdentityRecord{}).
+			Where("source = ? AND external_id = ? AND subject_id = ?",
+				ident.Source, ident.ExternalID, fromSubjectID).
+			Updates(map[string]any{
+				"subject_id": ident.SubjectID,
+				"display":    ident.Display,
+			})
+		if result.Error != nil {
+			return identityUnavailable("认领身份", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			// 归属在事务中途被改走了。宁可不认领，也不动别人的行。
+			return identityTaken(ident)
+		}
+		return nil
+	})
+}
+
 // Delete 实现 identity.IdentityStore。
 //
 // 删除与"是不是最后一个"必须在同一次事务里完成。分开写的话，两个并发的

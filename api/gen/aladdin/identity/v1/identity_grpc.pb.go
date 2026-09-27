@@ -19,14 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	IdentityService_Login_FullMethodName                 = "/aladdin.identity.v1.IdentityService/Login"
-	IdentityService_Refresh_FullMethodName               = "/aladdin.identity.v1.IdentityService/Refresh"
-	IdentityService_GetAuthMethods_FullMethodName        = "/aladdin.identity.v1.IdentityService/GetAuthMethods"
-	IdentityService_WhoAmI_FullMethodName                = "/aladdin.identity.v1.IdentityService/WhoAmI"
-	IdentityService_GetSessionPermissions_FullMethodName = "/aladdin.identity.v1.IdentityService/GetSessionPermissions"
-	IdentityService_BindIdentity_FullMethodName          = "/aladdin.identity.v1.IdentityService/BindIdentity"
-	IdentityService_UnbindIdentity_FullMethodName        = "/aladdin.identity.v1.IdentityService/UnbindIdentity"
-	IdentityService_ListIdentities_FullMethodName        = "/aladdin.identity.v1.IdentityService/ListIdentities"
+	IdentityService_Login_FullMethodName                   = "/aladdin.identity.v1.IdentityService/Login"
+	IdentityService_Refresh_FullMethodName                 = "/aladdin.identity.v1.IdentityService/Refresh"
+	IdentityService_GetAuthMethods_FullMethodName          = "/aladdin.identity.v1.IdentityService/GetAuthMethods"
+	IdentityService_WhoAmI_FullMethodName                  = "/aladdin.identity.v1.IdentityService/WhoAmI"
+	IdentityService_GetSessionPermissions_FullMethodName   = "/aladdin.identity.v1.IdentityService/GetSessionPermissions"
+	IdentityService_BindIdentity_FullMethodName            = "/aladdin.identity.v1.IdentityService/BindIdentity"
+	IdentityService_UnbindIdentity_FullMethodName          = "/aladdin.identity.v1.IdentityService/UnbindIdentity"
+	IdentityService_CompleteIdentityBinding_FullMethodName = "/aladdin.identity.v1.IdentityService/CompleteIdentityBinding"
+	IdentityService_ListIdentities_FullMethodName          = "/aladdin.identity.v1.IdentityService/ListIdentities"
 )
 
 // IdentityServiceClient is the client API for IdentityService service.
@@ -64,7 +65,12 @@ type IdentityServiceClient interface {
 	//
 	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
 	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-	// 正常绑定没有区别。
+	// 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
+	// identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
+	// 身份被并入当前主体。
+	//
+	// 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
+	// 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
 	BindIdentity(ctx context.Context, in *BindIdentityRequest, opts ...grpc.CallOption) (*BindIdentityResponse, error)
 	// 从当前主体上摘掉一个登录渠道。
 	//
@@ -74,6 +80,13 @@ type IdentityServiceClient interface {
 	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
 	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
 	UnbindIdentity(ctx context.Context, in *UnbindIdentityRequest, opts ...grpc.CallOption) (*UnbindIdentityResponse, error)
+	// 完成一次重定向型渠道的绑定。
+	//
+	// 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
+	// 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
+	// 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
+	// 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	CompleteIdentityBinding(ctx context.Context, in *CompleteIdentityBindingRequest, opts ...grpc.CallOption) (*CompleteIdentityBindingResponse, error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error)
 }
@@ -156,6 +169,16 @@ func (c *identityServiceClient) UnbindIdentity(ctx context.Context, in *UnbindId
 	return out, nil
 }
 
+func (c *identityServiceClient) CompleteIdentityBinding(ctx context.Context, in *CompleteIdentityBindingRequest, opts ...grpc.CallOption) (*CompleteIdentityBindingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteIdentityBindingResponse)
+	err := c.cc.Invoke(ctx, IdentityService_CompleteIdentityBinding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *identityServiceClient) ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListIdentitiesResponse)
@@ -201,7 +224,12 @@ type IdentityServiceServer interface {
 	//
 	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
 	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-	// 正常绑定没有区别。
+	// 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
+	// identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
+	// 身份被并入当前主体。
+	//
+	// 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
+	// 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
 	BindIdentity(context.Context, *BindIdentityRequest) (*BindIdentityResponse, error)
 	// 从当前主体上摘掉一个登录渠道。
 	//
@@ -211,6 +239,13 @@ type IdentityServiceServer interface {
 	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
 	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
 	UnbindIdentity(context.Context, *UnbindIdentityRequest) (*UnbindIdentityResponse, error)
+	// 完成一次重定向型渠道的绑定。
+	//
+	// 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
+	// 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
+	// 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
+	// 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	CompleteIdentityBinding(context.Context, *CompleteIdentityBindingRequest) (*CompleteIdentityBindingResponse, error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error)
 	mustEmbedUnimplementedIdentityServiceServer()
@@ -243,6 +278,9 @@ func (UnimplementedIdentityServiceServer) BindIdentity(context.Context, *BindIde
 }
 func (UnimplementedIdentityServiceServer) UnbindIdentity(context.Context, *UnbindIdentityRequest) (*UnbindIdentityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UnbindIdentity not implemented")
+}
+func (UnimplementedIdentityServiceServer) CompleteIdentityBinding(context.Context, *CompleteIdentityBindingRequest) (*CompleteIdentityBindingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteIdentityBinding not implemented")
 }
 func (UnimplementedIdentityServiceServer) ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListIdentities not implemented")
@@ -394,6 +432,24 @@ func _IdentityService_UnbindIdentity_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityService_CompleteIdentityBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteIdentityBindingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).CompleteIdentityBinding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_CompleteIdentityBinding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).CompleteIdentityBinding(ctx, req.(*CompleteIdentityBindingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _IdentityService_ListIdentities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListIdentitiesRequest)
 	if err := dec(in); err != nil {
@@ -446,6 +502,10 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnbindIdentity",
 			Handler:    _IdentityService_UnbindIdentity_Handler,
+		},
+		{
+			MethodName: "CompleteIdentityBinding",
+			Handler:    _IdentityService_CompleteIdentityBinding_Handler,
 		},
 		{
 			MethodName: "ListIdentities",

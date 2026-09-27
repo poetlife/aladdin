@@ -328,3 +328,97 @@ func TestSubjectIDIsOpaque(t *testing.T) {
 		t.Errorf("主体标识 %q 缺少 %q 前缀", subject.ID, subjectIDPrefix)
 	}
 }
+
+// Owner 报告一份身份当前属于谁；不存在的身份返回 ErrIdentityNotFound。
+func TestOwnerReportsCurrentSubject(t *testing.T) {
+	ctx := context.Background()
+	identities, _ := newTestIdentities()
+
+	subject, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "")
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	owner, err := identities.Owner(ctx, SourceGoogle, "sub-a")
+	if err != nil {
+		t.Fatalf("读取归属失败: %v", err)
+	}
+	if owner != subject.ID {
+		t.Errorf("owner = %q，期望 %q", owner, subject.ID)
+	}
+	if _, err := identities.Owner(ctx, SourceGoogle, "never-issued"); !errors.Is(err, ErrIdentityNotFound) {
+		t.Errorf("err = %v，期望 ErrIdentityNotFound", err)
+	}
+}
+
+// 认领把一个空主体上的唯一身份移到目标主体；原主体留下零身份的壳。
+func TestReclaimMovesIdentityFromVacantSubject(t *testing.T) {
+	ctx := context.Background()
+	identities, _ := newTestIdentities()
+
+	from, err := identities.ResolveOrRegister(ctx, SourceGithub, "gh-1", "old")
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	to, err := identities.ResolveOrRegister(ctx, SourceGoogle, "g-1", "")
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+
+	if err := identities.Reclaim(ctx, from.ID, Identity{
+		Source:     SourceGithub,
+		ExternalID: "gh-1",
+		SubjectID:  to.ID,
+		Display:    "new",
+	}); err != nil {
+		t.Fatalf("认领失败: %v", err)
+	}
+
+	resolved, err := identities.ResolveOrRegister(ctx, SourceGithub, "gh-1", "new")
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if resolved.ID != to.ID {
+		t.Errorf("认领后 GitHub 登录到 %q，期望 %q", resolved.ID, to.ID)
+	}
+	left, err := identities.List(ctx, from.ID)
+	if err != nil {
+		t.Fatalf("列出原主体失败: %v", err)
+	}
+	if len(left) != 0 {
+		t.Errorf("原主体还剩 %d 条身份，期望 0", len(left))
+	}
+}
+
+// 原主体不是空主体（还有别的身份）时认领被拒，归属一字不动。
+func TestReclaimRejectsNonVacantSubject(t *testing.T) {
+	ctx := context.Background()
+	identities, _ := newTestIdentities()
+
+	from, err := identities.ResolveOrRegister(ctx, SourceGithub, "gh-1", "")
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if err := identities.Bind(ctx, from.ID, SourceGithub, "gh-2", ""); err != nil {
+		t.Fatalf("绑定失败: %v", err)
+	}
+	to, err := identities.ResolveOrRegister(ctx, SourceGoogle, "g-1", "")
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+
+	err = identities.Reclaim(ctx, from.ID, Identity{
+		Source:     SourceGithub,
+		ExternalID: "gh-1",
+		SubjectID:  to.ID,
+	})
+	if !errors.Is(err, ErrIdentityNotVacant) {
+		t.Fatalf("err = %v，期望 ErrIdentityNotVacant", err)
+	}
+	owner, err := identities.Owner(ctx, SourceGithub, "gh-1")
+	if err != nil {
+		t.Fatalf("读取归属失败: %v", err)
+	}
+	if owner != from.ID {
+		t.Errorf("归属被改动了：%q，期望 %q", owner, from.ID)
+	}
+}

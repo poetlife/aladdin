@@ -85,6 +85,29 @@ func (i *Identities) Bind(ctx context.Context, subjectID, source, externalID, di
 	})
 }
 
+// Owner 返回一份身份当前属于哪个主体。不存在时返回 ErrIdentityNotFound。
+func (i *Identities) Owner(ctx context.Context, source, externalID string) (string, error) {
+	ident, err := i.identities.Lookup(ctx, source, externalID)
+	if err != nil {
+		return "", err
+	}
+	return ident.SubjectID, nil
+}
+
+// Reclaim 把一个属于 fromSubjectID 的身份认领到 ident.SubjectID。
+//
+// **归属由调用方决定，且调用方必须已经确认两件事**：
+//
+//   - ident.SubjectID 是当前已认证的主体（服务端从会话取，不由请求字段决定）；
+//   - fromSubjectID 没有任何角色绑定（空主体的另一半条件）。
+//
+// 本方法只校验 fromSubjectID **只有这一条身份**（空主体的这一半是身份域
+// 事实，必须在存储的同一笔操作里判），然后完成移动。原主体留下零身份、
+// 零角色的壳，与它本来就没有可失去的东西这件事一致。
+func (i *Identities) Reclaim(ctx context.Context, fromSubjectID string, ident Identity) error {
+	return i.identities.Reclaim(ctx, ident, fromSubjectID)
+}
+
 // Unbind 从主体上摘掉一个渠道身份。
 //
 // 摘掉之后该渠道不再通向这个主体：下次用它登录会按"未命中"登记出一个

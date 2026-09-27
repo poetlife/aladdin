@@ -20,8 +20,10 @@ GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认
 
 | 端点 | 作用 |
 |------|------|
-| `/auth/github/start` | 生成一次登录的凭据，把浏览器交给 GitHub |
-| `/auth/github/callback` | 接收 GitHub 送回来的授权码，完成登录，把浏览器送回前端 |
+| `/auth/github/start` | 生成一次导航的凭据，把浏览器交给 GitHub。导航可以声明这次是登录还是绑定 |
+| `/auth/github/callback` | 接收 GitHub 送回来的授权码，完成登录或产出待绑定凭据，把浏览器送回前端 |
+
+**这两个端点同时服务登录与绑定。** 用途标记由起点导航携带，服务端把它记进一次性导航状态；它不是信任边界——绑定的归属只在导航结束后那次已认证的兑换里决定（见 [identity-linking.md](identity-linking.md)）。
 
 **这两个地址是对外契约的一部分**：`/auth/github/callback` 必须登记在 GitHub 控制台的授权回调地址里，且与 aladdin 配置中的对外源一致（见下）。换域名时要同时改这三处（GitHub 控制台、对外源配置、反向代理规则），漏掉任何一处都表现为"点登录没反应"或"回调 404"。
 
@@ -94,6 +96,16 @@ GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认
 
 前端在挂载时读取这份凭证并**立即把它从地址栏抹掉**，再按既有流程使用它。抹掉这一步不能让凭证留在浏览器历史里。
 
+### 绑定到已有主体的两段式
+
+GitHub 的绑定与登录复用上面那两个端点，差别只在用途标记与回调之后的去向。归属语义（绑到当前会话的主体、凭据指身份不指主体、兑换同时要会话与 cookie）见 [identity-linking.md](identity-linking.md)，这里只写 GitHub 特有的部分：
+
+- 起点导航带"绑定"用途；服务端把用途记进一次性导航状态，回调据此分支。
+- 回调校验通过后**不登记主体、不签发会话**，而是把已校验的 GitHub 身份记成一份**待绑定凭据**，把凭据写进 HttpOnly cookie，再把浏览器送回前端。回跳地址里**不带凭据**，只带一个固定的结果标记。
+- 前端在回调页用**当前会话**发起一次已认证的兑换请求；服务端同时要求该 cookie 与有效会话，缺一即拒。
+- 已属于当前主体的 GitHub 身份幂等成功；已属于一个**空主体**（只有这条身份、没有任何角色绑定）时按"空主体认领"把身份移到当前主体，并告诉用户"此前单独登录过、已并入当前账号"；已属于任何**非空**主体时仍拒绝、不转移。
+- **待绑定凭据的 cookie 与登录起点 cookie 是两份不同的东西**：前者只用于绑定兑换，后者只用于这次回调的导航校验。两者都必须 HttpOnly，是否要求加密传输都由对外源的协议决定。
+
 ### 对外源
 
 服务端需要知道自己的**对外地址**，用来构造交给 GitHub 的回调地址与回跳前端的地址。这是一个配置项，**不是秘密**（它只是一个主机名），因此与客户端标识一样放在配置文件里。
@@ -106,7 +118,7 @@ GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认
 
 - 登录流程、身份识别、主体登记与默认权限：[channel-login.md](channel-login.md)。
 - 会话凭证的签发与失效：[session-token.md](session-token.md)。
-- **把 GitHub 身份绑到已有主体**：本次不做，见下方待定决策。
+- **把 GitHub 身份绑到已有主体**：归属语义、凭据边界与可验证性见 [identity-linking.md](identity-linking.md)；本文件只描述 GitHub 特有的导航、回跳与 cookie。
 - GitHub 控制台的申请与配置：这是部署动作。
 
 约束：
@@ -139,6 +151,13 @@ GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认
 | 密钥不进日志 | 启动日志、错误信息与 `--debug` 输出中不出现客户端密钥与访问令牌（`internal/config` 测试 + 启动冒烟） |
 | 密钥不可由配置提供 | 配置文件的键集合里没有承载客户端密钥的键（`internal/config` 测试） |
 | 端到端一致 | 两种 RPC 协议（grpc-go 与 Connect）对同一次登录得到的结论一致（端到端测试） |
+| 绑定用途不在回调签发会话 | 带绑定用途走完回调后，浏览器拿不到会话凭证，库里也没有新增主体（`internal/server` 测试 + 端到端测试） |
+| 失败标记按用途选 | 绑定用途的导航在凭据不符、超时或渠道校验失败时回跳 `github_bind_failed`，登录用途的对应情形回跳 `github_login_failed`（`internal/server` 测试）。凭据**已被兑换过**（重放）时用途已无从判断，按登录标记回跳——这是刻意接受的边界 |
+| 绑定凭据不进地址 | 回跳前端的地址里不含待绑定凭据（`internal/server` 测试） |
+| 绑定兑换需要 cookie | 缺 cookie、cookie 与凭据不符、或没有有效会话时不产生绑定（`internal/server` 测试） |
+| 绑定与登录共用校验器 | 伪造、过期、受众不符的渠道凭证在绑定路径同样失败（`internal/identity` 测试） |
+| 回调后的认领走完整链路 | GitHub 身份已属于空主体时，走完回调与已认证兑换后该身份归当前主体，原主体只剩零身份、零角色（端到端测试） |
+| 非空主体的 GitHub 身份不被夺走 | 原主体有任何角色或别的身份时，绑定被拒且归属不变（`internal/server` 测试） |
 
 测试**不得联网**：校验器藏在一个接口后面，测试注入一个指向本机假 GitHub 的实现，覆盖上表每一条。
 
@@ -149,12 +168,14 @@ GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认
 3. 走一次完整登录 → 回到前端应已登录、界面全空（验证"新主体零权限"）。
 4. 手工删掉起点端点写下的 cookie 再走完回调 → **不应**登录成功，应带一条失败信息回到登录页。
 5. 半套配置（配了客户端标识但缺对外源或客户端密钥）→ **拒绝启动**。
+6. 用一个已有主体登录，从个人资料发起 GitHub 绑定 → 应提示绑定成功；随后退出并用 GitHub 登录 → 应得到**同一个主体**，而不是新的零权限主体。
+7. 直接打开绑定成功的回跳地址（不带待绑定 cookie）→ **不应**产生绑定，也不应泄露凭据是否曾经有效。
+8. 先单独用 GitHub 登录一次（得到零权限主体），再用 Google 登录并在个人资料里绑定 GitHub → 应提示"此前单独登录过、已并入当前账号"；随后用 GitHub 登录 → 应得到 Google 那个主体。
 
 ## 待定决策
 
 | 决策 | 推荐默认 | 替换影响范围 |
 |------|---------|-------------|
-| 把 GitHub 身份绑到**已有主体** | 暂不做（**未定**） | 需要让"绑到哪个主体"穿过一次浏览器导航：导航带不了认证头，而本仓库刻意把会话放在浏览器本地存储而非 cookie 里，因此回调端点无从得知发起者是谁。可选形态有两种，都需要单独设计其边界——一是由客户端先换一份一次性票据再导航，二是由服务端为这次绑定签一份意图凭据。**伪造意图凭据就是"把身份绑到任意主体"的入口**，那是 [identity-linking.md](identity-linking.md) 明令禁止的形状，因此这一步的边界必须先于实现定下来 |
 | 授权请求携带 PKCE 挑战 | 暂不做（**未定**） | 纵深防御。授权码单次使用、且换取发生在服务端到服务端之间，因此当前不构成一条可被利用的路径 |
 
 ## 依赖关系
@@ -162,6 +183,7 @@ GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认
 | 依赖对象 | 交互方式 |
 |---------|---------|
 | 渠道登录 | 复用其登录流程、身份识别与主体登记（见 [channel-login.md](channel-login.md)） |
+| 渠道绑定 | 复用其归属规则与待绑定凭据边界（见 [identity-linking.md](identity-linking.md)） |
 | 会话凭证 | 登录成功后调用其签发入口（见 [session-token.md](session-token.md)） |
 | 配置模块 | 消费客户端标识、对外源；客户端密钥只从环境变量读（见 [../config/server-config.md](../config/server-config.md)） |
 | 可观测性 | 登录成功与失败留痕，**不含授权码、客户端密钥与访问令牌**（见 [../../observability.md](../../observability.md)） |
@@ -174,7 +196,9 @@ GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认
 |------|---------|
 | GitHub 凭证（授权码）的校验（唯一入口） | [internal/identity/github_verifier.go](../../../internal/identity/github_verifier.go) |
 | 两个浏览器直连端点 | [internal/server/github_login_flow.go](../../../internal/server/github_login_flow.go) |
-| 一次性登录凭据的记录（单次使用与有效期） | [internal/server/login_states.go](../../../internal/server/login_states.go) |
+| 一次性导航凭据与待绑定凭据的记录（单次使用与有效期） | [internal/server/one_time_store.go](../../../internal/server/one_time_store.go) / [internal/server/pending_bindings.go](../../../internal/server/pending_bindings.go) |
+| 服务端签发的 cookie 的构造与读取（属性集合唯一入口） | [internal/server/cookie.go](../../../internal/server/cookie.go) |
+| 待绑定凭据的兑换与空主体认领 | [internal/server/identity_service.go](../../../internal/server/identity_service.go) |
 | 浏览器直连端点的放行清单 | [internal/server/middleware.go](../../../internal/server/middleware.go) |
 | 客户端标识、对外源与密钥 | [internal/config/](../../../internal/config/) |
 

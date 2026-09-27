@@ -351,3 +351,155 @@ func TestIdentityContractListEmpty(t *testing.T) {
 		}
 	})
 }
+
+// 认领只对空主体成立：原主体只有这一条身份时，才能把它移走。
+func TestIdentityContractReclaimMovesOnlyIdentity(t *testing.T) {
+	forEachIdentityStore(t, func(t *testing.T, store identity.IdentityStore) {
+		ctx := context.Background()
+		original := testIdentity("usr_old", "google-sub-a", "old@example.com")
+		if err := store.Put(ctx, original); err != nil {
+			t.Fatalf("写入身份失败: %v", err)
+		}
+
+		reclaimed := original
+		reclaimed.SubjectID = "usr_new"
+		reclaimed.Display = "new@example.com"
+		if err := store.Reclaim(ctx, reclaimed, "usr_old"); err != nil {
+			t.Fatalf("认领失败: %v", err)
+		}
+
+		got, err := store.Lookup(ctx, reclaimed.Source, reclaimed.ExternalID)
+		if err != nil {
+			t.Fatalf("读取身份失败: %v", err)
+		}
+		if got != reclaimed {
+			t.Errorf("认领后的身份 = %+v，期望 %+v", got, reclaimed)
+		}
+		oldList, err := store.ListBySubject(ctx, "usr_old")
+		if err != nil {
+			t.Fatalf("列出原主体失败: %v", err)
+		}
+		if len(oldList) != 0 {
+			t.Errorf("原主体还剩 %d 条身份，期望 0", len(oldList))
+		}
+		newList, err := store.ListBySubject(ctx, "usr_new")
+		if err != nil {
+			t.Fatalf("列出目标主体失败: %v", err)
+		}
+		if len(newList) != 1 {
+			t.Fatalf("目标主体身份数 = %d，期望 1", len(newList))
+		}
+	})
+}
+
+// 原主体还有别的身份时，认领必须拒绝且一行不动：否则会把另一个主体的
+// 进入方式也留在一个被认领过的壳上。
+func TestIdentityContractReclaimRejectsNonVacant(t *testing.T) {
+	forEachIdentityStore(t, func(t *testing.T, store identity.IdentityStore) {
+		ctx := context.Background()
+		first := testIdentity("usr_old", "google-sub-a", "")
+		second := testIdentity("usr_old", "google-sub-b", "")
+		for _, ident := range []identity.Identity{first, second} {
+			if err := store.Put(ctx, ident); err != nil {
+				t.Fatalf("写入身份失败: %v", err)
+			}
+		}
+
+		reclaimed := first
+		reclaimed.SubjectID = "usr_new"
+		err := store.Reclaim(ctx, reclaimed, "usr_old")
+		if !errors.Is(err, identity.ErrIdentityNotVacant) {
+			t.Fatalf("err = %v，期望 ErrIdentityNotVacant", err)
+		}
+
+		got, err := store.Lookup(ctx, first.Source, first.ExternalID)
+		if err != nil {
+			t.Fatalf("读取身份失败: %v", err)
+		}
+		if got.SubjectID != "usr_old" {
+			t.Errorf("归属被改动了：%q，期望 usr_old", got.SubjectID)
+		}
+	})
+}
+
+// 认领必须写明"从谁那里认领"：拿一个不相关的原主体来认领会被拒绝。
+func TestIdentityContractReclaimRejectsOtherOwner(t *testing.T) {
+	forEachIdentityStore(t, func(t *testing.T, store identity.IdentityStore) {
+		ctx := context.Background()
+		original := testIdentity("usr_old", "google-sub-a", "")
+		if err := store.Put(ctx, original); err != nil {
+			t.Fatalf("写入身份失败: %v", err)
+		}
+
+		reclaimed := original
+		reclaimed.SubjectID = "usr_new"
+		err := store.Reclaim(ctx, reclaimed, "usr_other")
+		if !errors.Is(err, identity.ErrIdentityTaken) {
+			t.Fatalf("err = %v，期望 ErrIdentityTaken", err)
+		}
+	})
+}
+
+// 认领一个不存在的身份返回 ErrIdentityNotFound。
+func TestIdentityContractReclaimMissing(t *testing.T) {
+	forEachIdentityStore(t, func(t *testing.T, store identity.IdentityStore) {
+		err := store.Reclaim(context.Background(),
+			testIdentity("usr_new", "never-issued", ""), "usr_old")
+		if !errors.Is(err, identity.ErrIdentityNotFound) {
+			t.Fatalf("err = %v，期望 ErrIdentityNotFound", err)
+		}
+	})
+}
+
+// 原主体与目标主体相同时是幂等成功：身份已经在目标主体上，无需移动。
+func TestIdentityContractReclaimSameSubjectIsIdempotent(t *testing.T) {
+	forEachIdentityStore(t, func(t *testing.T, store identity.IdentityStore) {
+		ctx := context.Background()
+		original := testIdentity("usr_same", "google-sub-a", "a@example.com")
+		if err := store.Put(ctx, original); err != nil {
+			t.Fatalf("写入身份失败: %v", err)
+		}
+
+		if err := store.Reclaim(ctx, original, "usr_same"); err != nil {
+			t.Fatalf("同主体认领失败: %v", err)
+		}
+
+		got, err := store.Lookup(ctx, original.Source, original.ExternalID)
+		if err != nil {
+			t.Fatalf("读取身份失败: %v", err)
+		}
+		if got != original {
+			t.Errorf("身份 = %+v，期望原样不动 %+v", got, original)
+		}
+	})
+}
+
+// 幂等判定必须排在存在性与归属校验**之后**：同主体的取值不能把"不存在"或
+// "属于别人"报成认领成功。两个实现必须在这两点上给出同一个结论。
+func TestIdentityContractReclaimSameSubjectStillChecksOwnership(t *testing.T) {
+	forEachIdentityStore(t, func(t *testing.T, store identity.IdentityStore) {
+		ctx := context.Background()
+
+		// 身份不存在。
+		if err := store.Reclaim(ctx, testIdentity("usr_same", "never-issued", ""), "usr_same"); !errors.Is(err, identity.ErrIdentityNotFound) {
+			t.Errorf("不存在的身份：err = %v，期望 ErrIdentityNotFound", err)
+		}
+
+		// 身份存在，但属于另一个主体。
+		other := testIdentity("usr_other", "google-sub-a", "")
+		if err := store.Put(ctx, other); err != nil {
+			t.Fatalf("写入身份失败: %v", err)
+		}
+		if err := store.Reclaim(ctx, testIdentity("usr_same", "google-sub-a", ""), "usr_same"); !errors.Is(err, identity.ErrIdentityTaken) {
+			t.Errorf("属于别人的身份：err = %v，期望 ErrIdentityTaken", err)
+		}
+
+		got, err := store.Lookup(ctx, other.Source, other.ExternalID)
+		if err != nil {
+			t.Fatalf("读取身份失败: %v", err)
+		}
+		if got.SubjectID != "usr_other" {
+			t.Errorf("归属被改动了：%q，期望 usr_other", got.SubjectID)
+		}
+	})
+}

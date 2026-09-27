@@ -1,3 +1,4 @@
+import { Code, ConnectError } from '@connectrpc/connect'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -9,6 +10,7 @@ import { AuthCallbackPage } from './AuthCallbackPage'
 
 vi.mock('../api/identity', () => ({
   AuthSource: { Google: 'google', Github: 'github' },
+  completeIdentityBinding: vi.fn(),
   getAuthMethods: vi.fn(),
   login: vi.fn(),
   loginWithGoogle: vi.fn(),
@@ -43,6 +45,7 @@ async function renderCallbackPage(hash: string): Promise<HTMLElement> {
           <Routes>
             <Route path="/login/callback" element={<AuthCallbackPage />} />
             <Route path="/" element={<div data-testid="home" />} />
+            <Route path="/profile" element={<div data-testid="profile" />} />
           </Routes>
         </SessionProvider>
       </MemoryRouter>,
@@ -104,6 +107,40 @@ describe('重定向登录的回调页', () => {
     expect(container.querySelector('[data-testid="home"]')).toBeNull()
     // 用不了的凭证不该留在本地存储里。
     expect(globalThis.localStorage?.getItem('aladdin.token')).toBeNull()
+  })
+
+  it('把绑定回跳的 source 交给已认证兑换，并转到个人资料页', async () => {
+    vi.mocked(identityApi.completeIdentityBinding).mockResolvedValue({
+      $typeName: 'aladdin.identity.v1.CompleteIdentityBindingResponse',
+      identities: [],
+      reclaimed: false,
+    })
+
+    const container = await renderCallbackPage('#binding=github')
+
+    expect(identityApi.completeIdentityBinding).toHaveBeenCalledWith('github')
+    expect(globalThis.location.hash).toBe('')
+    expect(container.querySelector('[data-testid="profile"]')).not.toBeNull()
+    // 绑定不改动本地凭证：它只把身份并到当前主体上。
+    expect(globalThis.localStorage?.getItem('aladdin.token')).toBeNull()
+  })
+
+  it('绑定失败标记给出绑定提示，而不是登录提示', async () => {
+    const container = await renderCallbackPage('#error=github_bind_failed')
+
+    expect(container.textContent).toContain('绑定未完成')
+    expect(container.querySelector('[data-testid="profile"]')).toBeNull()
+  })
+
+  it('绑定兑换时会话已失效，提示重新登录而不是摊开未认证', async () => {
+    vi.mocked(identityApi.completeIdentityBinding).mockRejectedValue(
+      new ConnectError('未认证', Code.Unauthenticated),
+    )
+
+    const container = await renderCallbackPage('#binding=github')
+
+    expect(container.textContent).toContain('登录状态已失效')
+    expect(container.querySelector('[data-testid="profile"]')).toBeNull()
   })
 
   it('地址里什么都没有时明确说明这不是回调地址，而不是永远转圈', async () => {

@@ -30,6 +30,11 @@ var (
 	// 进入方式夺走，而那个动作在系统里与一次正常绑定没有区别。
 	ErrIdentityTaken = errors.New("身份已被其他主体绑定")
 
+	// ErrIdentityNotVacant 表示试图认领的身份所属主体不是空主体——它还有
+	// 别的身份。认领只对"只有这一条身份"的主体成立；否则并发的认领会把
+	// 同一个主体的不同身份分别认领走。
+	ErrIdentityNotVacant = errors.New("身份所属主体不是空主体")
+
 	// ErrLastIdentity 表示这次解绑会把主体的最后一个身份摘掉。
 	//
 	// 一个主体没有任何身份，等于它再也没有任何进入方式：它的角色绑定还在，
@@ -77,6 +82,21 @@ type IdentityStore interface {
 	// 该身份已属于**另一个**主体时返回 ErrIdentityTaken；已属于同一主体时
 	// 只更新展示信息，是幂等的。
 	Put(ctx context.Context, ident Identity) error
+
+	// Reclaim 把一个身份从 fromSubjectID 移到 ident.SubjectID。
+	//
+	// 它只接受一种情形：该身份当前属于 fromSubjectID，且 fromSubjectID
+	// **只有这一条身份**。这条判断必须与移动在同一次操作里完成：分开写的话，
+	// 两个并发认领会各查一次"只有这一条"，把同一个主体的不同身份都认领走。
+	//
+	// 该身份不存在时返回 ErrIdentityNotFound；不属于 fromSubjectID 时返回
+	// ErrIdentityTaken；fromSubjectID 还有别的身份时返回 ErrIdentityNotVacant，
+	// 且一行不动。
+	//
+	// 两个主体标识相同时是**幂等成功**（身份已在目标主体上，无需移动）。这条
+	// 幂等判定排在存在性与归属校验**之后**：抢在前面返回成功会把"身份不存在"
+	// 或"身份属于别人"报成认领成功。
+	Reclaim(ctx context.Context, ident Identity, fromSubjectID string) error
 
 	// Delete 删除一条**属于该主体**的身份，返回是否真的删掉了。
 	//
@@ -148,6 +168,37 @@ func (s *MemoryIdentityStore) Put(_ context.Context, ident Identity) error {
 	if existing, ok := s.byKey[key]; ok && existing.SubjectID != ident.SubjectID {
 		return ErrIdentityTaken
 	}
+	s.byKey[key] = ident
+	if s.bySubject[ident.SubjectID] == nil {
+		s.bySubject[ident.SubjectID] = map[identityKey]struct{}{}
+	}
+	s.bySubject[ident.SubjectID][key] = struct{}{}
+	return nil
+}
+
+// Reclaim 实现 IdentityStore。
+func (s *MemoryIdentityStore) Reclaim(_ context.Context, ident Identity, fromSubjectID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := identityKey{source: ident.Source, externalID: ident.ExternalID}
+	existing, ok := s.byKey[key]
+	if !ok {
+		return ErrIdentityNotFound
+	}
+	if existing.SubjectID != fromSubjectID {
+		return ErrIdentityTaken
+	}
+	if fromSubjectID == ident.SubjectID {
+		// 同主体是幂等成功，不需要移动。
+		return nil
+	}
+	if len(s.bySubject[fromSubjectID]) != 1 {
+		return ErrIdentityNotVacant
+	}
+
+	delete(s.bySubject[fromSubjectID], key)
+	delete(s.bySubject, fromSubjectID)
 	s.byKey[key] = ident
 	if s.bySubject[ident.SubjectID] == nil {
 		s.bySubject[ident.SubjectID] = map[identityKey]struct{}{}

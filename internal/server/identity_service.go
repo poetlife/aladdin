@@ -36,6 +36,11 @@ type IdentityService struct {
 	sessions *identity.Sessions
 	// machine 是机器凭证的查表认证器：token 形式的登录仍走它。
 	machine *interceptor.TokenAuthenticator
+	// pendingBindings 是重定向型绑定的待绑定凭据表（见 pending_bindings.go）。
+	pendingBindings *pendingBindings
+	// gate 让空主体认领与角色授予串行，避免认领检查完"没有角色"之后、
+	// 角色又被授予（见 subject_lifecycle_gate.go）。
+	gate *subjectLifecycleGate
 }
 
 // IdentityDeps 是认证面所需的依赖，由 server.New 装配后注入。
@@ -45,18 +50,24 @@ type IdentityDeps struct {
 	Sessions   *identity.Sessions
 	Channels   *identity.Registry
 	Logger     *zap.Logger
+	// PendingBindings 是重定向型绑定的待绑定凭据表。
+	PendingBindings *pendingBindings
+	// LifecycleGate 与 RBAC 的授予路径共用，用于空主体认领。
+	LifecycleGate *subjectLifecycleGate
 }
 
 // NewIdentityService 构造认证面服务。
 func NewIdentityService(store rbac.MutableStore, engine *rbac.Engine, deps IdentityDeps) *IdentityService {
 	return &IdentityService{
-		store:      store,
-		engine:     engine,
-		logger:     deps.Logger,
-		channels:   deps.Channels,
-		identities: deps.Identities,
-		sessions:   deps.Sessions,
-		machine:    deps.Machine,
+		store:           store,
+		engine:          engine,
+		logger:          deps.Logger,
+		channels:        deps.Channels,
+		identities:      deps.Identities,
+		sessions:        deps.Sessions,
+		machine:         deps.Machine,
+		pendingBindings: deps.PendingBindings,
+		gate:            deps.LifecycleGate,
 	}
 }
 
@@ -240,19 +251,188 @@ func (s *IdentityService) BindIdentity(ctx context.Context, req *connect.Request
 		return nil, toLoginConnectError(err)
 	}
 
-	if err := s.identities.Bind(ctx, subject.ID, identity.SourceGoogle, verified.ExternalID, verified.Display); err != nil {
+	// 归属与空主体认领**只有这一处实现**：搬运型与重定向型的差别只在凭证
+	// 怎么到达服务端，到了这里之后的归属语义完全相同（见
+	// docs/design/identity/identity-linking.md）。为一条路径另写一份，迟早会
+	// 出现"一条路径能认领、另一条不能"的断裂。
+	reclaimed, err := s.bindVerifiedIdentity(ctx, subject, pendingBinding{
+		source:   identity.SourceGoogle,
+		verified: verified,
+	})
+	if err != nil {
 		return nil, toIdentityConnectError(err)
 	}
-	s.logger.Info("已绑定登录渠道",
-		zap.String("subject_id", subject.ID),
-		zap.String("source", identity.SourceGoogle),
-		zap.String("identity_id", verified.ExternalID),
-	)
+	s.logBinding(subject.ID, identity.SourceGoogle, verified.ExternalID, reclaimed)
 	list, err := s.identityList(ctx, subject.ID)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&identityv1.BindIdentityResponse{Identities: list}), nil
+	return connect.NewResponse(&identityv1.BindIdentityResponse{
+		Identities: list,
+		Reclaimed:  reclaimed,
+	}), nil
+}
+
+// stagePendingBinding 记下一份已经由浏览器直连端点校验过的身份。
+//
+// 它由 GithubLoginFlow 在回调里调用；返回的凭据只经 HttpOnly cookie 交给
+// 浏览器，前端拿不到它的内容，只能拿它来兑换。
+func (s *IdentityService) stagePendingBinding(source string, verified identity.VerifiedIdentity) (string, error) {
+	return s.pendingBindings.issue(source, verified)
+}
+
+// CompleteIdentityBinding 实现 IdentityService。
+//
+// 渠道凭证**不在这里**：它经浏览器导航到达服务端，已由回调用与登录完全相同的
+// 校验器校验过，并记成一份一次性待绑定凭据。本方法只做最后一件事：从**当前
+// 会话**取主体，把凭据里的身份绑到它身上。
+//
+// 归属仍然由发起者决定，不由任何请求字段决定——请求里只有 source，没有主体。
+func (s *IdentityService) CompleteIdentityBinding(ctx context.Context, req *connect.Request[identityv1.CompleteIdentityBindingRequest]) (*connect.Response[identityv1.CompleteIdentityBindingResponse], error) {
+	subject, ok := interceptor.SubjectFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("未认证"))
+	}
+	source := req.Msg.GetSource()
+	if source == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source 不能为空"))
+	}
+
+	token, ok := cookieValue(req.Header(), pendingBindingCookie)
+	if !ok {
+		return nil, pendingBindingFailed()
+	}
+	pending, ok := s.pendingBindings.consume(token)
+	if !ok || pending.source != source {
+		// 不区分"没发出过""过期""来源不符"：对调用方是同一件事——这次
+		// 绑定已经不能完成了，重新发起一次。
+		return nil, pendingBindingFailed()
+	}
+
+	reclaimed, err := s.bindVerifiedIdentity(ctx, subject, pending)
+	if err != nil {
+		return nil, toIdentityConnectError(err)
+	}
+	list, err := s.identityList(ctx, subject.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := connect.NewResponse(&identityv1.CompleteIdentityBindingResponse{
+		Identities: list,
+		Reclaimed:  reclaimed,
+	})
+	// 服务端已经消费了凭据；顺手让浏览器侧也把它删掉。
+	resp.Header().Add("Set-Cookie", pendingBindingClearCookie(s.pendingBindings.secure).String())
+	s.logBinding(subject.ID, pending.source, pending.verified.ExternalID, reclaimed)
+	return resp, nil
+}
+
+// logBinding 记一条绑定或认领的留痕。
+//
+// 两者共用一处是为了让"认领"这件事在日志里只有一个名字：读日志的人不必先
+// 分辨是哪条路径进来的。留痕含主体标识与身份标识，**不含任何令牌**。
+func (s *IdentityService) logBinding(subjectID, source, externalID string, reclaimed bool) {
+	event := "已绑定登录渠道"
+	if reclaimed {
+		event = "已认领空主体的登录渠道"
+	}
+	s.logger.Info(event,
+		zap.String("subject_id", subjectID),
+		zap.String("source", source),
+		zap.String("identity_id", externalID),
+	)
+}
+
+// bindVerifiedIdentity 把一份已校验身份绑到 subject；当它已属于一个空主体时
+// 认领它。返回的 bool 表示这次是否发生了认领。
+//
+// "空主体"的两个条件分别落在两处：**只有这一条身份**由身份存储在移动的同
+// 一笔操作里判；**没有任何角色绑定**由这里读 RBAC，并与角色授予共用生命周期
+// 锁串行——否则会出现"身份移走了、角色还留在原主体"的搁浅。
+func (s *IdentityService) bindVerifiedIdentity(ctx context.Context, subject rbac.Subject, pending pendingBinding) (bool, error) {
+	ident := identity.Identity{
+		Source:     pending.source,
+		ExternalID: pending.verified.ExternalID,
+		SubjectID:  subject.ID,
+		Display:    pending.verified.Display,
+	}
+	err := s.identities.Bind(ctx, subject.ID, pending.source, pending.verified.ExternalID, pending.verified.Display)
+	switch {
+	case err == nil:
+		return false, nil
+	case !errors.Is(err, identity.ErrIdentityTaken):
+		return false, err
+	}
+
+	owner, err := s.identities.Owner(ctx, pending.source, pending.verified.ExternalID)
+	switch {
+	case errors.Is(err, identity.ErrIdentityNotFound):
+		// 身份在绑定失败与这次查询之间被摘掉了。重试一次绑定；这次要么
+		// 成功，要么以一个更新的占用者身份失败。
+		if retryErr := s.identities.Bind(ctx, subject.ID, pending.source, pending.verified.ExternalID, pending.verified.Display); retryErr != nil {
+			return false, retryErr
+		}
+		return false, nil
+	case err != nil:
+		return false, err
+	case owner == subject.ID:
+		// 并发的另一个请求已经把同一身份绑到了当前主体。幂等成功。
+		return false, nil
+	}
+
+	unlock := s.gate.lock()
+	defer unlock()
+
+	// 等锁期间归属可能已经变过。认领的判据必须以锁内的这一次为准，而且只能
+	// 认领等锁前看到的那个原主体；否则两个并发兑换会把同一个身份从一个
+	// 空主体再搬到另一个空主体。
+	current, err := s.identities.Owner(ctx, pending.source, pending.verified.ExternalID)
+	switch {
+	case errors.Is(err, identity.ErrIdentityNotFound):
+		if retryErr := s.identities.Bind(ctx, subject.ID, pending.source, pending.verified.ExternalID, pending.verified.Display); retryErr != nil {
+			return false, retryErr
+		}
+		return false, nil
+	case err != nil:
+		return false, err
+	case current == subject.ID:
+		return false, nil
+	case current != owner:
+		return false, identity.ErrIdentityTaken
+	}
+
+	bindings, err := s.store.SubjectBindings(ctx, owner)
+	switch {
+	case errors.Is(err, rbac.ErrSubjectNotFound):
+		// 原主体不存在：它不是空主体，认领会把一条身份挂到不存在的壳上。
+		return false, identity.ErrIdentityTaken
+	case err != nil:
+		return false, err
+	case len(bindings) != 0:
+		// 原主体有角色绑定。认领会把角色搁浅，因此不认领。
+		return false, identity.ErrIdentityTaken
+	}
+
+	if err := s.identities.Reclaim(ctx, owner, ident); err != nil {
+		switch {
+		case errors.Is(err, identity.ErrIdentityNotVacant),
+			errors.Is(err, identity.ErrIdentityTaken):
+			return false, identity.ErrIdentityTaken
+		default:
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// pendingBindingFailed 是"这次绑定不能完成"的统一拒绝。
+//
+// 不区分缺失、过期、已用过、来源不符：区分它们只会把一次失败的兑换变成
+// 对"这份凭据是否曾经有效"的探测。
+func pendingBindingFailed() error {
+	return connect.NewError(connect.CodeFailedPrecondition,
+		errors.New("绑定未完成或已失效，请重新发起"))
 }
 
 // UnbindIdentity 实现 IdentityService。

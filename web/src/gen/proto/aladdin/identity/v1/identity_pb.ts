@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/identity/v1/identity.proto.
  */
 export const file_aladdin_identity_v1_identity: GenFile = /*@__PURE__*/
-  fileDesc("CiJhbGFkZGluL2lkZW50aXR5L3YxL2lkZW50aXR5LnByb3RvEhNhbGFkZGluLmlkZW50aXR5LnYxIskBCgxMb2dpblJlcXVlc3QSOwoIcGFzc3dvcmQYASABKAsyJy5hbGFkZGluLmlkZW50aXR5LnYxLlBhc3N3b3JkQ3JlZGVudGlhbEgAEjUKBXRva2VuGAIgASgLMiQuYWxhZGRpbi5pZGVudGl0eS52MS5Ub2tlbkNyZWRlbnRpYWxIABI3CgZnb29nbGUYAyABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIjgKElBhc3N3b3JkQ3JlZGVudGlhbBIQCgh1c2VybmFtZRgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSIgCg9Ub2tlbkNyZWRlbnRpYWwSDQoFdG9rZW4YASABKAkiJAoQR29vZ2xlQ3JlZGVudGlhbBIQCghpZF90b2tlbhgBIAEoCSIXChVHZXRBdXRoTWV0aG9kc1JlcXVlc3QiSgoWR2V0QXV0aE1ldGhvZHNSZXNwb25zZRIwCgdtZXRob2RzGAEgAygLMh8uYWxhZGRpbi5pZGVudGl0eS52MS5BdXRoTWV0aG9kIi8KCkF1dGhNZXRob2QSDgoGc291cmNlGAEgASgJEhEKCWNsaWVudF9pZBgCIAEoCSI5Cg1Mb2dpblJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRISCgpleHBpcmVzX2F0GAIgASgJIiYKDlJlZnJlc2hSZXF1ZXN0EhQKDGFjY2Vzc190b2tlbhgBIAEoCSI7Cg9SZWZyZXNoUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfYXQYAiABKAkiDwoNV2hvQW1JUmVxdWVzdCJRCg5XaG9BbUlSZXNwb25zZRISCgpzdWJqZWN0X2lkGAEgASgJEhQKDHN1YmplY3RfdHlwZRgCIAEoCRIVCg1kZWZhdWx0X3Njb3BlGAMgASgJIi0KHEdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QSDQoFc2NvcGUYASABKAkiQwodR2V0U2Vzc2lvblBlcm1pc3Npb25zUmVzcG9uc2USDQoFc2NvcGUYASABKAkSEwoLcGVybWlzc2lvbnMYAiADKAkiXAoTQmluZElkZW50aXR5UmVxdWVzdBI3CgZnb29nbGUYASABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIkkKFEJpbmRJZGVudGl0eVJlc3BvbnNlEjEKCmlkZW50aXRpZXMYASADKAsyHS5hbGFkZGluLmlkZW50aXR5LnYxLklkZW50aXR5IjwKFVVuYmluZElkZW50aXR5UmVxdWVzdBIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkiSwoWVW5iaW5kSWRlbnRpdHlSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSIXChVMaXN0SWRlbnRpdGllc1JlcXVlc3QiSwoWTGlzdElkZW50aXRpZXNSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSJACghJZGVudGl0eRIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkSDwoHZGlzcGxheRgDIAEoCTLpBgoPSWRlbnRpdHlTZXJ2aWNlElQKBUxvZ2luEiEuYWxhZGRpbi5pZGVudGl0eS52MS5Mb2dpblJlcXVlc3QaIi5hbGFkZGluLmlkZW50aXR5LnYxLkxvZ2luUmVzcG9uc2UiBJiIJwESWgoHUmVmcmVzaBIjLmFsYWRkaW4uaWRlbnRpdHkudjEuUmVmcmVzaFJlcXVlc3QaJC5hbGFkZGluLmlkZW50aXR5LnYxLlJlZnJlc2hSZXNwb25zZSIEmIgnARJvCg5HZXRBdXRoTWV0aG9kcxIqLmFsYWRkaW4uaWRlbnRpdHkudjEuR2V0QXV0aE1ldGhvZHNSZXF1ZXN0GisuYWxhZGRpbi5pZGVudGl0eS52MS5HZXRBdXRoTWV0aG9kc1Jlc3BvbnNlIgSYiCcBElsKBldob0FtSRIiLmFsYWRkaW4uaWRlbnRpdHkudjEuV2hvQW1JUmVxdWVzdBojLmFsYWRkaW4uaWRlbnRpdHkudjEuV2hvQW1JUmVzcG9uc2UiCJCIJwOgiCcBEogBChVHZXRTZXNzaW9uUGVybWlzc2lvbnMSMS5hbGFkZGluLmlkZW50aXR5LnYxLkdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QaMi5hbGFkZGluLmlkZW50aXR5LnYxLkdldFNlc3Npb25QZXJtaXNzaW9uc1Jlc3BvbnNlIgiQiCcDoIgnARJpCgxCaW5kSWRlbnRpdHkSKC5hbGFkZGluLmlkZW50aXR5LnYxLkJpbmRJZGVudGl0eVJlcXVlc3QaKS5hbGFkZGluLmlkZW50aXR5LnYxLkJpbmRJZGVudGl0eVJlc3BvbnNlIgSgiCcBEm8KDlVuYmluZElkZW50aXR5EiouYWxhZGRpbi5pZGVudGl0eS52MS5VbmJpbmRJZGVudGl0eVJlcXVlc3QaKy5hbGFkZGluLmlkZW50aXR5LnYxLlVuYmluZElkZW50aXR5UmVzcG9uc2UiBKCIJwESbwoOTGlzdElkZW50aXRpZXMSKi5hbGFkZGluLmlkZW50aXR5LnYxLkxpc3RJZGVudGl0aWVzUmVxdWVzdBorLmFsYWRkaW4uaWRlbnRpdHkudjEuTGlzdElkZW50aXRpZXNSZXNwb25zZSIEoIgnAUJEWkJnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL2lkZW50aXR5L3YxO2lkZW50aXR5djFiBnByb3RvMw", [file_aladdin_rbac_v1_annotations]);
+  fileDesc("CiJhbGFkZGluL2lkZW50aXR5L3YxL2lkZW50aXR5LnByb3RvEhNhbGFkZGluLmlkZW50aXR5LnYxIskBCgxMb2dpblJlcXVlc3QSOwoIcGFzc3dvcmQYASABKAsyJy5hbGFkZGluLmlkZW50aXR5LnYxLlBhc3N3b3JkQ3JlZGVudGlhbEgAEjUKBXRva2VuGAIgASgLMiQuYWxhZGRpbi5pZGVudGl0eS52MS5Ub2tlbkNyZWRlbnRpYWxIABI3CgZnb29nbGUYAyABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIjgKElBhc3N3b3JkQ3JlZGVudGlhbBIQCgh1c2VybmFtZRgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSIgCg9Ub2tlbkNyZWRlbnRpYWwSDQoFdG9rZW4YASABKAkiJAoQR29vZ2xlQ3JlZGVudGlhbBIQCghpZF90b2tlbhgBIAEoCSIXChVHZXRBdXRoTWV0aG9kc1JlcXVlc3QiSgoWR2V0QXV0aE1ldGhvZHNSZXNwb25zZRIwCgdtZXRob2RzGAEgAygLMh8uYWxhZGRpbi5pZGVudGl0eS52MS5BdXRoTWV0aG9kIi8KCkF1dGhNZXRob2QSDgoGc291cmNlGAEgASgJEhEKCWNsaWVudF9pZBgCIAEoCSI5Cg1Mb2dpblJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRISCgpleHBpcmVzX2F0GAIgASgJIiYKDlJlZnJlc2hSZXF1ZXN0EhQKDGFjY2Vzc190b2tlbhgBIAEoCSI7Cg9SZWZyZXNoUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfYXQYAiABKAkiDwoNV2hvQW1JUmVxdWVzdCJRCg5XaG9BbUlSZXNwb25zZRISCgpzdWJqZWN0X2lkGAEgASgJEhQKDHN1YmplY3RfdHlwZRgCIAEoCRIVCg1kZWZhdWx0X3Njb3BlGAMgASgJIi0KHEdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QSDQoFc2NvcGUYASABKAkiQwodR2V0U2Vzc2lvblBlcm1pc3Npb25zUmVzcG9uc2USDQoFc2NvcGUYASABKAkSEwoLcGVybWlzc2lvbnMYAiADKAkiXAoTQmluZElkZW50aXR5UmVxdWVzdBI3CgZnb29nbGUYASABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIlwKFEJpbmRJZGVudGl0eVJlc3BvbnNlEjEKCmlkZW50aXRpZXMYASADKAsyHS5hbGFkZGluLmlkZW50aXR5LnYxLklkZW50aXR5EhEKCXJlY2xhaW1lZBgCIAEoCCIwCh5Db21wbGV0ZUlkZW50aXR5QmluZGluZ1JlcXVlc3QSDgoGc291cmNlGAEgASgJImcKH0NvbXBsZXRlSWRlbnRpdHlCaW5kaW5nUmVzcG9uc2USMQoKaWRlbnRpdGllcxgBIAMoCzIdLmFsYWRkaW4uaWRlbnRpdHkudjEuSWRlbnRpdHkSEQoJcmVjbGFpbWVkGAIgASgIIjwKFVVuYmluZElkZW50aXR5UmVxdWVzdBIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkiSwoWVW5iaW5kSWRlbnRpdHlSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSIXChVMaXN0SWRlbnRpdGllc1JlcXVlc3QiSwoWTGlzdElkZW50aXRpZXNSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSJACghJZGVudGl0eRIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkSDwoHZGlzcGxheRgDIAEoCTL2BwoPSWRlbnRpdHlTZXJ2aWNlElQKBUxvZ2luEiEuYWxhZGRpbi5pZGVudGl0eS52MS5Mb2dpblJlcXVlc3QaIi5hbGFkZGluLmlkZW50aXR5LnYxLkxvZ2luUmVzcG9uc2UiBJiIJwESWgoHUmVmcmVzaBIjLmFsYWRkaW4uaWRlbnRpdHkudjEuUmVmcmVzaFJlcXVlc3QaJC5hbGFkZGluLmlkZW50aXR5LnYxLlJlZnJlc2hSZXNwb25zZSIEmIgnARJvCg5HZXRBdXRoTWV0aG9kcxIqLmFsYWRkaW4uaWRlbnRpdHkudjEuR2V0QXV0aE1ldGhvZHNSZXF1ZXN0GisuYWxhZGRpbi5pZGVudGl0eS52MS5HZXRBdXRoTWV0aG9kc1Jlc3BvbnNlIgSYiCcBElsKBldob0FtSRIiLmFsYWRkaW4uaWRlbnRpdHkudjEuV2hvQW1JUmVxdWVzdBojLmFsYWRkaW4uaWRlbnRpdHkudjEuV2hvQW1JUmVzcG9uc2UiCJCIJwOgiCcBEogBChVHZXRTZXNzaW9uUGVybWlzc2lvbnMSMS5hbGFkZGluLmlkZW50aXR5LnYxLkdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QaMi5hbGFkZGluLmlkZW50aXR5LnYxLkdldFNlc3Npb25QZXJtaXNzaW9uc1Jlc3BvbnNlIgiQiCcDoIgnARJpCgxCaW5kSWRlbnRpdHkSKC5hbGFkZGluLmlkZW50aXR5LnYxLkJpbmRJZGVudGl0eVJlcXVlc3QaKS5hbGFkZGluLmlkZW50aXR5LnYxLkJpbmRJZGVudGl0eVJlc3BvbnNlIgSgiCcBEm8KDlVuYmluZElkZW50aXR5EiouYWxhZGRpbi5pZGVudGl0eS52MS5VbmJpbmRJZGVudGl0eVJlcXVlc3QaKy5hbGFkZGluLmlkZW50aXR5LnYxLlVuYmluZElkZW50aXR5UmVzcG9uc2UiBKCIJwESigEKF0NvbXBsZXRlSWRlbnRpdHlCaW5kaW5nEjMuYWxhZGRpbi5pZGVudGl0eS52MS5Db21wbGV0ZUlkZW50aXR5QmluZGluZ1JlcXVlc3QaNC5hbGFkZGluLmlkZW50aXR5LnYxLkNvbXBsZXRlSWRlbnRpdHlCaW5kaW5nUmVzcG9uc2UiBKCIJwESbwoOTGlzdElkZW50aXRpZXMSKi5hbGFkZGluLmlkZW50aXR5LnYxLkxpc3RJZGVudGl0aWVzUmVxdWVzdBorLmFsYWRkaW4uaWRlbnRpdHkudjEuTGlzdElkZW50aXRpZXNSZXNwb25zZSIEoIgnAUJEWkJnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL2lkZW50aXR5L3YxO2lkZW50aXR5djFiBnByb3RvMw", [file_aladdin_rbac_v1_annotations]);
 
 /**
  * @generated from message aladdin.identity.v1.LoginRequest
@@ -376,6 +376,15 @@ export type BindIdentityResponse = Message<"aladdin.identity.v1.BindIdentityResp
    * @generated from field: repeated aladdin.identity.v1.Identity identities = 1;
    */
   identities: Identity[];
+
+  /**
+   * 本次是否认领了一个空主体上的身份。含义与 CompleteIdentityBindingResponse
+   * 的同名字段一致：为 true 表示这个渠道此前单独登录过、已并入当前账号，
+   * 客户端据此给出说明；它不告诉调用方原主体的任何标识。
+   *
+   * @generated from field: bool reclaimed = 2;
+   */
+  reclaimed: boolean;
 };
 
 /**
@@ -384,6 +393,57 @@ export type BindIdentityResponse = Message<"aladdin.identity.v1.BindIdentityResp
  */
 export const BindIdentityResponseSchema: GenMessage<BindIdentityResponse> = /*@__PURE__*/
   messageDesc(file_aladdin_identity_v1_identity, 15);
+
+/**
+ * CompleteIdentityBindingRequest 兑换一份已经由回调校验过的重定向型渠道身份。
+ *
+ * @generated from message aladdin.identity.v1.CompleteIdentityBindingRequest
+ */
+export type CompleteIdentityBindingRequest = Message<"aladdin.identity.v1.CompleteIdentityBindingRequest"> & {
+  /**
+   * 渠道来源，如 github。它只用于与待绑定凭据里记下的来源互相印证；
+   * **不是归属输入**——目标主体只取当前凭证代表的主体。
+   *
+   * @generated from field: string source = 1;
+   */
+  source: string;
+};
+
+/**
+ * Describes the message aladdin.identity.v1.CompleteIdentityBindingRequest.
+ * Use `create(CompleteIdentityBindingRequestSchema)` to create a new message.
+ */
+export const CompleteIdentityBindingRequestSchema: GenMessage<CompleteIdentityBindingRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 16);
+
+/**
+ * CompleteIdentityBindingResponse 返回绑定之后该主体的全部渠道。
+ *
+ * @generated from message aladdin.identity.v1.CompleteIdentityBindingResponse
+ */
+export type CompleteIdentityBindingResponse = Message<"aladdin.identity.v1.CompleteIdentityBindingResponse"> & {
+  /**
+   * @generated from field: repeated aladdin.identity.v1.Identity identities = 1;
+   */
+  identities: Identity[];
+
+  /**
+   * 本次是否认领了一个空主体上的身份。为 true 表示这个渠道此前单独登录过，
+   * 客户端据此给出"已并入当前账号"的说明。
+   *
+   * 它只说明"发生过认领"，不告诉调用方原主体的任何标识。
+   *
+   * @generated from field: bool reclaimed = 2;
+   */
+  reclaimed: boolean;
+};
+
+/**
+ * Describes the message aladdin.identity.v1.CompleteIdentityBindingResponse.
+ * Use `create(CompleteIdentityBindingResponseSchema)` to create a new message.
+ */
+export const CompleteIdentityBindingResponseSchema: GenMessage<CompleteIdentityBindingResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 17);
 
 /**
  * @generated from message aladdin.identity.v1.UnbindIdentityRequest
@@ -409,7 +469,7 @@ export type UnbindIdentityRequest = Message<"aladdin.identity.v1.UnbindIdentityR
  * Use `create(UnbindIdentityRequestSchema)` to create a new message.
  */
 export const UnbindIdentityRequestSchema: GenMessage<UnbindIdentityRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 16);
+  messageDesc(file_aladdin_identity_v1_identity, 18);
 
 /**
  * @generated from message aladdin.identity.v1.UnbindIdentityResponse
@@ -426,7 +486,7 @@ export type UnbindIdentityResponse = Message<"aladdin.identity.v1.UnbindIdentity
  * Use `create(UnbindIdentityResponseSchema)` to create a new message.
  */
 export const UnbindIdentityResponseSchema: GenMessage<UnbindIdentityResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 17);
+  messageDesc(file_aladdin_identity_v1_identity, 19);
 
 /**
  * @generated from message aladdin.identity.v1.ListIdentitiesRequest
@@ -439,7 +499,7 @@ export type ListIdentitiesRequest = Message<"aladdin.identity.v1.ListIdentitiesR
  * Use `create(ListIdentitiesRequestSchema)` to create a new message.
  */
 export const ListIdentitiesRequestSchema: GenMessage<ListIdentitiesRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 18);
+  messageDesc(file_aladdin_identity_v1_identity, 20);
 
 /**
  * @generated from message aladdin.identity.v1.ListIdentitiesResponse
@@ -456,7 +516,7 @@ export type ListIdentitiesResponse = Message<"aladdin.identity.v1.ListIdentities
  * Use `create(ListIdentitiesResponseSchema)` to create a new message.
  */
 export const ListIdentitiesResponseSchema: GenMessage<ListIdentitiesResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 19);
+  messageDesc(file_aladdin_identity_v1_identity, 21);
 
 /**
  * Identity 是一个已绑定的登录渠道。
@@ -494,7 +554,7 @@ export type Identity = Message<"aladdin.identity.v1.Identity"> & {
  * Use `create(IdentitySchema)` to create a new message.
  */
 export const IdentitySchema: GenMessage<Identity> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 20);
+  messageDesc(file_aladdin_identity_v1_identity, 22);
 
 /**
  * IdentityService 是身份认证面。
@@ -572,7 +632,12 @@ export const IdentityService: GenService<{
    *
    * 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
    * 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-   * 正常绑定没有区别。
+   * 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
+   * identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
+   * 身份被并入当前主体。
+   *
+   * 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
+   * 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
    *
    * @generated from rpc aladdin.identity.v1.IdentityService.BindIdentity
    */
@@ -596,6 +661,21 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof UnbindIdentityRequestSchema;
     output: typeof UnbindIdentityResponseSchema;
+  },
+  /**
+   * 完成一次重定向型渠道的绑定。
+   *
+   * 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
+   * 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
+   * 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
+   * 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+   *
+   * @generated from rpc aladdin.identity.v1.IdentityService.CompleteIdentityBinding
+   */
+  completeIdentityBinding: {
+    methodKind: "unary";
+    input: typeof CompleteIdentityBindingRequestSchema;
+    output: typeof CompleteIdentityBindingResponseSchema;
   },
   /**
    * 列出当前主体已绑定的全部登录渠道。

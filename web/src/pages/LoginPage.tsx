@@ -120,8 +120,9 @@ export function LoginPage(): React.ReactNode {
               <Typography.Text type="secondary">或</Typography.Text>
             </Divider>
             <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-              第一次用某个渠道登录会得到一个<Typography.Text strong>新的、没有权限</Typography.Text>
-              的账号；把多个渠道归到同一个账号是「绑定」这个动作，登录本身不做合并。
+              第一次用某个渠道登录会得到一个<Typography.Text strong>没有权限</Typography.Text>
+              的新账号。把多个渠道归到同一个账号是「绑定」：先登录已有账号，在个人资料里绑定新渠道；
+              即使已经先单独登录过，也可以在那里把它并入已有账号。
             </Typography.Paragraph>
           </>
         )}
