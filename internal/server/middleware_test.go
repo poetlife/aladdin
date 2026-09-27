@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
@@ -11,6 +12,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/poetlife/aladdin/internal/observability"
+	"github.com/poetlife/aladdin/internal/rbac"
 )
 
 const testTraceID = "11112222333344445555666677778888"
@@ -113,5 +115,47 @@ func TestProbeAndUnmatchedLoggedAtDebug(t *testing.T) {
 				t.Error("降到 DEBUG 也应当带 trace_id，否则排障时依然搜不到")
 			}
 		})
+	}
+}
+
+// 放行清单里**只能**是浏览器直连的非 RPC 入口。
+//
+// 它与 infraProcedurePrefixes 的区别是类别：那份是 Connect 官方组件提供的
+// 框架服务（确实是 RPC，只是没有 aladdin 的权限注解），这份根本不是 RPC。
+// 两者的边界一旦混掉，就会出现"某个业务 RPC 被静默放行"。
+func TestBrowserEntryPathsAreNotRPCProcedures(t *testing.T) {
+	if len(browserEntryPaths) == 0 {
+		t.Fatal("放行清单是空的——若确实没有任何浏览器直连入口，应当连同这条用例一起删掉")
+	}
+	for path := range browserEntryPaths {
+		if isInfraProcedure(path) {
+			t.Errorf("%q 同时在基础设施前缀清单里：两份清单的类别不同，不能重叠", path)
+		}
+		// RPC 过程名形如 /<包名>.<领域>.<版本>.<Service>/<Method>，
+		// 第一段必带点号。浏览器直连入口不该长成这个样子。
+		first := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 2)[0]
+		if strings.Contains(first, ".") {
+			t.Errorf("%q 看起来是一个 RPC 过程名，不该出现在浏览器直连清单里", path)
+		}
+	}
+}
+
+// 基础设施前缀也**不得**落进浏览器直连清单。
+func TestInfraProceduresAreNotBrowserEntries(t *testing.T) {
+	for _, prefix := range infraProcedurePrefixes {
+		if isBrowserEntry(prefix) {
+			t.Errorf("%q 同时在浏览器直连清单里", prefix)
+		}
+	}
+}
+
+// 这些路径若不走放行清单，会被 rbac.Resolve 判成"未声明注解"而拒绝。
+// 这正是放行清单存在的理由——这条用例把这个理由固定下来：一旦某条路径变得
+// 能被 rbac.Resolve 解析，说明它其实是（或变成了）RPC，清单该重新审视。
+func TestBrowserEntriesWouldOtherwiseBeDenied(t *testing.T) {
+	for path := range browserEntryPaths {
+		if _, err := rbac.Resolve(path); err == nil {
+			t.Errorf("路径 %q 能被 rbac.Resolve 解析出注解，说明它可能其实是 RPC", path)
+		}
 	}
 }

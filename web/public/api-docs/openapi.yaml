@@ -836,6 +836,23 @@ paths:
                 $ref: '#/components/schemas/aladdin.rbac.v1.PublishPolicyResponse'
 components:
   schemas:
+    aladdin.identity.v1.AuthMethod:
+      type: object
+      properties:
+        source:
+          type: string
+          title: source
+          description: 渠道来源标识，如 google / github。前端据此决定渲染哪个入口。
+        clientId:
+          type: string
+          title: client_id
+          description: |-
+            该渠道的公开客户端标识。
+
+             **不是秘密**：它本来就明文出现在浏览器里，这是这类登录方式的设计前提。
+      title: AuthMethod
+      additionalProperties: false
+      description: AuthMethod 是一个已启用的登录渠道。
     aladdin.identity.v1.BindIdentityRequest:
       type: object
       allOf:
@@ -883,10 +900,14 @@ components:
     aladdin.identity.v1.GetAuthMethodsResponse:
       type: object
       properties:
-        googleClientId:
-          type: string
-          title: google_client_id
-          description: Google 登录的客户端标识；为空表示未启用该登录方式，前端不渲染对应入口。
+        methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.identity.v1.AuthMethod'
+          title: methods
+          description: |-
+            已启用的登录渠道，顺序稳定。为空表示没有任何渠道登录方式可用，
+             前端据此不渲染任何渠道入口。
       title: GetAuthMethodsResponse
       additionalProperties: false
       description: |-
@@ -894,6 +915,9 @@ components:
 
          只承载公开信息：这里出现的一切都会明文送到浏览器，因此不得放入任何
          需要保护的取值。
+
+         返回的是**列表**而不是逐个具名字段：新增一个渠道时这里不该再改一次形状，
+         前端也不该为每个渠道多写一个判断分支（见 docs/design/identity/channel-login.md）。
     aladdin.identity.v1.GetSessionPermissionsRequest:
       type: object
       properties:

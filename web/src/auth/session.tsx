@@ -25,6 +25,13 @@ export interface SessionState {
   signIn: (token: string) => Promise<void>
   /** 使用 Google 签发的身份令牌登录。 */
   signInWithGoogle: (idToken: string) => Promise<void>
+  /**
+   * 采纳一份**已经拿到**的会话凭证。
+   *
+   * 重定向型登录渠道（如 GitHub）由服务端完成校验，凭证随一次跳转交回前端，
+   * 前端只在回调页把它取出来交给这里——它不经由任何 RPC，因此不能走 signIn。
+   */
+  adoptSessionToken: (accessToken: string) => Promise<void>
   /** 清除本地凭证。 */
   signOut: () => void
   /** 切换作用域并重新拉取权限码。 */
@@ -34,6 +41,15 @@ export interface SessionState {
 }
 
 const SessionContext = createContext<SessionState | null>(null)
+
+/**
+ * 一次 load 的结果。
+ *
+ * 失败是**返回值**而不是异常：常规调用方（挂载时、切作用域）只关心状态已经落好，
+ * 让 load 抛出会把它们的调用变成未处理的拒绝。只有需要知道"这次没成功"的调用方
+ * ——重定向登录的回调页——自己把这个结果转成异常。
+ */
+type LoadOutcome = { ok: true } | { ok: false; message: string }
 
 /** 凭证在 localStorage 中的键名。 */
 const TOKEN_STORAGE_KEY = 'aladdin.token'
@@ -82,12 +98,6 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
   }, [])
 
   /**
-   * 拉取会话与权限码。
-   *
-   * 任何失败都收敛到"未登录"或"错误"，不会留下"有主体但没权限码"的中间态——
-   * 那种状态会让界面在"能点"与"点了报错"之间闪烁。
-   */
-  /**
    * 采纳服务端解析出的作用域。
    *
    * 只写状态与本地存储，**不触发重新拉取**——它就是本次拉取的结果，
@@ -99,12 +109,19 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     globalThis.localStorage?.setItem(SCOPE_STORAGE_KEY, next)
   }, [])
 
-  const load = useCallback(async (): Promise<void> => {
+  /**
+   * 拉取会话与权限码。
+   *
+   * 任何失败都收敛到"未登录"或"错误"，不会留下"有主体但没权限码"的中间态——
+   * 那种状态会让界面在"能点"与"点了报错"之间闪烁。失败作为返回值交给调用方，
+   * 自己只负责把状态落好（见 LoadOutcome）。
+   */
+  const load = useCallback(async (): Promise<LoadOutcome> => {
     if (readToken() === null) {
       setStatus('anonymous')
       setSubject(null)
       setPermissions(PermissionSet.empty())
-      return
+      return { ok: false, message: '尚未登录' }
     }
     try {
       const session = await identityApi.whoAmI()
@@ -126,9 +143,12 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
 
       setStatus('authenticated')
       setError(null)
+      return { ok: true }
     } catch (err) {
-      setError(messageOf(err))
+      const message = messageOf(err)
+      setError(message)
       clear()
+      return { ok: false, message }
     }
   }, [clear, adoptScope])
 
@@ -142,29 +162,40 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     onUnauthenticated(clear)
   }, [clear])
 
-  // 两条登录路径的差别只在"拿什么去换凭证"，换到之后的动作完全相同：
+  // 各条登录路径的差别只在"拿什么去换凭证"，换到之后的动作完全相同：
   // 落盘、再拉一次会话与权限码。抽出来是为了让"登录成功后要做什么"只有一份，
-  // 将来加第三种登录方式时不会漏掉其中一步。
-  const adoptCredential = useCallback(
-    async (response: { accessToken: string }): Promise<void> => {
-      writeToken(response.accessToken)
-      await load()
+  // 将来加第三条登录路径时不会漏掉其中一步。
+  //
+  // 采纳之后**必须确认真的登进来了**：load 把失败收敛成状态而不是抛出，所以
+  // 失败在这里转成一次异常。重定向登录的回调页据此给出提示，而不是静默把用户
+  // 送到首页、再被弹回登录页。
+  const adoptToken = useCallback(
+    async (accessToken: string): Promise<void> => {
+      writeToken(accessToken)
+      const outcome = await load()
+      if (!outcome.ok) {
+        throw new Error(outcome.message)
+      }
     },
     [load],
   )
 
+  const refresh = useCallback(async (): Promise<void> => {
+    await load()
+  }, [load])
+
   const signIn = useCallback(
     async (token: string): Promise<void> => {
-      await adoptCredential(await identityApi.login(token))
+      await adoptToken((await identityApi.login(token)).accessToken)
     },
-    [adoptCredential],
+    [adoptToken],
   )
 
   const signInWithGoogle = useCallback(
     async (idToken: string): Promise<void> => {
-      await adoptCredential(await identityApi.loginWithGoogle(idToken))
+      await adoptToken((await identityApi.loginWithGoogle(idToken)).accessToken)
     },
-    [adoptCredential],
+    [adoptToken],
   )
 
   const setScope = useCallback(
@@ -189,11 +220,24 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
       error,
       signIn,
       signInWithGoogle,
+      adoptSessionToken: adoptToken,
       signOut: clear,
       setScope,
-      refresh: load,
+      refresh,
     }),
-    [status, subject, scope, permissions, error, signIn, signInWithGoogle, clear, setScope, load],
+    [
+      status,
+      subject,
+      scope,
+      permissions,
+      error,
+      signIn,
+      signInWithGoogle,
+      adoptToken,
+      clear,
+      setScope,
+      refresh,
+    ],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

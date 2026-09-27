@@ -23,7 +23,8 @@ func clearEnv(t *testing.T) {
 		EnvAddress, EnvLogLevel, EnvLogFile, EnvTimeout, EnvConfig,
 		EnvDatabaseDriver, EnvDatabaseDSN,
 		EnvCOSBucketURL, EnvCOSSecretID, EnvCOSSecretKey,
-		EnvGoogleClientID, EnvBootstrapAdminSubject, EnvBootstrapAdminScope,
+		EnvGoogleClientID, EnvGithubClientID, EnvGithubClientSecret, EnvPublicBaseURL,
+		EnvBootstrapAdminSubject, EnvBootstrapAdminScope,
 	} {
 		t.Setenv(k, "")
 	}
@@ -637,6 +638,8 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyDatabaseDSN:           "aladdin@tcp(127.0.0.1:3306)/aladdin",
 			keyCOSBucketURL:          "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com",
 			keyGoogleClientID:        "1234567890.apps.googleusercontent.com",
+			keyGithubClientID:        "Iv1.0123456789abcdef",
+			keyPublicBaseURL:         "https://aladdin.example.com",
 			keyBootstrapAdminSubject: "google:110000000000000000001",
 			keyBootstrapAdminEmail:   "admin@example.com",
 			keyBootstrapAdminScope:   "root",
@@ -650,17 +653,23 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyBootstrapAdminSubject: keyBootstrapAdminScope + ": root\n",
 			keyBootstrapAdminEmail:   keyBootstrapAdminScope + ": root\n",
 			keyBootstrapAdminScope:   keyBootstrapAdminSubject + ": google:110000000000000000001\n",
+			// 重定向型登录渠道的三项也必须成对出现，理由同上。
+			keyGithubClientID: keyPublicBaseURL + ": https://aladdin.example.com\n",
+			keyPublicBaseURL:  keyGithubClientID + ": Iv1.0123456789abcdef\n",
 		}
 		// 生效前提来自环境变量的键。头像桶地址本身不是秘密、可以写进配置文件，
 		// 但它的两项密钥只有环境变量这一个来源（见 EnvCOSSecretID），因此这个
 		// 键必须连环境变量一起给出——否则走的是"半套配置拒绝启动"那条路径，
-		// 而那是另一回事，另有专门的用例守着。
+		// 而那是另一回事，另有专门的用例守着。GitHub 的客户端密钥同理。
 		envCompanions := map[string]map[string]string{
 			keyCOSBucketURL: {
 				EnvCOSSecretID:  "test-secret-id",
 				EnvCOSSecretKey: "test-secret-key",
 			},
+			keyGithubClientID: {EnvGithubClientSecret: "test-github-secret"},
+			keyPublicBaseURL:  {EnvGithubClientSecret: "test-github-secret"},
 		}
+
 		for _, key := range serverKeys {
 			sample, ok := samples[key]
 			if !ok {
@@ -889,6 +898,127 @@ func TestCOSDescribeHidesSecrets(t *testing.T) {
 
 	if empty := (COSConfig{}).Describe(); empty != "未启用" {
 		t.Errorf("未启用时 Describe = %q，期望 %q", empty, "未启用")
+	}
+}
+
+func TestValidatePublicBaseURL(t *testing.T) {
+	t.Run("未配置是合法的", func(t *testing.T) {
+		if err := validatePublicBaseURL(""); err != nil {
+			t.Errorf("err = %v，期望空值放行（是否需要它由登录渠道的校验决定）", err)
+		}
+	})
+
+	t.Run("接受的形式", func(t *testing.T) {
+		for _, ok := range []string{
+			"https://aladdin.example.com",
+			"https://aladdin.example.com/",
+			// 本地回环允许 http：本地开发没有证书，写死 https 会让登录在本机跑不通。
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+			"http://[::1]:5173",
+		} {
+			if err := validatePublicBaseURL(ok); err != nil {
+				t.Errorf("%q 被拒绝了：%v", ok, err)
+			}
+		}
+	})
+
+	t.Run("拒绝的形式", func(t *testing.T) {
+		for _, bad := range []string{
+			"aladdin.example.com",              // 不是绝对地址
+			"https://",                         // 没有主机名
+			"https://aladdin.example.com/x",    // 带路径：会衍生出一个也要登记的回调地址
+			"https://user@aladdin.example.com", // 带用户信息
+			"https://aladdin.example.com?a=1",  // 带查询串
+			"https://aladdin.example.com#f",    // 带 fragment
+			"http://aladdin.example.com",       // 非回环主机必须 https
+		} {
+			if err := validatePublicBaseURL(bad); err == nil {
+				t.Errorf("%q 被接受了，期望拒绝启动", bad)
+			}
+		}
+	})
+}
+
+// 重定向型渠道的三项必须同时给出：缺任何一项都拒绝启动，且错误信息指出缺的是哪一项。
+func TestValidateGithubLogin(t *testing.T) {
+	full := ServerConfig{
+		GithubClientID:     "Iv1.0123456789abcdef",
+		GithubClientSecret: "the-secret",
+		PublicBaseURL:      "https://aladdin.example.com",
+	}
+
+	t.Run("全空即未启用", func(t *testing.T) {
+		if err := validateGithubLogin(ServerConfig{}); err != nil {
+			t.Errorf("err = %v，期望不启用且不报错", err)
+		}
+	})
+
+	t.Run("全给即启用", func(t *testing.T) {
+		if err := validateGithubLogin(full); err != nil {
+			t.Errorf("err = %v，期望通过", err)
+		}
+	})
+
+	t.Run("缺什么就指出什么", func(t *testing.T) {
+		cases := map[string]struct {
+			cfg  ServerConfig
+			want string
+		}{
+			"缺客户端密钥": {ServerConfig{GithubClientID: full.GithubClientID, PublicBaseURL: full.PublicBaseURL}, EnvGithubClientSecret},
+			"缺对外地址":  {ServerConfig{GithubClientID: full.GithubClientID, GithubClientSecret: "s"}, keyPublicBaseURL},
+			"缺客户端标识": {ServerConfig{GithubClientSecret: "s", PublicBaseURL: full.PublicBaseURL}, keyGithubClientID},
+		}
+		for name, c := range cases {
+			err := validateGithubLogin(c.cfg)
+			if err == nil {
+				t.Errorf("%s：期望拒绝启动", name)
+				continue
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("%s：错误信息 %q 应当指出缺的是 %q", name, err, c.want)
+			}
+		}
+	})
+}
+
+// 客户端密钥只从环境变量来，半套配置在真实加载路径上就拒绝启动。
+func TestGithubClientSecretComesFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	clearEnv(t)
+
+	t.Setenv(EnvGithubClientID, "Iv1.0123456789abcdef")
+	t.Setenv(EnvPublicBaseURL, "https://aladdin.example.com")
+	if _, err := LoadServer(ServerFlags{}); err == nil {
+		t.Fatal("没给客户端密钥，期望拒绝启动")
+	} else if !strings.Contains(err.Error(), EnvGithubClientSecret) {
+		t.Errorf("错误信息 %q 应当指出缺的是 %s", err, EnvGithubClientSecret)
+	}
+
+	t.Setenv(EnvGithubClientSecret, "the-secret")
+	cfg, err := LoadServer(ServerFlags{})
+	if err != nil {
+		t.Fatalf("三项齐全仍加载失败: %v", err)
+	}
+	if cfg.GithubClientSecret != "the-secret" {
+		t.Error("客户端密钥没有从环境变量读进来")
+	}
+	if got := cfg.PublicURL("/auth/github/callback"); got != "https://aladdin.example.com/auth/github/callback" {
+		t.Errorf("PublicURL = %q", got)
+	}
+}
+
+// **客户端密钥不可由配置提供**，与 COS 密钥同理：一旦它有了配置键，它就会
+// 出现在某个人的 config.yml 里，而那个文件会进版本库、进镜像。
+func TestGithubClientSecretIsNotConfigKey(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	clearEnv(t)
+	write(t, filepath.Join(dir, FileName), "github_client_secret: some-secret\n")
+
+	if _, err := LoadServer(ServerFlags{}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("把 github_client_secret 写进配置文件 = %v，期望 ErrInvalid（未知键）", err)
 	}
 }
 

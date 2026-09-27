@@ -64,8 +64,10 @@ type IdentityStores struct {
 	Identities *identity.Identities
 	// Sessions 是会话凭证的签发与失效入口。
 	Sessions *identity.Sessions
-	// Verifier 校验渠道签发的身份令牌；为 nil 表示该登录方式未启用。
-	Verifier identity.TokenVerifier
+	// Channels 是**已启用**的登录渠道。它可以是空的——一个只服务机器凭证
+	// 的部署不需要任何人类登录方式，此时这些路径整体缺席，而不是退化成一个
+	// "什么都通过"的校验。
+	Channels *identity.Registry
 }
 
 // ProfileStores 是个人档案模块的存储，由入口进程构造后传入。
@@ -105,12 +107,11 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
 
 	identitySrv := NewIdentityService(store, engine, IdentityDeps{
-		Machine:        machine,
-		Identities:     ident.Identities,
-		Sessions:       ident.Sessions,
-		Verifier:       ident.Verifier,
-		GoogleClientID: cfg.GoogleClientID,
-		Logger:         logger,
+		Machine:    machine,
+		Identities: ident.Identities,
+		Sessions:   ident.Sessions,
+		Channels:   ident.Channels,
+		Logger:     logger,
 	})
 
 	// 档案对身份模块的依赖是**只读**的：展示名回退的第二步要取该主体的渠道
@@ -153,6 +154,14 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 
 	identityPath, identityHandler := identityv1connect.NewIdentityServiceHandler(identitySrv, opts...)
 	register(identityPath, identityHandler)
+
+	// 重定向型登录渠道的浏览器直连端点。它们不是 RPC（浏览器导航带不了请求头），
+	// 因此不走 Connect handler，但要经同一个 register 注册——这样遥测的路径
+	// 归一保持有界，且 authMiddleware 的放行清单与这里注册的地址不会漂移（见
+	// middleware.go 的 browserEntryPaths）。
+	githubFlow := NewGithubLoginFlow(identitySrv, cfg, logger)
+	register(identity.GithubStartPath, http.HandlerFunc(githubFlow.Start))
+	register(identity.GithubCallbackPath, http.HandlerFunc(githubFlow.Callback))
 
 	// 档案服务单独一组 handler options：它是唯一一个由客户端决定请求体大小的
 	// 入口（头像上传），因此显式设了读上限（见 profileReadMaxBytes）。

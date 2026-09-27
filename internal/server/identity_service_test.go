@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,14 +25,62 @@ import (
 // 它们直接调用 handler，因此冻结的是**分类与归属**；跨协议的同一性
 // 由 test/e2e 覆盖。
 
-// fakeVerifier 是一个可控的身份令牌校验器：整套用例不联网、不碰 Google。
+// fakeVerifier 是一个可控的渠道凭证校验器：整套用例不联网、不碰 Google。
 type fakeVerifier struct {
-	identity identity.GoogleIdentity
+	identity identity.VerifiedIdentity
 	err      error
 }
 
-func (f fakeVerifier) Verify(context.Context, string) (identity.GoogleIdentity, error) {
+func (f fakeVerifier) Verify(context.Context, string) (identity.VerifiedIdentity, error) {
 	return f.identity, f.err
+}
+
+// googleChannel 把一份校验器登记成 Google 渠道。
+//
+// 只关心"一条渠道"的用例用它，使渠道装配这件事不必在每个用例里重复一遍。
+// 需要多条渠道（例如验证渠道之间互不干扰）的用例直接构造 identity.Channel。
+func googleChannel(verifier identity.TokenVerifier) identity.Channel {
+	return identity.Channel{Source: identity.SourceGoogle, ClientID: "test-google-client", Verifier: verifier}
+}
+
+// countingSessionStore 包住内存实现并统计签发次数。
+//
+// 会话存储没有"列出全部"的接口，而"一次失败的登录没有在库里留下会话"是一条
+// 值得固定的性质：只断言"没交付凭证"漏得掉"签发了却没交付"。
+type countingSessionStore struct {
+	inner identity.SessionStore
+
+	mu   sync.Mutex
+	puts int
+}
+
+func newCountingSessionStore() *countingSessionStore {
+	return &countingSessionStore{inner: identity.NewMemoryStore()}
+}
+
+func (s *countingSessionStore) Put(ctx context.Context, hash string, session identity.Session) error {
+	s.mu.Lock()
+	s.puts++
+	s.mu.Unlock()
+	return s.inner.Put(ctx, hash, session)
+}
+
+func (s *countingSessionStore) Get(ctx context.Context, hash string) (identity.Session, error) {
+	return s.inner.Get(ctx, hash)
+}
+
+func (s *countingSessionStore) Delete(ctx context.Context, hash string) error {
+	return s.inner.Delete(ctx, hash)
+}
+
+func (s *countingSessionStore) DeleteExpired(ctx context.Context, now time.Time) (int64, error) {
+	return s.inner.DeleteExpired(ctx, now)
+}
+
+func (s *countingSessionStore) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.puts
 }
 
 // identityFixture 是认证面的一次装配：内存存储 + 可控校验器 + 可检查的日志。
@@ -39,15 +88,20 @@ type identityFixture struct {
 	subjects      rbac.MutableStore
 	identityStore identity.IdentityStore
 	sessions      *identity.Sessions
+	sessionStore  *countingSessionStore
 	service       *IdentityService
 	logs          *observer.ObservedLogs
 }
 
-func newIdentityFixture(t *testing.T, verifier identity.TokenVerifier) identityFixture {
+// issuedSessions 返回这套存储上签发过的会话条数。
+func (f identityFixture) issuedSessions() int { return f.sessionStore.count() }
+
+func newIdentityFixture(t *testing.T, channels ...identity.Channel) identityFixture {
 	t.Helper()
 
 	subjects := rbac.NewMemoryStore()
-	sessions := identity.NewSessions(identity.NewMemoryStore())
+	sessionStore := newCountingSessionStore()
+	sessions := identity.NewSessions(sessionStore)
 	identityStore := identity.NewMemoryIdentityStore()
 	core, logs := observer.New(zapcore.DebugLevel)
 
@@ -55,37 +109,39 @@ func newIdentityFixture(t *testing.T, verifier identity.TokenVerifier) identityF
 		subjects:      subjects,
 		identityStore: identityStore,
 		sessions:      sessions,
+		sessionStore:  sessionStore,
 		logs:          logs,
-		service:       newIdentityServiceOn(subjects, identityStore, sessions, verifier, zap.New(core)),
+		service:       newIdentityServiceOn(subjects, identityStore, sessions, channels, zap.New(core)),
 	}
 }
 
 // as 用**同一套存储**再装配一个认证面。
 //
-// 用于模拟"另一个人"：只有共用存储，身份的唯一归属才会真的被撞上。
-func (f identityFixture) as(verifier identity.TokenVerifier) *IdentityService {
-	return newIdentityServiceOn(f.subjects, f.identityStore, f.sessions, verifier, zap.NewNop())
+// 用于模拟"另一个人"或"另一条渠道"：只有共用存储，身份的唯一归属才会真的
+// 被撞上。
+func (f identityFixture) as(channels ...identity.Channel) *IdentityService {
+	return newIdentityServiceOn(f.subjects, f.identityStore, f.sessions, channels, zap.NewNop())
 }
 
 func newIdentityServiceOn(
 	subjects rbac.MutableStore,
 	identityStore identity.IdentityStore,
 	sessions *identity.Sessions,
-	verifier identity.TokenVerifier,
+	channels []identity.Channel,
 	logger *zap.Logger,
 ) *IdentityService {
 	return NewIdentityService(subjects, rbac.NewEngine(subjects, logger, nil), IdentityDeps{
 		Machine:    interceptor.NewTokenAuthenticator(),
 		Identities: identity.NewIdentities(identityStore, subjects),
 		Sessions:   sessions,
-		Verifier:   verifier,
+		Channels:   identity.NewRegistry(channels...),
 		Logger:     logger,
 	})
 }
 
-// verifierFor 造一个会把任何令牌都解成同一个渠道身份的校验器。
-func verifierFor(subject string) identity.TokenVerifier {
-	return fakeVerifier{identity: identity.GoogleIdentity{Subject: subject}}
+// verifierFor 造一个会把任何凭证都解成同一个渠道身份的校验器。
+func verifierFor(externalID string) identity.TokenVerifier {
+	return fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: externalID}}
 }
 
 // loginAs 用一份身份令牌登录，返回一次登录的产物。
@@ -122,9 +178,9 @@ func caller(t *testing.T, sessions *identity.Sessions, token string) context.Con
 //
 // 这是预期路径而不是错误路径——他能登录，只是什么都做不了。
 func TestLoginRegistersSubjectWithNoPermissions(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{identity: identity.GoogleIdentity{
-		Subject: "google-sub-a", Email: "a@example.com",
-	}})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{
+		ExternalID: "google-sub-a", Display: "a@example.com",
+	}}))
 
 	login := fixture.loginAs(t)
 	if login.GetAccessToken() == "" {
@@ -153,7 +209,7 @@ func TestLoginRegistersSubjectWithNoPermissions(t *testing.T) {
 // 而令牌与口令同级，进了日志就等于泄露。记的是主体标识而不是渠道标识：
 // 渠道标识随渠道而变，排障时要定位的是"库里这个人"。
 func TestLoginLogsSubjectWithoutToken(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{identity: identity.GoogleIdentity{Subject: "google-sub-a"}})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
 	login := fixture.loginAs(t)
 
 	subject, err := fixture.service.sessions.Verify(context.Background(), login.GetAccessToken())
@@ -184,7 +240,7 @@ func TestLoginLogsSubjectWithoutToken(t *testing.T) {
 // 混为一谈会让客户端在凭证问题时反复尝试刷新，把一次凭证问题放大成
 // 一次登录风暴。
 func TestLoginInvalidTokenIsUnauthenticated(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{err: identity.ErrInvalidToken})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{err: identity.ErrInvalidToken}))
 
 	_, err := fixture.service.Login(context.Background(), connect.NewRequest(&identityv1.LoginRequest{
 		Credential: &identityv1.LoginRequest_Google{Google: &identityv1.GoogleCredential{IdToken: "坏令牌"}},
@@ -196,7 +252,7 @@ func TestLoginInvalidTokenIsUnauthenticated(t *testing.T) {
 
 // 提供方够不着是"服务不可用"，不是"凭证无效"。
 func TestLoginProviderFailureIsUnavailable(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{err: identity.ErrProviderUnavailable})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{err: identity.ErrProviderUnavailable}))
 
 	_, err := fixture.service.Login(context.Background(), connect.NewRequest(&identityv1.LoginRequest{
 		Credential: &identityv1.LoginRequest_Google{Google: &identityv1.GoogleCredential{IdToken: "任意"}},
@@ -206,10 +262,10 @@ func TestLoginProviderFailureIsUnavailable(t *testing.T) {
 	}
 }
 
-// 未启用 Google 登录时报"未实现"，而不是"凭证无效"：前者说的是这条路没开，
-// 后者会说成是调用方拿错了令牌。
+// 未启用的渠道报"未实现"，而不是"凭证无效"：前者说的是这条路没开，
+// 后者会说成是调用方拿错了凭证。
 func TestLoginGoogleDisabled(t *testing.T) {
-	fixture := newIdentityFixture(t, nil)
+	fixture := newIdentityFixture(t)
 
 	_, err := fixture.service.Login(context.Background(), connect.NewRequest(&identityv1.LoginRequest{
 		Credential: &identityv1.LoginRequest_Google{Google: &identityv1.GoogleCredential{IdToken: "任意"}},
@@ -221,8 +277,8 @@ func TestLoginGoogleDisabled(t *testing.T) {
 
 // 绑定把渠道挂到**当前凭证代表的**主体上，而不是令牌里说的任何人。
 func TestBindIdentityBindsToCaller(t *testing.T) {
-	first := identity.GoogleIdentity{Subject: "google-sub-a", Email: "a@example.com"}
-	fixture := newIdentityFixture(t, fakeVerifier{identity: first})
+	first := identity.VerifiedIdentity{ExternalID: "google-sub-a", Display: "a@example.com"}
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: first}))
 
 	login := fixture.loginAs(t)
 	ctx := caller(t, fixture.sessions, login.GetAccessToken())
@@ -245,7 +301,7 @@ func TestBindIdentityBindsToCaller(t *testing.T) {
 
 // 绑定缺少凭证时是调用方的输入问题。
 func TestBindIdentityRequiresCredential(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{identity: identity.GoogleIdentity{Subject: "google-sub-a"}})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
 	login := fixture.loginAs(t)
 
 	_, err := fixture.service.BindIdentity(caller(t, fixture.sessions, login.GetAccessToken()),
@@ -258,7 +314,7 @@ func TestBindIdentityRequiresCredential(t *testing.T) {
 // 一个身份已经属于别人时拒绝，且**不透露占用者**。
 func TestBindIdentityRejectsTakenIdentity(t *testing.T) {
 	// 第一个人先登录，占住 google-sub-a。
-	first := newIdentityFixture(t, fakeVerifier{identity: identity.GoogleIdentity{Subject: "google-sub-a"}})
+	first := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
 	firstLogin := first.loginAs(t)
 	firstSubject, err := first.service.sessions.Verify(context.Background(), firstLogin.GetAccessToken())
 	if err != nil {
@@ -267,13 +323,14 @@ func TestBindIdentityRejectsTakenIdentity(t *testing.T) {
 
 	// 第二个人在同一套存储上登录（占住 google-sub-b），再用第一人的令牌发起绑定：
 	// 校验解出的是 google-sub-a，而归属只能落在发起者身上——于是撞上唯一归属。
-	second := first.as(verifierFor("google-sub-b"))
+	second := first.as(googleChannel(verifierFor("google-sub-b")))
 	secondLogin := loginAs(t, second, "第二个人的令牌")
 	callerCtx := caller(t, first.sessions, secondLogin.GetAccessToken())
 
-	// 绑定请求里带的是**第一人**的令牌。
-	second.verifier = verifierFor("google-sub-a")
-	_, err = second.BindIdentity(callerCtx, connect.NewRequest(&identityv1.BindIdentityRequest{
+	// 绑定请求里带的是**第一人**的令牌：用解出 google-sub-a 的校验器再装配一个
+	// 共用同一套存储的服务，而会话仍然来自第二个人。
+	binder := first.as(googleChannel(verifierFor("google-sub-a")))
+	_, err = binder.BindIdentity(callerCtx, connect.NewRequest(&identityv1.BindIdentityRequest{
 		Credential: &identityv1.BindIdentityRequest_Google{
 			Google: &identityv1.GoogleCredential{IdToken: "第一个人的令牌"},
 		},
@@ -288,7 +345,7 @@ func TestBindIdentityRejectsTakenIdentity(t *testing.T) {
 
 // 解绑只作用于自己的主体：拿别人的身份标识来解绑，一行不动。
 func TestUnbindIdentityScopedToCaller(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{identity: identity.GoogleIdentity{Subject: "google-sub-a"}})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
 	login := fixture.loginAs(t)
 
 	_, err := fixture.service.UnbindIdentity(caller(t, fixture.sessions, login.GetAccessToken()),
@@ -302,7 +359,7 @@ func TestUnbindIdentityScopedToCaller(t *testing.T) {
 
 // 摘掉最后一个渠道会被拒绝：那会让这个主体再也进不来。
 func TestUnbindIdentityKeepsLast(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{identity: identity.GoogleIdentity{Subject: "google-sub-a"}})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
 	login := fixture.loginAs(t)
 
 	_, err := fixture.service.UnbindIdentity(caller(t, fixture.sessions, login.GetAccessToken()),
@@ -316,17 +373,17 @@ func TestUnbindIdentityKeepsLast(t *testing.T) {
 
 // 列出渠道返回当前主体的全部绑定。
 func TestListIdentitiesReturnsCallersChannels(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{identity: identity.GoogleIdentity{
-		Subject: "google-sub-a", Email: "a@example.com",
-	}})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{
+		ExternalID: "google-sub-a", Display: "a@example.com",
+	}}))
 	login := fixture.loginAs(t)
 	ctx := caller(t, fixture.sessions, login.GetAccessToken())
 
-	// 第二个渠道：校验器解出的是另一个身份。
-	fixture.service.verifier = fakeVerifier{identity: identity.GoogleIdentity{
-		Subject: "google-sub-b", Email: "b@example.com",
-	}}
-	if _, err := fixture.service.BindIdentity(ctx, connect.NewRequest(&identityv1.BindIdentityRequest{
+	// 第二个渠道：用解出另一个身份的校验器再装配一个共用同一套存储的服务。
+	second := fixture.as(googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{
+		ExternalID: "google-sub-b", Display: "b@example.com",
+	}}))
+	if _, err := second.BindIdentity(ctx, connect.NewRequest(&identityv1.BindIdentityRequest{
 		Credential: &identityv1.BindIdentityRequest_Google{
 			Google: &identityv1.GoogleCredential{IdToken: "第二个渠道的令牌"},
 		},
@@ -353,7 +410,7 @@ func TestListIdentitiesReturnsCallersChannels(t *testing.T) {
 // 这条把"登录签发"与"请求认证"两侧接起来——只测其中一侧，
 // 会漏掉"登录拿到的凭证在下一个请求里不认"这类断裂。
 func TestIssuedSessionAuthenticatesRequests(t *testing.T) {
-	fixture := newIdentityFixture(t, fakeVerifier{identity: identity.GoogleIdentity{Subject: "google-sub-a"}})
+	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
 	login := fixture.loginAs(t)
 
 	// 认证入口：机器凭证集合为空，因此这次认证只能走会话路径。

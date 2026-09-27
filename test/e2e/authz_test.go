@@ -59,14 +59,31 @@ type harness struct {
 // startServer 在随机端口上启动服务端，并注入一个测试主体。
 func startServer(t *testing.T, roleID string, scope rbac.Scope) harness {
 	t.Helper()
-	return startServerWith(t, roleID, scope, nil)
+	return startServerWith(t, roleID, scope)
 }
 
-// startServerWith 允许注入身份令牌校验器，供认证链路的用例使用。
+// harnessOption 在装配之前调整配置或依赖。
+type harnessOption func(cfg *config.ServerConfig, ident *server.IdentityStores)
+
+// withChannels 注入登录渠道。
 //
-// verifier 为 nil 时那条登录路径整体缺席：机器凭证照常可用，Google 登录
-// 返回"未实现"——未启用的登录方式不该退化成一个可用的后门。
-func startServerWith(t *testing.T, roleID string, scope rbac.Scope, verifier identity.TokenVerifier) harness {
+// 不注入时那几条登录路径整体缺席：机器凭证照常可用，渠道登录返回"未实现"
+// ——未启用的登录方式不该退化成一个可用的后门。
+func withChannels(channels ...identity.Channel) harnessOption {
+	return func(_ *config.ServerConfig, ident *server.IdentityStores) {
+		ident.Channels = identity.NewRegistry(channels...)
+	}
+}
+
+// withPublicBaseURL 设置对外源，供重定向型登录渠道的用例使用。
+func withPublicBaseURL(baseURL string) harnessOption {
+	return func(cfg *config.ServerConfig, _ *server.IdentityStores) {
+		cfg.PublicBaseURL = baseURL
+	}
+}
+
+// startServerWith 允许在装配前注入渠道与对外源，供认证链路的用例使用。
+func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harnessOption) harness {
 	t.Helper()
 
 	cfg := config.DefaultServer()
@@ -104,11 +121,14 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, verifier ide
 	// 认证模块的存储同样落在真实连接上：会话与身份别名是这条链路上的
 	// 一等数据，用内存实现在这里等于把"表没建、写入没落盘"挡在测试之外。
 	identityStore := identitygormstore.NewIdentityStore(store.DB())
-	srv := server.New(cfg, logger, nil, store, server.IdentityStores{
+	ident := server.IdentityStores{
 		Identities: identity.NewIdentities(identityStore, store),
 		Sessions:   identity.NewSessions(identitygormstore.New(store.DB())),
-		Verifier:   verifier,
-	}, server.ProfileStores{
+	}
+	for _, opt := range opts {
+		opt(&cfg, &ident)
+	}
+	srv := server.New(cfg, logger, nil, store, ident, server.ProfileStores{
 		// 档案的存储同样落在真实连接上。
 		Profiles: profilegormstore.New(store.DB()),
 		// 头像字节用一个内存实现替代对象存储：契约要求测试不访问任何网络

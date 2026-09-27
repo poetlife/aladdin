@@ -120,11 +120,11 @@ func TestGoogleVerifierAcceptsValidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("合法令牌被拒: %v", err)
 	}
-	if got.Subject != "109876543210987654321" {
-		t.Errorf("身份标识 = %q", got.Subject)
+	if got.ExternalID != "109876543210987654321" {
+		t.Errorf("身份标识 = %q", got.ExternalID)
 	}
-	if got.Email != "zhang@example.com" {
-		t.Errorf("展示信息 = %q，期望记录邮箱用于展示", got.Email)
+	if got.Display != "zhang@example.com" {
+		t.Errorf("展示信息 = %q，期望记录邮箱用于展示", got.Display)
 	}
 }
 

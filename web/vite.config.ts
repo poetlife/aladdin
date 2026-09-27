@@ -31,9 +31,19 @@ export default defineConfig({
     //
     // 用字符串前缀而不是正则：vite 对字符串键做前缀匹配，语义比正则直白，
     // 也不会因为转义层级出问题。
-    // 前端自身路由是 /、/roles、/login、/forbidden，与 /aladdin. 不冲突。
+    // 前端自身路由是 /、/roles、/login、/login/callback、/forbidden，
+    // 与 /aladdin. 不冲突。
+    //
+    // /auth/ 整段属于**服务端的浏览器直连端点**（重定向型登录渠道的起点与
+    // 回调，见 internal/server/github_login_flow.go）。它同样必须转发到后端，
+    // 否则本地点 GitHub 登录会被 SPA 兜底吃掉、表现为"点了没反应"。
+    // 约定：前端不在 /auth/ 下放任何路由——它整段是服务端的。
     proxy: {
       '/aladdin.': {
+        target: process.env.ALADDIN_API_TARGET ?? 'http://127.0.0.1:9090',
+        changeOrigin: true,
+      },
+      '/auth/': {
         target: process.env.ALADDIN_API_TARGET ?? 'http://127.0.0.1:9090',
         changeOrigin: true,
       },

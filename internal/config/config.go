@@ -43,15 +43,23 @@ const (
 	EnvCOSBucketURL = "ALADDIN_COS_BUCKET_URL"
 	// EnvCOSSecretID 与 EnvCOSSecretKey 是头像存储的子账号密钥。
 	//
-	// **它们是本仓库唯一一组"只有环境变量、没有配置键"的取值**，与开发种子
-	// 旁路同类：一个开关一旦能写进配置文件，它就会在某个人手上的生产环境里
-	// 被写进去。配置文件会进版本库、进镜像、被贴给别人排查问题，而凭证不可以
-	// （见 docs/design/config/credentials.md）。
+	// **它们与 EnvGithubClientSecret 是本仓库仅有的两组"只有环境变量、没有
+	// 配置键"的取值**，与开发种子旁路同类：一个开关一旦能写进配置文件，它就会
+	// 在某个人手上的生产环境里被写进去。配置文件会进版本库、进镜像、被贴给
+	// 别人排查问题，而凭证不可以（见 docs/design/config/credentials.md）。
 	// 这里是**环境变量名**，不是凭证值——gosec 按名字里的单词误报了。
 	EnvCOSSecretID  = "ALADDIN_COS_SECRET_ID"  //nolint:gosec // 取值是变量名本身
 	EnvCOSSecretKey = "ALADDIN_COS_SECRET_KEY" //nolint:gosec // 取值是变量名本身
 
-	EnvGoogleClientID        = "ALADDIN_GOOGLE_CLIENT_ID"
+	EnvGoogleClientID = "ALADDIN_GOOGLE_CLIENT_ID"
+	EnvGithubClientID = "ALADDIN_GITHUB_CLIENT_ID"
+	// EnvGithubClientSecret 是 GitHub 登录的客户端密钥。
+	//
+	// 与 COS 密钥同理：**只有环境变量，没有配置键**。
+	EnvGithubClientSecret = "ALADDIN_GITHUB_CLIENT_SECRET" //nolint:gosec // 取值是变量名本身
+	// EnvPublicBaseURL 是服务端的对外地址，用于构造重定向型登录的回调与回跳地址。
+	EnvPublicBaseURL = "ALADDIN_PUBLIC_BASE_URL"
+
 	EnvBootstrapAdminSubject = "ALADDIN_BOOTSTRAP_ADMIN_SUBJECT"
 	EnvBootstrapAdminEmail   = "ALADDIN_BOOTSTRAP_ADMIN_EMAIL"
 	EnvBootstrapAdminScope   = "ALADDIN_BOOTSTRAP_ADMIN_SCOPE"
@@ -74,6 +82,8 @@ const (
 	keyCOSBucketURL = "cos_bucket_url"
 
 	keyGoogleClientID        = "google_client_id"
+	keyGithubClientID        = "github_client_id"
+	keyPublicBaseURL         = "public_base_url"
 	keyBootstrapAdminSubject = "bootstrap_admin_subject"
 	keyBootstrapAdminEmail   = "bootstrap_admin_email"
 	keyBootstrapAdminScope   = "bootstrap_admin_scope"
@@ -226,6 +236,23 @@ type ServerConfig struct {
 	// 因此放在配置里不违反"配置中不得出现凭证"。真正需要保密的是客户端
 	// 密钥，而浏览器登录流程不使用它（见 docs/design/identity/google-login.md）。
 	GoogleClientID string
+	// GithubClientID 是 GitHub 登录用的客户端标识；为空表示未启用该登录方式。
+	//
+	// 与 GoogleClientID 同理，它不是秘密（见
+	// docs/design/identity/github-login.md）。
+	GithubClientID string
+	// GithubClientSecret 是 GitHub 登录用的客户端密钥。
+	//
+	// **只从环境变量来，没有对应的配置键**（见 EnvGithubClientSecret）。
+	// 因此它也**不得进日志**——描述本模块的配置时不要把它整体丢进日志。
+	GithubClientSecret string
+	// PublicBaseURL 是服务端的**对外地址**，用于构造重定向型登录的回调地址
+	// 与回跳前端的地址。
+	//
+	// 它**不是秘密**（只是一个主机名），因此留在配置文件里。它必须由配置
+	// 给出，**不得由请求头推导**——用请求头构造跳转目标等于给攻击者一个把
+	// 会话凭证送到任意主机的原语（见 docs/design/identity/github-login.md）。
+	PublicBaseURL string
 	// Bootstrap 描述如何建立第一个管理员。
 	Bootstrap BootstrapConfig
 	// OTelEndpoint 是 OTLP/HTTP 端点。为空表示不上报——
@@ -235,6 +262,30 @@ type ServerConfig struct {
 	OTelInsecure bool
 	// OTelSampleRatio 是采样比例，取值 (0, 1]。
 	OTelSampleRatio float64
+}
+
+// PublicURL 由对外源与一个以 / 开头的路径拼出绝对地址。
+//
+// 它是"对外源怎么和一个路径组合"的**唯一实现**：回调地址与回跳前端的地址
+// 都从它派生，两处各拼一次迟早会出现一处少一个斜杠。
+//
+// 末尾斜杠在取值校验时已排除，因此这里只需处理"路径已带 /"的情形。
+func (c ServerConfig) PublicURL(path string) string {
+	return strings.TrimSuffix(c.PublicBaseURL, "/") + path
+}
+
+// PublicScheme 返回对外源的协议，**小写**；取值不成立时返回空串。
+//
+// 它是"从对外源取协议"的**唯一实现**：取值校验与"cookie 是否要求加密传输"
+// 都从它派生。两处各读一次原始字符串迟早会分岔——协议名大小写不敏感，而按
+// 字面量比较会认为 `HTTPS://…` 不是 https。空串表示"没有配置"，因此调用方
+// 判等即可，不需要额外区分"没配"与"不合法"。
+func (c ServerConfig) PublicScheme() string {
+	u, err := url.Parse(c.PublicBaseURL)
+	if err != nil {
+		return ""
+	}
+	return u.Scheme
 }
 
 // CLIConfig 是命令行客户端的运行配置。
@@ -322,6 +373,12 @@ func (c ServerConfig) Validate() error {
 		return err
 	}
 	if err := validateCOS(c.COS); err != nil {
+		return err
+	}
+	if err := validatePublicBaseURL(c.PublicBaseURL); err != nil {
+		return err
+	}
+	if err := validateGithubLogin(c); err != nil {
 		return err
 	}
 	if err := validateBootstrap(c.Bootstrap); err != nil {
@@ -438,6 +495,87 @@ func validateCOS(cos COSConfig) error {
 	if err != nil || bucket.Scheme != "https" || bucket.Host == "" {
 		return invalidKey(keyCOSBucketURL, EnvCOSBucketURL,
 			fmt.Sprintf("必须是带主机名的 https 地址，当前 %q", cos.BucketURL))
+	}
+	return nil
+}
+
+// validatePublicBaseURL 校验服务端对外地址的形状。
+//
+// 空值是合法的：它表示"没有配置"。**是否需要它由 validateGithubLogin 判定**
+// ——只有重定向型登录渠道才用它，因此不能在这里要求它非空。
+//
+// 路径必须为空或只有 `/`：带路径前缀会衍生出一个同样要登记在渠道控制台里的
+// 回调地址，那是一个只在部署时才暴露的陷阱。协议必须 https，**唯一例外是
+// 本地回环主机**——本地开发没有证书，写死 https 会让登录在本机根本跑不通。
+func validatePublicBaseURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL,
+			fmt.Sprintf("必须是带主机名的绝对地址，当前 %q", raw))
+	}
+	if u.User != nil {
+		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL, "不得带用户信息")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL, "不得带查询串或 fragment")
+	}
+	if u.Path != "" && u.Path != "/" {
+		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL,
+			fmt.Sprintf("路径必须为空或只有 /，当前 %q：带路径会衍生出一个也要登记在渠道控制台里的回调地址", u.Path))
+	}
+	// 允许 https；此外只允许**本地回环上的** http——本地开发没有证书，
+	// 写死 https 会让登录在本机根本跑不通。
+	loopbackHTTP := u.Scheme == "http" && isLoopbackHost(u.Hostname())
+	if u.Scheme != "https" && !loopbackHTTP {
+		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL,
+			fmt.Sprintf("必须是 https（仅本地回环主机允许 http），当前协议 %q", u.Scheme))
+	}
+	return nil
+}
+
+// isLoopbackHost 判断主机名是不是本地回环地址。
+func isLoopbackHost(host string) bool {
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
+}
+
+// validateGithubLogin 校验重定向型登录渠道的配置。
+//
+// 只有两种情形放行：**三项全空**（不启用）与**三项齐全**（启用）。部分给出
+// 一律拒绝启动——它的失败方式既不是"没启用"（界面会渲染一个点不通的入口），
+// 也不是"配错了"（启动时就能看见），而是"看起来配好了"，直到有人点了登录。
+// 这与 validateCOS 是同一条取向。
+//
+// 客户端密钥没有配置键、只从环境变量读，因此这里校验的是它**是否已被提供**，
+// 而不是它有没有出现在配置文件里。
+func validateGithubLogin(c ServerConfig) error {
+	hasClientID := c.GithubClientID != ""
+	hasSecret := c.GithubClientSecret != ""
+	hasBaseURL := c.PublicBaseURL != ""
+	if !hasClientID && !hasSecret && !hasBaseURL {
+		return nil // 未启用 GitHub 登录。这是默认情形
+	}
+
+	missing := make([]string, 0, 3)
+	if !hasClientID {
+		missing = append(missing, keyGithubClientID)
+	}
+	if !hasSecret {
+		missing = append(missing, EnvGithubClientSecret)
+	}
+	if !hasBaseURL {
+		missing = append(missing, keyPublicBaseURL)
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: 重定向型登录渠道的配置不完整，缺少 %s：客户端标识、客户端密钥与对外地址必须同时给出",
+			ErrInvalid, strings.Join(missing, " 与 "))
 	}
 	return nil
 }

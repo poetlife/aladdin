@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/identity/v1/identity.proto.
  */
 export const file_aladdin_identity_v1_identity: GenFile = /*@__PURE__*/
-  fileDesc("CiJhbGFkZGluL2lkZW50aXR5L3YxL2lkZW50aXR5LnByb3RvEhNhbGFkZGluLmlkZW50aXR5LnYxIskBCgxMb2dpblJlcXVlc3QSOwoIcGFzc3dvcmQYASABKAsyJy5hbGFkZGluLmlkZW50aXR5LnYxLlBhc3N3b3JkQ3JlZGVudGlhbEgAEjUKBXRva2VuGAIgASgLMiQuYWxhZGRpbi5pZGVudGl0eS52MS5Ub2tlbkNyZWRlbnRpYWxIABI3CgZnb29nbGUYAyABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIjgKElBhc3N3b3JkQ3JlZGVudGlhbBIQCgh1c2VybmFtZRgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSIgCg9Ub2tlbkNyZWRlbnRpYWwSDQoFdG9rZW4YASABKAkiJAoQR29vZ2xlQ3JlZGVudGlhbBIQCghpZF90b2tlbhgBIAEoCSIXChVHZXRBdXRoTWV0aG9kc1JlcXVlc3QiMgoWR2V0QXV0aE1ldGhvZHNSZXNwb25zZRIYChBnb29nbGVfY2xpZW50X2lkGAEgASgJIjkKDUxvZ2luUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfYXQYAiABKAkiJgoOUmVmcmVzaFJlcXVlc3QSFAoMYWNjZXNzX3Rva2VuGAEgASgJIjsKD1JlZnJlc2hSZXNwb25zZRIUCgxhY2Nlc3NfdG9rZW4YASABKAkSEgoKZXhwaXJlc19hdBgCIAEoCSIPCg1XaG9BbUlSZXF1ZXN0IlEKDldob0FtSVJlc3BvbnNlEhIKCnN1YmplY3RfaWQYASABKAkSFAoMc3ViamVjdF90eXBlGAIgASgJEhUKDWRlZmF1bHRfc2NvcGUYAyABKAkiLQocR2V0U2Vzc2lvblBlcm1pc3Npb25zUmVxdWVzdBINCgVzY29wZRgBIAEoCSJDCh1HZXRTZXNzaW9uUGVybWlzc2lvbnNSZXNwb25zZRINCgVzY29wZRgBIAEoCRITCgtwZXJtaXNzaW9ucxgCIAMoCSJcChNCaW5kSWRlbnRpdHlSZXF1ZXN0EjcKBmdvb2dsZRgBIAEoCzIlLmFsYWRkaW4uaWRlbnRpdHkudjEuR29vZ2xlQ3JlZGVudGlhbEgAQgwKCmNyZWRlbnRpYWwiSQoUQmluZElkZW50aXR5UmVzcG9uc2USMQoKaWRlbnRpdGllcxgBIAMoCzIdLmFsYWRkaW4uaWRlbnRpdHkudjEuSWRlbnRpdHkiPAoVVW5iaW5kSWRlbnRpdHlSZXF1ZXN0Eg4KBnNvdXJjZRgBIAEoCRITCgtleHRlcm5hbF9pZBgCIAEoCSJLChZVbmJpbmRJZGVudGl0eVJlc3BvbnNlEjEKCmlkZW50aXRpZXMYASADKAsyHS5hbGFkZGluLmlkZW50aXR5LnYxLklkZW50aXR5IhcKFUxpc3RJZGVudGl0aWVzUmVxdWVzdCJLChZMaXN0SWRlbnRpdGllc1Jlc3BvbnNlEjEKCmlkZW50aXRpZXMYASADKAsyHS5hbGFkZGluLmlkZW50aXR5LnYxLklkZW50aXR5IkAKCElkZW50aXR5Eg4KBnNvdXJjZRgBIAEoCRITCgtleHRlcm5hbF9pZBgCIAEoCRIPCgdkaXNwbGF5GAMgASgJMukGCg9JZGVudGl0eVNlcnZpY2USVAoFTG9naW4SIS5hbGFkZGluLmlkZW50aXR5LnYxLkxvZ2luUmVxdWVzdBoiLmFsYWRkaW4uaWRlbnRpdHkudjEuTG9naW5SZXNwb25zZSIEmIgnARJaCgdSZWZyZXNoEiMuYWxhZGRpbi5pZGVudGl0eS52MS5SZWZyZXNoUmVxdWVzdBokLmFsYWRkaW4uaWRlbnRpdHkudjEuUmVmcmVzaFJlc3BvbnNlIgSYiCcBEm8KDkdldEF1dGhNZXRob2RzEiouYWxhZGRpbi5pZGVudGl0eS52MS5HZXRBdXRoTWV0aG9kc1JlcXVlc3QaKy5hbGFkZGluLmlkZW50aXR5LnYxLkdldEF1dGhNZXRob2RzUmVzcG9uc2UiBJiIJwESWwoGV2hvQW1JEiIuYWxhZGRpbi5pZGVudGl0eS52MS5XaG9BbUlSZXF1ZXN0GiMuYWxhZGRpbi5pZGVudGl0eS52MS5XaG9BbUlSZXNwb25zZSIIkIgnA6CIJwESiAEKFUdldFNlc3Npb25QZXJtaXNzaW9ucxIxLmFsYWRkaW4uaWRlbnRpdHkudjEuR2V0U2Vzc2lvblBlcm1pc3Npb25zUmVxdWVzdBoyLmFsYWRkaW4uaWRlbnRpdHkudjEuR2V0U2Vzc2lvblBlcm1pc3Npb25zUmVzcG9uc2UiCJCIJwOgiCcBEmkKDEJpbmRJZGVudGl0eRIoLmFsYWRkaW4uaWRlbnRpdHkudjEuQmluZElkZW50aXR5UmVxdWVzdBopLmFsYWRkaW4uaWRlbnRpdHkudjEuQmluZElkZW50aXR5UmVzcG9uc2UiBKCIJwESbwoOVW5iaW5kSWRlbnRpdHkSKi5hbGFkZGluLmlkZW50aXR5LnYxLlVuYmluZElkZW50aXR5UmVxdWVzdBorLmFsYWRkaW4uaWRlbnRpdHkudjEuVW5iaW5kSWRlbnRpdHlSZXNwb25zZSIEoIgnARJvCg5MaXN0SWRlbnRpdGllcxIqLmFsYWRkaW4uaWRlbnRpdHkudjEuTGlzdElkZW50aXRpZXNSZXF1ZXN0GisuYWxhZGRpbi5pZGVudGl0eS52MS5MaXN0SWRlbnRpdGllc1Jlc3BvbnNlIgSgiCcBQkRaQmdpdGh1Yi5jb20vcG9ldGxpZmUvYWxhZGRpbi9hcGkvZ2VuL2FsYWRkaW4vaWRlbnRpdHkvdjE7aWRlbnRpdHl2MWIGcHJvdG8z", [file_aladdin_rbac_v1_annotations]);
+  fileDesc("CiJhbGFkZGluL2lkZW50aXR5L3YxL2lkZW50aXR5LnByb3RvEhNhbGFkZGluLmlkZW50aXR5LnYxIskBCgxMb2dpblJlcXVlc3QSOwoIcGFzc3dvcmQYASABKAsyJy5hbGFkZGluLmlkZW50aXR5LnYxLlBhc3N3b3JkQ3JlZGVudGlhbEgAEjUKBXRva2VuGAIgASgLMiQuYWxhZGRpbi5pZGVudGl0eS52MS5Ub2tlbkNyZWRlbnRpYWxIABI3CgZnb29nbGUYAyABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIjgKElBhc3N3b3JkQ3JlZGVudGlhbBIQCgh1c2VybmFtZRgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSIgCg9Ub2tlbkNyZWRlbnRpYWwSDQoFdG9rZW4YASABKAkiJAoQR29vZ2xlQ3JlZGVudGlhbBIQCghpZF90b2tlbhgBIAEoCSIXChVHZXRBdXRoTWV0aG9kc1JlcXVlc3QiSgoWR2V0QXV0aE1ldGhvZHNSZXNwb25zZRIwCgdtZXRob2RzGAEgAygLMh8uYWxhZGRpbi5pZGVudGl0eS52MS5BdXRoTWV0aG9kIi8KCkF1dGhNZXRob2QSDgoGc291cmNlGAEgASgJEhEKCWNsaWVudF9pZBgCIAEoCSI5Cg1Mb2dpblJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRISCgpleHBpcmVzX2F0GAIgASgJIiYKDlJlZnJlc2hSZXF1ZXN0EhQKDGFjY2Vzc190b2tlbhgBIAEoCSI7Cg9SZWZyZXNoUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfYXQYAiABKAkiDwoNV2hvQW1JUmVxdWVzdCJRCg5XaG9BbUlSZXNwb25zZRISCgpzdWJqZWN0X2lkGAEgASgJEhQKDHN1YmplY3RfdHlwZRgCIAEoCRIVCg1kZWZhdWx0X3Njb3BlGAMgASgJIi0KHEdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QSDQoFc2NvcGUYASABKAkiQwodR2V0U2Vzc2lvblBlcm1pc3Npb25zUmVzcG9uc2USDQoFc2NvcGUYASABKAkSEwoLcGVybWlzc2lvbnMYAiADKAkiXAoTQmluZElkZW50aXR5UmVxdWVzdBI3CgZnb29nbGUYASABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIkkKFEJpbmRJZGVudGl0eVJlc3BvbnNlEjEKCmlkZW50aXRpZXMYASADKAsyHS5hbGFkZGluLmlkZW50aXR5LnYxLklkZW50aXR5IjwKFVVuYmluZElkZW50aXR5UmVxdWVzdBIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkiSwoWVW5iaW5kSWRlbnRpdHlSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSIXChVMaXN0SWRlbnRpdGllc1JlcXVlc3QiSwoWTGlzdElkZW50aXRpZXNSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSJACghJZGVudGl0eRIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkSDwoHZGlzcGxheRgDIAEoCTLpBgoPSWRlbnRpdHlTZXJ2aWNlElQKBUxvZ2luEiEuYWxhZGRpbi5pZGVudGl0eS52MS5Mb2dpblJlcXVlc3QaIi5hbGFkZGluLmlkZW50aXR5LnYxLkxvZ2luUmVzcG9uc2UiBJiIJwESWgoHUmVmcmVzaBIjLmFsYWRkaW4uaWRlbnRpdHkudjEuUmVmcmVzaFJlcXVlc3QaJC5hbGFkZGluLmlkZW50aXR5LnYxLlJlZnJlc2hSZXNwb25zZSIEmIgnARJvCg5HZXRBdXRoTWV0aG9kcxIqLmFsYWRkaW4uaWRlbnRpdHkudjEuR2V0QXV0aE1ldGhvZHNSZXF1ZXN0GisuYWxhZGRpbi5pZGVudGl0eS52MS5HZXRBdXRoTWV0aG9kc1Jlc3BvbnNlIgSYiCcBElsKBldob0FtSRIiLmFsYWRkaW4uaWRlbnRpdHkudjEuV2hvQW1JUmVxdWVzdBojLmFsYWRkaW4uaWRlbnRpdHkudjEuV2hvQW1JUmVzcG9uc2UiCJCIJwOgiCcBEogBChVHZXRTZXNzaW9uUGVybWlzc2lvbnMSMS5hbGFkZGluLmlkZW50aXR5LnYxLkdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QaMi5hbGFkZGluLmlkZW50aXR5LnYxLkdldFNlc3Npb25QZXJtaXNzaW9uc1Jlc3BvbnNlIgiQiCcDoIgnARJpCgxCaW5kSWRlbnRpdHkSKC5hbGFkZGluLmlkZW50aXR5LnYxLkJpbmRJZGVudGl0eVJlcXVlc3QaKS5hbGFkZGluLmlkZW50aXR5LnYxLkJpbmRJZGVudGl0eVJlc3BvbnNlIgSgiCcBEm8KDlVuYmluZElkZW50aXR5EiouYWxhZGRpbi5pZGVudGl0eS52MS5VbmJpbmRJZGVudGl0eVJlcXVlc3QaKy5hbGFkZGluLmlkZW50aXR5LnYxLlVuYmluZElkZW50aXR5UmVzcG9uc2UiBKCIJwESbwoOTGlzdElkZW50aXRpZXMSKi5hbGFkZGluLmlkZW50aXR5LnYxLkxpc3RJZGVudGl0aWVzUmVxdWVzdBorLmFsYWRkaW4uaWRlbnRpdHkudjEuTGlzdElkZW50aXRpZXNSZXNwb25zZSIEoIgnAUJEWkJnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL2lkZW50aXR5L3YxO2lkZW50aXR5djFiBnByb3RvMw", [file_aladdin_rbac_v1_annotations]);
 
 /**
  * @generated from message aladdin.identity.v1.LoginRequest
@@ -134,15 +134,19 @@ export const GetAuthMethodsRequestSchema: GenMessage<GetAuthMethodsRequest> = /*
  * 只承载公开信息：这里出现的一切都会明文送到浏览器，因此不得放入任何
  * 需要保护的取值。
  *
+ * 返回的是**列表**而不是逐个具名字段：新增一个渠道时这里不该再改一次形状，
+ * 前端也不该为每个渠道多写一个判断分支（见 docs/design/identity/channel-login.md）。
+ *
  * @generated from message aladdin.identity.v1.GetAuthMethodsResponse
  */
 export type GetAuthMethodsResponse = Message<"aladdin.identity.v1.GetAuthMethodsResponse"> & {
   /**
-   * Google 登录的客户端标识；为空表示未启用该登录方式，前端不渲染对应入口。
+   * 已启用的登录渠道，顺序稳定。为空表示没有任何渠道登录方式可用，
+   * 前端据此不渲染任何渠道入口。
    *
-   * @generated from field: string google_client_id = 1;
+   * @generated from field: repeated aladdin.identity.v1.AuthMethod methods = 1;
    */
-  googleClientId: string;
+  methods: AuthMethod[];
 };
 
 /**
@@ -151,6 +155,36 @@ export type GetAuthMethodsResponse = Message<"aladdin.identity.v1.GetAuthMethods
  */
 export const GetAuthMethodsResponseSchema: GenMessage<GetAuthMethodsResponse> = /*@__PURE__*/
   messageDesc(file_aladdin_identity_v1_identity, 5);
+
+/**
+ * AuthMethod 是一个已启用的登录渠道。
+ *
+ * @generated from message aladdin.identity.v1.AuthMethod
+ */
+export type AuthMethod = Message<"aladdin.identity.v1.AuthMethod"> & {
+  /**
+   * 渠道来源标识，如 google / github。前端据此决定渲染哪个入口。
+   *
+   * @generated from field: string source = 1;
+   */
+  source: string;
+
+  /**
+   * 该渠道的公开客户端标识。
+   *
+   * **不是秘密**：它本来就明文出现在浏览器里，这是这类登录方式的设计前提。
+   *
+   * @generated from field: string client_id = 2;
+   */
+  clientId: string;
+};
+
+/**
+ * Describes the message aladdin.identity.v1.AuthMethod.
+ * Use `create(AuthMethodSchema)` to create a new message.
+ */
+export const AuthMethodSchema: GenMessage<AuthMethod> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 6);
 
 /**
  * @generated from message aladdin.identity.v1.LoginResponse
@@ -174,7 +208,7 @@ export type LoginResponse = Message<"aladdin.identity.v1.LoginResponse"> & {
  * Use `create(LoginResponseSchema)` to create a new message.
  */
 export const LoginResponseSchema: GenMessage<LoginResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 6);
+  messageDesc(file_aladdin_identity_v1_identity, 7);
 
 /**
  * @generated from message aladdin.identity.v1.RefreshRequest
@@ -191,7 +225,7 @@ export type RefreshRequest = Message<"aladdin.identity.v1.RefreshRequest"> & {
  * Use `create(RefreshRequestSchema)` to create a new message.
  */
 export const RefreshRequestSchema: GenMessage<RefreshRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 7);
+  messageDesc(file_aladdin_identity_v1_identity, 8);
 
 /**
  * @generated from message aladdin.identity.v1.RefreshResponse
@@ -213,7 +247,7 @@ export type RefreshResponse = Message<"aladdin.identity.v1.RefreshResponse"> & {
  * Use `create(RefreshResponseSchema)` to create a new message.
  */
 export const RefreshResponseSchema: GenMessage<RefreshResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 8);
+  messageDesc(file_aladdin_identity_v1_identity, 9);
 
 /**
  * @generated from message aladdin.identity.v1.WhoAmIRequest
@@ -226,7 +260,7 @@ export type WhoAmIRequest = Message<"aladdin.identity.v1.WhoAmIRequest"> & {
  * Use `create(WhoAmIRequestSchema)` to create a new message.
  */
 export const WhoAmIRequestSchema: GenMessage<WhoAmIRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 9);
+  messageDesc(file_aladdin_identity_v1_identity, 10);
 
 /**
  * @generated from message aladdin.identity.v1.WhoAmIResponse
@@ -257,7 +291,7 @@ export type WhoAmIResponse = Message<"aladdin.identity.v1.WhoAmIResponse"> & {
  * Use `create(WhoAmIResponseSchema)` to create a new message.
  */
 export const WhoAmIResponseSchema: GenMessage<WhoAmIResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 10);
+  messageDesc(file_aladdin_identity_v1_identity, 11);
 
 /**
  * @generated from message aladdin.identity.v1.GetSessionPermissionsRequest
@@ -276,7 +310,7 @@ export type GetSessionPermissionsRequest = Message<"aladdin.identity.v1.GetSessi
  * Use `create(GetSessionPermissionsRequestSchema)` to create a new message.
  */
 export const GetSessionPermissionsRequestSchema: GenMessage<GetSessionPermissionsRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 11);
+  messageDesc(file_aladdin_identity_v1_identity, 12);
 
 /**
  * @generated from message aladdin.identity.v1.GetSessionPermissionsResponse
@@ -300,7 +334,7 @@ export type GetSessionPermissionsResponse = Message<"aladdin.identity.v1.GetSess
  * Use `create(GetSessionPermissionsResponseSchema)` to create a new message.
  */
 export const GetSessionPermissionsResponseSchema: GenMessage<GetSessionPermissionsResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 12);
+  messageDesc(file_aladdin_identity_v1_identity, 13);
 
 /**
  * @generated from message aladdin.identity.v1.BindIdentityRequest
@@ -326,7 +360,7 @@ export type BindIdentityRequest = Message<"aladdin.identity.v1.BindIdentityReque
  * Use `create(BindIdentityRequestSchema)` to create a new message.
  */
 export const BindIdentityRequestSchema: GenMessage<BindIdentityRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 13);
+  messageDesc(file_aladdin_identity_v1_identity, 14);
 
 /**
  * BindIdentityResponse 返回绑定之后该主体的全部渠道。
@@ -349,7 +383,7 @@ export type BindIdentityResponse = Message<"aladdin.identity.v1.BindIdentityResp
  * Use `create(BindIdentityResponseSchema)` to create a new message.
  */
 export const BindIdentityResponseSchema: GenMessage<BindIdentityResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 14);
+  messageDesc(file_aladdin_identity_v1_identity, 15);
 
 /**
  * @generated from message aladdin.identity.v1.UnbindIdentityRequest
@@ -375,7 +409,7 @@ export type UnbindIdentityRequest = Message<"aladdin.identity.v1.UnbindIdentityR
  * Use `create(UnbindIdentityRequestSchema)` to create a new message.
  */
 export const UnbindIdentityRequestSchema: GenMessage<UnbindIdentityRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 15);
+  messageDesc(file_aladdin_identity_v1_identity, 16);
 
 /**
  * @generated from message aladdin.identity.v1.UnbindIdentityResponse
@@ -392,7 +426,7 @@ export type UnbindIdentityResponse = Message<"aladdin.identity.v1.UnbindIdentity
  * Use `create(UnbindIdentityResponseSchema)` to create a new message.
  */
 export const UnbindIdentityResponseSchema: GenMessage<UnbindIdentityResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 16);
+  messageDesc(file_aladdin_identity_v1_identity, 17);
 
 /**
  * @generated from message aladdin.identity.v1.ListIdentitiesRequest
@@ -405,7 +439,7 @@ export type ListIdentitiesRequest = Message<"aladdin.identity.v1.ListIdentitiesR
  * Use `create(ListIdentitiesRequestSchema)` to create a new message.
  */
 export const ListIdentitiesRequestSchema: GenMessage<ListIdentitiesRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 17);
+  messageDesc(file_aladdin_identity_v1_identity, 18);
 
 /**
  * @generated from message aladdin.identity.v1.ListIdentitiesResponse
@@ -422,7 +456,7 @@ export type ListIdentitiesResponse = Message<"aladdin.identity.v1.ListIdentities
  * Use `create(ListIdentitiesResponseSchema)` to create a new message.
  */
 export const ListIdentitiesResponseSchema: GenMessage<ListIdentitiesResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 18);
+  messageDesc(file_aladdin_identity_v1_identity, 19);
 
 /**
  * Identity 是一个已绑定的登录渠道。
@@ -460,7 +494,7 @@ export type Identity = Message<"aladdin.identity.v1.Identity"> & {
  * Use `create(IdentitySchema)` to create a new message.
  */
 export const IdentitySchema: GenMessage<Identity> = /*@__PURE__*/
-  messageDesc(file_aladdin_identity_v1_identity, 19);
+  messageDesc(file_aladdin_identity_v1_identity, 20);
 
 /**
  * IdentityService 是身份认证面。

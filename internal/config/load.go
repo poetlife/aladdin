@@ -24,7 +24,10 @@ type layer struct {
 
 	cosBucketURL *string
 
-	googleClientID        *string
+	googleClientID *string
+	githubClientID *string
+	publicBaseURL  *string
+
 	bootstrapAdminSubject *string
 	bootstrapAdminEmail   *string
 	bootstrapAdminScope   *string
@@ -102,6 +105,12 @@ func serverEnvOverrides() (layer, error) {
 	}
 	if v := os.Getenv(EnvGoogleClientID); v != "" {
 		l.googleClientID = &v
+	}
+	if v := os.Getenv(EnvGithubClientID); v != "" {
+		l.githubClientID = &v
+	}
+	if v := os.Getenv(EnvPublicBaseURL); v != "" {
+		l.publicBaseURL = &v
 	}
 	if v := os.Getenv(EnvBootstrapAdminSubject); v != "" {
 		l.bootstrapAdminSubject = &v
@@ -184,6 +193,12 @@ func mergeServer(cfg ServerConfig, l layer) ServerConfig {
 	if l.googleClientID != nil {
 		cfg.GoogleClientID = *l.googleClientID
 	}
+	if l.githubClientID != nil {
+		cfg.GithubClientID = *l.githubClientID
+	}
+	if l.publicBaseURL != nil {
+		cfg.PublicBaseURL = *l.publicBaseURL
+	}
 	if l.bootstrapAdminSubject != nil {
 		cfg.Bootstrap.Subject = *l.bootstrapAdminSubject
 	}
@@ -258,14 +273,15 @@ func LoadServer(f ServerFlags) (ServerConfig, error) {
 
 	// 密钥不参与分层：它们没有配置键，只从环境变量读。
 	cfg.COS.SecretID, cfg.COS.SecretKey = cosSecretsFromEnv()
+	cfg.GithubClientSecret = githubClientSecretFromEnv()
 
 	return cfg, cfg.Validate()
 }
 
 // cosSecretsFromEnv 读取头像存储的密钥。
 //
-// **这是本仓库唯一一组"只有环境变量、没有配置键"的取值**，与开发种子旁路
-// 同类。理由不是"分层对它们没用"，而是让它们**无法**出现在配置文件里：
+// **这是本仓库仅有的两组"只有环境变量、没有配置键"的取值之一**，与开发种子
+// 旁路同类。理由不是"分层对它们没用"，而是让它们**无法**出现在配置文件里：
 // 配置文件会进版本库、进镜像、被贴给别人排查问题，而凭证不可以
 // （见 docs/design/config/credentials.md）。
 //
@@ -273,6 +289,13 @@ func LoadServer(f ServerFlags) (ServerConfig, error) {
 // 由 validateCOS 拒绝启动。
 func cosSecretsFromEnv() (secretID, secretKey string) {
 	return os.Getenv(EnvCOSSecretID), os.Getenv(EnvCOSSecretKey)
+}
+
+// githubClientSecretFromEnv 读取 GitHub 登录的客户端密钥。
+//
+// 与 cosSecretsFromEnv 同理：没有配置键，只从环境变量读（见 validateGithubLogin）。
+func githubClientSecretFromEnv() string {
+	return os.Getenv(EnvGithubClientSecret)
 }
 
 // LoadCLI 合并出 CLI 运行配置。
