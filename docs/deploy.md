@@ -217,6 +217,32 @@ sudo /opt/aladdin/deploy.sh
 
 > **第 2 步是本部署里唯一一处不在本仓库管理的东西。** 浏览器来源白名单只存在于 Google 控制台，仓库里刻意没有对应的配置键。换域名时改的是那里，**忘记改的表现是"换了域名之后登录按钮点了没反应"**，而不是任何一条报错。
 
+### 11. 启用 GitHub 登录（可选）
+
+GitHub 是**重定向型**渠道：它交给浏览器的是一个授权码，服务端要用客户端密钥去换令牌，因此比 Google 多两步配置，且多一处要在渠道侧登记。
+
+1. 在 GitHub 建 **OAuth App**，把 **Authorization callback URL** 填成
+   `https://<域名>/auth/github/callback`
+2. 在 `/opt/aladdin/config.yml` 填入：
+   ```yaml
+   github_client_id: "<OAuth App 的 Client ID>"
+   public_base_url: "https://<域名>"
+   ```
+3. 把客户端密钥放进服务单元的环境文件，**不要**写进 `config.yml`：
+   ```bash
+   sudo install -m 600 /dev/null /opt/aladdin/github.env
+   printf 'ALADDIN_GITHUB_CLIENT_SECRET=%s\n' '<Client Secret>' | sudo tee /opt/aladdin/github.env >/dev/null
+   ```
+   并在服务单元的 `EnvironmentFile=` 里加上它（与 COS 密钥同一份做法，见 [design/config/server-config.md](design/config/server-config.md)）
+4. 确认 nginx 里 `location ^~ /auth/` 转发到服务端（模板已含，见 [../deploy/nginx-aladdin-site.conf](../deploy/nginx-aladdin-site.conf)）
+5. 重启服务，登录页应出现 GitHub 入口
+
+三项（客户端标识、客户端密钥、对外地址）**缺一即拒绝启动**，这是刻意的：半套配置的失败方式是"看起来配好了"，直到有人点了登录才失败。
+
+> 换域名时要同时改三处：GitHub 控制台的授权回调地址、配置里的 `public_base_url`、以及 nginx 的站点域名。**只改其中一处都表现为"点登录没反应"或"回调 404"**，而不是任何一条报错。
+
+**GitHub 登录会得到一个零权限的新主体**，不会自动并入已有的 Google 账号：把两个渠道归到同一个主体是「绑定」这个动作，而绑定重定向型渠道目前尚未支持（见 [design/identity/github-login.md](design/identity/github-login.md) 的待定决策）。
+
 ## 日常发布
 
 ```bash
@@ -299,6 +325,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 部署后健康检查失败并自动回滚 | `deploy.sh` 打印的服务端日志；若含"未知版本"，是迁移与回滚的冲突，见上文"回滚" |
 | 服务端起不来且日志说端口被占 | 9090 被同机别的服务占了，换端口要同时改三处（见"端口"） |
 | 换了域名后登录按钮点了没反应 | Google 控制台的浏览器来源白名单没改 |
+| 点 GitHub 登录没反应或回调 404 | 三处域名只要有一处没改就会这样：GitHub 控制台的授权回调地址、配置里的 `public_base_url`、nginx 站点域名。另需确认 nginx 的 `location ^~ /auth/` 转发到了服务端 |
 | 管理员登录后仍然"没有权限" | 引导是否生效：`sudo journalctl -u aladdin-server \| grep -i 引导`；引导只在存储中无任何绑定时生效 |
 | 数据"看起来全丢了" | 验证真实的数据路径：`sudo journalctl -u aladdin-server \| grep -i 数据库`——启动日志有脱敏后的定位信息 |
 | 服务被 OOM 杀掉后自动重启 | `journalctl -u aladdin-server \| grep -i memory`；单元里的 `MemoryMax` 是保险丝，不是估算 |
@@ -315,7 +342,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 发布产物 | 消费 Release 里的 `linux_amd64` 二进制包与前端包，不自行编译（见 [release.md](release.md)） |
 | 服务端配置 | `deploy.sh` 保证 `/opt/aladdin/config.yml` 存在后才发布 |
 | 持久化 | 备份策略消费 sqlite 的 WAL 语义 |
-| 身份认证 | 首次引导依赖一次真实登录产出的主体标识（见 [design/identity/google-login.md](design/identity/google-login.md)） |
+| 身份认证 | 首次引导依赖一次真实登录产出的主体标识（见 [design/identity/channel-login.md](design/identity/channel-login.md)） |
 | 反向代理 | 提供 TLS 终止、静态托管与到 9090 的转发；具体用什么、443 上还有没有别人，由宿主决定 |
 | 可观测性 | 日志走 journald；`otel_endpoint` 留空表示不上报，链路标识照常生成与传播 |
 | 头像存储 | COS 私有桶；桶地址由 `cos_bucket_url` 给出，密钥由 systemd 的 `EnvironmentFile` 提供（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)） |

@@ -17,9 +17,12 @@ interface LoginFormValues {
  * 页面不参与权限计算。
  *
  * **渲染哪些登录入口由服务端决定**：页面先问一次"启用了哪些登录方式"，
- * 拿到客户端标识才渲染 Google 按钮。未启用时不渲染入口，而不是渲染了再报错——
- * 后者会把一次配置缺失表现成一次功能故障（见
- * docs/design/identity/google-login.md）。
+ * 按返回的清单渲染。未启用的渠道不在清单里，也就不渲染入口——不是渲染了再
+ * 报错，后者会把一次配置缺失表现成一次功能故障（见
+ * docs/design/identity/channel-login.md）。
+ *
+ * 渠道之间的差别只在"怎么拿到凭证"：Google 是浏览器内的登录控件，GitHub 是
+ * 一次整页跳转（它必须由服务端用客户端密钥换取令牌，浏览器给不出可用的码）。
  */
 export function LoginPage(): React.ReactNode {
   const { signIn, signInWithGoogle, status } = useSession()
@@ -28,9 +31,9 @@ export function LoginPage(): React.ReactNode {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // null 表示"还没问到"，空串表示"问到了，未启用"。两者不能混：
+  // null 表示"还没问到"，空数组表示"问到了，没有任何渠道入口"。两者不能混：
   // 前者不该渲染入口，后者同样不该，但只有后者能说明"这是配置结果"。
-  const [googleClientId, setGoogleClientId] = useState<string | null>(null)
+  const [methods, setMethods] = useState<identityApi.AuthMethod[] | null>(null)
 
   const from = (location.state as { from?: string } | null)?.from ?? '/'
 
@@ -38,16 +41,16 @@ export function LoginPage(): React.ReactNode {
     let cancelled = false
     void identityApi
       .getAuthMethods()
-      .then((methods) => {
+      .then((list) => {
         if (!cancelled) {
-          setGoogleClientId(methods.googleClientId)
+          setMethods(list)
         }
       })
       .catch(() => {
-        // 问不到就不渲染任何可选入口，页面仍可用令牌登录。
+        // 问不到就不渲染任何渠道入口，页面仍可用令牌登录。
         // 登录方式查询失败不该让整个登录页不可用。
         if (!cancelled) {
-          setGoogleClientId('')
+          setMethods([])
         }
       })
     return () => {
@@ -81,7 +84,9 @@ export function LoginPage(): React.ReactNode {
     }
   }
 
-  const googleEnabled = googleClientId !== null && googleClientId !== ''
+  const google = methods?.find((m) => m.source === identityApi.AuthSource.Google)
+  const github = methods?.find((m) => m.source === identityApi.AuthSource.Github)
+  const hasChannelEntry = google !== undefined || github !== undefined
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 96 }}>
@@ -92,17 +97,32 @@ export function LoginPage(): React.ReactNode {
         </Typography.Paragraph>
         {error !== null && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
 
-        {googleEnabled && (
+        {google !== undefined && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+            <GoogleSignInButton
+              clientId={google.clientId}
+              onCredential={(idToken) => void handleGoogleCredential(idToken)}
+            />
+          </div>
+        )}
+
+        {github !== undefined && (
+          // 整页跳转，不是一次 RPC：GitHub 的授权码必须由服务端用客户端密钥
+          // 换取，因此这条路绕不开浏览器导航。
+          <Button href="/auth/github/start" block style={{ marginBottom: 8 }}>
+            使用 GitHub 登录
+          </Button>
+        )}
+
+        {hasChannelEntry && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-              <GoogleSignInButton
-                clientId={googleClientId}
-                onCredential={(idToken) => void handleGoogleCredential(idToken)}
-              />
-            </div>
             <Divider plain>
               <Typography.Text type="secondary">或</Typography.Text>
             </Divider>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+              第一次用某个渠道登录会得到一个<Typography.Text strong>新的、没有权限</Typography.Text>
+              的账号；把多个渠道归到同一个账号是「绑定」这个动作，登录本身不做合并。
+            </Typography.Paragraph>
           </>
         )}
 

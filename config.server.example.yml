@@ -82,6 +82,35 @@ cos_bucket_url: ""
 # 换域名时改的是 Google 控制台。
 google_client_id: ""
 
+# GitHub 登录的客户端标识（OAuth App 的 "Client ID"）。
+# 留空或不写这一行表示**未启用** GitHub 登录。
+#
+# GitHub 与 Google 不同：它交给浏览器的是一个**授权码**，因此服务端还要用
+# 客户端密钥去换令牌，且 GitHub 会把浏览器重定向回本服务的一个回调地址。
+# 因此启用它需要三项齐全：本项、下面的 public_base_url、以及环境变量里的
+# ALADDIN_GITHUB_CLIENT_SECRET。只给其中一部分会**拒绝启动**。
+#
+# **回调地址要登记在 GitHub 控制台**（OAuth App 的 Authorization callback URL），
+# 取值是 <public_base_url>/auth/github/callback。反向代理必须把 /auth/ 转发到
+# 服务端而不是前端静态页面，否则点登录会没反应（见 docs/deploy.md）。
+#
+# 客户端密钥与 COS 密钥同理，**只有环境变量这一个来源**：
+#   ALADDIN_GITHUB_CLIENT_SECRET
+github_client_id: ""
+
+# 服务端的**对外地址**，用于构造重定向型登录（目前是 GitHub）的回调地址与
+# 回跳前端的地址。只在启用了重定向型渠道时必填。
+#
+# 它**不是秘密**（只是一个主机名），因此留在配置文件里。写完整来源，不带路径：
+#   https://aladdin.example.com
+# 带路径前缀会衍生出一个同样要登记在渠道控制台里的回调地址，是部署时的陷阱，
+# 因此会被拒绝启动。协议必须 https，本地回环主机（localhost / 127.0.0.1 / ::1）
+# 例外允许 http，使本地开发无需证书。
+#
+# 它**不得由请求头推导**：用 Host / X-Forwarded-Host 构造跳转目标等于给攻击者
+# 一个把会话凭证送到任意主机的原语。
+public_base_url: ""
+
 # 第一个管理员。身份指认（下面两项**互斥**，只能填一个）与作用域必须同时
 # 给出或同时留空，只填一半会拒绝启动。
 #
@@ -99,7 +128,7 @@ bootstrap_admin_subject: ""
 #
 # 它是引导专属的便利写法，**不意味着身份可以按邮箱确定**：登录与绑定两条
 # 路径仍只认渠道签发的不可变标识，邮箱不参与任何一次判定
-# （见 docs/design/identity/google-login.md）。
+# （见 docs/design/identity/channel-login.md）。
 bootstrap_admin_email: ""
 #
 # 这次授予的作用域。写 <global> 表示全局作用域——内部值是空串，而空串在这里

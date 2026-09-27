@@ -40,13 +40,22 @@ func newFakeGoogleToken(subject, email string) *fakeGoogleToken {
 	return &fakeGoogleToken{subject: subject, email: email}
 }
 
-func (f *fakeGoogleToken) Verify(context.Context, string) (identity.GoogleIdentity, error) {
+func (f *fakeGoogleToken) Verify(context.Context, string) (identity.VerifiedIdentity, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
-		return identity.GoogleIdentity{}, f.err
+		return identity.VerifiedIdentity{}, f.err
 	}
-	return identity.GoogleIdentity{Subject: f.subject, Email: f.email}, nil
+	return identity.VerifiedIdentity{ExternalID: f.subject, Display: f.email}, nil
+}
+
+// googleChannel 把假校验器登记成 Google 渠道。
+func googleChannel(verifier identity.TokenVerifier) identity.Channel {
+	return identity.Channel{
+		Source:   identity.SourceGoogle,
+		ClientID: "e2e-google-client",
+		Verifier: verifier,
+	}
 }
 
 // set 换一个渠道身份，模拟"换一个渠道登进来"。
@@ -67,7 +76,7 @@ func (f *fakeGoogleToken) fail(err error) {
 func startIdentityServer(t *testing.T) (*fakeGoogleToken, harness) {
 	t.Helper()
 	fake := newFakeGoogleToken("google-sub-a", "a@example.com")
-	return fake, startServerWith(t, rbac.RoleViewer, testScope, fake)
+	return fake, startServerWith(t, rbac.RoleViewer, testScope, withChannels(googleChannel(fake)))
 }
 
 // connectIdentity 构造一个走 Connect 协议的认证面客户端。

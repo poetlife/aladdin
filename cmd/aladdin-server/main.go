@@ -76,6 +76,29 @@ func run() error {
 		return err
 	}
 
+	// 已启用的登录渠道。未配置客户端标识时各校验器的构造函数返回一个
+	// **真正的 nil**，该渠道被注册表丢弃：这条登录路径整体缺席，而不是
+	// 退化成一个"什么都通过"的校验器。
+	//
+	// 它在这里构造而不是直接内联进 server.New：下面那行启动日志要用它回答
+	// "我改的那几个登录配置到底有没有被读到"——重定向型渠道尤其需要，它要
+	// 三处取值一致，任何一处没读到都表现为"点登录没反应"。
+	channels := identity.NewRegistry(
+		identity.Channel{
+			Source:   identity.SourceGoogle,
+			ClientID: cfg.GoogleClientID,
+			Verifier: identity.NewGoogleVerifier(cfg.GoogleClientID),
+		},
+		identity.Channel{
+			Source:   identity.SourceGithub,
+			ClientID: cfg.GithubClientID,
+			// 回调地址必须与授权时给出的一致，两处都从对外源与同一个
+			// 路径常量派生（见 identity.GithubCallbackPath）。
+			Verifier: identity.NewGithubVerifier(
+				cfg.GithubClientID, cfg.GithubClientSecret, cfg.PublicURL(identity.GithubCallbackPath)),
+		},
+	)
+
 	// 生效配置留痕：这是回答"我改的配置文件到底有没有被读到"的唯一途径，
 	// 而它无法从"服务能启动"这个事实中推断出来。服务端配置中不含凭证，
 	// 因此可以整体入日志。
@@ -91,6 +114,10 @@ func run() error {
 		zap.String("database", database.Describe(cfg.Database)),
 		// 头像存储同理：只记桶地址，**不记密钥**（见 config.COSConfig.Describe）。
 		zap.String("cos", cfg.COS.Describe()),
+		// 已启用的登录方式与对外地址。两项都不是秘密；客户端密钥没有配置键，
+		// 自然也进不来这里。
+		zap.Strings("login_channels", channels.Sources()),
+		zap.String("public_base_url", cfg.PublicBaseURL),
 	)
 
 	// 打开库并迁移，全程发生在监听之前：迁移失败即拒绝启动，不会出现
@@ -124,9 +151,7 @@ func run() error {
 	srv := server.New(cfg, logger, metrics, store, server.IdentityStores{
 		Identities: identities,
 		Sessions:   sessions,
-		// 未配置客户端标识时这里是一个真正的 nil：那条登录路径整体缺席，
-		// 而不是退化成一个"什么都通过"的校验器。
-		Verifier: identity.NewGoogleVerifier(cfg.GoogleClientID),
+		Channels:   channels,
 	}, server.ProfileStores{
 		Profiles: profilegormstore.New(store.DB()),
 		Avatars:  avatars,

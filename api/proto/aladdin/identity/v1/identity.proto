@@ -112,9 +112,23 @@ message GetAuthMethodsRequest {}
 //
 // 只承载公开信息：这里出现的一切都会明文送到浏览器，因此不得放入任何
 // 需要保护的取值。
+//
+// 返回的是**列表**而不是逐个具名字段：新增一个渠道时这里不该再改一次形状，
+// 前端也不该为每个渠道多写一个判断分支（见 docs/design/identity/channel-login.md）。
 message GetAuthMethodsResponse {
-  // Google 登录的客户端标识；为空表示未启用该登录方式，前端不渲染对应入口。
-  string google_client_id = 1;
+  // 已启用的登录渠道，顺序稳定。为空表示没有任何渠道登录方式可用，
+  // 前端据此不渲染任何渠道入口。
+  repeated AuthMethod methods = 1;
+}
+
+// AuthMethod 是一个已启用的登录渠道。
+message AuthMethod {
+  // 渠道来源标识，如 google / github。前端据此决定渲染哪个入口。
+  string source = 1;
+  // 该渠道的公开客户端标识。
+  //
+  // **不是秘密**：它本来就明文出现在浏览器里，这是这类登录方式的设计前提。
+  string client_id = 2;
 }
 
 message LoginResponse {

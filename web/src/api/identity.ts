@@ -1,3 +1,4 @@
+import type { AuthMethod } from '../gen/proto/aladdin/identity/v1/identity_pb'
 import { identityClient } from './transport'
 
 /**
@@ -6,6 +7,8 @@ import { identityClient } from './transport'
  * 请求与响应的类型全部来自 proto 生成（web/src/gen/proto/），
  * 这里只做"把一次调用包成有名字的函数"这一件事。
  */
+
+export type { AuthMethod }
 
 /** 登录并换取访问凭证。这是公开方法，不需要凭证即可调用。 */
 export async function login(token: string) {
@@ -30,15 +33,29 @@ export async function getSessionPermissions(scope: string) {
 }
 
 /**
+ * 渠道来源标识。
+ *
+ * 它们与服务端的 `identity.Source*` 一一对应。前端只在"该渲染哪个入口、
+ * 该往哪个地址跳"这件事上用它们——**身份归属与任何判定都不在前端**。
+ */
+export const AuthSource = {
+  Google: 'google',
+  Github: 'github',
+} as const
+
+/**
  * 查询服务端当前启用了哪些登录方式。
  *
  * 公开方法，不需要凭证——调用方尚未认证，而这正是它要回答的问题的前提。
  *
- * 前端**不得**把客户端标识写进构建产物。它是服务端配置的派生结果，编一份
- * 进来就会与配置漂移，而漂移的表现是"改了服务端配置，前端还在用旧的"。
+ * **它是"有哪些登录方式"的唯一来源**：返回什么就渲染什么，未启用的渠道不在
+ * 返回值里，前端因此不渲染对应入口（见 docs/design/identity/channel-login.md）。
+ * 前端**不得**把渠道清单或客户端标识写进构建产物：那是服务端配置的派生结果，
+ * 编一份进来就会与配置漂移，而漂移的表现是"界面上有个入口，点了一直报错"。
  */
-export async function getAuthMethods() {
-  return identityClient().getAuthMethods({})
+export async function getAuthMethods(): Promise<AuthMethod[]> {
+  const resp = await identityClient().getAuthMethods({})
+  return resp.methods
 }
 
 /**

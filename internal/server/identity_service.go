@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"connectrpc.com/connect"
@@ -23,14 +24,12 @@ type IdentityService struct {
 	engine *rbac.Engine
 	logger *zap.Logger
 
-	// googleClientID 为 Google 登录的客户端标识；为空表示未启用该登录方式。
+	// channels 是**已启用**的登录渠道，是"当前有哪些登录方式"的唯一来源。
 	//
-	// 它不是秘密：这个值本来就明文出现在浏览器里，这是这类登录方式的设计
-	// 前提（见 docs/design/identity/google-login.md）。
-	googleClientID string
-	// verifier 校验渠道签发的身份令牌。未启用时为空——**不装一个"什么都通过"
-	// 的实现**，那会让未启用的登录方式变成一个可用的后门。
-	verifier identity.TokenVerifier
+	// 未启用的渠道根本不在这里，而不是留一个 Verifier 为 nil 的位置——
+	// 一个"装在那里的空实现"迟早会被某条路径直接调用（见 internal/identity
+	// 的 Registry）。
+	channels *identity.Registry
 	// identities 是"一个渠道身份属于哪个主体"的唯一入口。
 	identities *identity.Identities
 	// sessions 是会话凭证的签发与失效入口。
@@ -41,25 +40,23 @@ type IdentityService struct {
 
 // IdentityDeps 是认证面所需的依赖，由 server.New 装配后注入。
 type IdentityDeps struct {
-	Machine        *interceptor.TokenAuthenticator
-	Identities     *identity.Identities
-	Sessions       *identity.Sessions
-	Verifier       identity.TokenVerifier
-	GoogleClientID string
-	Logger         *zap.Logger
+	Machine    *interceptor.TokenAuthenticator
+	Identities *identity.Identities
+	Sessions   *identity.Sessions
+	Channels   *identity.Registry
+	Logger     *zap.Logger
 }
 
 // NewIdentityService 构造认证面服务。
 func NewIdentityService(store rbac.MutableStore, engine *rbac.Engine, deps IdentityDeps) *IdentityService {
 	return &IdentityService{
-		store:          store,
-		engine:         engine,
-		logger:         deps.Logger,
-		googleClientID: deps.GoogleClientID,
-		verifier:       deps.Verifier,
-		identities:     deps.Identities,
-		sessions:       deps.Sessions,
-		machine:        deps.Machine,
+		store:      store,
+		engine:     engine,
+		logger:     deps.Logger,
+		channels:   deps.Channels,
+		identities: deps.Identities,
+		sessions:   deps.Sessions,
+		machine:    deps.Machine,
 	}
 }
 
@@ -69,7 +66,7 @@ func NewIdentityService(store rbac.MutableStore, engine *rbac.Engine, deps Ident
 func (s *IdentityService) Login(ctx context.Context, req *connect.Request[identityv1.LoginRequest]) (*connect.Response[identityv1.LoginResponse], error) {
 	switch cred := req.Msg.GetCredential().(type) {
 	case *identityv1.LoginRequest_Google:
-		return s.loginWithGoogle(ctx, cred.Google.GetIdToken())
+		return s.loginWithChannel(ctx, identity.SourceGoogle, cred.Google.GetIdToken())
 	case *identityv1.LoginRequest_Token:
 		return s.loginWithMachineToken(cred.Token.GetToken())
 	case *identityv1.LoginRequest_Password:
@@ -82,37 +79,47 @@ func (s *IdentityService) Login(ctx context.Context, req *connect.Request[identi
 	}
 }
 
-// loginWithGoogle 校验一份 Google 身份令牌，解析出主体，签发会话。
-//
-// 三步的顺序是有意的：**先校验令牌，再解析主体，最后才签发**。
-// 解析会登记新主体，因此绝不能在校验通过之前发生——否则任何字符串都能
-// 在库里造出一个主体。
-func (s *IdentityService) loginWithGoogle(ctx context.Context, idToken string) (*connect.Response[identityv1.LoginResponse], error) {
-	verified, err := s.verifyGoogle(ctx, idToken)
+// loginWithChannel 校验一份渠道凭证，解析出主体，签发会话。
+func (s *IdentityService) loginWithChannel(ctx context.Context, source, credential string) (*connect.Response[identityv1.LoginResponse], error) {
+	verified, err := s.verify(ctx, source, credential)
 	if err != nil {
-		return nil, err
+		return nil, toLoginConnectError(err)
 	}
-
-	subject, err := s.identities.ResolveOrRegister(ctx, identity.SourceGoogle, verified.Subject, verified.Email)
+	issued, err := s.resolveAndIssue(ctx, source, verified)
 	if err != nil {
 		return nil, toIdentityConnectError(err)
 	}
-
-	issued, err := s.sessions.Issue(ctx, subject)
-	if err != nil {
-		return nil, toIdentityConnectError(err)
-	}
-
-	// 登录留痕含主体标识：它是"这个人现在叫什么"的唯一可检索来源，
-	// 也是建立第一个管理员时人工搬运的那个值。**不含令牌**。
-	s.logger.Info("登录成功",
-		zap.String("source", identity.SourceGoogle),
-		zap.String("subject_id", subject.ID),
-	)
 	return connect.NewResponse(&identityv1.LoginResponse{
 		AccessToken: issued.Token,
 		ExpiresAt:   issued.Session.ExpiresAt.Format(time.RFC3339),
 	}), nil
+}
+
+// resolveAndIssue 是登录与重定向回调**共用**的那段核心：解析主体、签发会话、留痕。
+//
+// 它接受一份**已校验**的身份，自己不做任何校验。调用方必须在校验通过之后
+// 才走到这里——解析会登记新主体，因此绝不能在校验之前发生，否则任何字符串
+// 都能在库里造出一个主体。
+//
+// 两条登录路径（RPC 与浏览器重定向回调）共用它，是为了让"登录成功后要做什么"
+// 只有一份：分开实现迟早会出现"RPC 生效、回调没生效"这类断裂。
+func (s *IdentityService) resolveAndIssue(ctx context.Context, source string, verified identity.VerifiedIdentity) (identity.Issued, error) {
+	subject, err := s.identities.ResolveOrRegister(ctx, source, verified.ExternalID, verified.Display)
+	if err != nil {
+		return identity.Issued{}, err
+	}
+	issued, err := s.sessions.Issue(ctx, subject)
+	if err != nil {
+		return identity.Issued{}, err
+	}
+
+	// 登录留痕含主体标识：它是"这个人现在叫什么"的唯一可检索来源，
+	// 也是建立第一个管理员时人工搬运的那个值。**不含凭证**。
+	s.logger.Info("登录成功",
+		zap.String("source", source),
+		zap.String("subject_id", subject.ID),
+	)
+	return issued, nil
 }
 
 // loginWithMachineToken 用一份机器凭证换访问凭证。
@@ -134,30 +141,39 @@ func (s *IdentityService) loginWithMachineToken(token string) (*connect.Response
 	}), nil
 }
 
-// verifyGoogle 校验一份 Google 身份令牌。
+// verify 按 source 取校验器并校验渠道凭证。
 //
-// 校验器缺失、令牌不成立、提供方不可达三者分别映射到不同的错误码：
-// 前两者是"这条路走不通"，后者是"我们够不着 Google"，返回同一个错误
-// 会让一次外部依赖故障表现成"所有人都登录失败了"。
+// 它只做校验，不登记主体、不签发会话——那两件事在 resolveAndIssue 里，
+// 由调用方在校验通过之后触发。
 //
-// **任何失败都不返回"无权限"**，只返回"未认证"。
-func (s *IdentityService) verifyGoogle(ctx context.Context, idToken string) (identity.GoogleIdentity, error) {
-	if s.verifier == nil {
-		// 未启用时报"未实现"，而不是"凭证无效"：前者说的是这条路没开，
-		// 后者会说成是调用方拿错了令牌。
-		return identity.GoogleIdentity{}, connect.NewError(connect.CodeUnimplemented,
-			errors.New("未启用 Google 登录"))
+// 失败一律返回领域错误，由各入口各自映射成自己的错误形状：登录 RPC 映射成
+// Connect 错误码，浏览器回调映射成一次带错误信息的重定向。
+func (s *IdentityService) verify(ctx context.Context, source, credential string) (identity.VerifiedIdentity, error) {
+	channel, ok := s.channels.Get(source)
+	if !ok {
+		return identity.VerifiedIdentity{}, fmt.Errorf("%w: %s", identity.ErrChannelDisabled, source)
 	}
-	verified, err := s.verifier.Verify(ctx, idToken)
+	return channel.Verifier.Verify(ctx, credential)
+}
+
+// toLoginConnectError 把登录路径上的失败映射为 Connect 错误码。
+//
+// 分类的依据是"调用方该做什么"，而不是错误来自哪一层：
+//
+//   - 渠道未启用 → Unimplemented（这条路没开，换一条）；
+//   - 凭证不成立 → Unauthenticated（**不是**无权限，见 docs/design/rbac）；
+//   - 够不着渠道 → Unavailable（退避重试）。
+func toLoginConnectError(err error) error {
 	switch {
-	case err == nil:
-		return verified, nil
+	case errors.Is(err, identity.ErrChannelDisabled):
+		return connect.NewError(connect.CodeUnimplemented, errors.New("未启用该登录方式"))
 	case errors.Is(err, identity.ErrProviderUnavailable):
-		return identity.GoogleIdentity{}, connect.NewError(connect.CodeUnavailable,
+		return connect.NewError(connect.CodeUnavailable,
 			errors.New("身份提供方暂时不可用，请稍后重试"))
+	case errors.Is(err, identity.ErrInvalidToken):
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("身份凭证无效"))
 	default:
-		return identity.GoogleIdentity{}, connect.NewError(connect.CodeUnauthenticated,
-			errors.New("身份令牌无效"))
+		return toIdentityConnectError(err)
 	}
 }
 
@@ -187,11 +203,19 @@ func (s *IdentityService) Refresh(_ context.Context, req *connect.Request[identi
 // 是因为返回的内容本来就会出现在浏览器里——一个不公开的"有哪些登录方式"
 // 不保护任何东西，只会迫使前端硬编码一份会漂移的副本。
 //
-// **未启用时返回空标识，由前端决定不渲染入口**，而不是渲染了再报错。
+// 清单**由注册表派生**，不在这里逐渠道列举：列举一份就会与"实际装配了哪些
+// 渠道"有两个来源，而它们迟早会漂移，表现为"登录页渲染了一个点了报错的入口"。
+// 未启用的渠道不在注册表里，因此也就不在下发清单里——前端据此不渲染入口。
 func (s *IdentityService) GetAuthMethods(_ context.Context, _ *connect.Request[identityv1.GetAuthMethodsRequest]) (*connect.Response[identityv1.GetAuthMethodsResponse], error) {
-	return connect.NewResponse(&identityv1.GetAuthMethodsResponse{
-		GoogleClientId: s.googleClientID,
-	}), nil
+	channels := s.channels.Methods()
+	methods := make([]*identityv1.AuthMethod, 0, len(channels))
+	for _, ch := range channels {
+		methods = append(methods, &identityv1.AuthMethod{
+			Source:   ch.Source,
+			ClientId: ch.ClientID,
+		})
+	}
+	return connect.NewResponse(&identityv1.GetAuthMethodsResponse{Methods: methods}), nil
 }
 
 // BindIdentity 实现 IdentityService。
@@ -211,18 +235,18 @@ func (s *IdentityService) BindIdentity(ctx context.Context, req *connect.Request
 	}
 	// 与登录**同一个**校验器、同一份校验清单：为绑定另写一套会让
 	// "哪条路径校验得更松"只能靠比对代码来回答。
-	verified, err := s.verifyGoogle(ctx, google.Google.GetIdToken())
+	verified, err := s.verify(ctx, identity.SourceGoogle, google.Google.GetIdToken())
 	if err != nil {
-		return nil, err
+		return nil, toLoginConnectError(err)
 	}
 
-	if err := s.identities.Bind(ctx, subject.ID, identity.SourceGoogle, verified.Subject, verified.Email); err != nil {
+	if err := s.identities.Bind(ctx, subject.ID, identity.SourceGoogle, verified.ExternalID, verified.Display); err != nil {
 		return nil, toIdentityConnectError(err)
 	}
 	s.logger.Info("已绑定登录渠道",
 		zap.String("subject_id", subject.ID),
 		zap.String("source", identity.SourceGoogle),
-		zap.String("identity_id", verified.Subject),
+		zap.String("identity_id", verified.ExternalID),
 	)
 	list, err := s.identityList(ctx, subject.ID)
 	if err != nil {

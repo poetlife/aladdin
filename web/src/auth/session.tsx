@@ -25,6 +25,13 @@ export interface SessionState {
   signIn: (token: string) => Promise<void>
   /** 使用 Google 签发的身份令牌登录。 */
   signInWithGoogle: (idToken: string) => Promise<void>
+  /**
+   * 采纳一份**已经拿到**的会话凭证。
+   *
+   * 重定向型登录渠道（如 GitHub）由服务端完成校验，凭证随一次跳转交回前端，
+   * 前端只在回调页把它取出来交给这里——它不经由任何 RPC，因此不能走 signIn。
+   */
+  adoptSessionToken: (accessToken: string) => Promise<void>
   /** 清除本地凭证。 */
   signOut: () => void
   /** 切换作用域并重新拉取权限码。 */
@@ -142,12 +149,12 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     onUnauthenticated(clear)
   }, [clear])
 
-  // 两条登录路径的差别只在"拿什么去换凭证"，换到之后的动作完全相同：
+  // 各条登录路径的差别只在"拿什么去换凭证"，换到之后的动作完全相同：
   // 落盘、再拉一次会话与权限码。抽出来是为了让"登录成功后要做什么"只有一份，
-  // 将来加第三种登录方式时不会漏掉其中一步。
-  const adoptCredential = useCallback(
-    async (response: { accessToken: string }): Promise<void> => {
-      writeToken(response.accessToken)
+  // 将来加第三条登录路径时不会漏掉其中一步。
+  const adoptToken = useCallback(
+    async (accessToken: string): Promise<void> => {
+      writeToken(accessToken)
       await load()
     },
     [load],
@@ -155,16 +162,16 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
 
   const signIn = useCallback(
     async (token: string): Promise<void> => {
-      await adoptCredential(await identityApi.login(token))
+      await adoptToken((await identityApi.login(token)).accessToken)
     },
-    [adoptCredential],
+    [adoptToken],
   )
 
   const signInWithGoogle = useCallback(
     async (idToken: string): Promise<void> => {
-      await adoptCredential(await identityApi.loginWithGoogle(idToken))
+      await adoptToken((await identityApi.loginWithGoogle(idToken)).accessToken)
     },
-    [adoptCredential],
+    [adoptToken],
   )
 
   const setScope = useCallback(
@@ -189,11 +196,24 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
       error,
       signIn,
       signInWithGoogle,
+      adoptSessionToken: adoptToken,
       signOut: clear,
       setScope,
       refresh: load,
     }),
-    [status, subject, scope, permissions, error, signIn, signInWithGoogle, clear, setScope, load],
+    [
+      status,
+      subject,
+      scope,
+      permissions,
+      error,
+      signIn,
+      signInWithGoogle,
+      adoptToken,
+      clear,
+      setScope,
+      load,
+    ],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

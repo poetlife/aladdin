@@ -6,11 +6,14 @@ import (
 	"sync"
 )
 
-// SourceGoogle 是 Google 这个渠道来源的标识。
+// SourceGoogle 与 SourceGithub 是渠道来源的标识。
 //
-// 它同时是身份别名表里的一个取值：将来接入第二个来源时，两边的身份各归
-// 各位——同一个不可变标识字符串在两个来源下是两个不同的身份，而不是同一个。
-const SourceGoogle = "google"
+// 它们同时是身份别名表里的取值：两个来源的身份各归各位——同一个不可变标识
+// 字符串在两个来源下是两个不同的身份，而不是同一个。
+const (
+	SourceGoogle = "google"
+	SourceGithub = "github"
+)
 
 var (
 	// ErrIdentityNotFound 表示这个渠道身份还不属于任何主体。

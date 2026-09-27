@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 
 import { RequirePermission } from './auth'
 import { AppLayout } from './layouts/AppLayout'
+import { AuthCallbackPage } from './pages/AuthCallbackPage'
 import { ForbiddenPage } from './pages/ForbiddenPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
@@ -25,6 +26,12 @@ import { PermissionCodes } from './gen/permission-codes'
  */
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  // 重定向型登录渠道的回调落点。它必须在 RequirePermission **之外**：
+  // 浏览器刚跳回来时凭证还只在地址的 fragment 里，尚未落盘。
+  //
+  // 它**不在 /auth/ 下**：那一段被反向代理整段转发给服务端（服务端的
+  // 回调端点在 /auth/github/），前端在这里放路由会被服务端接走。
+  { path: '/login/callback', element: <AuthCallbackPage /> },
   { path: '/forbidden', element: <ForbiddenPage /> },
   {
     element: <RequirePermission />,

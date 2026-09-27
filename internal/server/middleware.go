@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"go.uber.org/zap"
 
+	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
@@ -37,6 +38,28 @@ func isInfraProcedure(path string) bool {
 	}
 	return false
 }
+
+// browserEntryPaths 是浏览器直接导航进入的**非 RPC** 入口。
+//
+// 它们与 infraProcedurePrefixes 的区别是**类别**而不是松紧：
+//
+//   - 那份清单里是 Connect 官方组件提供的框架服务，它们**确实是 RPC**，
+//     只是没有 aladdin 的权限注解；
+//   - 这份清单里根本不是 RPC。浏览器导航带不了 Authorization 头，而 rbac 的
+//     方法注解体系回答的是"这是哪个 RPC 方法"——这些路径在 proto 里没有、
+//     也不该有方法描述符，因此必须在 rbac.Resolve 之前放行。
+//
+// 两份清单的边界要守住：**任何 RPC 过程名（形如 /pkg.Service/Method）进入
+// 这份清单都是缺陷**，反之亦然。这份清单同样应当保持极短。
+//
+// 用精确路径而不是前缀：前缀会让将来某个业务路径误吃前缀而被静默放行，
+// 也会让遥测的路径归一失去上界。
+var browserEntryPaths = map[string]bool{
+	identity.GithubStartPath:    true,
+	identity.GithubCallbackPath: true,
+}
+
+func isBrowserEntry(path string) bool { return browserEntryPaths[path] }
 
 // procedureUnmatched 是未落在任何已注册服务下的路径共用的指标属性值。
 //
@@ -175,7 +198,7 @@ type authMiddleware struct {
 func (m *authMiddleware) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if isInfraProcedure(path) {
+		if isInfraProcedure(path) || isBrowserEntry(path) {
 			next.ServeHTTP(w, r)
 			return
 		}

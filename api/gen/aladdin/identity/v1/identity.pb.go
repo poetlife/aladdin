@@ -310,12 +310,16 @@ func (*GetAuthMethodsRequest) Descriptor() ([]byte, []int) {
 //
 // 只承载公开信息：这里出现的一切都会明文送到浏览器，因此不得放入任何
 // 需要保护的取值。
+//
+// 返回的是**列表**而不是逐个具名字段：新增一个渠道时这里不该再改一次形状，
+// 前端也不该为每个渠道多写一个判断分支（见 docs/design/identity/channel-login.md）。
 type GetAuthMethodsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Google 登录的客户端标识；为空表示未启用该登录方式，前端不渲染对应入口。
-	GoogleClientId string `protobuf:"bytes,1,opt,name=google_client_id,json=googleClientId,proto3" json:"google_client_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// 已启用的登录渠道，顺序稳定。为空表示没有任何渠道登录方式可用，
+	// 前端据此不渲染任何渠道入口。
+	Methods       []*AuthMethod `protobuf:"bytes,1,rep,name=methods,proto3" json:"methods,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetAuthMethodsResponse) Reset() {
@@ -348,9 +352,66 @@ func (*GetAuthMethodsResponse) Descriptor() ([]byte, []int) {
 	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *GetAuthMethodsResponse) GetGoogleClientId() string {
+func (x *GetAuthMethodsResponse) GetMethods() []*AuthMethod {
 	if x != nil {
-		return x.GoogleClientId
+		return x.Methods
+	}
+	return nil
+}
+
+// AuthMethod 是一个已启用的登录渠道。
+type AuthMethod struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 渠道来源标识，如 google / github。前端据此决定渲染哪个入口。
+	Source string `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	// 该渠道的公开客户端标识。
+	//
+	// **不是秘密**：它本来就明文出现在浏览器里，这是这类登录方式的设计前提。
+	ClientId      string `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthMethod) Reset() {
+	*x = AuthMethod{}
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthMethod) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthMethod) ProtoMessage() {}
+
+func (x *AuthMethod) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthMethod.ProtoReflect.Descriptor instead.
+func (*AuthMethod) Descriptor() ([]byte, []int) {
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *AuthMethod) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *AuthMethod) GetClientId() string {
+	if x != nil {
+		return x.ClientId
 	}
 	return ""
 }
@@ -366,7 +427,7 @@ type LoginResponse struct {
 
 func (x *LoginResponse) Reset() {
 	*x = LoginResponse{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[6]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -378,7 +439,7 @@ func (x *LoginResponse) String() string {
 func (*LoginResponse) ProtoMessage() {}
 
 func (x *LoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[6]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -391,7 +452,7 @@ func (x *LoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
 func (*LoginResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{6}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *LoginResponse) GetAccessToken() string {
@@ -417,7 +478,7 @@ type RefreshRequest struct {
 
 func (x *RefreshRequest) Reset() {
 	*x = RefreshRequest{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[7]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -429,7 +490,7 @@ func (x *RefreshRequest) String() string {
 func (*RefreshRequest) ProtoMessage() {}
 
 func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[7]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -442,7 +503,7 @@ func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshRequest.ProtoReflect.Descriptor instead.
 func (*RefreshRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{7}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RefreshRequest) GetAccessToken() string {
@@ -462,7 +523,7 @@ type RefreshResponse struct {
 
 func (x *RefreshResponse) Reset() {
 	*x = RefreshResponse{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[8]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -474,7 +535,7 @@ func (x *RefreshResponse) String() string {
 func (*RefreshResponse) ProtoMessage() {}
 
 func (x *RefreshResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[8]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -487,7 +548,7 @@ func (x *RefreshResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshResponse.ProtoReflect.Descriptor instead.
 func (*RefreshResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{8}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RefreshResponse) GetAccessToken() string {
@@ -512,7 +573,7 @@ type WhoAmIRequest struct {
 
 func (x *WhoAmIRequest) Reset() {
 	*x = WhoAmIRequest{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[9]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -524,7 +585,7 @@ func (x *WhoAmIRequest) String() string {
 func (*WhoAmIRequest) ProtoMessage() {}
 
 func (x *WhoAmIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[9]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -537,7 +598,7 @@ func (x *WhoAmIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhoAmIRequest.ProtoReflect.Descriptor instead.
 func (*WhoAmIRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{9}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{10}
 }
 
 type WhoAmIResponse struct {
@@ -553,7 +614,7 @@ type WhoAmIResponse struct {
 
 func (x *WhoAmIResponse) Reset() {
 	*x = WhoAmIResponse{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[10]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -565,7 +626,7 @@ func (x *WhoAmIResponse) String() string {
 func (*WhoAmIResponse) ProtoMessage() {}
 
 func (x *WhoAmIResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[10]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -578,7 +639,7 @@ func (x *WhoAmIResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhoAmIResponse.ProtoReflect.Descriptor instead.
 func (*WhoAmIResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{10}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WhoAmIResponse) GetSubjectId() string {
@@ -612,7 +673,7 @@ type GetSessionPermissionsRequest struct {
 
 func (x *GetSessionPermissionsRequest) Reset() {
 	*x = GetSessionPermissionsRequest{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[11]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -624,7 +685,7 @@ func (x *GetSessionPermissionsRequest) String() string {
 func (*GetSessionPermissionsRequest) ProtoMessage() {}
 
 func (x *GetSessionPermissionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[11]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -637,7 +698,7 @@ func (x *GetSessionPermissionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionPermissionsRequest.ProtoReflect.Descriptor instead.
 func (*GetSessionPermissionsRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{11}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetSessionPermissionsRequest) GetScope() string {
@@ -658,7 +719,7 @@ type GetSessionPermissionsResponse struct {
 
 func (x *GetSessionPermissionsResponse) Reset() {
 	*x = GetSessionPermissionsResponse{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[12]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -670,7 +731,7 @@ func (x *GetSessionPermissionsResponse) String() string {
 func (*GetSessionPermissionsResponse) ProtoMessage() {}
 
 func (x *GetSessionPermissionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[12]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -683,7 +744,7 @@ func (x *GetSessionPermissionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionPermissionsResponse.ProtoReflect.Descriptor instead.
 func (*GetSessionPermissionsResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{12}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetSessionPermissionsResponse) GetScope() string {
@@ -715,7 +776,7 @@ type BindIdentityRequest struct {
 
 func (x *BindIdentityRequest) Reset() {
 	*x = BindIdentityRequest{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[13]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -727,7 +788,7 @@ func (x *BindIdentityRequest) String() string {
 func (*BindIdentityRequest) ProtoMessage() {}
 
 func (x *BindIdentityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[13]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -740,7 +801,7 @@ func (x *BindIdentityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BindIdentityRequest.ProtoReflect.Descriptor instead.
 func (*BindIdentityRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{13}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *BindIdentityRequest) GetCredential() isBindIdentityRequest_Credential {
@@ -783,7 +844,7 @@ type BindIdentityResponse struct {
 
 func (x *BindIdentityResponse) Reset() {
 	*x = BindIdentityResponse{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[14]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +856,7 @@ func (x *BindIdentityResponse) String() string {
 func (*BindIdentityResponse) ProtoMessage() {}
 
 func (x *BindIdentityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[14]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +869,7 @@ func (x *BindIdentityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BindIdentityResponse.ProtoReflect.Descriptor instead.
 func (*BindIdentityResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{14}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *BindIdentityResponse) GetIdentities() []*Identity {
@@ -830,7 +891,7 @@ type UnbindIdentityRequest struct {
 
 func (x *UnbindIdentityRequest) Reset() {
 	*x = UnbindIdentityRequest{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[15]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -842,7 +903,7 @@ func (x *UnbindIdentityRequest) String() string {
 func (*UnbindIdentityRequest) ProtoMessage() {}
 
 func (x *UnbindIdentityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[15]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -855,7 +916,7 @@ func (x *UnbindIdentityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnbindIdentityRequest.ProtoReflect.Descriptor instead.
 func (*UnbindIdentityRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{15}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UnbindIdentityRequest) GetSource() string {
@@ -881,7 +942,7 @@ type UnbindIdentityResponse struct {
 
 func (x *UnbindIdentityResponse) Reset() {
 	*x = UnbindIdentityResponse{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[16]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -893,7 +954,7 @@ func (x *UnbindIdentityResponse) String() string {
 func (*UnbindIdentityResponse) ProtoMessage() {}
 
 func (x *UnbindIdentityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[16]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -906,7 +967,7 @@ func (x *UnbindIdentityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnbindIdentityResponse.ProtoReflect.Descriptor instead.
 func (*UnbindIdentityResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{16}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UnbindIdentityResponse) GetIdentities() []*Identity {
@@ -924,7 +985,7 @@ type ListIdentitiesRequest struct {
 
 func (x *ListIdentitiesRequest) Reset() {
 	*x = ListIdentitiesRequest{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[17]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -936,7 +997,7 @@ func (x *ListIdentitiesRequest) String() string {
 func (*ListIdentitiesRequest) ProtoMessage() {}
 
 func (x *ListIdentitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[17]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -949,7 +1010,7 @@ func (x *ListIdentitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListIdentitiesRequest.ProtoReflect.Descriptor instead.
 func (*ListIdentitiesRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{17}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{18}
 }
 
 type ListIdentitiesResponse struct {
@@ -961,7 +1022,7 @@ type ListIdentitiesResponse struct {
 
 func (x *ListIdentitiesResponse) Reset() {
 	*x = ListIdentitiesResponse{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[18]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -973,7 +1034,7 @@ func (x *ListIdentitiesResponse) String() string {
 func (*ListIdentitiesResponse) ProtoMessage() {}
 
 func (x *ListIdentitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[18]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -986,7 +1047,7 @@ func (x *ListIdentitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListIdentitiesResponse.ProtoReflect.Descriptor instead.
 func (*ListIdentitiesResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{18}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListIdentitiesResponse) GetIdentities() []*Identity {
@@ -1014,7 +1075,7 @@ type Identity struct {
 
 func (x *Identity) Reset() {
 	*x = Identity{}
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[19]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1026,7 +1087,7 @@ func (x *Identity) String() string {
 func (*Identity) ProtoMessage() {}
 
 func (x *Identity) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[19]
+	mi := &file_aladdin_identity_v1_identity_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1039,7 +1100,7 @@ func (x *Identity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Identity.ProtoReflect.Descriptor instead.
 func (*Identity) Descriptor() ([]byte, []int) {
-	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{19}
+	return file_aladdin_identity_v1_identity_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Identity) GetSource() string {
@@ -1081,9 +1142,13 @@ const file_aladdin_identity_v1_identity_proto_rawDesc = "" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"-\n" +
 	"\x10GoogleCredential\x12\x19\n" +
 	"\bid_token\x18\x01 \x01(\tR\aidToken\"\x17\n" +
-	"\x15GetAuthMethodsRequest\"B\n" +
-	"\x16GetAuthMethodsResponse\x12(\n" +
-	"\x10google_client_id\x18\x01 \x01(\tR\x0egoogleClientId\"Q\n" +
+	"\x15GetAuthMethodsRequest\"S\n" +
+	"\x16GetAuthMethodsResponse\x129\n" +
+	"\amethods\x18\x01 \x03(\v2\x1f.aladdin.identity.v1.AuthMethodR\amethods\"A\n" +
+	"\n" +
+	"AuthMethod\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x1b\n" +
+	"\tclient_id\x18\x02 \x01(\tR\bclientId\"Q\n" +
 	"\rLoginResponse\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12\x1d\n" +
 	"\n" +
@@ -1153,7 +1218,7 @@ func file_aladdin_identity_v1_identity_proto_rawDescGZIP() []byte {
 	return file_aladdin_identity_v1_identity_proto_rawDescData
 }
 
-var file_aladdin_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_aladdin_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_aladdin_identity_v1_identity_proto_goTypes = []any{
 	(*LoginRequest)(nil),                  // 0: aladdin.identity.v1.LoginRequest
 	(*PasswordCredential)(nil),            // 1: aladdin.identity.v1.PasswordCredential
@@ -1161,50 +1226,52 @@ var file_aladdin_identity_v1_identity_proto_goTypes = []any{
 	(*GoogleCredential)(nil),              // 3: aladdin.identity.v1.GoogleCredential
 	(*GetAuthMethodsRequest)(nil),         // 4: aladdin.identity.v1.GetAuthMethodsRequest
 	(*GetAuthMethodsResponse)(nil),        // 5: aladdin.identity.v1.GetAuthMethodsResponse
-	(*LoginResponse)(nil),                 // 6: aladdin.identity.v1.LoginResponse
-	(*RefreshRequest)(nil),                // 7: aladdin.identity.v1.RefreshRequest
-	(*RefreshResponse)(nil),               // 8: aladdin.identity.v1.RefreshResponse
-	(*WhoAmIRequest)(nil),                 // 9: aladdin.identity.v1.WhoAmIRequest
-	(*WhoAmIResponse)(nil),                // 10: aladdin.identity.v1.WhoAmIResponse
-	(*GetSessionPermissionsRequest)(nil),  // 11: aladdin.identity.v1.GetSessionPermissionsRequest
-	(*GetSessionPermissionsResponse)(nil), // 12: aladdin.identity.v1.GetSessionPermissionsResponse
-	(*BindIdentityRequest)(nil),           // 13: aladdin.identity.v1.BindIdentityRequest
-	(*BindIdentityResponse)(nil),          // 14: aladdin.identity.v1.BindIdentityResponse
-	(*UnbindIdentityRequest)(nil),         // 15: aladdin.identity.v1.UnbindIdentityRequest
-	(*UnbindIdentityResponse)(nil),        // 16: aladdin.identity.v1.UnbindIdentityResponse
-	(*ListIdentitiesRequest)(nil),         // 17: aladdin.identity.v1.ListIdentitiesRequest
-	(*ListIdentitiesResponse)(nil),        // 18: aladdin.identity.v1.ListIdentitiesResponse
-	(*Identity)(nil),                      // 19: aladdin.identity.v1.Identity
+	(*AuthMethod)(nil),                    // 6: aladdin.identity.v1.AuthMethod
+	(*LoginResponse)(nil),                 // 7: aladdin.identity.v1.LoginResponse
+	(*RefreshRequest)(nil),                // 8: aladdin.identity.v1.RefreshRequest
+	(*RefreshResponse)(nil),               // 9: aladdin.identity.v1.RefreshResponse
+	(*WhoAmIRequest)(nil),                 // 10: aladdin.identity.v1.WhoAmIRequest
+	(*WhoAmIResponse)(nil),                // 11: aladdin.identity.v1.WhoAmIResponse
+	(*GetSessionPermissionsRequest)(nil),  // 12: aladdin.identity.v1.GetSessionPermissionsRequest
+	(*GetSessionPermissionsResponse)(nil), // 13: aladdin.identity.v1.GetSessionPermissionsResponse
+	(*BindIdentityRequest)(nil),           // 14: aladdin.identity.v1.BindIdentityRequest
+	(*BindIdentityResponse)(nil),          // 15: aladdin.identity.v1.BindIdentityResponse
+	(*UnbindIdentityRequest)(nil),         // 16: aladdin.identity.v1.UnbindIdentityRequest
+	(*UnbindIdentityResponse)(nil),        // 17: aladdin.identity.v1.UnbindIdentityResponse
+	(*ListIdentitiesRequest)(nil),         // 18: aladdin.identity.v1.ListIdentitiesRequest
+	(*ListIdentitiesResponse)(nil),        // 19: aladdin.identity.v1.ListIdentitiesResponse
+	(*Identity)(nil),                      // 20: aladdin.identity.v1.Identity
 }
 var file_aladdin_identity_v1_identity_proto_depIdxs = []int32{
 	1,  // 0: aladdin.identity.v1.LoginRequest.password:type_name -> aladdin.identity.v1.PasswordCredential
 	2,  // 1: aladdin.identity.v1.LoginRequest.token:type_name -> aladdin.identity.v1.TokenCredential
 	3,  // 2: aladdin.identity.v1.LoginRequest.google:type_name -> aladdin.identity.v1.GoogleCredential
-	3,  // 3: aladdin.identity.v1.BindIdentityRequest.google:type_name -> aladdin.identity.v1.GoogleCredential
-	19, // 4: aladdin.identity.v1.BindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
-	19, // 5: aladdin.identity.v1.UnbindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
-	19, // 6: aladdin.identity.v1.ListIdentitiesResponse.identities:type_name -> aladdin.identity.v1.Identity
-	0,  // 7: aladdin.identity.v1.IdentityService.Login:input_type -> aladdin.identity.v1.LoginRequest
-	7,  // 8: aladdin.identity.v1.IdentityService.Refresh:input_type -> aladdin.identity.v1.RefreshRequest
-	4,  // 9: aladdin.identity.v1.IdentityService.GetAuthMethods:input_type -> aladdin.identity.v1.GetAuthMethodsRequest
-	9,  // 10: aladdin.identity.v1.IdentityService.WhoAmI:input_type -> aladdin.identity.v1.WhoAmIRequest
-	11, // 11: aladdin.identity.v1.IdentityService.GetSessionPermissions:input_type -> aladdin.identity.v1.GetSessionPermissionsRequest
-	13, // 12: aladdin.identity.v1.IdentityService.BindIdentity:input_type -> aladdin.identity.v1.BindIdentityRequest
-	15, // 13: aladdin.identity.v1.IdentityService.UnbindIdentity:input_type -> aladdin.identity.v1.UnbindIdentityRequest
-	17, // 14: aladdin.identity.v1.IdentityService.ListIdentities:input_type -> aladdin.identity.v1.ListIdentitiesRequest
-	6,  // 15: aladdin.identity.v1.IdentityService.Login:output_type -> aladdin.identity.v1.LoginResponse
-	8,  // 16: aladdin.identity.v1.IdentityService.Refresh:output_type -> aladdin.identity.v1.RefreshResponse
-	5,  // 17: aladdin.identity.v1.IdentityService.GetAuthMethods:output_type -> aladdin.identity.v1.GetAuthMethodsResponse
-	10, // 18: aladdin.identity.v1.IdentityService.WhoAmI:output_type -> aladdin.identity.v1.WhoAmIResponse
-	12, // 19: aladdin.identity.v1.IdentityService.GetSessionPermissions:output_type -> aladdin.identity.v1.GetSessionPermissionsResponse
-	14, // 20: aladdin.identity.v1.IdentityService.BindIdentity:output_type -> aladdin.identity.v1.BindIdentityResponse
-	16, // 21: aladdin.identity.v1.IdentityService.UnbindIdentity:output_type -> aladdin.identity.v1.UnbindIdentityResponse
-	18, // 22: aladdin.identity.v1.IdentityService.ListIdentities:output_type -> aladdin.identity.v1.ListIdentitiesResponse
-	15, // [15:23] is the sub-list for method output_type
-	7,  // [7:15] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	6,  // 3: aladdin.identity.v1.GetAuthMethodsResponse.methods:type_name -> aladdin.identity.v1.AuthMethod
+	3,  // 4: aladdin.identity.v1.BindIdentityRequest.google:type_name -> aladdin.identity.v1.GoogleCredential
+	20, // 5: aladdin.identity.v1.BindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
+	20, // 6: aladdin.identity.v1.UnbindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
+	20, // 7: aladdin.identity.v1.ListIdentitiesResponse.identities:type_name -> aladdin.identity.v1.Identity
+	0,  // 8: aladdin.identity.v1.IdentityService.Login:input_type -> aladdin.identity.v1.LoginRequest
+	8,  // 9: aladdin.identity.v1.IdentityService.Refresh:input_type -> aladdin.identity.v1.RefreshRequest
+	4,  // 10: aladdin.identity.v1.IdentityService.GetAuthMethods:input_type -> aladdin.identity.v1.GetAuthMethodsRequest
+	10, // 11: aladdin.identity.v1.IdentityService.WhoAmI:input_type -> aladdin.identity.v1.WhoAmIRequest
+	12, // 12: aladdin.identity.v1.IdentityService.GetSessionPermissions:input_type -> aladdin.identity.v1.GetSessionPermissionsRequest
+	14, // 13: aladdin.identity.v1.IdentityService.BindIdentity:input_type -> aladdin.identity.v1.BindIdentityRequest
+	16, // 14: aladdin.identity.v1.IdentityService.UnbindIdentity:input_type -> aladdin.identity.v1.UnbindIdentityRequest
+	18, // 15: aladdin.identity.v1.IdentityService.ListIdentities:input_type -> aladdin.identity.v1.ListIdentitiesRequest
+	7,  // 16: aladdin.identity.v1.IdentityService.Login:output_type -> aladdin.identity.v1.LoginResponse
+	9,  // 17: aladdin.identity.v1.IdentityService.Refresh:output_type -> aladdin.identity.v1.RefreshResponse
+	5,  // 18: aladdin.identity.v1.IdentityService.GetAuthMethods:output_type -> aladdin.identity.v1.GetAuthMethodsResponse
+	11, // 19: aladdin.identity.v1.IdentityService.WhoAmI:output_type -> aladdin.identity.v1.WhoAmIResponse
+	13, // 20: aladdin.identity.v1.IdentityService.GetSessionPermissions:output_type -> aladdin.identity.v1.GetSessionPermissionsResponse
+	15, // 21: aladdin.identity.v1.IdentityService.BindIdentity:output_type -> aladdin.identity.v1.BindIdentityResponse
+	17, // 22: aladdin.identity.v1.IdentityService.UnbindIdentity:output_type -> aladdin.identity.v1.UnbindIdentityResponse
+	19, // 23: aladdin.identity.v1.IdentityService.ListIdentities:output_type -> aladdin.identity.v1.ListIdentitiesResponse
+	16, // [16:24] is the sub-list for method output_type
+	8,  // [8:16] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_aladdin_identity_v1_identity_proto_init() }
@@ -1217,7 +1284,7 @@ func file_aladdin_identity_v1_identity_proto_init() {
 		(*LoginRequest_Token)(nil),
 		(*LoginRequest_Google)(nil),
 	}
-	file_aladdin_identity_v1_identity_proto_msgTypes[13].OneofWrappers = []any{
+	file_aladdin_identity_v1_identity_proto_msgTypes[14].OneofWrappers = []any{
 		(*BindIdentityRequest_Google)(nil),
 	}
 	type x struct{}
@@ -1226,7 +1293,7 @@ func file_aladdin_identity_v1_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aladdin_identity_v1_identity_proto_rawDesc), len(file_aladdin_identity_v1_identity_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
