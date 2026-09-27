@@ -242,6 +242,62 @@ func TestGithubCallbackRejectsInvalidCredential(t *testing.T) {
 	}
 }
 
+// 同一份凭据用第二次**不签发会话**。
+//
+// 这条由服务端自己的记录保证，而不是靠浏览器在回调后删掉 cookie——cookie 由
+// 浏览器保管，重放它对我们不是"做不到"的事。
+func TestGithubCallbackRejectsReplayedState(t *testing.T) {
+	srv, fixture := githubFlowHarness(t, testPublicBaseURL, githubChannel(verifierFor("1001")))
+
+	_, cookie := startGithubLogin(t, srv.URL)
+
+	first := callback(t, srv.URL, cookie, "the-code", cookie.Value)
+	if fragmentValue(t, first, frontendTokenFragment) == "" {
+		t.Fatalf("第一次回调没有交付会话凭证: %q", first)
+	}
+
+	second := callback(t, srv.URL, cookie, "the-code", cookie.Value)
+	if fragmentValue(t, second, frontendTokenFragment) != "" {
+		t.Error("同一份凭据的第二次回调仍然交付了会话凭证")
+	}
+	if got := fragmentValue(t, second, frontendErrorFragment); got != githubLoginFailed {
+		t.Errorf("第二次回调的跳转目标 = %q，期望带一个固定的失败标记", second)
+	}
+	if n := fixture.issuedSessions(); n != 1 {
+		t.Errorf("签发了 %d 条会话，期望 1 条", n)
+	}
+}
+
+// cookie 与地址一致、但服务端从没发出过这份凭据时，同样不签发会话。
+//
+// 这把"凭据是否成立"的判据收回服务端：cookie 的取值可以被别的来源写进来
+// （子域、脚本注入），但只有服务端发出过的取值才有对应记录。
+func TestGithubCallbackRejectsUnissuedState(t *testing.T) {
+	srv, fixture := githubFlowHarness(t, testPublicBaseURL, githubChannel(verifierFor("1001")))
+
+	forged := &http.Cookie{Name: githubStateCookie, Value: "forged-state"}
+	location := callback(t, srv.URL, forged, "the-code", forged.Value)
+
+	if fragmentValue(t, location, frontendTokenFragment) != "" {
+		t.Error("服务端没发出过的凭据不得交付会话凭证")
+	}
+	if n := fixture.issuedSessions(); n != 0 {
+		t.Errorf("签发了 %d 条会话，期望 0 条", n)
+	}
+}
+
+// 协议名大小写不敏感：写成 `HTTPS://` 时 cookie 仍须要求加密传输。
+//
+// 按原始字符串的前缀比较会把这一种判成"不要求"，与取值校验的结论相反。
+func TestGithubStartCookieSecureForUppercaseScheme(t *testing.T) {
+	srv, _ := githubFlowHarness(t, "HTTPS://aladdin.example.com", githubChannel(verifierFor("1001")))
+
+	_, cookie := startGithubLogin(t, srv.URL)
+	if !cookie.Secure {
+		t.Error("对外源是 https（只是大小写不同）时 cookie 应当要求加密传输")
+	}
+}
+
 // 未启用该渠道时两个端点都不存在。
 func TestGithubEndpointsAbsentWhenChannelDisabled(t *testing.T) {
 	// 只装 Google：GitHub 这条路整体缺席。

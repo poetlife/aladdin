@@ -211,9 +211,13 @@ func (v *GithubVerifier) fetchIdentity(ctx context.Context, token string) (Verif
 
 // do 发一次请求并读出响应体，把失败归一成两类结论。
 //
-// "我们够不着他"（传输错误、5xx、响应读不出来）归 ErrProviderUnavailable，
-// "他明确说这个凭证不行"（4xx）归 ErrInvalidToken。这两类必须分开：混在一起
+// "我们够不着他"（传输错误、5xx、响应读不出来、限流）归 ErrProviderUnavailable，
+// "他明确说这个凭证不行"（401）归 ErrInvalidToken。这两类必须分开：混在一起
 // 会让一次 GitHub 故障表现成"所有人的凭证都失效了"。
+//
+// **只有 401 是"这份凭证不行"。** 403 不能跟着一起归：GitHub 在触发限流或
+// 滥用检测时也返回 403，那是一次渠道侧的拒绝，报到用户面前会成为"你的凭证
+// 无效"（客户端据此不再重试），与真正的原因相距很远。
 //
 // **响应体绝不进入错误信息**：换令牌的响应体里就装着访问令牌。
 func (v *GithubVerifier) do(req *http.Request) ([]byte, error) {
@@ -229,8 +233,10 @@ func (v *GithubVerifier) do(req *http.Request) ([]byte, error) {
 	}
 
 	switch {
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+	case resp.StatusCode == http.StatusUnauthorized:
 		return nil, fmt.Errorf("%w: %s 拒绝了这份凭证（HTTP %d）", ErrInvalidToken, req.URL.Host, resp.StatusCode)
+	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests:
+		return nil, fmt.Errorf("%w: %s 拒绝了这次请求（HTTP %d）", ErrProviderUnavailable, req.URL.Host, resp.StatusCode)
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
 		return nil, fmt.Errorf("%w: %s 返回 HTTP %d", ErrProviderUnavailable, req.URL.Host, resp.StatusCode)
 	}

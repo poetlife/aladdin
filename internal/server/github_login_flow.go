@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -36,6 +35,12 @@ const (
 	// githubStateBytes 是这份证据的随机字节数：16 字节即 128 位，
 	// 猜中一份有效取值的概率可以忽略。
 	githubStateBytes = 16
+	// githubStateMaxPending 是服务端同时记住的未使用凭据条数上界。
+	//
+	// 发起登录的地址谁都能调，没有上界就等于给了一张可以随便写大的表。
+	// 4096 条远超"十分钟内有四千个登录正在进行"的真实规模，因此正常使用
+	// 碰不到它；碰到它时表现为某一次进行中的登录要重来。
+	githubStateMaxPending = 4096
 
 	// githubLoginFailed 是回跳前端时附在地址上的失败标记。
 	//
@@ -55,11 +60,18 @@ type GithubLoginFlow struct {
 	service *IdentityService
 	cfg     config.ServerConfig
 	logger  *zap.Logger
+	// states 是"凭据用过没有"的唯一答案所在（见 login_states.go）。
+	states *loginStates
 }
 
 // NewGithubLoginFlow 构造 GitHub 的重定向登录流程。
 func NewGithubLoginFlow(service *IdentityService, cfg config.ServerConfig, logger *zap.Logger) *GithubLoginFlow {
-	return &GithubLoginFlow{service: service, cfg: cfg, logger: logger}
+	return &GithubLoginFlow{
+		service: service,
+		cfg:     cfg,
+		logger:  logger,
+		states:  newLoginStates(githubStateTTL, githubStateMaxPending, time.Now),
+	}
 }
 
 // Start 实现起点端点：生成一次性凭据、把浏览器交给 GitHub。
@@ -82,6 +94,9 @@ func (f *GithubLoginFlow) Start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "服务暂时不可用", http.StatusInternalServerError)
 		return
 	}
+	// 先记住再写下 cookie：回调只认这里记过的凭据。"单次使用"与"cookie 相符"
+	// 是两条独立的判断，缺了这条，任何字符串都能伪装成一次登录的凭据。
+	f.states.issue(state)
 	f.setStateCookie(w, state)
 
 	http.Redirect(w, r, identity.GithubAuthorizeURL(channel.ClientID, f.redirectURI(), state), http.StatusFound)
@@ -89,7 +104,7 @@ func (f *GithubLoginFlow) Start(w http.ResponseWriter, r *http.Request) {
 
 // Callback 实现回调端点：确认这次登录由本浏览器发起，再完成登录。
 func (f *GithubLoginFlow) Callback(w http.ResponseWriter, r *http.Request) {
-	// 凭据单次使用：无论成败都先作废它，重复使用同一份凭据不得再次登录。
+	// cookie 先作废：它只在这一次回调上有用。
 	f.clearStateCookie(w)
 
 	if _, ok := f.service.channels.Get(identity.SourceGithub); !ok {
@@ -106,6 +121,14 @@ func (f *GithubLoginFlow) Callback(w http.ResponseWriter, r *http.Request) {
 		// 攻击者可以把自己账号的授权码塞进受害者的浏览器，让服务端为**攻击者
 		// 的主体**签发会话——受害者此后的一切操作都落在攻击者能登录的账号上。
 		f.fail(w, r, "登录凭据缺失或不符")
+		return
+	}
+	// 凭据单次使用：无论接下来成败，先把它从服务端的记录里取走。取走之后同一份
+	// 凭据再来一次就查不到，因此不会第二次签发会话——即便 cookie 还在。
+	if !f.states.consume(state) {
+		// cookie 相符却没有记录：它要么已经用过（重放），要么过期了，要么根本不是
+		// 本服务发出的。三种情况都不该走到签发。
+		f.fail(w, r, "登录凭据已失效或已被使用")
 		return
 	}
 
@@ -189,7 +212,9 @@ func (f *GithubLoginFlow) clearStateCookie(w http.ResponseWriter) {
 // 它由**对外源的协议**决定，而不是写死：写死 true 会让本地回环上的 http 开发
 // 无法登录，写死 false 会让线上少一道防护。
 func (f *GithubLoginFlow) secureCookie() bool {
-	return strings.HasPrefix(f.cfg.PublicBaseURL, "https://")
+	// 从解析后的协议判，而不是按原始字符串的前缀：协议名大小写不敏感，用前缀比较
+	// 会把 `HTTPS://…` 判成不要求加密传输，与取值校验的结论相反。
+	return f.cfg.PublicScheme() == "https"
 }
 
 // newGithubState 生成一份密码学随机的一次性凭据。

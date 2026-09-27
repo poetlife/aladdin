@@ -274,6 +274,20 @@ func (c ServerConfig) PublicURL(path string) string {
 	return strings.TrimSuffix(c.PublicBaseURL, "/") + path
 }
 
+// PublicScheme 返回对外源的协议，**小写**；取值不成立时返回空串。
+//
+// 它是"从对外源取协议"的**唯一实现**：取值校验与"cookie 是否要求加密传输"
+// 都从它派生。两处各读一次原始字符串迟早会分岔——协议名大小写不敏感，而按
+// 字面量比较会认为 `HTTPS://…` 不是 https。空串表示"没有配置"，因此调用方
+// 判等即可，不需要额外区分"没配"与"不合法"。
+func (c ServerConfig) PublicScheme() string {
+	u, err := url.Parse(c.PublicBaseURL)
+	if err != nil {
+		return ""
+	}
+	return u.Scheme
+}
+
 // CLIConfig 是命令行客户端的运行配置。
 //
 // 不含凭证：凭证单独存放、单独保护（见 internal/auth 与

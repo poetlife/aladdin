@@ -218,6 +218,10 @@ func TestGithubVerifierProviderFailuresAreUnavailable(t *testing.T) {
 		"换令牌坏响应体":  func(f *fakeGithub) { f.tokenBody = `not json` },
 		"用户接口 5xx": func(f *fakeGithub) { f.userStatus = http.StatusInternalServerError },
 		"用户接口坏响应体": func(f *fakeGithub) { f.userBody = `not json` },
+		// 限流也是"我们够不着他"，不是"你的凭证不行"：GitHub 触发限流或滥用
+		// 检测时返回 403/429，把它报成凭证无效会让用户以为自己的账号坏了。
+		"用户接口 403（限流）": func(f *fakeGithub) { f.userStatus = http.StatusForbidden },
+		"用户接口 429（限流）": func(f *fakeGithub) { f.userStatus = http.StatusTooManyRequests },
 	}
 	for name, breakIt := range cases {
 		t.Run(name, func(t *testing.T) {
