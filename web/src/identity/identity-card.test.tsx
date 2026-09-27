@@ -137,7 +137,7 @@ it('下一次操作清掉上一次的绑定提示', async () => {
   expect(container.textContent).toContain('已把此前单独登录过')
 
   // 解绑是一次"下一次操作"：点开确认气泡，再点它的确认按钮。
-  const trigger = container.querySelector<HTMLButtonElement>('.ant-list-item button')
+  const trigger = container.querySelector<HTMLButtonElement>('.ant-listy-item button')
   await act(async () => {
     trigger?.click()
   })

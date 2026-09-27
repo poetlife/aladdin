@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Divider, Form, Input, Typography } from 'antd'
+import { Alert, Button, Card, Divider, Form, Input, Space, Typography, theme } from 'antd'
+import { KeyRound, Lamp, LogIn } from 'lucide-react'
 
 import * as identityApi from '../api/identity'
 import { messageOf } from '../api/errors'
@@ -28,6 +29,7 @@ export function LoginPage(): React.ReactNode {
   const { signIn, signInWithGoogle, status } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
+  const { token } = theme.useToken()
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -91,7 +93,12 @@ export function LoginPage(): React.ReactNode {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 96 }}>
       <Card style={{ width: 420 }}>
-        <Typography.Title level={4}>阿拉丁神灯</Typography.Title>
+        <Space size={8} align="center" style={{ marginBottom: 12 }}>
+          <Lamp size={22} color={token.colorPrimary} />
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            阿拉丁神灯
+          </Typography.Title>
+        </Space>
         <Typography.Paragraph type="secondary">
           权限判定发生在服务端。本界面只根据服务端返回的权限码集合做展示裁剪。
         </Typography.Paragraph>
@@ -109,7 +116,7 @@ export function LoginPage(): React.ReactNode {
         {github !== undefined && (
           // 整页跳转，不是一次 RPC：GitHub 的授权码必须由服务端用客户端密钥
           // 换取，因此这条路绕不开浏览器导航。
-          <Button href="/auth/github/start" block style={{ marginBottom: 8 }}>
+          <Button href="/auth/github/start" block icon={<LogIn size={16} />} style={{ marginBottom: 8 }}>
             使用 GitHub 登录
           </Button>
         )}
@@ -133,7 +140,11 @@ export function LoginPage(): React.ReactNode {
             label="访问凭证"
             rules={[{ required: true, message: '请输入访问凭证' }]}
           >
-            <Input.Password placeholder="机器凭证或访问令牌" autoComplete="off" />
+            <Input.Password
+              prefix={<KeyRound size={14} />}
+              placeholder="机器凭证或访问令牌"
+              autoComplete="off"
+            />
           </Form.Item>
           <Button type="primary" htmlType="submit" block loading={submitting || status === 'loading'}>
             登录

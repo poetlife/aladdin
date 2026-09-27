@@ -1,4 +1,5 @@
 import { Button, Result } from 'antd'
+import { House } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 /**
@@ -15,7 +16,7 @@ export function ForbiddenPage(): React.ReactNode {
       title="无权限"
       subTitle="当前作用域下你没有访问该页面所需的权限。若认为这是误判，请联系管理员核对角色授权。"
       extra={
-        <Button type="primary" onClick={() => void navigate('/')}>
+        <Button type="primary" icon={<House size={16} />} onClick={() => void navigate('/')}>
           返回首页
         </Button>
       }

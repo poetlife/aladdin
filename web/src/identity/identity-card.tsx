@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Alert, Button, Card, Divider, List, Popconfirm, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Divider, Flex, Listy, Popconfirm, Space, Tag, Typography } from 'antd'
+import { KeyRound, Link2 } from 'lucide-react'
 
 import * as identityApi from '../api/identity'
 import { messageOf } from '../api/errors'
@@ -91,7 +92,14 @@ export function IdentityCard(): React.ReactNode {
   const bindable = methods.filter((method) => !boundSources.has(method.source))
 
   return (
-    <Card title="登录方式">
+    <Card
+      title={
+        <Space size={8}>
+          <KeyRound size={16} />
+          登录方式
+        </Space>
+      }
+    >
       {result !== null && (
         <Alert
           type="success"
@@ -126,16 +134,24 @@ export function IdentityCard(): React.ReactNode {
         error === null && <Typography.Text type="secondary">正在读取登录方式…</Typography.Text>
       ) : (
         <>
-          <List
-            dataSource={list}
-            locale={{ emptyText: '还没有绑定任何登录方式' }}
-            renderItem={(identity) => {
-              const last = list.length <= 1
-              return (
-                <List.Item
-                  actions={[
+          {list.length === 0 ? (
+            <Typography.Text type="secondary">还没有绑定任何登录方式</Typography.Text>
+          ) : (
+            <Listy
+              items={list}
+              rowKey={(identity) => `${identity.source}:${identity.externalId}`}
+              itemRender={(identity) => {
+                const last = list.length <= 1
+                return (
+                  <Flex justify="space-between" align="center" gap={16}>
+                    <Space orientation="vertical" size={4}>
+                      <Space>
+                        <Tag>{sourceLabel(identity.source)}</Tag>
+                        <Typography.Text>{identity.display || identity.externalId}</Typography.Text>
+                      </Space>
+                      <Typography.Text type="secondary">{identity.externalId}</Typography.Text>
+                    </Space>
                     <Popconfirm
-                      key="unbind"
                       title={`解绑 ${sourceLabel(identity.source)}？`}
                       description="解绑之后它不再进入当前账号，登录时会登记出一个新的零权限主体。"
                       okText="解绑"
@@ -146,22 +162,12 @@ export function IdentityCard(): React.ReactNode {
                       <Button danger type="link" disabled={last}>
                         解绑
                       </Button>
-                    </Popconfirm>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={
-                      <Space>
-                        <Tag>{sourceLabel(identity.source)}</Tag>
-                        <Typography.Text>{identity.display || identity.externalId}</Typography.Text>
-                      </Space>
-                    }
-                    description={identity.externalId}
-                  />
-                </List.Item>
-              )
-            }}
-          />
+                    </Popconfirm>
+                  </Flex>
+                )
+              }}
+            />
+          )}
           {list.length <= 1 && (
             <Typography.Text type="secondary">
               不能解绑最后一个登录方式，否则这个账号将再也进不来。
@@ -171,16 +177,20 @@ export function IdentityCard(): React.ReactNode {
           {bindable.length > 0 && (
             <>
               <Divider plain>绑定新的登录方式</Divider>
-              <Space direction="vertical" size="middle">
+              <Space orientation="vertical" size="middle">
                 {bindable.map((method) => {
                   if (method.source === identityApi.AuthSource.Github) {
                     // 整页跳转：GitHub 的授权码必须由服务端用客户端密钥换取。
                     // 绑定意图只由 purpose 标记表达，归属在回跳后的已认证兑换里决定。
                     return (
-                      <Button key={method.source} href="/auth/github/start?purpose=bind" loading={busy}>
+                      <Button
+                        key={method.source}
+                        href="/auth/github/start?purpose=bind"
+                        icon={<Link2 size={16} />}
+                        loading={busy}
+                      >
                         绑定 GitHub
-                      </Button>
-                    )
+                      </Button>                    )
                   }
                   if (method.source === identityApi.AuthSource.Google) {
                     return (
