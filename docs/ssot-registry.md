@@ -27,6 +27,7 @@
 | 一份渠道凭证是否可信、代表哪个渠道上的哪个身份 | `identity.TokenVerifier` 接口；每个渠道一个实现 | [internal/identity/channel.go](../internal/identity/channel.go)（Google 实现见 [google_verifier.go](../internal/identity/google_verifier.go)、GitHub 见 [github_verifier.go](../internal/identity/github_verifier.go)） |
 | 当前启用了哪些登录渠道 | `identity.Registry` | [internal/identity/channel.go](../internal/identity/channel.go) |
 | 一个 HTTP 路径是不是浏览器直连的非 RPC 入口 | `isBrowserEntry` | [internal/server/middleware.go](../internal/server/middleware.go) |
+| 一份浏览器直连登录的凭据是否用过、是否还有效 | `loginStates` | [internal/server/login_states.go](../internal/server/login_states.go) |
 | 一个渠道身份属于哪个主体 | 身份的解析入口（按（来源，身份标识）查别名，未命中才登记主体） | [internal/identity/identity_resolver.go](../internal/identity/identity_resolver.go) |
 | 一份会话凭证是否有效、代表谁 | 会话存储的查询入口 | [internal/identity/session.go](../internal/identity/session.go) |
 | 某个邮箱（展示值）对应哪些已登记身份 | 身份别名的按展示值查询 | [internal/identity/identity.go](../internal/identity/identity.go) |

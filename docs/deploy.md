@@ -234,7 +234,7 @@ GitHub 是**重定向型**渠道：它交给浏览器的是一个授权码，服
    printf 'ALADDIN_GITHUB_CLIENT_SECRET=%s\n' '<Client Secret>' | sudo tee /opt/aladdin/github.env >/dev/null
    ```
    并在服务单元的 `EnvironmentFile=` 里加上它（与 COS 密钥同一份做法，见 [design/config/server-config.md](design/config/server-config.md)）
-4. 确认 nginx 里 `location ^~ /auth/` 转发到服务端（模板已含，见 [../deploy/nginx-aladdin-site.conf](../deploy/nginx-aladdin-site.conf)）
+4. 确认 nginx 里 `location ^~ /auth/` 转发到服务端，且这一条里带 `access_log off`（模板已含，见 [../deploy/nginx-aladdin-site.conf](../deploy/nginx-aladdin-site.conf)）——回调地址里带着授权码与登录凭据，默认的访问日志格式会把它们写进日志
 5. 重启服务，登录页应出现 GitHub 入口
 
 三项（客户端标识、客户端密钥、对外地址）**缺一即拒绝启动**，这是刻意的：半套配置的失败方式是"看起来配好了"，直到有人点了登录才失败。
@@ -325,7 +325,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 部署后健康检查失败并自动回滚 | `deploy.sh` 打印的服务端日志；若含"未知版本"，是迁移与回滚的冲突，见上文"回滚" |
 | 服务端起不来且日志说端口被占 | 9090 被同机别的服务占了，换端口要同时改三处（见"端口"） |
 | 换了域名后登录按钮点了没反应 | Google 控制台的浏览器来源白名单没改 |
-| 点 GitHub 登录没反应或回调 404 | 三处域名只要有一处没改就会这样：GitHub 控制台的授权回调地址、配置里的 `public_base_url`、nginx 站点域名。另需确认 nginx 的 `location ^~ /auth/` 转发到了服务端 |
+| 点 GitHub 登录没反应或回调 404 | 三处域名只要有一处没改就会这样：GitHub 控制台的授权回调地址、配置里的 `public_base_url`、nginx 站点域名。另需确认 nginx 的 `location ^~ /auth/` 转发到了服务端。**这条路径刻意不记 nginx 访问日志**（地址里带着授权码与凭据），因此"请求有没有打到服务端"要看服务端日志：走对了会有登录成功或"登录未完成"的留痕；走错了才会在 `location /` 的访问日志里留下一条 200 |
 | 管理员登录后仍然"没有权限" | 引导是否生效：`sudo journalctl -u aladdin-server \| grep -i 引导`；引导只在存储中无任何绑定时生效 |
 | 数据"看起来全丢了" | 验证真实的数据路径：`sudo journalctl -u aladdin-server \| grep -i 数据库`——启动日志有脱敏后的定位信息 |
 | 服务被 OOM 杀掉后自动重启 | `journalctl -u aladdin-server \| grep -i memory`；单元里的 `MemoryMax` 是保险丝，不是估算 |
