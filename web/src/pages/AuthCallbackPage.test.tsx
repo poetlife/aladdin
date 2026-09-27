@@ -93,6 +93,19 @@ describe('重定向登录的回调页', () => {
     expect(container.querySelector('[data-testid="home"]')).toBeNull()
   })
 
+  it('服务端不认这份凭证时给出提示，而不是静默回到登录页', async () => {
+    // 凭证随跳转交回，但用不了（例如已失效）。会话层把失败收敛成"未登录"，
+    // 本页必须自己确认结果，否则用户只会被弹回登录页且看不到任何解释。
+    vi.mocked(identityApi.whoAmI).mockRejectedValue(new Error('凭证已失效，请重新登录'))
+
+    const container = await renderCallbackPage('#token=a-stale-token')
+
+    expect(container.textContent).toContain('凭证已失效')
+    expect(container.querySelector('[data-testid="home"]')).toBeNull()
+    // 用不了的凭证不该留在本地存储里。
+    expect(globalThis.localStorage?.getItem('aladdin.token')).toBeNull()
+  })
+
   it('地址里什么都没有时明确说明这不是回调地址，而不是永远转圈', async () => {
     const container = await renderCallbackPage('')
 
