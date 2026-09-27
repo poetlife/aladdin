@@ -1,16 +1,11 @@
-import { Avatar, Button, Dropdown, Input, Layout, Space, theme } from 'antd'
-import type { MenuProps } from 'antd'
-import { Building2, ChevronDown, CircleUserRound, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Button, Input, Layout, theme } from 'antd'
+import { Building2, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 import { useSession } from '../auth'
-import { avatarFallbackInitial, useProfile } from '../profile'
 import { ThemeSwitch } from '../theme'
 
 const { Header } = Layout
-
-const ICON_SIZE = 16
 
 interface AppHeaderProps {
   /** 侧边栏当前是否收起。 */
@@ -20,30 +15,19 @@ interface AppHeaderProps {
 }
 
 /**
- * 页头：折叠开关与当前会话的工具区。
+ * 页头：与**当前视图**相关的控件——折叠开关、作用域、主题。
+ *
+ * 账号入口不在这里，在侧边栏底部（见 AppLayout.tsx）：它回答的是"我是谁"，
+ * 与导航同类，因此与导航同处一侧。
  *
  * 背景与分隔线取自 `theme.useToken()`，而不是 antd 的 `Layout.Header` 默认值——
  * 后者是硬编码的深色 `#001529`，不随明暗算法变化，会在亮色主题下留一条深色带。
  */
 export function AppHeader({ collapsed, onToggleCollapsed }: AppHeaderProps): React.ReactNode {
-  const navigate = useNavigate()
   const { token } = theme.useToken()
-  const { subject, scope, setScope, signOut } = useSession()
-  const { profile } = useProfile()
+  const { scope, setScope } = useSession()
 
   const [scopeDraft, setScopeDraft] = useState(scope)
-
-  // 展示名由服务端算好（未设昵称时回退到渠道标识）。它还没到时先显示主体
-  // 标识——那正是回退规则的最后一档，因此不是一个"错的中间态"，
-  // 只是暂时停在了最后一档。
-  const displayName = profile?.displayName ?? subject?.subjectId ?? '未登录'
-  const avatarUrl = profile?.avatarUrl ?? ''
-
-  const accountItems: MenuProps['items'] = [
-    { key: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
-    { type: 'divider' },
-    { key: 'sign-out', label: '退出登录', icon: <LogOut size={ICON_SIZE} />, danger: true },
-  ]
 
   async function applyScope(): Promise<void> {
     if (scopeDraft !== scope) {
@@ -101,32 +85,6 @@ export function AppHeader({ collapsed, onToggleCollapsed }: AppHeaderProps): Rea
         />
 
         <ThemeSwitch />
-
-        <Dropdown
-          placement="bottomRight"
-          trigger={['click']}
-          menu={{
-            items: accountItems,
-            onClick: ({ key }) => {
-              if (key === 'sign-out') {
-                signOut()
-                void navigate('/login')
-                return
-              }
-              void navigate(key)
-            },
-          }}
-        >
-          <Button type="text" style={{ height: 40, paddingInline: 8 }}>
-            <Space size={8} align="center">
-              <Avatar size="small" src={avatarUrl === '' ? undefined : avatarUrl}>
-                {avatarFallbackInitial(displayName)}
-              </Avatar>
-              <span>{displayName}</span>
-              <ChevronDown size={14} />
-            </Space>
-          </Button>
-        </Dropdown>
       </div>
     </Header>
   )

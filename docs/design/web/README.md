@@ -37,11 +37,13 @@
 
 ## 外壳
 
-侧边栏（品牌区 + 导航）与页头（折叠开关、作用域、主题切换、账号）构成外壳，业务页面挂在其内部。外壳本身只要**已认证**——零权限的主体也进得来，界面是空的（见 [../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)）。
+侧边栏（品牌区 + 导航 + 账号）与页头（折叠开关、作用域、主题切换）构成外壳，业务页面挂在其内部。外壳本身只要**已认证**——零权限的主体也进得来，界面是空的（见 [../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)）。
+
+账号区（头像、展示名、退出登录）钉在侧边栏底部，与导航同处一侧：它与导航回答的是同一类问题——"我是谁、要去哪一页"；页头留给与当前视图相关的控件（折叠、作用域、主题）。侧边栏收起时账号区只留头像。
 
 导航项按权限裁剪：无权限的入口**不渲染**而不是置灰，避免导航栏被大量无权项占据。
 
 ## 相关
 
 - 前端权限裁剪的边界：[../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)
-- 页头显示的展示名与头像从哪来：[../profile/README.md](../profile/README.md)
+- 账号区显示的展示名与头像从哪来：[../profile/README.md](../profile/README.md)
