@@ -106,12 +106,18 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	machine := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
 
+	// 生命周期锁同时交给"空主体认领"与"角色授予"：两件事必须对同一个
+	// 主体串行，否则会出现身份已移走、角色还留在原主体的搁浅（见
+	// subject_lifecycle_gate.go）。
+	lifecycleGate := &subjectLifecycleGate{}
 	identitySrv := NewIdentityService(store, engine, IdentityDeps{
-		Machine:    machine,
-		Identities: ident.Identities,
-		Sessions:   ident.Sessions,
-		Channels:   ident.Channels,
-		Logger:     logger,
+		Machine:         machine,
+		Identities:      ident.Identities,
+		Sessions:        ident.Sessions,
+		Channels:        ident.Channels,
+		Logger:          logger,
+		PendingBindings: newPendingBindings(time.Now, cfg.PublicScheme() == "https"),
+		LifecycleGate:   lifecycleGate,
 	})
 
 	// 档案对身份模块的依赖是**只读**的：展示名回退的第二步要取该主体的渠道
@@ -149,7 +155,7 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	opts := []connect.HandlerOption{
 		connect.WithInterceptors(authorizer.Interceptor()),
 	}
-	rbacPath, rbacHandler := rbacv1connect.NewRBACServiceHandler(NewRBACService(store, engine), opts...)
+	rbacPath, rbacHandler := rbacv1connect.NewRBACServiceHandler(NewRBACService(store, engine, lifecycleGate), opts...)
 	register(rbacPath, rbacHandler)
 
 	identityPath, identityHandler := identityv1connect.NewIdentityServiceHandler(identitySrv, opts...)

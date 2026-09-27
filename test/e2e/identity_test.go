@@ -266,18 +266,30 @@ func TestBoundChannelLogsIntoSameSubject(t *testing.T) {
 //
 // 第一个人已经占住那个身份，第二个人再拿同一份令牌来绑，撞上唯一归属。
 // 若这里返回成功，就意味着任何拿到他人令牌的人都能把别人的进入方式夺走。
+//
+// 第一个人在这里必须是**非空主体**：只有一条身份的空主体会被认领而不是拒绝
+// ——两条凭证到达方式的归属语义完全相同（认领见 TestBindIdentityReclaimsVacantChannel）。
 func TestBindIdentityRefusesTakenChannel(t *testing.T) {
 	fake, h := startIdentityServer(t)
 
-	// 第一个人匿名登录一次，占住 google-sub-a。
-	anon, anonCtx := grpcIdentity(t, h, "")
-	loginGoogle(t, anon, anonCtx)
+	// 第一个人登录一次，占住 google-sub-a。
+	firstClient, firstCtx, _ := loginOverGRPC(t, h)
+
+	// 再给他绑上第二个渠道，使他不再是空主体。
+	fake.set("google-sub-a2", "a2@example.com")
+	if _, err := firstClient.BindIdentity(firstCtx, &identityv1.BindIdentityRequest{
+		Credential: &identityv1.BindIdentityRequest_Google{
+			Google: &identityv1.GoogleCredential{IdToken: "第一个人的第二个令牌"},
+		},
+	}); err != nil {
+		t.Fatalf("给第一个人绑定第二个渠道失败: %v", err)
+	}
 
 	// 第二个人登录，并**带上自己的凭证**（绑定需要已认证的调用方）。
 	fake.set("google-sub-b", "b@example.com")
 	secondClient, secondCtx, _ := loginOverGRPC(t, h)
 
-	// 第二个人拿**第一人**的令牌发起绑定。
+	// 第二个人拿**第一人**的令牌发起绑定：第一个人非空，必须拒绝。
 	fake.set("google-sub-a", "a@example.com")
 	_, err := secondClient.BindIdentity(secondCtx, &identityv1.BindIdentityRequest{
 		Credential: &identityv1.BindIdentityRequest_Google{
@@ -286,6 +298,65 @@ func TestBindIdentityRefusesTakenChannel(t *testing.T) {
 	})
 	if got := rpcCode(err); got != codeAlreadyExists {
 		t.Fatalf("错误码 = %d，期望 AlreadyExists（%v）", got, err)
+	}
+}
+
+// 搬运型（Google）与重定向型共用同一处归属实现：已属于空主体的身份同样被认领。
+//
+// 两条路径的差别只在凭证怎么到达服务端。若为其中一条另写一份实现，就会出现
+// "GitHub 能认领、Google 不能"的断裂，而用户看到的是一个再也解不开的死结。
+func TestBindIdentityReclaimsVacantChannel(t *testing.T) {
+	fake, h := startIdentityServer(t)
+
+	// 第一个人单独登录，得到一个只有 google-sub-a 的零权限主体。
+	throwawayClient, throwawayCtx, _ := loginOverGRPC(t, h)
+	throwaway, err := throwawayClient.WhoAmI(throwawayCtx, &identityv1.WhoAmIRequest{})
+	if err != nil {
+		t.Fatalf("WhoAmI 失败: %v", err)
+	}
+
+	// 第二个人登录（占住 google-sub-b）。
+	fake.set("google-sub-b", "b@example.com")
+	secondClient, secondCtx, _ := loginOverGRPC(t, h)
+	second, err := secondClient.WhoAmI(secondCtx, &identityv1.WhoAmIRequest{})
+	if err != nil {
+		t.Fatalf("WhoAmI 失败: %v", err)
+	}
+	if second.GetSubjectId() == throwaway.GetSubjectId() {
+		t.Fatal("夹具坏了：两个渠道登录到了同一个主体")
+	}
+
+	// 第二个人拿**第一人**的令牌绑定：第一人是空主体，应当被认领。
+	fake.set("google-sub-a", "a@example.com")
+	resp, err := secondClient.BindIdentity(secondCtx, &identityv1.BindIdentityRequest{
+		Credential: &identityv1.BindIdentityRequest_Google{
+			Google: &identityv1.GoogleCredential{IdToken: "第一个人的令牌"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("认领失败: %v", err)
+	}
+	if !resp.GetReclaimed() {
+		t.Error("发生了认领，reclaimed 却为 false")
+	}
+
+	// 原主体只剩零身份。
+	left, err := throwawayClient.ListIdentities(throwawayCtx, &identityv1.ListIdentitiesRequest{})
+	if err != nil {
+		t.Fatalf("列出原主体失败: %v", err)
+	}
+	if n := len(left.GetIdentities()); n != 0 {
+		t.Errorf("原主体还剩 %d 条身份，期望 0", n)
+	}
+
+	// 再用这个渠道登录，得到的应当是第二个人的主体。
+	againClient, againCtx, _ := loginOverGRPC(t, h)
+	again, err := againClient.WhoAmI(againCtx, &identityv1.WhoAmIRequest{})
+	if err != nil {
+		t.Fatalf("WhoAmI 失败: %v", err)
+	}
+	if again.GetSubjectId() != second.GetSubjectId() {
+		t.Errorf("再次登录得到 %q，期望 %q", again.GetSubjectId(), second.GetSubjectId())
 	}
 }
 

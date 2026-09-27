@@ -131,11 +131,13 @@ func newIdentityServiceOn(
 	logger *zap.Logger,
 ) *IdentityService {
 	return NewIdentityService(subjects, rbac.NewEngine(subjects, logger, nil), IdentityDeps{
-		Machine:    interceptor.NewTokenAuthenticator(),
-		Identities: identity.NewIdentities(identityStore, subjects),
-		Sessions:   sessions,
-		Channels:   identity.NewRegistry(channels...),
-		Logger:     logger,
+		Machine:         interceptor.NewTokenAuthenticator(),
+		Identities:      identity.NewIdentities(identityStore, subjects),
+		Sessions:        sessions,
+		Channels:        identity.NewRegistry(channels...),
+		Logger:          logger,
+		PendingBindings: newPendingBindings(time.Now, false),
+		LifecycleGate:   &subjectLifecycleGate{},
 	})
 }
 
@@ -311,7 +313,10 @@ func TestBindIdentityRequiresCredential(t *testing.T) {
 	}
 }
 
-// 一个身份已经属于别人时拒绝，且**不透露占用者**。
+// 一个身份已经属于**非空**主体时拒绝，且**不透露占用者**。
+//
+// 这里必须让第一个人不是空主体：搬运型与重定向型共用同一处归属实现，空主体的
+// 身份会被认领而不是拒绝（见 TestBindIdentityReclaimsVacantSubject）。
 func TestBindIdentityRejectsTakenIdentity(t *testing.T) {
 	// 第一个人先登录，占住 google-sub-a。
 	first := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
@@ -319,6 +324,14 @@ func TestBindIdentityRejectsTakenIdentity(t *testing.T) {
 	firstSubject, err := first.service.sessions.Verify(context.Background(), firstLogin.GetAccessToken())
 	if err != nil {
 		t.Fatalf("会话不可用: %v", err)
+	}
+	// 一条角色绑定就让"空主体"不再成立：认领只对零角色的主体开放。
+	if err := first.subjects.Bind(context.Background(), rbac.RoleBinding{
+		SubjectID: firstSubject.ID,
+		RoleID:    rbac.RoleViewer,
+		Scope:     rbac.GlobalScope,
+	}); err != nil {
+		t.Fatalf("授予角色失败: %v", err)
 	}
 
 	// 第二个人在同一套存储上登录（占住 google-sub-b），再用第一人的令牌发起绑定：
@@ -340,6 +353,76 @@ func TestBindIdentityRejectsTakenIdentity(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), firstSubject.ID) {
 		t.Errorf("错误信息泄露了占用者：%q", err.Error())
+	}
+}
+
+// 搬运型（Google）与重定向型共用同一处归属实现：已属于空主体的身份同样被认领。
+//
+// 两条路径的差别只在凭证怎么到达服务端；归属与认领若各写一份，就会出现
+// "GitHub 能认领、Google 不能"的断裂（见 docs/design/identity/identity-linking.md）。
+func TestBindIdentityReclaimsVacantSubject(t *testing.T) {
+	// 第一个人先单独登录，得到一个只有 google-sub-a 的零权限主体。
+	throwaway := newIdentityFixture(t, googleChannel(verifierFor("google-sub-a")))
+	throwawayLogin := throwaway.loginAs(t)
+	throwawaySubject, err := throwaway.service.sessions.Verify(context.Background(), throwawayLogin.GetAccessToken())
+	if err != nil {
+		t.Fatalf("会话不可用: %v", err)
+	}
+
+	// 第二个人登录（占住 google-sub-b），再用解出 google-sub-a 的令牌发起绑定：
+	// 发起者是第二个人，因此认领落在第二个人的主体上。
+	secondLogin := loginAs(t, throwaway.as(googleChannel(verifierFor("google-sub-b"))), "第二个人的令牌")
+	secondSubject, err := throwaway.sessions.Verify(context.Background(), secondLogin.GetAccessToken())
+	if err != nil {
+		t.Fatalf("会话不可用: %v", err)
+	}
+	ctx := caller(t, throwaway.sessions, secondLogin.GetAccessToken())
+
+	binder := throwaway.as(googleChannel(verifierFor("google-sub-a")))
+	resp, err := binder.BindIdentity(ctx, connect.NewRequest(&identityv1.BindIdentityRequest{
+		Credential: &identityv1.BindIdentityRequest_Google{
+			Google: &identityv1.GoogleCredential{IdToken: "第一个人的令牌"},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("认领失败: %v", err)
+	}
+	if !resp.Msg.GetReclaimed() {
+		t.Error("发生了认领，reclaimed 却为 false")
+	}
+
+	owner, err := throwaway.identityStore.Lookup(context.Background(), identity.SourceGoogle, "google-sub-a")
+	if err != nil {
+		t.Fatalf("读取归属失败: %v", err)
+	}
+	if owner.SubjectID != secondSubject.ID {
+		t.Errorf("认领后归属 = %q，期望 %q", owner.SubjectID, secondSubject.ID)
+	}
+
+	// 原主体只剩零身份、零角色。
+	left, err := binder.identities.List(context.Background(), throwawaySubject.ID)
+	if err != nil {
+		t.Fatalf("列出原主体失败: %v", err)
+	}
+	if len(left) != 0 {
+		t.Errorf("原主体还剩 %d 条身份，期望 0", len(left))
+	}
+	bindings, err := throwaway.subjects.SubjectBindings(context.Background(), throwawaySubject.ID)
+	if err != nil {
+		t.Fatalf("读取原主体角色失败: %v", err)
+	}
+	if len(bindings) != 0 {
+		t.Errorf("原主体带着 %d 条角色绑定，期望 0", len(bindings))
+	}
+
+	// 再用这个渠道登录，得到的应当是第二个人（也就是发起认领的那个）的主体。
+	resolver := identity.NewIdentities(throwaway.identityStore, throwaway.subjects)
+	again, err := resolver.ResolveOrRegister(context.Background(), identity.SourceGoogle, "google-sub-a", "")
+	if err != nil {
+		t.Fatalf("再次解析失败: %v", err)
+	}
+	if again.ID != secondSubject.ID {
+		t.Errorf("再次登录得到 %q，期望 %q", again.ID, secondSubject.ID)
 	}
 }
 
@@ -467,4 +550,305 @@ func (failingSessionStore) Delete(context.Context, string) error { return errSes
 
 func (failingSessionStore) DeleteExpired(context.Context, time.Time) (int64, error) {
 	return 0, errSessionStoreBoom
+}
+
+// pendingBindingRequest 造一份"带着待绑定 cookie"的兑换请求。
+func pendingBindingRequest(token string) *connect.Request[identityv1.CompleteIdentityBindingRequest] {
+	req := connect.NewRequest(&identityv1.CompleteIdentityBindingRequest{
+		Source: identity.SourceGithub,
+	})
+	req.Header().Set("Cookie", (&http.Cookie{Name: pendingBindingCookie, Value: token}).String())
+	return req
+}
+
+// registerGithubThrowaway 直接在存储上登记一个只有 GitHub 身份的零权限主体，
+// 模拟"先用 GitHub 单独登录过一次"。
+func registerGithubThrowaway(t *testing.T, fixture identityFixture, externalID string) rbac.Subject {
+	t.Helper()
+	resolver := identity.NewIdentities(fixture.identityStore, fixture.subjects)
+	subject, err := resolver.ResolveOrRegister(context.Background(), identity.SourceGithub, externalID, "octo")
+	if err != nil {
+		t.Fatalf("登记 GitHub 主体失败: %v", err)
+	}
+	return subject
+}
+
+// 兑换一份已校验身份，把它绑到**当前会话**代表的主体上。
+func TestCompleteIdentityBindingBindsToCaller(t *testing.T) {
+	fixture := newIdentityFixture(t, googleChannel(verifierFor("g-a")))
+	login := fixture.loginAs(t)
+	ctx := caller(t, fixture.sessions, login.GetAccessToken())
+	subject, err := fixture.sessions.Verify(context.Background(), login.GetAccessToken())
+	if err != nil {
+		t.Fatalf("会话不可用: %v", err)
+	}
+
+	token, err := fixture.service.stagePendingBinding(identity.SourceGithub, identity.VerifiedIdentity{
+		ExternalID: "gh-a",
+		Display:    "octo",
+	})
+	if err != nil {
+		t.Fatalf("登记待绑定凭据失败: %v", err)
+	}
+	resp, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+	if err != nil {
+		t.Fatalf("兑换失败: %v", err)
+	}
+	if resp.Msg.GetReclaimed() {
+		t.Error("没有发生认领，reclaimed 却为 true")
+	}
+	if cookies := resp.Header().Values("Set-Cookie"); len(cookies) == 0 || !strings.Contains(cookies[0], pendingBindingCookie+"=") {
+		t.Errorf("兑换成功后没有清掉浏览器侧凭据: %v", cookies)
+	}
+
+	owner, err := fixture.identityStore.Lookup(context.Background(), identity.SourceGithub, "gh-a")
+	if err != nil {
+		t.Fatalf("读取归属失败: %v", err)
+	}
+	if owner.SubjectID != subject.ID {
+		t.Errorf("归属 = %q，期望 %q", owner.SubjectID, subject.ID)
+	}
+}
+
+// 没有会话时不能兑换；而且这份凭据不会被这次未认证的尝试消耗。
+func TestCompleteIdentityBindingRequiresSession(t *testing.T) {
+	fixture := newIdentityFixture(t, googleChannel(verifierFor("g-a")))
+	token, err := fixture.service.stagePendingBinding(identity.SourceGithub, identity.VerifiedIdentity{ExternalID: "gh-a"})
+	if err != nil {
+		t.Fatalf("登记待绑定凭据失败: %v", err)
+	}
+
+	if _, err := fixture.service.CompleteIdentityBinding(context.Background(), pendingBindingRequest(token)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("code = %v，期望 Unauthenticated（err=%v）", connect.CodeOf(err), err)
+	}
+
+	// 未认证的尝试没有读走凭据：拿到会话之后仍可兑换。
+	login := fixture.loginAs(t)
+	if _, err := fixture.service.CompleteIdentityBinding(
+		caller(t, fixture.sessions, login.GetAccessToken()), pendingBindingRequest(token)); err != nil {
+		t.Fatalf("认证后兑换失败: %v", err)
+	}
+}
+
+// 凭据缺失、已用过、来源不符都归为同一个拒绝，且一次性。
+func TestCompleteIdentityBindingRejectsBadCredential(t *testing.T) {
+	fixture := newIdentityFixture(t, googleChannel(verifierFor("g-a")))
+	login := fixture.loginAs(t)
+	ctx := caller(t, fixture.sessions, login.GetAccessToken())
+
+	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest("never-issued")); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("缺失凭据 code = %v，期望 FailedPrecondition（err=%v）", connect.CodeOf(err), err)
+	}
+
+	token, err := fixture.service.stagePendingBinding(identity.SourceGithub, identity.VerifiedIdentity{ExternalID: "gh-a"})
+	if err != nil {
+		t.Fatalf("登记待绑定凭据失败: %v", err)
+	}
+	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token)); err != nil {
+		t.Fatalf("第一次兑换失败: %v", err)
+	}
+	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token)); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("重放 code = %v，期望 FailedPrecondition（err=%v）", connect.CodeOf(err), err)
+	}
+
+	// 来源不符也算这份凭据不能兑换，且同样一次性。
+	otherToken, err := fixture.service.stagePendingBinding(identity.SourceGithub, identity.VerifiedIdentity{ExternalID: "gh-b"})
+	if err != nil {
+		t.Fatalf("登记待绑定凭据失败: %v", err)
+	}
+	mismatch := connect.NewRequest(&identityv1.CompleteIdentityBindingRequest{Source: identity.SourceGoogle})
+	mismatch.Header().Set("Cookie", (&http.Cookie{Name: pendingBindingCookie, Value: otherToken}).String())
+	if _, err := fixture.service.CompleteIdentityBinding(ctx, mismatch); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("来源不符 code = %v，期望 FailedPrecondition（err=%v）", connect.CodeOf(err), err)
+	}
+}
+
+// 身份已属于一个空主体时，兑换把它认领到当前主体；原主体只剩零身份、零角色。
+func TestCompleteIdentityBindingReclaimsVacantSubject(t *testing.T) {
+	fixture := newIdentityFixture(t, googleChannel(verifierFor("g-a")))
+	login := fixture.loginAs(t)
+	ctx := caller(t, fixture.sessions, login.GetAccessToken())
+	target, err := fixture.sessions.Verify(context.Background(), login.GetAccessToken())
+	if err != nil {
+		t.Fatalf("会话不可用: %v", err)
+	}
+	throwaway := registerGithubThrowaway(t, fixture, "gh-a")
+
+	token, err := fixture.service.stagePendingBinding(identity.SourceGithub, identity.VerifiedIdentity{
+		ExternalID: "gh-a",
+		Display:    "octo-new",
+	})
+	if err != nil {
+		t.Fatalf("登记待绑定凭据失败: %v", err)
+	}
+	resp, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+	if err != nil {
+		t.Fatalf("认领失败: %v", err)
+	}
+	if !resp.Msg.GetReclaimed() {
+		t.Error("发生了认领，reclaimed 却为 false")
+	}
+
+	owner, err := fixture.identityStore.Lookup(context.Background(), identity.SourceGithub, "gh-a")
+	if err != nil {
+		t.Fatalf("读取归属失败: %v", err)
+	}
+	if owner.SubjectID != target.ID {
+		t.Errorf("认领后归属 = %q，期望 %q", owner.SubjectID, target.ID)
+	}
+	if owner.Display != "octo-new" {
+		t.Errorf("展示信息 = %q，期望刷新为 octo-new", owner.Display)
+	}
+	left, err := fixture.service.identities.List(context.Background(), throwaway.ID)
+	if err != nil {
+		t.Fatalf("列出原主体失败: %v", err)
+	}
+	if len(left) != 0 {
+		t.Errorf("原主体还剩 %d 条身份，期望 0", len(left))
+	}
+	bindings, err := fixture.subjects.SubjectBindings(context.Background(), throwaway.ID)
+	if err != nil {
+		t.Fatalf("读取原主体角色失败: %v", err)
+	}
+	if len(bindings) != 0 {
+		t.Errorf("原主体带着 %d 条角色绑定，期望 0", len(bindings))
+	}
+
+	resolver := identity.NewIdentities(fixture.identityStore, fixture.subjects)
+	again, err := resolver.ResolveOrRegister(context.Background(), identity.SourceGithub, "gh-a", "")
+	if err != nil {
+		t.Fatalf("再次解析失败: %v", err)
+	}
+	if again.ID != target.ID {
+		t.Errorf("再次登录得到 %q，期望 %q", again.ID, target.ID)
+	}
+}
+
+// 原主体有角色绑定时不认领：那是非空主体，认领会把角色搁浅。
+func TestCompleteIdentityBindingRejectsNonVacantByRole(t *testing.T) {
+	fixture := newIdentityFixture(t, googleChannel(verifierFor("g-a")))
+	login := fixture.loginAs(t)
+	ctx := caller(t, fixture.sessions, login.GetAccessToken())
+	throwaway := registerGithubThrowaway(t, fixture, "gh-a")
+	if err := fixture.subjects.Bind(context.Background(), rbac.RoleBinding{
+		SubjectID: throwaway.ID,
+		RoleID:    rbac.RoleViewer,
+		Scope:     rbac.GlobalScope,
+	}); err != nil {
+		t.Fatalf("授予角色失败: %v", err)
+	}
+
+	token, err := fixture.service.stagePendingBinding(identity.SourceGithub, identity.VerifiedIdentity{ExternalID: "gh-a"})
+	if err != nil {
+		t.Fatalf("登记待绑定凭据失败: %v", err)
+	}
+	_, err = fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+	if connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("code = %v，期望 AlreadyExists（err=%v）", connect.CodeOf(err), err)
+	}
+	if strings.Contains(err.Error(), throwaway.ID) {
+		t.Errorf("错误信息泄露了原主体：%q", err.Error())
+	}
+
+	owner, err := fixture.identityStore.Lookup(context.Background(), identity.SourceGithub, "gh-a")
+	if err != nil {
+		t.Fatalf("读取归属失败: %v", err)
+	}
+	if owner.SubjectID != throwaway.ID {
+		t.Errorf("归属被改动了：%q，期望 %q", owner.SubjectID, throwaway.ID)
+	}
+}
+
+// 原主体还有别的身份时也不认领：空主体的两个条件缺一不可。
+func TestCompleteIdentityBindingRejectsNonVacantByIdentity(t *testing.T) {
+	fixture := newIdentityFixture(t, googleChannel(verifierFor("g-a")))
+	login := fixture.loginAs(t)
+	ctx := caller(t, fixture.sessions, login.GetAccessToken())
+	throwaway := registerGithubThrowaway(t, fixture, "gh-a")
+	resolver := identity.NewIdentities(fixture.identityStore, fixture.subjects)
+	if err := resolver.Bind(context.Background(), throwaway.ID, identity.SourceGithub, "gh-b", ""); err != nil {
+		t.Fatalf("绑定第二个身份失败: %v", err)
+	}
+
+	token, err := fixture.service.stagePendingBinding(identity.SourceGithub, identity.VerifiedIdentity{ExternalID: "gh-a"})
+	if err != nil {
+		t.Fatalf("登记待绑定凭据失败: %v", err)
+	}
+	_, err = fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+	if connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("code = %v，期望 AlreadyExists（err=%v）", connect.CodeOf(err), err)
+	}
+	if strings.Contains(err.Error(), throwaway.ID) {
+		t.Errorf("错误信息泄露了原主体：%q", err.Error())
+	}
+}
+
+// 认领必须先看到"原主体没有角色"这条事实。测试持有生命周期锁再给原主体
+// 授角色，重放"授予与认领并发"的时序：认领必须落在拒绝一侧。
+//
+// 这里直接写存储，验的是**认领这一侧**；授予那一侧是否真的持锁由
+// TestAssignRoleHoldsLifecycleGate 走生产路径断言。两条缺一不可。
+func TestCompleteIdentityBindingHonorsLifecycleGate(t *testing.T) {
+	fixture := newIdentityFixture(t, googleChannel(verifierFor("g-a")))
+	login := fixture.loginAs(t)
+	ctx := caller(t, fixture.sessions, login.GetAccessToken())
+	throwaway := registerGithubThrowaway(t, fixture, "gh-a")
+
+	token, err := fixture.service.stagePendingBinding(identity.SourceGithub, identity.VerifiedIdentity{ExternalID: "gh-a"})
+	if err != nil {
+		t.Fatalf("登记待绑定凭据失败: %v", err)
+	}
+
+	unlock := fixture.service.gate.lock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+		done <- err
+	}()
+
+	// 认领要拿同一把锁；在它拿到之前授上角色，它必须看到这条事实。
+	if err := fixture.subjects.Bind(context.Background(), rbac.RoleBinding{
+		SubjectID: throwaway.ID,
+		RoleID:    rbac.RoleViewer,
+		Scope:     rbac.GlobalScope,
+	}); err != nil {
+		t.Fatalf("授予角色失败: %v", err)
+	}
+	unlock()
+
+	if err := <-done; connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("code = %v，期望 AlreadyExists（err=%v）", connect.CodeOf(err), err)
+	}
+	owner, err := fixture.identityStore.Lookup(context.Background(), identity.SourceGithub, "gh-a")
+	if err != nil {
+		t.Fatalf("读取归属失败: %v", err)
+	}
+	if owner.SubjectID != throwaway.ID {
+		t.Errorf("归属被改动了：%q，期望 %q", owner.SubjectID, throwaway.ID)
+	}
+}
+
+// 生命周期锁本身是互斥的：第二个获取者必须等第一个释放。
+func TestSubjectLifecycleGateIsExclusive(t *testing.T) {
+	gate := &subjectLifecycleGate{}
+	unlock := gate.lock()
+
+	acquired := make(chan struct{})
+	go func() {
+		release := gate.lock()
+		close(acquired)
+		release()
+	}()
+
+	select {
+	case <-acquired:
+		t.Fatal("第二个获取者在第一把锁释放前就拿到了锁")
+	case <-time.After(10 * time.Millisecond):
+	}
+	unlock()
+	select {
+	case <-acquired:
+	case <-time.After(time.Second):
+		t.Fatal("第一把锁释放后第二个获取者仍拿不到锁")
+	}
 }

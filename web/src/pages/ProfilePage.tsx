@@ -3,6 +3,7 @@ import { Alert, Avatar, Button, Card, Divider, Form, Input, Space, Typography, U
 
 import { messageOf } from '../api/errors'
 import { useSession } from '../auth'
+import { IdentityCard } from '../identity/identity-card'
 import { avatarFallbackInitial, useProfile } from '../profile'
 
 interface ProfileFormValues {
@@ -188,6 +189,8 @@ export function ProfilePage(): React.ReactNode {
           </Button>
         </Form>
       </Card>
+
+      <IdentityCard />
 
       <Card>
         <Typography.Text type="secondary">

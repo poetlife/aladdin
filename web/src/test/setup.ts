@@ -15,3 +15,13 @@ if (!globalThis.matchMedia) {
       dispatchEvent: () => false,
     }) as MediaQueryList
 }
+
+// jsdom 同样没有 ResizeObserver，而 antd 的气泡类组件（Popconfirm / Popover /
+// Tooltip）用它测量尺寸；不打这个补丁，任何打开气泡的测试都会在挂载时抛错。
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver
+}

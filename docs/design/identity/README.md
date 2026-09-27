@@ -45,7 +45,7 @@ aladdin 是前端（React + antd）、服务端（Go + gRPC）、命令行（cob
 |--------|------|------|
 | 渠道登录（通用） | 登录流程、渠道凭证的两种到达方式、身份与主体的识别与登记、新主体零权限、渠道的启用与下发 | [channel-login.md](channel-login.md) |
 | 用 Google 账号登录 | Google 凭证的形态与校验要求 | [google-login.md](google-login.md) |
-| 用 GitHub 账号登录 | 重定向型渠道：两个浏览器直连端点、一次性凭据、客户端密钥、对外源 | [github-login.md](github-login.md) |
+| 用 GitHub 账号登录 | 重定向型渠道：两个浏览器直连端点、一次性凭据、客户端密钥、对外源、绑定到已有主体的两段式 | [github-login.md](github-login.md) |
 | 登录渠道的绑定 | 已登录主体把新渠道加到自己身上、解绑，以及"不能绑给谁"的边界 | [identity-linking.md](identity-linking.md) |
 | 会话凭证 | 不透明令牌的签发、过期、校验、撤销与回收 | [session-token.md](session-token.md) |
 
@@ -55,7 +55,7 @@ aladdin 是前端（React + antd）、服务端（Go + gRPC）、命令行（cob
 |------|---------|-------------|
 | CLI 的渠道登录（设备码流程） | 暂不做。CLI 继续使用机器凭证（**未定**） | 新增一条登录路径；会话凭证与身份的归属不受影响 |
 | Workspace 群组同步为角色 | 暂不做。角色绑定仍由管理员显式授予（**未定**） | 引入一个外部权限来源，需重新审视"配置不得成为权限来源"的同源约束 |
-| 把 GitHub 身份绑到已有主体 | 暂不做（**未定**） | 需让"绑到哪个主体"穿过一次浏览器导航；边界见 [github-login.md](github-login.md) 的待定决策 |
+| 非空主体上的身份转移（含主体失去全部可用渠道之后的恢复） | 暂不做（**未定**） | 引入一个以他人为目标的动作，必须带权限码；空主体的认领已在 [identity-linking.md](identity-linking.md) 里定下 |
 | 会话有效期长度 | 见 [session-token.md](session-token.md)（**未定**） | 只影响签发参数 |
 
 ---

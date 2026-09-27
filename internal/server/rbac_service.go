@@ -21,11 +21,13 @@ import (
 type RBACService struct {
 	store  rbac.MutableStore
 	engine *rbac.Engine
+	// gate 与空主体认领共用：授角色与"这个主体有没有角色"的检查必须串行。
+	gate *subjectLifecycleGate
 }
 
 // NewRBACService 构造管理面服务。
-func NewRBACService(store rbac.MutableStore, engine *rbac.Engine) *RBACService {
-	return &RBACService{store: store, engine: engine}
+func NewRBACService(store rbac.MutableStore, engine *rbac.Engine, gate *subjectLifecycleGate) *RBACService {
+	return &RBACService{store: store, engine: engine, gate: gate}
 }
 
 // GetRole 实现 RBACService。
@@ -135,6 +137,11 @@ func (s *RBACService) AssignRole(ctx context.Context, req *connect.Request[rbacv
 			ChangeId: changeID("binding", binding.SubjectID),
 		}), nil
 	}
+
+	// 授予角色与空主体认领串行：认领要确认"这个主体没有角色绑定"，
+	// 若两者之间刚好插进一次授予，就会出现身份移走、角色留下的搁浅。
+	unlock := s.gate.lock()
+	defer unlock()
 
 	existing, err := s.store.SubjectBindings(ctx, binding.SubjectID)
 	if err != nil && !errors.Is(err, rbac.ErrSubjectNotFound) {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -64,11 +65,22 @@ func noRedirectClient() *http.Client {
 	}
 }
 
-// startGithubLogin 走一次起点端点，返回跳转目标与写下的 cookie。
+// startGithubLogin 走一次登录起点，返回跳转目标与写下的 cookie。
 func startGithubLogin(t *testing.T, baseURL string) (string, *http.Cookie) {
 	t.Helper()
+	return startGithubFlow(t, baseURL, "")
+}
 
-	resp, err := noRedirectClient().Get(baseURL + identity.GithubStartPath)
+// startGithubFlow 走一次起点端点。purpose 是导航上的**原始线值**：
+// 空表示登录，flowPurposeBind 的线值表示绑定。
+func startGithubFlow(t *testing.T, baseURL, purpose string) (string, *http.Cookie) {
+	t.Helper()
+
+	target := baseURL + identity.GithubStartPath
+	if purpose != "" {
+		target += "?purpose=" + url.QueryEscape(purpose)
+	}
+	resp, err := noRedirectClient().Get(target)
 	if err != nil {
 		t.Fatalf("访问起点端点失败: %v", err)
 	}
@@ -82,7 +94,7 @@ func startGithubLogin(t *testing.T, baseURL string) (string, *http.Cookie) {
 			return resp.Header.Get("Location"), cookie
 		}
 	}
-	t.Fatal("起点端点没有写下登录凭据 cookie")
+	t.Fatal("起点端点没有写下导航凭据 cookie")
 	return "", nil
 }
 
@@ -316,8 +328,20 @@ func TestGithubEndpointsAbsentWhenChannelDisabled(t *testing.T) {
 	}
 }
 
+// callbackResult 是一次回调响应里调用方需要的东西；响应体已经在 helper 里读完并关闭。
+type callbackResult struct {
+	location string
+	cookies  []*http.Cookie
+}
+
 // callback 走一次回调端点，返回跳转目标。cookie 为 nil 表示不携带凭据 cookie。
 func callback(t *testing.T, baseURL string, cookie *http.Cookie, code, state string) string {
+	t.Helper()
+	return callbackResponse(t, baseURL, cookie, code, state).location
+}
+
+// callbackResponse 走一次回调端点，返回跳转目标与响应写下的 cookie。
+func callbackResponse(t *testing.T, baseURL string, cookie *http.Cookie, code, state string) callbackResult {
 	t.Helper()
 
 	target, err := url.Parse(baseURL + identity.GithubCallbackPath)
@@ -350,7 +374,7 @@ func callback(t *testing.T, baseURL string, cookie *http.Cookie, code, state str
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("回调端点状态码 = %d，期望 302", resp.StatusCode)
 	}
-	return resp.Header.Get("Location")
+	return callbackResult{location: resp.Header.Get("Location"), cookies: resp.Cookies()}
 }
 
 // cookieFor 按需返回 cookie 指针，使"不携带 cookie"这一情形能表达出来。
@@ -359,6 +383,91 @@ func cookieFor(present bool, cookie *http.Cookie) *http.Cookie {
 		return nil
 	}
 	return cookie
+}
+
+// 绑定起点走完回调后不签发会话，而是把已校验身份记成一份 HttpOnly 待绑定凭据。
+func TestGithubBindCallbackIssuesPendingBinding(t *testing.T) {
+	srv, fixture := githubFlowHarness(t, testPublicBaseURL, githubChannel(verifierFor("2001")))
+
+	_, stateCookie := startGithubFlow(t, srv.URL, string(flowPurposeBind))
+	resp := callbackResponse(t, srv.URL, stateCookie, "the-code", stateCookie.Value)
+	location := resp.location
+
+	if got := fragmentValue(t, location, frontendBindingFragment); got != identity.SourceGithub {
+		t.Fatalf("binding fragment = %q，期望 %q（location=%q）", got, identity.SourceGithub, location)
+	}
+	if fragmentValue(t, location, frontendTokenFragment) != "" {
+		t.Error("绑定回调不得交付会话凭证")
+	}
+	if n := fixture.issuedSessions(); n != 0 {
+		t.Errorf("绑定回调签发了 %d 条会话，期望 0", n)
+	}
+	if _, err := fixture.identityStore.Lookup(context.Background(), identity.SourceGithub, "2001"); !errors.Is(err, identity.ErrIdentityNotFound) {
+		t.Errorf("绑定回调登记了身份（err=%v），期望未登记", err)
+	}
+
+	var pending *http.Cookie
+	for _, cookie := range resp.cookies {
+		if cookie.Name == pendingBindingCookie {
+			pending = cookie
+		}
+	}
+	if pending == nil {
+		t.Fatal("绑定回调没有写下待绑定凭据 cookie")
+	}
+	if pending.Value == "" {
+		t.Error("待绑定凭据 cookie 是空值")
+	}
+	if !pending.HttpOnly {
+		t.Error("待绑定凭据 cookie 必须不可被脚本读取")
+	}
+	if pending.Path != pendingBindingCookiePath {
+		t.Errorf("待绑定凭据 cookie 作用路径 = %q，期望 %q", pending.Path, pendingBindingCookiePath)
+	}
+	if pending.SameSite != http.SameSiteStrictMode {
+		t.Errorf("SameSite = %v，期望 Strict（兑换是同源 RPC，不需要 Lax）", pending.SameSite)
+	}
+	if !pending.Secure {
+		t.Error("对外源是 https 时待绑定凭据 cookie 应当要求加密传输")
+	}
+}
+
+// 绑定路径的失败也带固定标记，但不含任何内部细节，也绝不签发会话。
+func TestGithubBindCallbackFailureUsesBindMarker(t *testing.T) {
+	srv, fixture := githubFlowHarness(t, testPublicBaseURL,
+		githubChannel(fakeVerifier{err: identity.ErrInvalidToken}))
+
+	_, stateCookie := startGithubFlow(t, srv.URL, string(flowPurposeBind))
+	location := callback(t, srv.URL, stateCookie, "the-code", stateCookie.Value)
+
+	if got := fragmentValue(t, location, frontendErrorFragment); got != githubBindFailed {
+		t.Fatalf("error fragment = %q，期望 %q（location=%q）", got, githubBindFailed, location)
+	}
+	if fragmentValue(t, location, frontendTokenFragment) != "" {
+		t.Error("绑定失败不得交付会话凭证")
+	}
+	if n := fixture.issuedSessions(); n != 0 {
+		t.Errorf("绑定失败签发了 %d 条会话，期望 0", n)
+	}
+}
+
+// 凭据不符时也要按用途选标记：用户明明登录着、正在做绑定，不该被告知
+// "登录未完成"。用途取自服务端记下的那条记录，因此这里能给出正确的措辞。
+func TestGithubBindCallbackBadStateUsesBindMarker(t *testing.T) {
+	srv, fixture := githubFlowHarness(t, testPublicBaseURL, githubChannel(verifierFor("2001")))
+
+	_, stateCookie := startGithubFlow(t, srv.URL, string(flowPurposeBind))
+	location := callback(t, srv.URL, stateCookie, "the-code", "not-the-issued-state")
+
+	if got := fragmentValue(t, location, frontendErrorFragment); got != githubBindFailed {
+		t.Fatalf("error fragment = %q，期望 %q（location=%q）", got, githubBindFailed, location)
+	}
+	if fragmentValue(t, location, frontendTokenFragment) != "" {
+		t.Error("绑定失败不得交付会话凭证")
+	}
+	if n := fixture.issuedSessions(); n != 0 {
+		t.Errorf("凭据不符却签发了 %d 条会话，期望 0", n)
+	}
 }
 
 // fragmentValue 取出跳转目标里某个 fragment 的取值。

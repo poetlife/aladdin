@@ -51,6 +51,9 @@ const (
 	// IdentityServiceUnbindIdentityProcedure is the fully-qualified name of the IdentityService's
 	// UnbindIdentity RPC.
 	IdentityServiceUnbindIdentityProcedure = "/aladdin.identity.v1.IdentityService/UnbindIdentity"
+	// IdentityServiceCompleteIdentityBindingProcedure is the fully-qualified name of the
+	// IdentityService's CompleteIdentityBinding RPC.
+	IdentityServiceCompleteIdentityBindingProcedure = "/aladdin.identity.v1.IdentityService/CompleteIdentityBinding"
 	// IdentityServiceListIdentitiesProcedure is the fully-qualified name of the IdentityService's
 	// ListIdentities RPC.
 	IdentityServiceListIdentitiesProcedure = "/aladdin.identity.v1.IdentityService/ListIdentities"
@@ -84,7 +87,12 @@ type IdentityServiceClient interface {
 	//
 	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
 	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-	// 正常绑定没有区别。
+	// 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
+	// identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
+	// 身份被并入当前主体。
+	//
+	// 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
+	// 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
 	BindIdentity(context.Context, *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error)
 	// 从当前主体上摘掉一个登录渠道。
 	//
@@ -94,6 +102,13 @@ type IdentityServiceClient interface {
 	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
 	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
 	UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error)
+	// 完成一次重定向型渠道的绑定。
+	//
+	// 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
+	// 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
+	// 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
+	// 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	CompleteIdentityBinding(context.Context, *connect.Request[v1.CompleteIdentityBindingRequest]) (*connect.Response[v1.CompleteIdentityBindingResponse], error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error)
 }
@@ -151,6 +166,12 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("UnbindIdentity")),
 			connect.WithClientOptions(opts...),
 		),
+		completeIdentityBinding: connect.NewClient[v1.CompleteIdentityBindingRequest, v1.CompleteIdentityBindingResponse](
+			httpClient,
+			baseURL+IdentityServiceCompleteIdentityBindingProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("CompleteIdentityBinding")),
+			connect.WithClientOptions(opts...),
+		),
 		listIdentities: connect.NewClient[v1.ListIdentitiesRequest, v1.ListIdentitiesResponse](
 			httpClient,
 			baseURL+IdentityServiceListIdentitiesProcedure,
@@ -162,14 +183,15 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // identityServiceClient implements IdentityServiceClient.
 type identityServiceClient struct {
-	login                 *connect.Client[v1.LoginRequest, v1.LoginResponse]
-	refresh               *connect.Client[v1.RefreshRequest, v1.RefreshResponse]
-	getAuthMethods        *connect.Client[v1.GetAuthMethodsRequest, v1.GetAuthMethodsResponse]
-	whoAmI                *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
-	getSessionPermissions *connect.Client[v1.GetSessionPermissionsRequest, v1.GetSessionPermissionsResponse]
-	bindIdentity          *connect.Client[v1.BindIdentityRequest, v1.BindIdentityResponse]
-	unbindIdentity        *connect.Client[v1.UnbindIdentityRequest, v1.UnbindIdentityResponse]
-	listIdentities        *connect.Client[v1.ListIdentitiesRequest, v1.ListIdentitiesResponse]
+	login                   *connect.Client[v1.LoginRequest, v1.LoginResponse]
+	refresh                 *connect.Client[v1.RefreshRequest, v1.RefreshResponse]
+	getAuthMethods          *connect.Client[v1.GetAuthMethodsRequest, v1.GetAuthMethodsResponse]
+	whoAmI                  *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
+	getSessionPermissions   *connect.Client[v1.GetSessionPermissionsRequest, v1.GetSessionPermissionsResponse]
+	bindIdentity            *connect.Client[v1.BindIdentityRequest, v1.BindIdentityResponse]
+	unbindIdentity          *connect.Client[v1.UnbindIdentityRequest, v1.UnbindIdentityResponse]
+	completeIdentityBinding *connect.Client[v1.CompleteIdentityBindingRequest, v1.CompleteIdentityBindingResponse]
+	listIdentities          *connect.Client[v1.ListIdentitiesRequest, v1.ListIdentitiesResponse]
 }
 
 // Login calls aladdin.identity.v1.IdentityService.Login.
@@ -207,6 +229,11 @@ func (c *identityServiceClient) UnbindIdentity(ctx context.Context, req *connect
 	return c.unbindIdentity.CallUnary(ctx, req)
 }
 
+// CompleteIdentityBinding calls aladdin.identity.v1.IdentityService.CompleteIdentityBinding.
+func (c *identityServiceClient) CompleteIdentityBinding(ctx context.Context, req *connect.Request[v1.CompleteIdentityBindingRequest]) (*connect.Response[v1.CompleteIdentityBindingResponse], error) {
+	return c.completeIdentityBinding.CallUnary(ctx, req)
+}
+
 // ListIdentities calls aladdin.identity.v1.IdentityService.ListIdentities.
 func (c *identityServiceClient) ListIdentities(ctx context.Context, req *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error) {
 	return c.listIdentities.CallUnary(ctx, req)
@@ -240,7 +267,12 @@ type IdentityServiceHandler interface {
 	//
 	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
 	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-	// 正常绑定没有区别。
+	// 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
+	// identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
+	// 身份被并入当前主体。
+	//
+	// 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
+	// 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
 	BindIdentity(context.Context, *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error)
 	// 从当前主体上摘掉一个登录渠道。
 	//
@@ -250,6 +282,13 @@ type IdentityServiceHandler interface {
 	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
 	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
 	UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error)
+	// 完成一次重定向型渠道的绑定。
+	//
+	// 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
+	// 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
+	// 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
+	// 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	CompleteIdentityBinding(context.Context, *connect.Request[v1.CompleteIdentityBindingRequest]) (*connect.Response[v1.CompleteIdentityBindingResponse], error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error)
 }
@@ -303,6 +342,12 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("UnbindIdentity")),
 		connect.WithHandlerOptions(opts...),
 	)
+	identityServiceCompleteIdentityBindingHandler := connect.NewUnaryHandler(
+		IdentityServiceCompleteIdentityBindingProcedure,
+		svc.CompleteIdentityBinding,
+		connect.WithSchema(identityServiceMethods.ByName("CompleteIdentityBinding")),
+		connect.WithHandlerOptions(opts...),
+	)
 	identityServiceListIdentitiesHandler := connect.NewUnaryHandler(
 		IdentityServiceListIdentitiesProcedure,
 		svc.ListIdentities,
@@ -325,6 +370,8 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 			identityServiceBindIdentityHandler.ServeHTTP(w, r)
 		case IdentityServiceUnbindIdentityProcedure:
 			identityServiceUnbindIdentityHandler.ServeHTTP(w, r)
+		case IdentityServiceCompleteIdentityBindingProcedure:
+			identityServiceCompleteIdentityBindingHandler.ServeHTTP(w, r)
 		case IdentityServiceListIdentitiesProcedure:
 			identityServiceListIdentitiesHandler.ServeHTTP(w, r)
 		default:
@@ -362,6 +409,10 @@ func (UnimplementedIdentityServiceHandler) BindIdentity(context.Context, *connec
 
 func (UnimplementedIdentityServiceHandler) UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.UnbindIdentity is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) CompleteIdentityBinding(context.Context, *connect.Request[v1.CompleteIdentityBindingRequest]) (*connect.Response[v1.CompleteIdentityBindingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.CompleteIdentityBinding is not implemented"))
 }
 
 func (UnimplementedIdentityServiceHandler) ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error) {
