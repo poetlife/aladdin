@@ -49,7 +49,11 @@ function AppShell(): React.ReactNode {
   ]
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    // 外壳占满视口且**不随内容变高**：内容超出时由内容区自己滚动。
+    // 若这里是 minHeight，页面一长整份文档就变高，侧边栏跟着被撑长，
+    // 钉底的账号区就跑到文档底部去了——那正是滚动它就会跟着消失的原因。
+    // 用 dvh 而非 vh：移动端浏览器收起地址栏时 vh 不会跟着变，底部会被切掉一截。
+    <Layout style={{ height: '100dvh' }}>
       {/* theme="light" 的底色是 colorBgContainer，它随明暗算法走——
           这里不写死色值，暗色下侧边栏自然比内容区更亮一层。 */}
       <Sider
@@ -78,7 +82,9 @@ function AppShell(): React.ReactNode {
       </Sider>
       <Layout>
         <AppHeader collapsed={collapsed} onToggleCollapsed={() => setCollapsed((prev) => !prev)} />
-        <Content style={{ padding: 24 }}>
+        {/* 内容区是唯一的滚动容器：滚动它不会带走侧边栏底部的账号区。
+            它自己撑满剩余高度靠的是 Layout 给的 flex，不需要再声明一次。 */}
+        <Content style={{ padding: 24, overflowY: 'auto' }}>
           <Outlet />
         </Content>
       </Layout>
