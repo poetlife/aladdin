@@ -61,7 +61,8 @@ database_dsn: aladdin.db
 #   ALADDIN_COS_SECRET_KEY
 # 它们只有环境变量这一个来源。配置文件会进版本库、进镜像、被贴给别人排查
 # 问题，而凭证不可以。生产环境上由 systemd 的 EnvironmentFile 从
-# /opt/aladdin/cos.env（0600）读取，见 docs/deploy.md。
+# /opt/aladdin/secrets.env（0600）读取，见 docs/deploy.md。
+# GitHub 登录的客户端密钥也在**同一个文件**里——密钥只有一个来源文件。
 #
 # 桶地址与两项密钥必须**同时给出或同时留空**：只配一半会拒绝启动。半套配置
 # 的失败方式是"看起来配好了"——界面会渲染一个传不上去的上传区，直到第一次

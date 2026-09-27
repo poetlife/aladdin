@@ -45,7 +45,7 @@ aladdin 的服务端是一个只讲 RPC 的进程：它不托管静态文件、�
                                    ▼
                         aladdin-server（systemd，仅回环 :9090）
                           /opt/aladdin/config.yml
-                          /opt/aladdin/cos.env（0600，可选）
+                          /opt/aladdin/secrets.env（0600，可选）
                           /opt/aladdin/data/aladdin.db（sqlite）
                                    │
                                    └─▶ COS 桶（私有读写，头像；可选）
@@ -152,15 +152,18 @@ database_dsn: /opt/aladdin/data/aladdin.db
 3. **把密钥写进一个仅属主可读的文件**，交给 systemd 读：
 
 ```bash
-sudo tee /opt/aladdin/cos.env >/dev/null <<'EOF'
+sudo install -o aladdin -g aladdin -m 0600 /dev/null /opt/aladdin/secrets.env
+sudo tee /opt/aladdin/secrets.env >/dev/null <<'EOF'
 ALADDIN_COS_SECRET_ID=<子账号 SecretId>
 ALADDIN_COS_SECRET_KEY=<子账号 SecretKey>
 EOF
-sudo chown aladdin:aladdin /opt/aladdin/cos.env
-sudo chmod 0600 /opt/aladdin/cos.env
 ```
 
+先建空文件再写，而不是直接 `tee` 出去再 `chmod`：后者在创建与收紧之间留了一个宽权限窗口，而窗口期里文件可能已经被复制走了。这与 CLI 侧凭证文件"创建即受限"是同一条要求。
+
 密钥**不进 `config.yml`**：那个文件会进版本库、进镜像、被贴给别人排查问题（见 [design/config/credentials.md](design/config/credentials.md)）。这与"生产机上不出现 `ALADDIN_DEV_SEED`"是同一条理由的两面。
+
+**所有密钥放这一个文件，一个功能一份 env 是不要的。** 约束只到"密钥走环境变量"，没说它们要分几份；而分开只会多出漂移面——多一个文件就多一行 `EnvironmentFile=`，多一处"重装单元时漏掉"的机会。分开也换不来隔离：读它们的是同一个进程、同一个 uid，`EnvironmentFile` 机制也一样，信任域完全重合。第 11 步的 GitHub 密钥因此**追加到同一个文件**。
 
 4. 在 `/opt/aladdin/config.yml` 填 `cos_bucket_url`——**完整桶主机名**（含 APPID 与地域，形如 `https://<桶名>-<APPID>.cos.<地域>.myqcloud.com`），然后重启。
 
@@ -189,7 +192,9 @@ sudo systemctl enable aladdin-server
 
 单元文件里**没有** `ALADDIN_DEV_SEED` 这类环境变量，也不应该有：那是绕过真实认证的开发旁路，且它写进去的主体与绑定会**落库**，一次误开在库里留下的是长期存在的真实数据，取消环境变量并不会清除它们（见 [design/config/server-config.md](design/config/server-config.md)）。
 
-单元文件里有 `EnvironmentFile=-/opt/aladdin/cos.env`。**`-` 前缀是有意的**：文件不存在时 systemd 不报错，因此没做第 7 步的部署照常启动，头像功能保持未启用。COS 密钥是这里唯一需要走环境变量的凭证——它不能进配置文件（理由同上），而 `cos.env` 是 0600、属主是服务账号，与 CLI 侧凭证文件的保护方式一致。
+单元文件里有 `EnvironmentFile=-/opt/aladdin/secrets.env`。**`-` 前缀是有意的**：文件不存在时 systemd 不报错，因此没做第 7 步的部署照常启动，头像功能保持未启用。密钥是这里唯一一类需要走环境变量的输入——它们不能进配置文件（理由同上），而 `secrets.env` 是 0600、属主是服务账号，与 CLI 侧凭证文件的保护方式一致。
+
+> 单元文件里**只有这一行** `EnvironmentFile=`。第 11 步的 GitHub 密钥不是第二份文件，更不是第二行。"一个功能一份 env"曾让 `github.env` 只存在于服务器上，而仓库那份单元少了它——于是"按仓库重装单元"会静默丢掉 GitHub 登录：密钥文件还在，服务读不到。一份文件一行，这类漂移没有产生的余地。
 
 ### 9. 发布第一个版本
 
@@ -228,12 +233,14 @@ GitHub 是**重定向型**渠道：它交给浏览器的是一个授权码，服
    github_client_id: "<OAuth App 的 Client ID>"
    public_base_url: "https://<域名>"
    ```
-3. 把客户端密钥放进服务单元的环境文件，**不要**写进 `config.yml`：
+3. 把客户端密钥**追加**到第 7 步那个 `secrets.env` 末尾，**不要**写进 `config.yml`，也**不要**另起一份（理由见第 7 步）：
    ```bash
-   sudo install -m 600 /dev/null /opt/aladdin/github.env
-   printf 'ALADDIN_GITHUB_CLIENT_SECRET=%s\n' '<Client Secret>' | sudo tee /opt/aladdin/github.env >/dev/null
+   [[ -e /opt/aladdin/secrets.env ]] || sudo install -o aladdin -g aladdin -m 0600 /dev/null /opt/aladdin/secrets.env
+   sudo tee -a /opt/aladdin/secrets.env >/dev/null <<'EOF'
+   ALADDIN_GITHUB_CLIENT_SECRET=<Client Secret>
+   EOF
    ```
-   并在服务单元的 `EnvironmentFile=` 里加上它（与 COS 密钥同一份做法，见 [design/config/server-config.md](design/config/server-config.md)）
+   第一行的守卫让"没做第 7 步"的部署也能拿到一个创建即 0600 的文件，而不是让 `tee -a` 按 root 的 umask 建出一个宽权限的。单元文件**不动**——它那一行 `EnvironmentFile=` 已经在第 8 步装好了，且只该有那一行
 4. 确认 nginx 里 `location ^~ /auth/` 转发到服务端，且这一条里带 `access_log off`（模板已含，见 [../deploy/nginx-aladdin-site.conf](../deploy/nginx-aladdin-site.conf)）——回调地址里带着授权码与登录凭据，默认的访问日志格式会把它们写进日志
 5. 重启服务，登录页应出现 GitHub 入口
 
@@ -326,6 +333,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 服务端起不来且日志说端口被占 | 9090 被同机别的服务占了，换端口要同时改三处（见"端口"） |
 | 换了域名后登录按钮点了没反应 | Google 控制台的浏览器来源白名单没改 |
 | 点 GitHub 登录没反应或回调 404 | 三处域名只要有一处没改就会这样：GitHub 控制台的授权回调地址、配置里的 `public_base_url`、nginx 站点域名。另需确认 nginx 的 `location ^~ /auth/` 转发到了服务端。**这条路径刻意不记 nginx 访问日志**（地址里带着授权码与凭据），因此"请求有没有打到服务端"要看服务端日志：走对了会有登录成功或"登录未完成"的留痕；走错了才会在 `location /` 的访问日志里留下一条 200 |
+| GitHub 登录曾正常、某次重装单元后失效 | 单元里是否丢了 `EnvironmentFile=-/opt/aladdin/secrets.env`，或密钥是否仍留在旧的 `github.env` 里（同一个键不会读两处，旧的不会再被读到）。**重新装了单元就必须核对这一行**——它是唯一会被"按仓库重装"覆盖掉的一行 |
 | 管理员登录后仍然"没有权限" | 引导是否生效：`sudo journalctl -u aladdin-server \| grep -i 引导`；引导只在存储中无任何绑定时生效 |
 | 数据"看起来全丢了" | 验证真实的数据路径：`sudo journalctl -u aladdin-server \| grep -i 数据库`——启动日志有脱敏后的定位信息 |
 | 服务被 OOM 杀掉后自动重启 | `journalctl -u aladdin-server \| grep -i memory`；单元里的 `MemoryMax` 是保险丝，不是估算 |
@@ -363,7 +371,8 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 证书可续期 | `certbot renew --dry-run` 通过；`:80` 的 ACME location 仍在 |
 | 生产无认证旁路 | 生产机上 `ALADDIN_DEV_SEED` 未出现在 systemd 单元与环境中 |
 | 备份可用 | `VACUUM INTO` 产出的快照能被一个新进程打开并读到既有数据 |
-| 密钥文件仅属主可读 | `/opt/aladdin/cos.env` 权限为 0600、属主为 aladdin（部署后核对） |
+| 密钥文件仅属主可读 | `/opt/aladdin/secrets.env` 权限为 0600、属主为 aladdin（部署后核对） |
+| 密钥只有一份、只有一行 | `/opt/aladdin` 下没有按功能拆开的 env 文件（`cos.env`、`github.env` 等），单元里的 `EnvironmentFile=` 也恰好一行且指向 `secrets.env`（部署后核对） |
 | 桶为私有读写 | 去掉预签名参数直接访问对象地址被拒（部署后冒烟） |
 | 头像功能可缺省 | 未做第 7 步的部署照常启动，前端不渲染头像上传区（部署后冒烟） |
 | 仓库不含实例值 | `git log --all -p \| grep -iE "真实域名\|主机别名\|公网 IP"` 无命中（长期项：**每次提交前**都要成立） |

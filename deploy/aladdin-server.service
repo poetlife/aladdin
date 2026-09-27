@@ -16,16 +16,19 @@ WorkingDirectory=/opt/aladdin
 # "我改的那个文件到底有没有被读到"就不再是一个需要猜的问题。
 ExecStart=/opt/aladdin/bin/aladdin-server -config /opt/aladdin/config.yml
 
-# 头像存储（腾讯云 COS）的子账号密钥。
+# 密钥文件。**只有这一行**，所有密钥都放这一个文件：拆成按功能的多份
+# 只会多出"重装单元时漏掉一行"的机会，而读它们的是同一个进程、同一个
+# uid，分开换不来任何隔离。见 docs/deploy.md 的一次性前置。
 #
-# 这两项是**唯一**需要以环境变量形式给出的凭证：它们不能写进 config.yml
-# （那个文件会进版本库、进镜像、被贴给别人排查问题），因此放在一个 0600、
-# 属主为服务账号的文件里。见 docs/deploy.md 的一次性前置。
+# 文件里装的是需要保密的那几项：腾讯云 COS 的子账号密钥（ALADDIN_COS_*）、
+# GitHub 登录的客户端密钥（ALADDIN_GITHUB_CLIENT_SECRET）。它们不能写进
+# config.yml（那个文件会进版本库、进镜像、被贴给别人排查问题），因此放在
+# 一个 0600、属主为服务账号的文件里。
 #
-# **`-` 前缀是有意的**：文件不存在时 systemd 不报错，于是没做那一步的部署
-# 照常启动、头像功能保持未启用。反过来，配了桶地址却没配密钥会在配置校验那
-# 一层拒绝启动——那是有意的，不是故障。
-EnvironmentFile=-/opt/aladdin/cos.env
+# **`-` 前缀是有意的**：文件不存在时 systemd 不报错，于是没做那几步的部署
+# 照常启动、头像与 GitHub 登录保持未启用。反过来，配了桶地址却没配密钥会在
+# 配置校验那一层拒绝启动——那是有意的，不是故障。
+EnvironmentFile=-/opt/aladdin/secrets.env
 
 Restart=on-failure
 RestartSec=5s
