@@ -10,13 +10,16 @@ import { MONOSPACE } from '../../theme'
  * 在仓库里没有落点——只有"怎么升级"，而升级的前提恰恰是先有一份**发布产物**
  * （本机编译出来的二进制不能自更新）。
  *
- * 两条硬约束，改这个文件时要一起守：
+ * 三条硬约束，改这个文件时要一起守：
  *
  * - **不出现版本号字面量。** 产物名里带着 tag，写死一条下载命令就等于写死了
  *   当时的版本；下一个 tag 之后那条命令指向一个不存在的产物，而这里不会报
  *   任何错。所以命令在**运行期**解析最新 tag。
  * - **不出现部署实例的值**（域名、主机别名）。与仓库"不含实例值"是同一条
  *   约束，见 docs/deploy.md 的可验证性表。
+ * - **不把人引向系统目录。** 自更新替换的是本机这一份文件，目标不可写时它
+ *   会拒绝（见 docs/design/cli/self-update.md）。装进 /usr/local/bin 的人
+ *   每次升级都要 sudo，非特权用户更是连装都装不上。
  */
 
 /** 发布页。产物命名与保留策略见 docs/release.md。 */
@@ -62,7 +65,10 @@ curl -LO "$base/$asset"
 curl -LO "$base/SHA256SUMS"
 grep "$asset" SHA256SUMS | ${platform.verify}
 tar xzf "$asset"
-install -m 0755 aladdin /usr/local/bin/aladdin`
+
+# 装进用户可写目录，这样升级不需要 sudo
+mkdir -p ~/.local/bin
+install -m 0755 aladdin ~/.local/bin/aladdin`
 }
 
 /**
@@ -110,8 +116,14 @@ export function CliPage(): React.ReactNode {
               <Space orientation="vertical" size="small" style={{ width: '100%' }}>
                 <CommandBlock>{installScript(platform)}</CommandBlock>
                 <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  最后一步放进 PATH，必要时加 <Typography.Text code>sudo</Typography.Text>
-                  ，或换成一个你已经有的可写目录。装完用{' '}
+                  装进 <Typography.Text code>~/.local/bin</Typography.Text>
+                  ——它归你所有，所以后面的{' '}
+                  <Typography.Text code>aladdin update</Typography.Text> 不需要 sudo；装到{' '}
+                  <Typography.Text code>/usr/local/bin</Typography.Text>{' '}
+                  这类系统目录则要先过 sudo，普通用户还会直接 Permission denied。这个目录不在{' '}
+                  <Typography.Text code>PATH</Typography.Text> 里时，把{' '}
+                  <Typography.Text code>{'export PATH="$HOME/.local/bin:$PATH"'}</Typography.Text>{' '}
+                  加进 shell 配置并重开一个终端。装完用{' '}
                   <Typography.Text code>aladdin version</Typography.Text> 确认。
                 </Typography.Paragraph>
               </Space>
@@ -172,30 +184,40 @@ export function CliPage(): React.ReactNode {
 }
 
 /**
- * 等宽命令块。
- *
- * 它只是"命令要能整段复制"这一件事的载体，所以留在本文件里；出现第二个
+ * 等宽命令块。它只做"命令要能整段复制"这一件事，所以留在本文件里；出现第二个
  * 使用方时再抽出去（过早抽出去只会多一个只有一处调用的模块）。
+ *
+ * 复制入口用 antd 的 `Typography` 自带的那一个（仓库里已有九处同样的用法），
+ * 不自己碰剪贴板：手动选中一段命令容易漏掉续行，也容易把行首的换行带进去。
  */
 function CommandBlock({ children }: { children: string }): React.ReactNode {
   const { token } = theme.useToken()
 
   return (
-    <pre
-      style={{
-        margin: 0,
-        padding: token.paddingSM,
-        background: token.colorFillTertiary,
-        borderRadius: token.borderRadius,
-        fontFamily: MONOSPACE,
-        fontSize: 13,
-        // 命令普遍很长，窄屏下尤其。**折行而不是横向滚动**：横向滚动会把
-        // 后半截藏起来，而这里藏的是 URL——看着像命令就长这样。
-        whiteSpace: 'pre-wrap',
-        overflowWrap: 'anywhere',
-      }}
-    >
-      {children}
-    </pre>
+    <div style={{ position: 'relative' }}>
+      <pre
+        style={{
+          margin: 0,
+          padding: token.paddingSM,
+          // 右上角留给复制入口：正文不钻到它下面去。
+          paddingRight: token.paddingSM + token.padding,
+          background: token.colorFillTertiary,
+          borderRadius: token.borderRadius,
+          fontFamily: MONOSPACE,
+          fontSize: 13,
+          // 命令普遍很长，窄屏下尤其。**折行而不是横向滚动**：横向滚动会把
+          // 后半截藏起来，而这里藏的是 URL——看着像命令就长这样。
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere',
+        }}
+      >
+        {children}
+      </pre>
+      {/* 没有子节点，因此渲染出来的就是这个复制图标本身。 */}
+      <Typography.Text
+        copyable={{ text: children }}
+        style={{ position: 'absolute', top: token.paddingXS, right: token.paddingXS }}
+      />
+    </div>
   )
 }
