@@ -57,6 +57,18 @@
 
 版本号一路来自 tag：`GITHUB_REF_NAME` → `make release-build VERSION=…` → Makefile 里既有的 `LDFLAGS`。**不新增第二处 `-X main.version`**。
 
+CLI 产物里另有一处注入：**内置默认目标地址**——发布出去的 CLI 默认连官方服务，这样"下载下来就能登录"成立（行为见 [design/config/cli-config.md](design/config/cli-config.md)）。它与版本号是两件事，不共用同一个 `-X`，规则照旧：地址注入也**只有一处**。
+
+- 值由仓库变量 `ALADDIN_CLI_DEFAULT_ADDRESS` 提供，构建时传给 `make release-build RELEASE_CLI_ADDRESS=…`。**它是部署实例的值，不进仓库**——与 nginx 模板里的 `__SITE_DOMAIN__` 是同一条约束（见 [deploy.md](deploy.md) 的可验证性表）。
+- **只注入 CLI 二进制**：服务端产物不带这个值，它无论在哪种构建形态下都只监听回环。
+- 值缺失时**构建失败**，而不是发出一个默认连本机的 CLI。守卫放在 `release.yml`，因此本机的 `make release-build` 不受影响（它不带这个变量，产物默认连本机——**本机构建的发布产物不代表发布出去的那种**）。
+- 值必须是 `host:port` 形态（地址不接受 scheme 与路径）：形状不对时**构建失败**。运行时也有同一套校验，但那已经是发出去之后的事了。
+- 构建后**必须校验注入真的落进了二进制**：`-X` 在符号名写错或符号不可达时会**静默失效、不报错**。没有这一步，就会发出去一个悄悄回落到本机默认值的产物，而所有门禁都是绿的。
+
+```bash
+grep -aqF -- "<注入值>" dist/aladdin || 中止
+```
+
 产物落在 `dist/`：
 
 | 产物 | 说明 |

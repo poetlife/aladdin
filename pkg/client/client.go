@@ -1,19 +1,23 @@
 // Package client 提供访问 aladdin gRPC 服务的客户端构造。
 //
-// 它是客户端侧所有出站请求的唯一出口：凭证与链路标识的注入只在这里实现，
-// CLI 与未来的其它调用方都复用它，避免出现"某个入口忘了带链路标识"。
+// 它是客户端侧所有出站请求的唯一出口：传输方式、凭证与链路标识的注入只在这里
+// 实现，CLI 与未来的其它调用方都复用它，避免出现"某个入口忘了带链路标识"
+// 或"某个入口忘了加密"。
 package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sort"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/poetlife/aladdin/internal/loopback"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
@@ -22,6 +26,13 @@ import (
 type Options struct {
 	// Address 是目标 gRPC 地址。
 	Address string
+	// TLS 非空时用 TLS 连接；为空表示明文。
+	//
+	// **非回环地址必须非空。** 是否使用 TLS 由调用方按目标地址推导
+	// （见 config.CLIConfig.TLSConfig），本包不重复那个判断——但会把"非回环
+	// 不得明文"这条底线守住，见 Dial。测试注入的传输配置也只经此字段进入，
+	// 因此不存在面向用户的"跳过证书校验"开关。
+	TLS *tls.Config
 	// Token 是访问凭证。为空表示匿名调用（只能访问公开方法）。
 	Token string
 	// Scope 是本次调用声明的作用域。为空时由服务端使用凭证的默认作用域。
@@ -37,6 +48,10 @@ type Client struct {
 }
 
 // Dial 建立连接。
+//
+// 明文只允许通向回环地址（本机开发、SSH 隧道）：指向别处却不给 TLS 配置时
+// 在这里就失败。凭证是 Authorization: Bearer，明文过境等于把它交出去，
+// 因此这条底线由本包兜住——调用方漏传一次也不会悄悄发出去。
 func Dial(opts Options) (*Client, error) {
 	if opts.Address == "" {
 		return nil, fmt.Errorf("目标地址不能为空")
@@ -45,8 +60,18 @@ func Dial(opts Options) (*Client, error) {
 		opts.Timeout = 30 * time.Second
 	}
 
+	var creds credentials.TransportCredentials
+	switch {
+	case opts.TLS != nil:
+		creds = credentials.NewTLS(opts.TLS)
+	case loopback.IsAddress(opts.Address):
+		creds = insecure.NewCredentials()
+	default:
+		return nil, fmt.Errorf("目标地址 %s 不是回环地址，必须使用 TLS", opts.Address)
+	}
+
 	conn, err := grpc.NewClient(opts.Address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(creds),
 		grpc.WithChainUnaryInterceptor(unaryMetadataInterceptor(opts)),
 	)
 	if err != nil {

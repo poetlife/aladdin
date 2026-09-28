@@ -82,7 +82,8 @@ func runLogin(cmd *cobra.Command, token string) error {
 	if err := ensureTelemetry(cfg); err != nil {
 		return err
 	}
-	c, err := client.Dial(client.Options{Address: cfg.Address, Timeout: cfg.Timeout})
+	debugTarget(cfg)
+	c, err := client.Dial(client.Options{Address: cfg.Address, TLS: cfg.TLSConfig(), Timeout: cfg.Timeout})
 	if err != nil {
 		return err
 	}

@@ -587,10 +587,59 @@ func TestValidateCLITimeout(t *testing.T) {
 }
 
 // 两端默认地址同源：本机开发零配置互通依赖这一点。
+//
+// 发布构建会往 CLI 一端注入官方服务地址，但那条注入**只作用于 CLI**，
+// 且解析只经过 resolveCLITarget 一处。因此这里既断言"源码构建两端同源"，
+// 也直接断言注入的分支：注入后服务端仍取内置常量。
+//
+// 注入值不写进测试文件——它是部署实例的值（见 deploy.md 的可验证性表），
+// 这里用的与其它测试同一批夹具域名。
 func TestDefaultAddressShared(t *testing.T) {
 	if DefaultServer().Address != DefaultCLI().Address {
 		t.Errorf("两端默认地址不一致：服务端 %q，CLI %q",
 			DefaultServer().Address, DefaultCLI().Address)
+	}
+	if got := resolveCLITarget(""); got != DefaultAddress {
+		t.Errorf("空注入值应回落到内置常量 %q，得到 %q", DefaultAddress, got)
+	}
+	if got := resolveCLITarget("aladdin.example.test:443"); got != "aladdin.example.test:443" {
+		t.Errorf("注入值未被采用，得到 %q", got)
+	}
+	if DefaultServer().Address != DefaultAddress {
+		t.Errorf("服务端的监听默认值不应被注入影响，得到 %q", DefaultServer().Address)
+	}
+}
+
+// 目标地址决定是否使用 TLS：非回环一律 TLS，只有回环允许明文。
+func TestCLIRequiresTLS(t *testing.T) {
+	cases := []struct {
+		address string
+		want    bool
+	}{
+		{"127.0.0.1:9090", false},
+		{"localhost:9090", false},
+		{"[::1]:9090", false},
+		{"127.0.0.2:9090", false},
+		{"aladdin.example.test:443", true},
+		{"192.168.1.10:9090", true},
+	}
+	for _, c := range cases {
+		cfg := CLIConfig{Address: c.address}
+		if got := cfg.RequiresTLS(); got != c.want {
+			t.Errorf("%q 的 RequiresTLS() = %v，期望 %v", c.address, got, c.want)
+		}
+		// 明文与 TLS 必须成对：要求 TLS 时不得拿到空配置，回环时不得拿到配置。
+		if got := cfg.TLSConfig(); (got != nil) != c.want {
+			t.Errorf("%q 的 TLSConfig() 是否为 nil = %v，期望 %v", c.address, got != nil, c.want)
+		}
+	}
+
+	cfg := CLIConfig{Address: "aladdin.example.test:443"}
+	if got := cfg.TLSConfig(); got == nil || got.ServerName != "aladdin.example.test" {
+		t.Errorf("非回环地址的 TLSConfig 应带 SNI 主机名，得到 %+v", got)
+	}
+	if cfg.TLSConfig().InsecureSkipVerify {
+		t.Error("TLSConfig 不得跳过证书校验")
 	}
 }
 

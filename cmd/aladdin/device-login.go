@@ -31,7 +31,8 @@ func runDeviceLogin(cmd *cobra.Command) error {
 	}
 
 	// 设备码登录的两个接口都是公开方法，因此这条连接不带任何凭证。
-	c, err := client.Dial(client.Options{Address: cfg.Address, Timeout: cfg.Timeout})
+	debugTarget(cfg)
+	c, err := client.Dial(client.Options{Address: cfg.Address, TLS: cfg.TLSConfig(), Timeout: cfg.Timeout})
 	if err != nil {
 		return err
 	}

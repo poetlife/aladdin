@@ -23,6 +23,7 @@
 | 数据库后端类型的合法取值 | `database.ParseDialect` | [internal/database/dialect.go](../internal/database/dialect.go) |
 | 该读哪一个配置文件（显式指定 > 环境变量 > 默认位置） | `config.locateFile` | [internal/config/file.go](../internal/config/file.go) |
 | 配置文件里的键是否属于本端 | `config.readFileValues` | [internal/config/file.go](../internal/config/file.go) |
+| 一个主机（或 `host:port` 目标）是否为本地回环（唯一判据；决定 CLI 是否允许明文） | `loopback.IsHost` / `loopback.IsAddress` | [internal/loopback/loopback.go](../internal/loopback/loopback.go) |
 | 凭证文件权限是否可接受（仅属主可读写） | 凭证文件权限校验 | [internal/auth/credentials.go](../internal/auth/credentials.go) |
 | 合入 / 发版前的门禁范围（跑哪些检查） | 可复用工作流 | [.github/workflows/gate.yml](../.github/workflows/gate.yml) |
 | 一份渠道凭证是否可信、代表哪个渠道上的哪个身份 | `identity.TokenVerifier` 接口；每个渠道一个实现 | [internal/identity/channel.go](../internal/identity/channel.go)（Google 实现见 [google_verifier.go](../internal/identity/google_verifier.go)、GitHub 见 [github_verifier.go](../internal/identity/github_verifier.go)） |
@@ -64,6 +65,7 @@
 | 服务端配置的五层合并与校验 | `config.LoadServer` | [internal/config/load.go](../internal/config/load.go) |
 | CLI 配置的五层合并与校验 | `config.LoadCLI` | [internal/config/load.go](../internal/config/load.go) |
 | 分层顺序（默认值 < 配置文件 < 本地覆盖 < 环境变量 < 命令行参数） | 两端展开时共用同一条语义与同一批来源读取函数 | [internal/config/load.go](../internal/config/load.go) |
+| CLI 内置默认目标地址的解析（源码常量，或发布构建注入值） | `config.DefaultCLI` 内的解析入口；注入值的生产者是 `make release-build` / `release.yml` | [internal/config/config.go](../internal/config/config.go) |
 | CLI 凭证解析（参数 > 环境变量 > 凭证文件） | `auth.Resolve` | [internal/auth/credentials.go](../internal/auth/credentials.go) |
 | 日志 logger 构建 | `observability.NewLogger` | [internal/observability/logger.go](../internal/observability/logger.go) |
 | trace_id / span_id 的生成与继承 | OTel 传播器，经 `observability.StartServerSpan` / `StartClientSpan` | [internal/observability/tracing.go](../internal/observability/tracing.go) |

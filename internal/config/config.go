@@ -9,8 +9,10 @@
 package config
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -18,6 +20,7 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
+	"github.com/poetlife/aladdin/internal/loopback"
 	"github.com/poetlife/aladdin/internal/observability"
 )
 
@@ -366,14 +369,62 @@ func DefaultServer() ServerConfig {
 	}
 }
 
+// injectedCLIDefaultAddress 是发布构建注入的 CLI 默认目标地址。
+//
+// 只有 `make release-build` 会通过链接器注入它，源码构建恒为空串——空串表示
+// "用 DefaultAddress"。官方发布的 CLI 因此开箱就指向官方服务，而从源码构建的
+// 二进制仍默认连本机（见 docs/release.md 的"产物"）。
+//
+// **初值必须是字符串字面量。** 一旦写成非常量表达式（哪怕是
+// `strings.TrimSpace("")`），编译器会生成一段 init 赋值，在启动时把链接期
+// 注入的值覆盖掉——注入静默失效，产物悄悄回落到 DefaultAddress。
+// 符号名形如 github.com/poetlife/aladdin/internal/config.injectedCLIDefaultAddress。
+var injectedCLIDefaultAddress = ""
+
+// resolveCLITarget 解析 CLI 的目标地址：注入值优先，否则内置常量。
+//
+// 默认值的解析只有这一处。服务端**不经过这里**：它的监听默认值在任何构建形态下
+// 都是 DefaultAddress，注入只作用于 CLI 一端。
+func resolveCLITarget(injected string) string {
+	if injected != "" {
+		return injected
+	}
+	return DefaultAddress
+}
+
 // DefaultCLI 返回 CLI 的内置默认配置。
 func DefaultCLI() CLIConfig {
 	return CLIConfig{
-		Address:         DefaultAddress,
+		Address:         resolveCLITarget(injectedCLIDefaultAddress),
 		Timeout:         DefaultTimeout,
 		LogLevel:        DefaultLogLevel,
 		OTelSampleRatio: DefaultSampleRatio,
 	}
+}
+
+// RequiresTLS 判断这个目标地址是否必须使用 TLS。
+//
+// **非回环地址一律要求 TLS**，只有回环（本机开发、SSH 隧道）允许明文。这个判断
+// 从**合并后的地址**推导，不是一个配置键：因此它不可能与地址不一致，也不会出现
+// "地址改了、协议没跟着改"。CLI 的凭证是 Authorization: Bearer，明文过境等于把
+// 凭证交出去——所以不提供关掉它的开关（见 CLAUDE.md 第 7 条）。
+func (c CLIConfig) RequiresTLS() bool { return !loopback.IsAddress(c.Address) }
+
+// TLSConfig 返回该目标地址应当使用的传输层配置；回环地址返回 nil，表示明文。
+//
+// 走系统根证书：官方服务的证书由公开 CA 签发，不需要额外的信任配置。**不设置
+// InsecureSkipVerify**——那等于把这条连接交给任何能插到中间的人。
+func (c CLIConfig) TLSConfig() *tls.Config {
+	if !c.RequiresTLS() {
+		return nil
+	}
+	// Address 的形状已由 Validate 保证是 host:port；这里取主机名是为了显式给出
+	// SNI 与证书校验用的名字，不依赖底层连接的默认推导。
+	host, _, err := net.SplitHostPort(c.Address)
+	if err != nil {
+		return &tls.Config{}
+	}
+	return &tls.Config{ServerName: host}
 }
 
 // LoggerOptions 把服务端配置转换为日志构建参数。
@@ -568,7 +619,7 @@ func checkOriginShape(key, env, raw, pathReason string) error {
 	if u.Path != "" && u.Path != "/" {
 		return invalidKey(key, env, fmt.Sprintf("路径必须为空或只有 /，当前 %q：%s", u.Path, pathReason))
 	}
-	loopbackHTTP := u.Scheme == "http" && isLoopbackHost(u.Hostname())
+	loopbackHTTP := u.Scheme == "http" && loopback.IsHost(u.Hostname())
 	if u.Scheme != "https" && !loopbackHTTP {
 		return invalidKey(key, env, fmt.Sprintf("必须是 https（仅本地回环主机允许 http），当前协议 %q", u.Scheme))
 	}
@@ -667,16 +718,6 @@ func validatePublicBaseURL(raw string) error {
 	}
 	return checkOriginShape(keyPublicBaseURL, EnvPublicBaseURL, raw,
 		"带路径会衍生出一个也要登记在渠道控制台里的回调地址")
-}
-
-// isLoopbackHost 判断主机名是不是本地回环地址。
-func isLoopbackHost(host string) bool {
-	switch host {
-	case "localhost", "127.0.0.1", "::1":
-		return true
-	default:
-		return false
-	}
 }
 
 // validateGithubLogin 校验重定向型登录渠道的配置。
