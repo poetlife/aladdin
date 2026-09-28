@@ -73,7 +73,7 @@ func newRootCommand() *cobra.Command {
 
 	pf := root.PersistentFlags()
 	pf.StringVar(&flags.configPath, "config", "", "配置文件路径（默认读取 ALADDIN_CONFIG，否则读用户配置目录下的 config.yml）")
-	pf.StringVar(&flags.address, "address", "", "服务端地址（默认读取 ALADDIN_ADDRESS 或内置默认值）")
+	pf.StringVar(&flags.address, "address", "", "服务端地址（默认读取 ALADDIN_ADDRESS 或内置默认值；发布产物已内置官方地址，非回环地址一律走 TLS）")
 	pf.StringVar(&flags.token, "token", "", "访问凭证（优先级最高）")
 	pf.StringVar(&flags.scope, "scope", "", "本次调用声明的作用域")
 	pf.StringVar(&flags.output, "output", "text", "输出格式：text 或 json")
@@ -135,14 +135,32 @@ func newClient() (*client.Client, error) {
 	}
 	if cfg.LogLevel == observability.LevelDebug {
 		// 只输出来源，绝不输出凭证原文。
-		printf(os.Stderr, "debug: 凭证来源=%s 作用域=%q 地址=%s\n", cred.Source, cred.Scope, cfg.Address)
+		printf(os.Stderr, "debug: 凭证来源=%s 作用域=%q\n", cred.Source, cred.Scope)
 	}
+	debugTarget(cfg)
 	return client.Dial(client.Options{
 		Address: cfg.Address,
+		TLS:     cfg.TLSConfig(),
 		Token:   cred.Token,
 		Scope:   cred.Scope,
 		Timeout: cfg.Timeout,
 	})
+}
+
+// debugTarget 在 debug 级别下打印目标地址与传输方式。
+//
+// 它要在**每一条会发起调用的路径**上都出现，包括登录：排障时第一眼要确认的就是
+// "这次连的到底是哪、有没有加密"。只在其中一条路径上打印，会让另一条路径的现场
+// 多出一轮来回（见 docs/debugging/records/2026-09-29-cli-http1-preface-error.md）。
+func debugTarget(cfg config.CLIConfig) {
+	if cfg.LogLevel != observability.LevelDebug {
+		return
+	}
+	transport := "明文"
+	if cfg.RequiresTLS() {
+		transport = "TLS"
+	}
+	printf(os.Stderr, "debug: 地址=%s 传输=%s\n", cfg.Address, transport)
 }
 
 // confirm 对危险操作做二次确认。

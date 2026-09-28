@@ -3,15 +3,21 @@ package main
 import (
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
+	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/auth"
+	"github.com/poetlife/aladdin/internal/rbac"
 )
+
+// connectErr 造一个指定错误码的 Connect 错误，用于退出码映射表。
+func connectErr(code connect.Code) error {
+	return connect.NewError(code, errors.New("x"))
+}
 
 // TestCheckCommandsRequiresDeclaration 确保新增命令必须表态：
 // 要么声明权限码，要么进公开白名单。
@@ -39,14 +45,14 @@ func TestExitCodeFor(t *testing.T) {
 		{"无错误", nil, exitOK},
 		{"缺少凭证", auth.ErrNoCredential, exitUnauthenticated},
 		{"凭证文件权限过宽", auth.ErrCredentialFileInsecure, exitUnauthenticated},
-		{"未认证", status.Error(codes.Unauthenticated, "x"), exitUnauthenticated},
-		{"权限不足", status.Error(codes.PermissionDenied, "x"), exitPermissionDenied},
-		{"服务不可用", status.Error(codes.Unavailable, "x"), exitUnavailable},
-		{"超时", status.Error(codes.DeadlineExceeded, "x"), exitUnavailable},
-		{"参数非法", status.Error(codes.InvalidArgument, "x"), exitUsage},
-		{"前置条件不满足", status.Error(codes.FailedPrecondition, "x"), exitUsage},
-		{"内部错误", status.Error(codes.Internal, "x"), exitFailure},
-		{"非 grpc 错误", errors.New("boom"), exitFailure},
+		{"未认证", connectErr(connect.CodeUnauthenticated), exitUnauthenticated},
+		{"权限不足", connectErr(connect.CodePermissionDenied), exitPermissionDenied},
+		{"服务不可用", connectErr(connect.CodeUnavailable), exitUnavailable},
+		{"超时", connectErr(connect.CodeDeadlineExceeded), exitUnavailable},
+		{"参数非法", connectErr(connect.CodeInvalidArgument), exitUsage},
+		{"前置条件不满足", connectErr(connect.CodeFailedPrecondition), exitUsage},
+		{"内部错误", connectErr(connect.CodeInternal), exitFailure},
+		{"非 Connect 错误", errors.New("boom"), exitFailure},
 	}
 
 	seen := map[int]string{}
@@ -76,6 +82,38 @@ func TestExitCodeFor(t *testing.T) {
 		if tc.code == exitOK {
 			t.Errorf("%s 的退出码不能是 0", tc.name)
 		}
+	}
+}
+
+// 拒绝提示读的是错误详情里的结构化 DenialDetail，而不是错误文本——
+// 文本会变，枚举取值是契约。
+func TestDescribeDenialReadsStructuredDetail(t *testing.T) {
+	denied := func(reason rbacv1.DenialReason, metadata map[string]string) error {
+		ce := connect.NewError(connect.CodePermissionDenied, errors.New("服务端原始文本"))
+		detail, err := connect.NewErrorDetail(&rbacv1.DenialDetail{
+			Reason:   reason,
+			Metadata: metadata,
+		})
+		if err != nil {
+			t.Fatalf("构造拒绝详情失败: %v", err)
+		}
+		ce.AddDetail(detail)
+		return ce
+	}
+
+	if msg := describeDenial(denied(rbac.ReasonNoMatchingGrant, nil)); !strings.Contains(msg, "aladdin permissions") {
+		t.Errorf("无匹配授权的提示应引导到 permissions 命令，得到 %q", msg)
+	}
+	if msg := describeDenial(denied(rbac.ReasonAnnotationMissing,
+		map[string]string{"method": "/aladdin.test.v1.S/M"})); !strings.Contains(msg, "/aladdin.test.v1.S/M") {
+		t.Errorf("漏注解的提示应报出方法名，得到 %q", msg)
+	}
+	// 没有详情的 Connect 错误、以及根本不是 Connect 的错误，都不该给出拒绝提示。
+	if msg := describeDenial(connectErr(connect.CodePermissionDenied)); msg != "" {
+		t.Errorf("没有详情时不应给出拒绝提示，得到 %q", msg)
+	}
+	if msg := describeDenial(errors.New("boom")); msg != "" {
+		t.Errorf("非 Connect 错误不应给出拒绝提示，得到 %q", msg)
 	}
 }
 

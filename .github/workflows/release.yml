@@ -52,6 +52,11 @@ jobs:
     needs: gate
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # 发布产物里 CLI 的默认目标地址。它是**部署实例的值**，因此不进仓库：
+      # 值放在仓库设置（Settings → Variables）里，构建时注入二进制。
+      # 见 docs/release.md 的"产物"。
+      ALADDIN_CLI_DEFAULT_ADDRESS: ${{ vars.ALADDIN_CLI_DEFAULT_ADDRESS }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
@@ -74,11 +79,21 @@ jobs:
       - name: 安装前端依赖
         run: make web-ci
 
+      # 缺值就**不发**：默认连本机的 CLI 发出去，用户那边表现为"装完登录连不上"，
+      # 而这里一切绿灯。宁可这次发版失败。
+      - name: 校验 CLI 默认地址已配置
+        run: |
+          if [ -z "${ALADDIN_CLI_DEFAULT_ADDRESS}" ]; then
+            echo "::error::仓库变量 ALADDIN_CLI_DEFAULT_ADDRESS 未配置。缺了它，发布产物里的 CLI 会默认连本机，装的人连不上官方服务。"
+            exit 1
+          fi
+
       # 交叉编译、归档与校验和都在 Makefile 里，这里不重写一遍 go build：
       # 构建命令若有第二个入口，就会与 make build 漂移。
-      # VERSION 由 tag 传入，与 make build 共用同一处 LDFLAGS。
+      # VERSION 由 tag 传入，与 make build 共用同一处 LDFLAGS；地址另有一处注入，
+      # 只作用于 CLI 那个二进制（见 docs/release.md 的"产物"）。
       - name: 构建
-        run: make release-build VERSION="${GITHUB_REF_NAME}"
+        run: make release-build VERSION="${GITHUB_REF_NAME}" RELEASE_CLI_ADDRESS="${ALADDIN_CLI_DEFAULT_ADDRESS}"
 
       - name: 上传产物
         uses: actions/upload-artifact@v7

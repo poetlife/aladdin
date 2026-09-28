@@ -3,9 +3,11 @@
 // 传输层用 Connect（connect-go）：它的 handler 在同一个端口上同时支持
 // Connect / gRPC / gRPC-Web 三种协议，因此
 //   - 浏览器走 Connect（web/src/api/transport.ts）
-//   - CLI 走原生 gRPC（pkg/client 的 grpc-go 客户端）
+//   - CLI 也走 Connect（pkg/client）
 //
-// 两者打同一个地址，不存在两套服务端，也不存在两份业务实现。
+// 两者打同一个地址，不存在两套服务端，也不存在两份业务实现。命令行不走原生
+// gRPC 是有依据的：反向代理转发 gRPC 时会丢掉空正文响应的 trailers，也就是
+// 所有错误响应（见 docs/debugging/registry.md）。
 //
 // 参考实现：usememos/memos。
 package server

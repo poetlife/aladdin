@@ -173,10 +173,10 @@ export function CliPage(): React.ReactNode {
 
       <Card title="服务端地址">
         <Typography.Paragraph style={{ marginBottom: 0 }}>
-          由 <Typography.Text code>--address</Typography.Text>、
-          <Typography.Text code>ALADDIN_ADDRESS</Typography.Text> 或配置文件给出，默认{' '}
-          <Typography.Text code>127.0.0.1:9090</Typography.Text>。把一个远端服务端接到本机属于部署形态，
-          不在这里展开。
+          <strong>发布版已经带着官方服务地址</strong>，装完直接登录即可，不用先配。从源码构建的二进制默认连本机（
+          <Typography.Text code>127.0.0.1:9090</Typography.Text>）。要换目标用{' '}
+          <Typography.Text code>--address</Typography.Text> 或{' '}
+          <Typography.Text code>ALADDIN_ADDRESS</Typography.Text>，也可以写进配置文件；<strong>非本机地址一律走 TLS</strong>。
         </Typography.Paragraph>
       </Card>
     </Space>

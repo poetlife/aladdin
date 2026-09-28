@@ -21,6 +21,15 @@ GO_BINS     := aladdin-server aladdin
 # 校验和工具名在两端不同：Linux 是 sha256sum，macOS 是 shasum -a 256。
 SHA256      := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
+# 发布产物的 CLI 里注入的默认目标地址：发布出去的 CLI 开箱就该连官方服务。
+#
+# 只作用于 CLI 那一个二进制——服务端的监听默认值在任何构建形态下都是回环。
+# 值形如 host:port（地址不接受 scheme），由 CI 从仓库变量传入：它是部署实例的
+# 值，不进仓库（见 docs/release.md 的"产物"）。空值合法，本机构建的发布产物
+# 因此默认连本机——它**不代表**发布出去的那一种。
+RELEASE_CLI_ADDRESS ?=
+CLI_ADDRESS_LDFLAG  := $(if $(RELEASE_CLI_ADDRESS),-X $(MODULE)/internal/config.injectedCLIDefaultAddress=$(RELEASE_CLI_ADDRESS))
+
 # 生成代码与静态检查所需的工具。用 `go install` 固定版本，避免"我这能跑"。
 #
 # 五条一律钉到具体版本，不留 @latest：留一个，本机与 CI 就可能装到不同的版本，
@@ -147,12 +156,26 @@ web-build: ## 构建前端
 .PHONY: release-build
 release-build: web-build ## 产出发布产物到 dist/（跨平台二进制、前端包、校验和）
 	@rm -rf $(DIST_DIR) && mkdir -p $(DIST_DIR)
+	@if [ -z "$(RELEASE_CLI_ADDRESS)" ]; then \
+		echo ">>> 注意：未提供 RELEASE_CLI_ADDRESS，本次的 CLI 产物默认连本机（只适合本机验证）"; \
+	fi
 	@for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
 		for b in $(GO_BINS); do \
 			echo ">>> $$os/$$arch $$b"; \
+			ldflags='$(RELEASE_LDFLAGS)'; \
+			if [ "$$b" = "aladdin" ]; then ldflags="$$ldflags $(CLI_ADDRESS_LDFLAG)"; fi; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 \
-				go build -trimpath -ldflags '$(RELEASE_LDFLAGS)' -o $(DIST_DIR)/$$b ./cmd/$$b || exit 1; \
+				go build -trimpath -ldflags "$$ldflags" -o $(DIST_DIR)/$$b ./cmd/$$b || exit 1; \
+			if [ "$$b" = "aladdin" ] && [ -n "$(RELEASE_CLI_ADDRESS)" ]; then \
+				echo "$(RELEASE_CLI_ADDRESS)" | grep -Eq '^[^:]+:[0-9]+$$' || { \
+					echo "RELEASE_CLI_ADDRESS 必须形如 host:port（地址不接受 scheme 与路径），得到 $(RELEASE_CLI_ADDRESS)" >&2; \
+					exit 1; }; \
+				grep -aqF -- "$(RELEASE_CLI_ADDRESS)" $(DIST_DIR)/$$b || { \
+					echo "注入失败：$(DIST_DIR)/$$b 中找不到 $(RELEASE_CLI_ADDRESS)" >&2; \
+					echo "  链接器 -X 在符号名写错或符号不可达时会静默失效，产物会悄悄回落到本机默认值" >&2; \
+					exit 1; }; \
+			fi; \
 			tar -czf $(DIST_DIR)/$${b}_$(VERSION)_$${os}_$${arch}.tar.gz -C $(DIST_DIR) $$b || exit 1; \
 			rm $(DIST_DIR)/$$b; \
 		done; \

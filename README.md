@@ -7,7 +7,7 @@
 三端共享同一套 RBAC 权限体系：
 
 - **服务端**（Go + Connect）：权限模型与决策引擎的唯一实现处，是唯一的安全边界。一个端口同时讲 Connect / gRPC / gRPC-Web
-- **命令行**（Go + cobra）：走原生 gRPC 的客户端，与服务端共享同一份业务实现
+- **命令行**（Go + cobra）：走 Connect 的客户端，与服务端共享同一份业务实现
 - **前端**（React + antd）：走 Connect，按服务端下发的权限码集合做展示裁剪
 
 三端之间的接口契约由 `api/proto/` 单一来源派生：服务端 handler、前端类型与 service descriptor 都出自同一次 `buf generate`。

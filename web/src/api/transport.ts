@@ -19,8 +19,8 @@ import { RBACService } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
  * 回写在响应头里；失败时可用 `traceIdOf(error)` 取出，见 ./errors。
  *
  * 传输协议是 Connect（参考 usememos/memos）：服务端用 connect-go，
- * 同一个端口同时支持 Connect / gRPC / gRPC-Web，因此浏览器走 Connect、
- * CLI 走原生 gRPC，两侧共享同一份业务实现。
+ * 同一个端口同时支持 Connect / gRPC / gRPC-Web，因此浏览器与命令行
+ * 都走 Connect，两侧共享同一份业务实现。
  */
 
 /** 传输层配置。 */

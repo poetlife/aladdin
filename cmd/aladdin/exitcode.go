@@ -4,8 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"connectrpc.com/connect"
 
 	"github.com/poetlife/aladdin/internal/auth"
 	"github.com/poetlife/aladdin/internal/config"
@@ -57,20 +56,18 @@ func exitCodeFor(err error) int {
 		return exitUsage
 	}
 
-	st, ok := status.FromError(err)
-	if !ok {
-		return exitFailure
-	}
-	switch st.Code() {
-	case codes.OK:
-		return exitOK
-	case codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange, codes.NotFound:
+	// CodeOf 对不是 Connect 错误的输入返回 CodeUnknown，因此网络故障、配置
+	// 错误之类都会落到默认分支的"未分类失败"——与"服务端不可用"区分开，
+	// 后者是服务端明确回了这个码。connect-go 没有"成功"这个码，err == nil
+	// 在上面已经返回了。
+	switch connect.CodeOf(err) {
+	case connect.CodeInvalidArgument, connect.CodeFailedPrecondition, connect.CodeOutOfRange, connect.CodeNotFound:
 		return exitUsage
-	case codes.Unauthenticated:
+	case connect.CodeUnauthenticated:
 		return exitUnauthenticated
-	case codes.PermissionDenied:
+	case connect.CodePermissionDenied:
 		return exitPermissionDenied
-	case codes.Unavailable, codes.DeadlineExceeded:
+	case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
 		return exitUnavailable
 	default:
 		return exitFailure

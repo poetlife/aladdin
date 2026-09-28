@@ -17,7 +17,7 @@
 | 调用方 | 协议 | 说明 |
 |--------|------|------|
 | Web 前端 | Connect | 浏览器端用 `@connectrpc/connect-web` |
-| CLI | 原生 gRPC | grpc-go 客户端，`pkg/client` |
+| CLI | Connect | connect-go 客户端，`pkg/client`。**不走原生 gRPC**：命令行经反向代理出网，而反代转发 gRPC 时会丢掉空正文响应的 trailers，也就是所有错误响应 |
 | 第三方 / 调试 | gRPC-Web、gRPC、Connect | 同一地址，无需额外网关 |
 
 **三者共享同一份业务实现与同一条鉴权链路**。不存在"REST 走一套判定、gRPC 走另一套"的可能——这是选择 Connect 而不是 grpc-gateway 的核心理由（见 [README.md](README.md) 的传输方式决策）。
@@ -40,7 +40,7 @@
 - **认证放在 HTTP 层，而不是 RPC 拦截器里**：拦截器在请求体读取并解压**之后**才执行，把认证放那里意味着未认证的请求也会先被完整读一遍。放在 HTTP 层可以在读取任何字节之前拒绝。未认证的请求是最不需要被解析的请求。
 - **鉴权放在 RPC 拦截器里**：判定需要读取请求消息中的作用域字段，只有过了协议层才拿得到。
 
-因此 HTTP 中间件在拒绝时，必须按客户端所用的协议编码错误——用 Connect 提供的错误写出器完成，它对 Connect / gRPC / gRPC-Web 分别编码（gRPC 走 trailer）。**这不是实现细节而是行为要求**：若中间件对所有协议都写 JSON，grpc-go 客户端会把拒绝当成传输层故障，CLI 就拿不到正确的退出码了。
+因此 HTTP 中间件在拒绝时，必须按客户端所用的协议编码错误——用 Connect 提供的错误写出器完成，它对 Connect / gRPC / gRPC-Web 分别编码（gRPC 走 trailer）。**这不是实现细节而是行为要求**：若中间件对所有协议都写 JSON，gRPC 与 gRPC-Web 客户端会把拒绝当成传输层故障，拿不到正确的退出码或错误码。
 
 ### 受控方法到权限码的映射
 

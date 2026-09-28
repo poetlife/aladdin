@@ -19,9 +19,10 @@ import (
 
 // 本文件验证 Connect 协议路径。
 //
-// authz_test.go 走的是 gRPC 协议（CLI 的 grpc-go 客户端），这里走 Connect 协议
-// （浏览器）。两者打的是**同一个地址、同一份 handler、同一套业务实现**——
-// 这正是选 Connect 的理由。两条路径都过，才说明改造没有引入协议相关的分叉。
+// authz_test.go 走的是 gRPC 协议（grpc-go 客户端，模拟另一条协议），这里走
+// Connect 协议（浏览器与命令行）。两者打的是**同一个地址、同一份 handler、
+// 同一套业务实现**——这正是选 Connect 的理由。两条路径都过，才说明改造没有
+// 引入协议相关的分叉。
 
 // connectClient 构造一个走 Connect 协议的客户端。
 //
