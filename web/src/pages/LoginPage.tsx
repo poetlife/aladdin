@@ -91,8 +91,11 @@ export function LoginPage(): React.ReactNode {
   const hasChannelEntry = google !== undefined || github !== undefined
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 96 }}>
-      <Card style={{ width: 420 }}>
+    // 卡片宽度是弹性的：桌面端维持 420，手机上占满减去左右 16px 的整宽。
+    // 顶部间距随视口高度收缩（clamp 的上限就是原来的 96），矮屏的横屏手机
+    // 才不会一进来只看见留白。
+    <div style={{ display: 'flex', justifyContent: 'center', padding: 'clamp(32px, 12vh, 96px) 16px 24px' }}>
+      <Card style={{ width: '100%', maxWidth: 420, minWidth: 0 }}>
         <Space size={8} align="center" style={{ marginBottom: 12 }}>
           <Lamp size={22} color={token.colorPrimary} />
           <Typography.Title level={4} style={{ margin: 0 }}>

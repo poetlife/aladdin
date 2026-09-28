@@ -1,4 +1,4 @@
-import { Card, Descriptions, Empty, Space, Tag, Typography } from 'antd'
+import { Card, Descriptions, Empty, Skeleton, Space, Tag, Typography } from 'antd'
 import { LayoutDashboard, ShieldCheck } from 'lucide-react'
 
 import { usePermissionSet, useSession } from '../auth'
@@ -12,7 +12,7 @@ import { useProfile } from '../profile'
  */
 export function HomePage(): React.ReactNode {
   const { subject, scope } = useSession()
-  const { profile } = useProfile()
+  const { profile, loading: profileLoading } = useProfile()
   const permissions = usePermissionSet()
   const codes = permissions.toArray()
 
@@ -29,7 +29,15 @@ export function HomePage(): React.ReactNode {
         <Descriptions column={{ xs: 1, sm: 1, md: 2 }} size="small">
           {/* 展示名由服务端算好：未设昵称时回退到登录渠道标识。把它与主体标识
               并排显示，是因为排障时常常需要把界面上看到的名字对应回库里那一行。 */}
-          <Descriptions.Item label="显示名">{profile?.displayName ?? '—'}</Descriptions.Item>
+          {/* 档案是这一页唯一晚到的数据（会话与权限码在进来之前就已就绪），
+              所以只有这一格需要占位；整页铺骨架反而会把已经拿到的数据盖掉。 */}
+          <Descriptions.Item label="显示名">
+            {profileLoading && profile === null ? (
+              <Skeleton.Input active size="small" style={{ width: 120 }} />
+            ) : (
+              (profile?.displayName ?? '—')
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="主体标识">{subject?.subjectId ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="类型">{subject?.subjectType ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="当前作用域">{scope === '' ? '<global>' : scope}</Descriptions.Item>

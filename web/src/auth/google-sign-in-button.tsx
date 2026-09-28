@@ -45,5 +45,14 @@ export function GoogleSignInButton({ clientId, onCredential }: GoogleSignInButto
     }
   }, [clientId])
 
-  return <div ref={holder} data-testid="google-sign-in" />
+  // 容器自己占满可用宽度并把按钮居中：GIS 只按固定像素宽度画按钮，
+  // 容器若按内容撑宽，挂载时就量不到"还剩多少地方"，只能写死一个宽度，
+  // 而写死的那个数在手机上必然过宽。
+  return (
+    <div
+      ref={holder}
+      data-testid="google-sign-in"
+      style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
+    />
+  )
 }

@@ -115,6 +115,10 @@ export function RolesPage(): React.ReactNode {
         dataSource={roles}
         loading={loading}
         pagination={false}
+        // 三列都按内容撑宽，手机上装不下。让表格在自己的容器里横向滚动，
+        // 而不是把整页顶宽——整页横向滚动是这一版要消掉的东西。
+        // 代价是权限列不再换行、表格比桌面端更宽，这是"手机上读得下来"换来的。
+        scroll={{ x: 'max-content' }}
         locale={{
           emptyText: (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前作用域下没有角色" />

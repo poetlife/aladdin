@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Alert, Button, Card, Divider, Flex, Listy, Popconfirm, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Divider, Flex, Listy, Popconfirm, Skeleton, Space, Tag, Typography } from 'antd'
 import { KeyRound, Link2 } from 'lucide-react'
 
 import * as identityApi from '../api/identity'
@@ -131,7 +131,9 @@ export function IdentityCard(): React.ReactNode {
       )}
 
       {identities === null ? (
-        error === null && <Typography.Text type="secondary">正在读取登录方式…</Typography.Text>
+        // 还没读到之前给骨架行，形似下面真会出现的列表；
+        // 骨架的微光来自 antd 自带，不自己写动画。
+        error === null && <Skeleton active title={false} paragraph={{ rows: 2 }} />
       ) : (
         <>
           {list.length === 0 ? (
@@ -144,12 +146,20 @@ export function IdentityCard(): React.ReactNode {
                 const last = list.length <= 1
                 return (
                   <Flex justify="space-between" align="center" gap={16}>
-                    <Space orientation="vertical" size={4}>
-                      <Space>
+                    {/* 标识是外部给的，可以很长（邮箱、手机号、一串 openid）。
+                        这里让它换行而不是撑破行：flex 项默认 min-width:auto，
+                        不给 minWidth:0 的话这一列根本不肯收缩。
+                        换行而不截断，是因为这一页的职责就是把标识显示全。 */}
+                    <Space orientation="vertical" size={4} style={{ minWidth: 0, flex: 1 }}>
+                      <Space wrap>
                         <Tag>{sourceLabel(identity.source)}</Tag>
-                        <Typography.Text>{identity.display || identity.externalId}</Typography.Text>
+                        <Typography.Text style={{ wordBreak: 'break-all' }}>
+                          {identity.display || identity.externalId}
+                        </Typography.Text>
                       </Space>
-                      <Typography.Text type="secondary">{identity.externalId}</Typography.Text>
+                      <Typography.Text type="secondary" style={{ wordBreak: 'break-all' }}>
+                        {identity.externalId}
+                      </Typography.Text>
                     </Space>
                     <Popconfirm
                       title={`解绑 ${sourceLabel(identity.source)}？`}
