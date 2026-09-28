@@ -131,4 +131,6 @@
 | CLI 凭证（令牌、绑定作用域、过期时间） | 用户配置目录下的 `credentials.json`，经 `auth.Resolve` 读取 | [internal/auth/credentials.go](../internal/auth/credentials.go) |
 | 环境变量名（`ALADDIN_` 前缀） | 各模块内集中定义：配置项在 config、凭证在 auth、开发旁路在 server；调用方不得手写字符串字面量 | [internal/config/config.go](../internal/config/config.go) |
 | 发布产物清单与校验和（自更新的唯一来源） | `upgrade` 的发布源读取入口 | [internal/upgrade/release.go](../internal/upgrade/release.go) |
+| 发行版产物的命名与平台清单（**自更新与界面上的下载命令两处都消费**） | [docs/release.md](release.md) 记录的对外契约；平台取自 Makefile 的 `PLATFORMS` | [Makefile](../Makefile) |
+| 界面里的等宽字体栈（代码块、可编辑正文） | `MONOSPACE` | [web/src/theme/monospace.ts](../web/src/theme/monospace.ts) |
 | 代码生成与静态检查工具的版本（本机安装与 CI 缓存 key 都由此派生） | Makefile 的 `TOOLS` 清单 | [Makefile](../Makefile) |

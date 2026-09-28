@@ -9,9 +9,11 @@ import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RolesPage } from './pages/RolesPage'
+import { PermissionCodes } from './gen/permission-codes'
+import { CliPage } from './pages/docs/CliPage'
+import { DocsIndexPage } from './pages/docs/DocsIndexPage'
 import { ProjectEditorPage } from './pages/galaxy/ProjectEditorPage'
 import { ProjectListPage } from './pages/galaxy/ProjectListPage'
-import { PermissionCodes } from './gen/permission-codes'
 
 /**
  * 路由表。
@@ -50,6 +52,14 @@ export const router = createBrowserRouter([
           // 地址由服务端拼进对外地址交给终端（internal/server 的
           // DeviceApprovalPath），改这里的路径要同时改那里。
           { path: '/device', element: <DeviceApprovalPage /> },
+          // 文档区。它与外壳同属一回事：**文档是前端的一部分**（路由 + 组件），
+          // 不是另一个站点。将来"放出去"改变的是准入，不是换宿主
+          //（见 docs/design/web/docs-area.md）。
+          //
+          // 准入只要**已认证**、不要权限码：零权限的主体最需要它——否则
+          // "先装命令行才能登录、登录了才看得到怎么装命令行"这个环闭不上。
+          { path: '/docs', element: <DocsIndexPage /> },
+          { path: '/docs/cli', element: <CliPage /> },
           {
             element: <RequirePermission require={[PermissionCodes.RbacRoleRead]} />,
             children: [{ path: '/roles', element: <RolesPage /> }],

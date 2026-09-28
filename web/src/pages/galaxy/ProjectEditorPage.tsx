@@ -14,6 +14,7 @@ import type {
   ValidationProblem,
   Version,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { MONOSPACE } from '../../theme'
 import { AssetLibrary } from './AssetLibrary'
 import { PreviewFrame } from './PreviewFrame'
 import { PublishPanel } from './PublishPanel'
@@ -29,8 +30,6 @@ interface failure {
   message: string
   traceId: string | null
 }
-
-const MONOSPACE = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
 /**
  * 工程编辑器。

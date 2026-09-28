@@ -1,6 +1,7 @@
 import { Avatar, Button, Dropdown, Menu, theme } from 'antd'
 import type { MenuProps } from 'antd'
 import {
+  BookOpen,
   ChevronDown,
   CircleUserRound,
   Lamp,
@@ -61,7 +62,15 @@ export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps):
     ...(canReadRoles
       ? [{ key: '/roles', label: '角色', icon: <ShieldCheck size={ICON_SIZE} /> }]
       : []),
+    // 文档区也不需要权限码：它讲的是"怎么把命令行装上并登录"，
+    // 而零权限的主体恰恰最需要它（见 docs/design/web/docs-area.md）。
+    // 导航**只有这一项**：章节加页只往区域里加，这里不再变。
+    { key: '/docs', label: '文档', icon: <BookOpen size={ICON_SIZE} /> },
   ]
+
+  // 导航项都是一级路径，而页面可以更深（/docs/cli、/galaxy/<工程标识>）。
+  // 拿整个路径去比对，进到子页时父项就不再高亮，因此取第一段。
+  const selectedKey = `/${location.pathname.split('/')[1] ?? ''}`
 
   return (
     // 三段纵向排布：品牌区固定，导航占满剩余高度，账号区钉底。
@@ -73,7 +82,7 @@ export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps):
           正是我们要的，不用手动分叉。 */}
       <Menu
         mode="inline"
-        selectedKeys={[location.pathname]}
+        selectedKeys={[selectedKey]}
         items={items}
         onClick={({ key }) => {
           go(key)

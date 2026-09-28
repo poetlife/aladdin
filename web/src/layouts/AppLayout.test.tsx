@@ -38,7 +38,7 @@ const DRAWER_OPEN = '.ant-drawer-open'
 
 let root: Root | null = null
 
-async function renderShell(): Promise<HTMLElement> {
+async function renderShell(path = '/'): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -46,11 +46,13 @@ async function renderShell(): Promise<HTMLElement> {
     root?.render(
       <ThemeProvider>
         <SessionProvider>
-          <MemoryRouter initialEntries={['/']}>
+          <MemoryRouter initialEntries={[path]}>
             <Routes>
               <Route element={<AppLayout />}>
                 <Route path="/" element={<p>概览内容</p>} />
                 <Route path="/profile" element={<p>档案内容</p>} />
+                <Route path="/docs" element={<p>文档内容</p>} />
+                <Route path="/docs/cli" element={<p>命令行内容</p>} />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -167,5 +169,29 @@ describe('外壳的宽窄两态', () => {
 
     expect(container.textContent).toContain('档案内容')
     expect(document.querySelector(DRAWER_OPEN)).toBeNull()
+  })
+
+  // 文档区不要权限码：零权限的主体最需要它，否则"先装命令行才能登录、
+  // 登录了才看得到怎么装命令行"这个环闭不上（见 docs/design/web/docs-area.md）。
+  it('导航里有文档入口，零权限也渲染得出来', async () => {
+    installMatchMedia(true)
+
+    const container = await renderShell()
+    await clickByLabel(container, '打开导航')
+    await clickDrawerNav('文档')
+
+    expect(container.textContent).toContain('文档内容')
+  })
+
+  // 导航项都是一级路径，而 /docs/cli 这类子页比它深。若拿整个路径去比对，
+  // 进到子页时父项就不再高亮——二级导航项一出现就会撞上。
+  it('进到子页时父导航项仍然高亮', async () => {
+    installMatchMedia(false)
+
+    const container = await renderShell('/docs/cli')
+
+    expect(container.textContent).toContain('命令行内容')
+    const selected = container.querySelector('.ant-menu-item-selected')
+    expect(selected?.textContent).toContain('文档')
   })
 })
