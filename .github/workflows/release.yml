@@ -22,7 +22,8 @@ concurrency:
 jobs:
   validate:
     name: 校验 tag
-    runs-on: ubuntu-latest
+    # 镜像钉版本的理由见 gate.yml。
+    runs-on: ubuntu-24.04
     steps:
       - name: tag 必须形如 vX.Y.Z
         # `tags: ['v*']` 只是粗筛，这里才是真正的约束。
@@ -49,22 +50,22 @@ jobs:
   build:
     name: 构建发布产物
     needs: gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: 安装 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
       - name: 安装 Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -80,7 +81,7 @@ jobs:
         run: make release-build VERSION="${GITHUB_REF_NAME}"
 
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -90,7 +91,7 @@ jobs:
   publish:
     name: 发布 Release
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -98,13 +99,13 @@ jobs:
       # 没有 .git 时 gh 会直接报 "not a git repository"。
       # fetch-tags 显式打开，否则找不到上一个 tag，变更日志会退化成"从第一个提交开始"。
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: 下载产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
@@ -130,7 +131,7 @@ jobs:
   prune:
     name: 清理旧版本产物
     needs: publish
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:

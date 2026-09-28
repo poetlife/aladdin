@@ -15,18 +15,21 @@ permissions:
 jobs:
   gate:
     name: 门禁
-    runs-on: ubuntu-latest
+    # 钉住基础镜像版本。ubuntu-latest 会在 GitHub 轮换镜像时静默换掉整个运行环境，
+    # 那是"某天门禁突然红了而没人改过代码"的典型来源；换镜像应当是一次有意的改动。
+    # 这与 Makefile 里把工具钉到具体版本是同一条理由：版本升级是有意为之，不是自动发生的。
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # 需要完整历史：make check-gen 用 git diff 判断生成产物是否同步，
           # 浅克隆会让这个判断失真。
           fetch-depth: 0
 
       - name: 安装 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           # 关掉 setup-go 自带的缓存，改用下面那一步。它自带的缓存 key 只看
@@ -47,7 +50,7 @@ jobs:
         # 代价是缓存停在首次保存时的那份，仓库自身的包仍要重编——
         # 但编译开销的大头是 otel/gRPC/gorm 这些永不改变的三方依赖，
         # 它们从头到尾都在缓存里。
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/go/pkg/mod
@@ -56,7 +59,7 @@ jobs:
           restore-keys: go-${{ runner.os }}-
 
       - name: 安装 Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -77,7 +80,7 @@ jobs:
         # 有意不缓存 golangci-lint 自己的分析结果（~/.cache/golangci-lint）。
         # 上面两个缓存过期了只是慢一点，那一个过期了可能让一条 finding 不再出现，
         # 而门禁里"少报一条"和"没有门禁"是一回事。
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/go/bin
           key: go-tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
