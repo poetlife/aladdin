@@ -111,8 +111,8 @@ galaxy 补上这一块：用户在 aladdin 里写 HTML、放素材，然后发�
 | 个人档案 | **无交互**。工程不显示拥有者的昵称与头像——发布态是公开匿名的，把展示信息带上去会引入一条新的身份暴露面，见 [publication.md](publication.md) 的待定决策 |
 | 持久化 | 四张表由持久化模块统一管（见 [../persistence/schema.md](../persistence/schema.md)） |
 | 对象存储直传 | 资产的字节走公共直传链路（签发凭证、直传、提交核对），见 [../objectstore/README.md](../objectstore/README.md) |
-| 对象存储 | 私有区沿用头像那个桶（不同前缀），公开区用独立桶，见 [asset-library.md](asset-library.md) 与 [publication.md](publication.md) |
-| 服务端配置 | 公开桶与发布域由配置给出（**各项上限是常量，不是配置项**，见 [../config/server-config.md](../config/server-config.md)） |
+| 对象存储 | 私有区与公开区在**同一个桶**里（不同前缀），公开区靠逐对象的公开读区分，见 [asset-library.md](asset-library.md) 与 [publication.md](publication.md) |
+| 服务端配置 | 桶地址（沿用 `cos_bucket_url`）与发布域由配置给出（**各项上限是常量，不是配置项**，见 [../config/server-config.md](../config/server-config.md)） |
 | proto | 方法与权限码在 `api/proto/aladdin/galaxy/v1/` 中声明，经 `buf generate` 派生两端代码 |
 | 前端权限 | galaxy 页面的入口按 `galaxy.*` 权限码裁剪（见 [../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)） |
 | Web 界面 | 呈现机制见 [../web/README.md](../web/README.md)；取舍见 [../uiux/README.md](../uiux/README.md) |
@@ -136,7 +136,7 @@ galaxy 补上这一块：用户在 aladdin 里写 HTML、放素材，然后发�
 | 未发布不可达 | 未发布的工程、已撤回的工程，其发布地址返回"不存在"而不是空页（端到端测试） |
 | 不可枚举 | 接口面上不存在列出已发布工程的入口（`internal/server` 测试：遍历 method descriptor） |
 | 权限码不外泄 | 无 `galaxy.*` 权限时，工程与资产入口不渲染；直接调用被拒（前端测试 + 端到端测试） |
-| 未配置时降级正确 | 公开桶或发布域未配置时，工程与资产的读写照常，发布入口不可用（`internal/config` 与 `internal/galaxy` 测试） |
+| 未配置时降级正确 | 发布域未配置时工程与资产的读写照常，发布入口不可用（`internal/config` 与 `internal/galaxy` 测试） |
 
 ## 待定决策
 

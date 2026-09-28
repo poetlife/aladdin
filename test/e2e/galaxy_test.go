@@ -153,11 +153,12 @@ func TestGalaxyPublishedPageIsPubliclyReachable(t *testing.T) {
 	if strings.Contains(body, galaxy.PlaceholderScheme) {
 		t.Error("产物里仍留着未改写的占位符")
 	}
-	wantAddress := h.publicBucket + "/" + sha256Hex(pngBytes)
+	// 公开区是同一个桶里的一个前缀：地址由键规则给出。
+	wantAddress := h.bucket + "/" + galaxy.ReleaseObjectKey(sha256Hex(pngBytes))
 	if !strings.Contains(body, wantAddress) {
 		t.Errorf("产物里没有公开区地址 %q", wantAddress)
 	}
-	// 安全边界在响应头里：脚本发不出请求，媒体只能来自公开区。
+	// 安全边界在响应头里：脚本发不出请求，媒体只能来自那个桶。
 	policy := header.Get(galaxy.CSPHeaderName)
 	if policy == "" {
 		t.Fatal("响应里没有内容安全策略")
@@ -165,8 +166,9 @@ func TestGalaxyPublishedPageIsPubliclyReachable(t *testing.T) {
 	if !strings.Contains(policy, "connect-src 'none'") {
 		t.Errorf("策略没有挡住脚本发请求:\n%s", policy)
 	}
-	if !strings.Contains(policy, "img-src "+h.publicBucket) {
-		t.Errorf("策略允许的来源不是公开桶:\n%s", policy)
+	// 策略里的来源只到主机——公开区与私有区共用它，区分靠对象权限。
+	if !strings.Contains(policy, "img-src "+h.bucket) {
+		t.Errorf("策略允许的来源不是发布物素材所在的桶:\n%s", policy)
 	}
 	if policyLine := header.Get("X-Content-Type-Options"); policyLine != "nosniff" {
 		t.Errorf("X-Content-Type-Options = %q，期望 nosniff", policyLine)
@@ -444,11 +446,13 @@ func TestGalaxyPromotesOnlyReferencedAssets(t *testing.T) {
 	if h.public.Count() != 1 {
 		t.Fatalf("公开区对象数 = %d，期望 1（只上架被引用的）", h.public.Count())
 	}
-	if digests := h.public.Digests(); len(digests) != 1 || digests[0] != sha256Hex(pngBytes) {
-		t.Errorf("公开区的摘要 = %v，期望只含被引用的那一个", digests)
+	// 键是公开区里的**完整**对象键：公开区与私有区在同一个桶里，区分靠这段前缀。
+	key := galaxy.ReleaseObjectKey(sha256Hex(pngBytes))
+	if keys := h.public.Keys(); len(keys) != 1 || keys[0] != key {
+		t.Errorf("公开区的对象键 = %v，期望只含被引用的那一个", keys)
 	}
 	// 上架的字节与私有区那份一致：直传之后服务端不接触字节，上架是唯一一次读回。
-	promoted, err := h.public.Object(sha256Hex(pngBytes))
+	promoted, err := h.public.Object(key)
 	if err != nil {
 		t.Fatalf("读取公开区对象失败: %v", err)
 	}

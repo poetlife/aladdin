@@ -116,8 +116,8 @@ func run() error {
 		zap.String("database", database.Describe(cfg.Database)),
 		// 头像存储同理：只记桶地址，**不记密钥**（见 config.COSConfig.Describe）。
 		zap.String("cos", cfg.COS.Describe()),
-		// 发布这一项没有密钥，因此原样给出公开桶地址与发布域：它的失败方式
-		// 是"发布入口没渲染"，而那可能只是配置没读到。
+		// 发布这一项没有密钥，因此原样给出发布域：它的失败方式是"发布入口没
+		// 渲染"，而那可能只是配置没读到。它用的桶地址已经记在上面那一项里了。
 		zap.String("galaxy", cfg.Galaxy.Describe()),
 		// 已启用的登录方式与对外地址。两项都不是秘密；客户端密钥没有配置键，
 		// 自然也进不来这里。
@@ -153,17 +153,19 @@ func run() error {
 		return err
 	}
 
-	// 公开区与发布域：发布这一项能力的两半，成对出现（配置校验已经强制）。
-	// 未配置时 Public 为 nil、Origin 为零值，领域层据此让发布这条路整体缺席。
+	// 公开区与发布域：公开区与资产私有区共用上面那个桶（靠逐对象的公开读区分），
+	// 因此这里只多一个发布域。配置校验已经强制"给了发布域就必须有桶"，所以发布
+	// 启用时 objects 必然非 nil。未配置时 Public 为 nil、Origin 为零值，领域层
+	// 据此让发布这条路整体缺席。
 	var publicWriter galaxy.PublicStore
 	origin := galaxy.PublicOrigin{}
 	if cfg.Galaxy.Enabled() {
-		writer, err := cosupload.NewPublicWriter(cfg.Galaxy.PublicBucketURL, cfg.COS.SecretID, cfg.COS.SecretKey)
+		writer, err := cosupload.NewPublicWriter(cfg.COS.BucketURL, cfg.COS.SecretID, cfg.COS.SecretKey)
 		if err != nil {
 			return fmt.Errorf("构造公开区存储失败: %w", err)
 		}
 		publicWriter = writer
-		origin, err = galaxy.NewPublicOrigin(cfg.Galaxy.PublicBucketURL, cfg.Galaxy.PublishBaseURL)
+		origin, err = galaxy.NewPublicOrigin(cfg.COS.BucketURL, cfg.Galaxy.PublishBaseURL)
 		if err != nil {
 			return fmt.Errorf("构造发布地址失败: %w", err)
 		}

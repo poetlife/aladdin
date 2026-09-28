@@ -47,7 +47,7 @@ func TestPublishRewritesAndServes(t *testing.T) {
 		t.Error("对外地址返回的不是这次发布产物")
 	}
 	// 引用的资产在公开区，且是按内容摘要放的。
-	exists, err := f.public.Exists(ctx, asset.Digest)
+	exists, err := f.public.Exists(ctx, ReleaseObjectKey(asset.Digest))
 	if err != nil {
 		t.Fatalf("查询公开区失败: %v", err)
 	}
@@ -74,8 +74,10 @@ func TestOnlyReferencedAssetsArePromoted(t *testing.T) {
 	if f.public.Count() != 1 {
 		t.Errorf("公开区对象数 = %d，期望 1", f.public.Count())
 	}
-	if digests := f.public.Digests(); len(digests) != 1 || digests[0] != used.Digest {
-		t.Errorf("公开区的摘要 = %v，期望只含被引用的那一个", digests)
+	// 键是公开区里的**完整**对象键（`galaxy/release/<摘要>`），不是裸摘要：
+	// 公开区与私有区在同一个桶里，区分它们的正是这段前缀。
+	if keys := f.public.Keys(); len(keys) != 1 || keys[0] != ReleaseObjectKey(used.Digest) {
+		t.Errorf("公开区的对象键 = %v，期望只含被引用的那一个", keys)
 	}
 }
 
@@ -256,7 +258,7 @@ func TestUnpublishAndMissingAreIndistinguishable(t *testing.T) {
 	}
 }
 
-// 未配置公开桶或发布域时，发布整体不可用，而工程与资产照常可用。
+// 未配置发布域时，发布整体不可用，而工程与资产照常可用。
 func TestPublishUnavailableWithoutConfiguration(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
@@ -265,7 +267,7 @@ func TestPublishUnavailableWithoutConfiguration(t *testing.T) {
 	version := f.saveVersion(t, project.ID)
 	ctx := context.Background()
 
-	// 重装一个没有公开区、也没有发布域的部署。
+	// 重装一个没有发布配置的部署。
 	bare := NewService(Deps{
 		Store:  f.store,
 		Assets: f.objects,
@@ -283,7 +285,7 @@ func TestPublishUnavailableWithoutConfiguration(t *testing.T) {
 		t.Error("没有发布域却给出了页面地址")
 	}
 	if bare.Capabilities().PublishEnabled {
-		t.Error("没有公开区却报告发布可用")
+		t.Error("没有发布配置却报告发布可用")
 	}
 	// 工程与资产照常可用。
 	if _, err := bare.ListAssets(ctx, testOwner, project.ID); err != nil {
@@ -334,6 +336,11 @@ func TestAllowedSourceAndAssetAddressComeFromOneValue(t *testing.T) {
 	if parsed.Scheme+"://"+parsed.Host != policy {
 		t.Errorf("地址的来源 %s://%s 与策略允许的 %s 不同", parsed.Scheme, parsed.Host, policy)
 	}
+	// 公开区与私有区**共用同一个主机**，区分它们的是这段前缀：地址必须落在
+	// 公开区下面，否则同一个主机上的私有对象也会落进策略允许的范围。
+	if want := "/" + releaseKeyPrefix; !strings.HasPrefix(parsed.Path, want) {
+		t.Errorf("公开地址的路径 = %q，期望以 %q 开头", parsed.Path, want)
+	}
 	if !strings.Contains(string(publication.Content), address) {
 		t.Error("产物里的地址不是这一处派生的")
 	}
@@ -373,23 +380,23 @@ func TestContentSecurityPolicy(t *testing.T) {
 	}
 }
 
-// 发布域与公开桶的取值必须干净：https、有主机名、不带用户信息与路径。
+// 桶地址与发布域的取值必须干净：https、有主机名、不带用户信息与路径。
 func TestPublicOriginRejectsUnusableValues(t *testing.T) {
 	cases := []struct {
 		name   string
-		assets string
+		bucket string
 		page   string
 	}{
-		{"公开桶不是 https", "http://assets.example.com", testPageOrigin},
-		{"公开桶没有主机名", "https://", testPageOrigin},
-		{"公开桶带路径", "https://assets.example.com/bucket", testPageOrigin},
-		{"发布域带路径", testAssetsOrigin, "https://pages.example.com/g"},
-		{"发布域带用户信息", testAssetsOrigin, "https://user:pass@pages.example.com"},
-		{"发布域带查询串", testAssetsOrigin, "https://pages.example.com?a=1"},
+		{"桶地址不是 https", "http://assets.example.com", testPageOrigin},
+		{"桶地址没有主机名", "https://", testPageOrigin},
+		{"桶地址带路径", "https://assets.example.com/bucket", testPageOrigin},
+		{"发布域带路径", testBucketOrigin, "https://pages.example.com/g"},
+		{"发布域带用户信息", testBucketOrigin, "https://user:pass@pages.example.com"},
+		{"发布域带查询串", testBucketOrigin, "https://pages.example.com?a=1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := NewPublicOrigin(tc.assets, tc.page); err == nil {
+			if _, err := NewPublicOrigin(tc.bucket, tc.page); err == nil {
 				t.Error("期望拒绝，实际通过了")
 			}
 		})

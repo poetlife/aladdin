@@ -43,12 +43,11 @@ const (
 	EnvDatabaseDSN    = "ALADDIN_DATABASE_DSN"
 
 	EnvCOSBucketURL = "ALADDIN_COS_BUCKET_URL"
-	// EnvGalaxyPublicBucketURL 与 EnvGalaxyPublishBaseURL 是 galaxy 发布的公开桶
-	// 地址与对外地址。**它们复用同一对 COS 密钥**：子账号同时被授权两个桶，而
-	// "公开还是私有"由桶侧策略决定，不由凭证决定（见
-	// docs/design/galaxy/publication.md）。
-	EnvGalaxyPublicBucketURL = "ALADDIN_GALAXY_PUBLIC_BUCKET_URL"
-	EnvGalaxyPublishBaseURL  = "ALADDIN_GALAXY_PUBLISH_BASE_URL"
+	// EnvGalaxyPublishBaseURL 是 galaxy 发布页面的对外地址。
+	//
+	// 发布**没有独立的桶地址**：公开区与私有区在同一个桶里，靠逐对象的公开读
+	// 区分（见 docs/design/galaxy/asset-library.md）。
+	EnvGalaxyPublishBaseURL = "ALADDIN_GALAXY_PUBLISH_BASE_URL"
 	// EnvCOSSecretID 与 EnvCOSSecretKey 是头像存储的子账号密钥。
 	//
 	// **它们与 EnvGithubClientSecret 是本仓库仅有的两组"只有环境变量、没有
@@ -89,8 +88,7 @@ const (
 
 	keyCOSBucketURL = "cos_bucket_url"
 
-	keyGalaxyPublicBucketURL = "galaxy_public_bucket_url"
-	keyGalaxyPublishBaseURL  = "galaxy_publish_base_url"
+	keyGalaxyPublishBaseURL = "galaxy_publish_base_url"
 
 	keyGoogleClientID        = "google_client_id"
 	keyGithubClientID        = "github_client_id"
@@ -172,20 +170,15 @@ type COSConfig struct {
 // 启动），因此这里不需要再回答"配了一半算不算"。
 func (c COSConfig) Enabled() bool { return c.BucketURL != "" }
 
-// GalaxyConfig 是 galaxy 发布所需的两个地址。
+// GalaxyConfig 是 galaxy 发布所需的地址。
 //
-// 它们**成对出现**：一个指向公开读的桶（发布物引用的媒体从那里取），一个指向
-// 发布页面的对外地址。二者缺一即发布不可用，而"只配一半"由 validateGalaxy
-// 拒绝启动——半套配置的失败方式既不是"没启用"，也不是"配错了"，而是"看起来
-// 配好了"，直到第一次发布才失败。
+// **只有一项**：发布页面的对外地址。公开区没有自己的桶——发布物引用的媒体与
+// 私有资产在同一个桶里，靠逐对象的公开读区分（见
+// docs/design/galaxy/asset-library.md）。因此发布复用的是 COS.BucketURL。
+//
+// 两项配置里只有一种搭配是错误：**给了发布域却没给桶**。"只缺发布域"是常态
+// （没启用发布），由 validateGalaxy 放行。
 type GalaxyConfig struct {
-	// PublicBucketURL 是发布物资产的**公开读**桶地址。
-	//
-	// 它与私有桶（COS.BucketURL）是两个独立的桶，不是同一个桶的两个前缀：桶的
-	// 公开读是一个"整个桶"级别的策略，把公开与私有的东西放进同一个桶，意味着
-	// 一次策略写错就是全桶公开。它**不是秘密**（只是一个主机名），因此留在
-	// 配置文件里。
-	PublicBucketURL string
 	// PublishBaseURL 是发布页面的对外地址（发布域）。
 	//
 	// **它必须与 PublicBaseURL 不同源**，且不只是主机名不同：同一注册域下的
@@ -194,10 +187,13 @@ type GalaxyConfig struct {
 	PublishBaseURL string
 }
 
-// Enabled 表示这个部署配置了发布存储。校验通过之后才调用它。
-func (c GalaxyConfig) Enabled() bool { return c.PublicBucketURL != "" && c.PublishBaseURL != "" }
+// Enabled 表示这个部署配置了发布。校验通过之后才调用它。
+//
+// 它只看发布域：桶那一半要跨到 COSConfig 才看得见，而两者的搭配由
+// validateGalaxy 在启动时强制，因此这里不需要再回答"配了一半算不算"。
+func (c GalaxyConfig) Enabled() bool { return c.PublishBaseURL != "" }
 
-// Describe 描述这项配置。它没有密钥，因此原样给出两个地址。
+// Describe 描述这项配置。它没有密钥，因此原样给出发布域。
 //
 // 启动日志要能回答"我改的那一行到底有没有被读到"——发布这一项尤其如此：
 // 它的失败方式是"发布入口没渲染"，而那可能只是配置没读到。
@@ -205,7 +201,7 @@ func (c GalaxyConfig) Describe() string {
 	if !c.Enabled() {
 		return "未启用"
 	}
-	return "公开桶 " + c.PublicBucketURL + "，发布域 " + c.PublishBaseURL
+	return "发布域 " + c.PublishBaseURL
 }
 
 // Describe 描述这项配置，**不含密钥**。
@@ -579,12 +575,13 @@ func checkOriginShape(key, env, raw, pathReason string) error {
 	return nil
 }
 
-// validateGalaxy 校验 galaxy 发布所需的两个地址。
+// validateGalaxy 校验 galaxy 发布所需的地址。
 //
-// 只有两种情形放行：**两项全空**（不启用发布）与**两项齐全**（启用发布）。部分
-// 给出一律拒绝启动——半套配置的失败方式既不是"没启用"（前端会渲染一个点了报错
-// 的发布入口），也不是"配错了"（启动时能看见），而是"看起来配好了"，直到第一次
-// 发布才失败。这与 validateCOS、validateGithubLogin 是同一条取向。
+// 只有一种搭配是错误：**给了发布域却没给桶**。反过来那一半（有桶、没有发布域）
+// 是"没启用发布"，是配置的常态而不是半套——它与"没启用头像"同类，由前端不渲染
+// 发布入口来表达。这与 validateCOS、validateGithubLogin 是同一条取向：真正该拒
+// 的是那种失败方式既不是"没启用"（前端会渲染一个点了报错的发布入口）、也不是
+// "配错了"（启动时能看见），而是"看起来配好了"、直到第一次发布才失败的情形。
 //
 // **发布域必须与主应用不同源，且不只是主机名不同。** 发布物里跑着用户写的脚本，
 // 同源意味着那段脚本与应用共享 origin。而"同一注册域"这一条更隐蔽：同一注册域下
@@ -592,24 +589,15 @@ func checkOriginShape(key, env, raw, pathReason string) error {
 // 条目，但它可以把请求发到同站的应用地址上带着 cookie 走。因此判据是**可注册域
 // 必须不同**。
 func validateGalaxy(c ServerConfig) error {
-	hasPublicBucket := c.Galaxy.PublicBucketURL != ""
-	hasPublishBase := c.Galaxy.PublishBaseURL != ""
-	switch {
-	case !hasPublicBucket && !hasPublishBase:
+	if c.Galaxy.PublishBaseURL == "" {
 		return nil // 未启用发布。这是默认情形
-	case !hasPublicBucket:
-		return invalidKey(keyGalaxyPublicBucketURL, EnvGalaxyPublicBucketURL,
-			"与 "+keyGalaxyPublishBaseURL+"（"+EnvGalaxyPublishBaseURL+"）必须同时给出：只给发布域等于有页面地址、没有放页面的地方")
-	case !hasPublishBase:
-		return invalidKey(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL,
-			"与 "+keyGalaxyPublicBucketURL+"（"+EnvGalaxyPublicBucketURL+"）必须同时给出：只给公开桶等于有存的地方、没有对外地址")
 	}
-
-	// 公开桶是"资源从哪来"，它必须是带主机名的 https 地址。
-	bucket, err := url.Parse(c.Galaxy.PublicBucketURL)
-	if err != nil || bucket.Scheme != "https" || bucket.Host == "" {
-		return invalidKey(keyGalaxyPublicBucketURL, EnvGalaxyPublicBucketURL,
-			fmt.Sprintf("必须是带主机名的 https 地址，当前 %q", c.Galaxy.PublicBucketURL))
+	// 发布物引用的媒体住在桶里（公开区与私有区同一个桶），因此没有桶就没有
+	// "放素材的地方"。
+	if c.COS.BucketURL == "" {
+		return invalidKey(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL,
+			"不能只给发布域：发布物的素材放在 "+keyCOSBucketURL+"（"+EnvCOSBucketURL+
+				"）指向的那个桶里，没有它等于有页面地址、没有放素材的地方")
 	}
 	if err := checkOriginShape(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL, c.Galaxy.PublishBaseURL,
 		"带路径会让 /g/<工程标识> 变成一个子路径，而那不在本 spec 的地址形状里"); err != nil {

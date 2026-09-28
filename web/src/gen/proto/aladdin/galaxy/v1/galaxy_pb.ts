@@ -47,20 +47,20 @@ export const AssetKindLimitSchema: GenMessage<AssetKindLimit> = /*@__PURE__*/
  * Capabilities 是当前部署下创作能力的边界。
  *
  * 两个布尔项是**部署形态**的公开事实，不因调用者而异：未配置对象存储时
- * 素材传不了，未配置发布存储时页面发不出去，而工程与版本照常可用。
+ * 素材传不了，未配置发布域时页面发不出去，而工程与版本照常可用。
  *
  * @generated from message aladdin.galaxy.v1.Capabilities
  */
 export type Capabilities = Message<"aladdin.galaxy.v1.Capabilities"> & {
   /**
-   * 是否配置了私有桶。为假时不渲染上传入口与资产区。
+   * 是否配置了对象存储桶。为假时不渲染上传入口与资产区。
    *
    * @generated from field: bool asset_upload_enabled = 1;
    */
   assetUploadEnabled: boolean;
 
   /**
-   * 是否配置了公开桶与发布域。为假时不渲染发布入口。
+   * 是否可用发布。为假时不渲染发布入口。
    *
    * @generated from field: bool publish_enabled = 2;
    */
@@ -1388,7 +1388,7 @@ export const GalaxyService: GenService<{
    * **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
    * 没有意义。草稿内容不会被读取。
    *
-   * 发布域与公开桶未配置时这一项不可用（见 GetCapabilities）。
+   * 发布域未配置时这一项不可用（见 GetCapabilities）。
    *
    * @generated from rpc aladdin.galaxy.v1.GalaxyService.Publish
    */

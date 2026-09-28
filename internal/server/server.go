@@ -96,7 +96,8 @@ type GalaxyStores struct {
 	// Assets 是私有区对象的直传入口。**为 nil 表示没有配置私有桶**：资产
 	// 功能整体缺席，而工程与版本照常可用。
 	Assets objectstore.Store
-	// Public 是公开区的写入口。**为 nil 表示没有配置公开桶**：发布不可用。
+	// Public 是公开区的写入口。**为 nil 表示没有配置发布**：发布不可用。
+	// 它写的是与 Assets 同一个桶，区别在写下去的对象权限（公开读）。
 	Public galaxy.PublicStore
 	// Origin 是发布态地址的派生入口。零值表示没有配置发布域。
 	Origin galaxy.PublicOrigin

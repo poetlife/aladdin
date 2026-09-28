@@ -4,8 +4,10 @@
 // 的元数据、读出对象字节、删除对象，以及签发短时读取地址。**策略怎么构造**在
 // policy.go —— 那是这套机制的安全核心，与"用哪个 SDK 调哪个接口"分开。
 //
-// 桶必须是**私有读写**：本实现依赖"没有签名取不到东西"这一前提，而签发读取
-// 地址这个动作的意义也正在于此。
+// 桶是**默认私有读写**：本实现依赖"没有签名取不到东西"这一前提，而签发读取
+// 地址这个动作的意义也正在于此。**唯一的例外是公开区的对象**——它们由
+// PublicWriter 在写入时逐个设成公开读，桶本身没有公开读策略（见
+// docs/design/galaxy/asset-library.md）。
 package cosupload
 
 import (
@@ -202,27 +204,30 @@ func (s *Store) PresignGet(ctx context.Context, key string, ttl time.Duration) (
 	return signed.String(), nil
 }
 
-// PublicWriter 是**公开区**的写入口：按内容摘要上架与查询已存在的对象。
+// PublicWriter 是**公开区**的写入口：把发布物引用的字节写进桶，并把那些对象设成
+// 公开读。
 //
-// 它与 Store 分开是因为它们写的是两个桶、承担两套语义：Store 管"用户的字节怎么
-// 进来"，PublicWriter 管"发布物引用的字节怎么被公开"。公开桶是公开读的，而私有
-// 桶必须私有——分成两个类型，好让"这一次写的是哪个桶"在调用处一眼可见。
+// 它与 Store 分开**不是**因为它们写两个桶——两者写的是**同一个桶**（见
+// docs/design/galaxy/asset-library.md）。分开是因为**写下去的东西会不会被所有人
+// 读到**不同：Store 写的是私有对象，PublicWriter 写的是公开对象，好让这件事在
+// 调用处一眼可见。
 type PublicWriter struct {
 	client *cos.Client
 }
 
-// NewPublicWriter 构造公开区的写入口。
-func NewPublicWriter(publicBucketURL, secretID, secretKey string) (*PublicWriter, error) {
-	client, err := newClient(publicBucketURL, secretID, secretKey)
+// NewPublicWriter 构造公开区的写入口。它**复用私有区的桶地址与同一对密钥**：
+// 公开与私有由对象权限决定，不由桶或凭证决定。
+func NewPublicWriter(bucketURL, secretID, secretKey string) (*PublicWriter, error) {
+	client, err := newClient(bucketURL, secretID, secretKey)
 	if err != nil {
 		return nil, err
 	}
 	return &PublicWriter{client: client}, nil
 }
 
-// Exists 判定公开区里是否已有该摘要的对象。
-func (w *PublicWriter) Exists(ctx context.Context, digest string) (bool, error) {
-	if _, err := w.client.Object.Head(ctx, digest, nil); err != nil {
+// Exists 判定公开区里是否已有该键的对象。
+func (w *PublicWriter) Exists(ctx context.Context, key string) (bool, error) {
+	if _, err := w.client.Object.Head(ctx, key, nil); err != nil {
 		if cos.IsNotFoundError(err) {
 			return false, nil
 		}
@@ -231,12 +236,18 @@ func (w *PublicWriter) Exists(ctx context.Context, digest string) (bool, error) 
 	return true, nil
 }
 
-// Put 把一个对象按给定的摘要键写进公开区。
+// Put 把一个对象按给定的键写进公开区。
 //
 // 内容类型随对象一起写入：公开区对象由访问者的浏览器直连取用，而"这个对象是
 // 什么类型"应当是对象自己的属性，不该靠地址上的参数去补。
-func (w *PublicWriter) Put(ctx context.Context, digest, contentType string, data []byte) error {
-	_, err := w.client.Object.Put(ctx, digest, bytes.NewReader(data), &cos.ObjectPutOptions{
+//
+// **公开读在这里设置，而且只在这里设置。** 桶保持默认私有读写、没有桶级的公开读
+// 策略，因此"哪些对象是公开的"完全由本方法的调用路径决定。由此得到一条对本方法
+// 前提的约束：**写下去的内容必须是发布校验已经放过的内容**（见
+// docs/design/galaxy/publication.md）——它是允许来源唯一能取到的东西。
+func (w *PublicWriter) Put(ctx context.Context, key, contentType string, data []byte) error {
+	_, err := w.client.Object.Put(ctx, key, bytes.NewReader(data), &cos.ObjectPutOptions{
+		ACLHeaderOptions:       &cos.ACLHeaderOptions{XCosACL: cos.ACL.PublicRead},
 		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{ContentType: contentType},
 	})
 	if err != nil {

@@ -312,7 +312,8 @@ type Deps struct {
 	// 照常可用。缺席由 nil 表达，而不是由一个"什么都存不下"的实现表达——
 	// 后者会让一次配置缺失在运行时表现成一次存储故障。
 	Assets objectstore.Store
-	// Public 是公开区的写入口。**为 nil 表示没有配置公开桶**：发布不可用。
+	// Public 是公开区的写入口。**为 nil 表示没有配置发布**：发布不可用。
+	// 它写的是与 Assets 同一个桶，区别在写下去的对象权限（公开读）。
 	Public PublicStore
 	// Origin 是发布态地址的派生入口。零值表示没有配置发布域。
 	Origin PublicOrigin

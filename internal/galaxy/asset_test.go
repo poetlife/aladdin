@@ -396,6 +396,6 @@ func TestAssetUnavailableWithoutStore(t *testing.T) {
 		t.Error("没有私有桶却报告资产可用")
 	}
 	if !capabilities.PublishEnabled {
-		t.Error("公开桶与发布域都在，发布应当可用")
+		t.Error("发布了却报告发布不可用")
 	}
 }

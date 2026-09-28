@@ -15,9 +15,9 @@ const (
 	testOwner = "usr_owner"
 	testOther = "usr_other"
 
-	// 发布态的公开桶与发布域。两者分别是"资源从哪来"与"页面在哪"，
-	// 断言对外地址与内容安全策略时都用得上。
-	testAssetsOrigin = "https://aladdin-public-1250000000.cos.ap-guangzhou.myqcloud.com"
+	// 桶地址与发布域。前者同时是私有区与公开区的主机（两者共用一个桶，靠键
+	// 前缀与对象权限区分），后者是页面在哪；断言对外地址与内容安全策略时都用得上。
+	testBucketOrigin = "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
 	testPageOrigin   = "https://pages.example.com"
 )
 
@@ -56,7 +56,7 @@ func newFixture(t *testing.T) *fixture {
 // mustOrigin 返回测试用的发布地址派生入口。
 func mustOrigin(t *testing.T) PublicOrigin {
 	t.Helper()
-	origin, err := NewPublicOrigin(testAssetsOrigin, testPageOrigin)
+	origin, err := NewPublicOrigin(testBucketOrigin, testPageOrigin)
 	if err != nil {
 		t.Fatalf("构造发布地址失败: %v", err)
 	}

@@ -24,8 +24,7 @@ type layer struct {
 
 	cosBucketURL *string
 
-	galaxyPublicBucketURL *string
-	galaxyPublishBaseURL  *string
+	galaxyPublishBaseURL *string
 
 	googleClientID *string
 	githubClientID *string
@@ -105,9 +104,6 @@ func serverEnvOverrides() (layer, error) {
 	// 由 LoadServer 在合并完成后单独读取（见 cosSecretsFromEnv）。
 	if v := os.Getenv(EnvCOSBucketURL); v != "" {
 		l.cosBucketURL = &v
-	}
-	if v := os.Getenv(EnvGalaxyPublicBucketURL); v != "" {
-		l.galaxyPublicBucketURL = &v
 	}
 	if v := os.Getenv(EnvGalaxyPublishBaseURL); v != "" {
 		l.galaxyPublishBaseURL = &v
@@ -198,9 +194,6 @@ func mergeServer(cfg ServerConfig, l layer) ServerConfig {
 	}
 	if l.cosBucketURL != nil {
 		cfg.COS.BucketURL = *l.cosBucketURL
-	}
-	if l.galaxyPublicBucketURL != nil {
-		cfg.Galaxy.PublicBucketURL = *l.galaxyPublicBucketURL
 	}
 	if l.galaxyPublishBaseURL != nil {
 		cfg.Galaxy.PublishBaseURL = *l.galaxyPublishBaseURL

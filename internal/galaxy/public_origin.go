@@ -15,7 +15,7 @@ const PublicPathPrefix = "/g/"
 
 // PublicOrigin 是发布态地址的派生入口（唯一入口）。
 //
-// 它同时回答两个问题，且两者的来源是同一个配置值（公开桶地址）：
+// 它同时回答两个问题，且两者的来源是同一个配置值（桶地址）：
 //
 //   - 改写时把 `asset://<资产标识>` 换成什么地址（AssetURL）；
 //   - 内容安全策略里允许从哪个来源取资源（AllowedSource）。
@@ -30,13 +30,17 @@ type PublicOrigin struct {
 	page   *url.URL
 }
 
-// NewPublicOrigin 解析公开桶地址与发布域。
+// NewPublicOrigin 解析桶地址与发布域。
 //
 // 两者都必须是绝对 https 地址、有主机名、不带用户信息、不带查询串与 fragment、
 // 路径为空或只有 "/"。配置校验也会拒绝这些取值，这里再挡一次是因为本构造函数
 // 是唯一入口——绕过它就等于绕过这条约束。
-func NewPublicOrigin(assetsBucketURL, publishBaseURL string) (PublicOrigin, error) {
-	assets, err := parseOrigin("公开桶地址", assetsBucketURL)
+//
+// 注意**桶地址不等于公开区的范围**：公开区是同一个桶里的一个前缀，由键规则
+// 给出（ReleaseObjectKey）。这一层只管主机，因为内容安全策略的来源表达式也只
+// 到主机（见 AllowedSource）。
+func NewPublicOrigin(bucketURL, publishBaseURL string) (PublicOrigin, error) {
+	assets, err := parseOrigin("桶地址", bucketURL)
 	if err != nil {
 		return PublicOrigin{}, err
 	}
@@ -74,17 +78,25 @@ func parseOrigin(what, raw string) (*url.URL, error) {
 func (o PublicOrigin) IsZero() bool { return o.assets == nil || o.page == nil }
 
 // AssetURL 返回一个公开区对象（按内容摘要寻址）的地址。
+//
+// 路径来自**键规则**（ReleaseObjectKey），不在这里再拼一遍：公开区与私有区在
+// 同一个桶里，桶主机对两者是同一个，区分它们的正是这段路径。
 func (o PublicOrigin) AssetURL(digest string) string {
 	if o.IsZero() {
 		return ""
 	}
-	return strings.TrimSuffix(o.assets.String(), "/") + "/" + digest
+	return strings.TrimSuffix(o.assets.String(), "/") + "/" + ReleaseObjectKey(digest)
 }
 
 // AllowedSource 返回内容安全策略里允许的资源来源。
 //
 // 只有来源（scheme + host），不带路径：策略匹配的是来源，多写一段路径既不会
 // 更严也不会更松，只会让"这条策略到底允许了什么"变得更难读。
+//
+// **代价要说清楚：这个主机上不止有公开对象。** 私有资产、草稿与头像都在同一个
+// 桶里，因此这条策略允许浏览器向整个主机发起取资源请求，最终能不能取到由**对象
+// 权限**决定（私有对象匿名取被拒）。同桶之前这条兜底是结构性的，现在不是了
+// （见 docs/design/galaxy/asset-library.md）。
 func (o PublicOrigin) AllowedSource() string {
 	if o.IsZero() {
 		return ""

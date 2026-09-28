@@ -30,7 +30,7 @@ var (
 	serverKeys = append([]string{
 		keyAddress, keyLogLevel, keyLogFile, keyDatabaseDriver, keyDatabaseDSN,
 		keyCOSBucketURL,
-		keyGalaxyPublicBucketURL, keyGalaxyPublishBaseURL,
+		keyGalaxyPublishBaseURL,
 		keyGoogleClientID, keyGithubClientID, keyPublicBaseURL,
 		keyBootstrapAdminSubject, keyBootstrapAdminEmail, keyBootstrapAdminScope,
 	}, otelKeys...)
@@ -60,7 +60,6 @@ func serverLayer(v fileValues) (layer, error) {
 		databaseDriver:        v.str(keyDatabaseDriver),
 		databaseDSN:           v.str(keyDatabaseDSN),
 		cosBucketURL:          v.str(keyCOSBucketURL),
-		galaxyPublicBucketURL: v.str(keyGalaxyPublicBucketURL),
 		galaxyPublishBaseURL:  v.str(keyGalaxyPublishBaseURL),
 		googleClientID:        v.str(keyGoogleClientID),
 		githubClientID:        v.str(keyGithubClientID),

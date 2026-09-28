@@ -139,12 +139,12 @@ func (x *AssetKindLimit) GetMaxBytes() uint32 {
 // Capabilities 是当前部署下创作能力的边界。
 //
 // 两个布尔项是**部署形态**的公开事实，不因调用者而异：未配置对象存储时
-// 素材传不了，未配置发布存储时页面发不出去，而工程与版本照常可用。
+// 素材传不了，未配置发布域时页面发不出去，而工程与版本照常可用。
 type Capabilities struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 是否配置了私有桶。为假时不渲染上传入口与资产区。
+	// 是否配置了对象存储桶。为假时不渲染上传入口与资产区。
 	AssetUploadEnabled bool `protobuf:"varint,1,opt,name=asset_upload_enabled,json=assetUploadEnabled,proto3" json:"asset_upload_enabled,omitempty"`
-	// 是否配置了公开桶与发布域。为假时不渲染发布入口。
+	// 是否可用发布。为假时不渲染发布入口。
 	PublishEnabled bool `protobuf:"varint,2,opt,name=publish_enabled,json=publishEnabled,proto3" json:"publish_enabled,omitempty"`
 	// 正文（草稿与版本）的字节上限。
 	MaxDocumentBytes uint32 `protobuf:"varint,3,opt,name=max_document_bytes,json=maxDocumentBytes,proto3" json:"max_document_bytes,omitempty"`

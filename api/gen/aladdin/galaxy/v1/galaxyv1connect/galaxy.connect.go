@@ -167,7 +167,7 @@ type GalaxyServiceClient interface {
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
 	// 没有意义。草稿内容不会被读取。
 	//
-	// 发布域与公开桶未配置时这一项不可用（见 GetCapabilities）。
+	// 发布域未配置时这一项不可用（见 GetCapabilities）。
 	Publish(context.Context, *connect.Request[v1.PublishRequest]) (*connect.Response[v1.PublishResponse], error)
 	// 撤回发布：把发布指针置空，地址立刻不可达。
 	//
@@ -502,7 +502,7 @@ type GalaxyServiceHandler interface {
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
 	// 没有意义。草稿内容不会被读取。
 	//
-	// 发布域与公开桶未配置时这一项不可用（见 GetCapabilities）。
+	// 发布域未配置时这一项不可用（见 GetCapabilities）。
 	Publish(context.Context, *connect.Request[v1.PublishRequest]) (*connect.Response[v1.PublishResponse], error)
 	// 撤回发布：把发布指针置空，地址立刻不可达。
 	//
