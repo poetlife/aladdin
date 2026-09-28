@@ -225,7 +225,7 @@ export function ProjectEditorPage(): React.ReactNode {
       <Card title="工程">
         <Alert
           type="error"
-          message={failure?.message ?? '读取工程失败'}
+          title={failure?.message ?? '读取工程失败'}
           description={
             failure !== null &&
             failure.traceId !== null && (
@@ -253,7 +253,7 @@ export function ProjectEditorPage(): React.ReactNode {
         {failure !== null && (
           <Alert
             type="error"
-            message={failure.message}
+            title={failure.message}
             description={
               failure.traceId !== null && (
                 <Typography.Text type="secondary" copyable>
@@ -264,7 +264,7 @@ export function ProjectEditorPage(): React.ReactNode {
             style={{ marginBottom: 16 }}
           />
         )}
-        {metaSaved && <Alert type="success" message="已保存" style={{ marginBottom: 16 }} />}
+        {metaSaved && <Alert type="success" title="已保存" style={{ marginBottom: 16 }} />}
         <Form<ProjectFormValues>
           form={form}
           layout="vertical"
@@ -305,16 +305,16 @@ export function ProjectEditorPage(): React.ReactNode {
           <Alert
             type="info"
             showIcon
-            message={`已载入版本 #${loadedSeq} 的正文，尚未保存`}
+            title={`已载入版本 #${loadedSeq} 的正文，尚未保存`}
             style={{ marginBottom: 12 }}
           />
         )}
-        {draftSaved && <Alert type="success" message="草稿已保存" style={{ marginBottom: 12 }} />}
+        {draftSaved && <Alert type="success" title="草稿已保存" style={{ marginBottom: 12 }} />}
         {problems !== null && problems.length > 0 && (
           <Alert
             type="warning"
             showIcon
-            message="正文有以下问题，发布会被拒绝"
+            title="正文有以下问题，发布会被拒绝"
             description={
               <ul style={{ margin: 0, paddingInlineStart: 20 }}>
                 {problems.map((problem, index) => (
@@ -326,7 +326,7 @@ export function ProjectEditorPage(): React.ReactNode {
           />
         )}
         {validatedOk && (
-          <Alert type="success" showIcon message="校验通过，这段正文可以发布" style={{ marginBottom: 12 }} />
+          <Alert type="success" showIcon title="校验通过，这段正文可以发布" style={{ marginBottom: 12 }} />
         )}
         <Input.TextArea
           value={draft}

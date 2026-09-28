@@ -130,7 +130,7 @@ export function ProfilePage(): React.ReactNode {
         <Alert
           type="error"
           showIcon
-          message="读取档案失败"
+          title="读取档案失败"
           description={error ?? '请稍后重试'}
           action={<Button onClick={() => void reload()}>重试</Button>}
         />
@@ -151,7 +151,7 @@ export function ProfilePage(): React.ReactNode {
         {avatarError !== null && (
           <Alert
             type="error"
-            message={avatarError}
+            title={avatarError}
             action={
               avatarFailedFile === null ? null : (
                 <Button size="small" onClick={() => void handleAvatarFile(avatarFailedFile)}>
@@ -218,9 +218,9 @@ export function ProfilePage(): React.ReactNode {
         }
       >
         {saveError !== null && (
-          <Alert type="error" message={saveError} style={{ marginBottom: 16 }} />
+          <Alert type="error" title={saveError} style={{ marginBottom: 16 }} />
         )}
-        {saved && <Alert type="success" message="已保存" style={{ marginBottom: 16 }} />}
+        {saved && <Alert type="success" title="已保存" style={{ marginBottom: 16 }} />}
 
         <Form<ProfileFormValues>
           form={form}

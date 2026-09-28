@@ -185,7 +185,7 @@ export function ProjectListPage(): React.ReactNode {
       {failure !== null && (
         <Alert
           type="error"
-          message={failure.message}
+          title={failure.message}
           description={
             failure.traceId !== null && (
               <Typography.Text type="secondary" copyable>
@@ -228,7 +228,7 @@ export function ProjectListPage(): React.ReactNode {
         }}
       >
         {createError !== null && (
-          <Alert type="error" message={createError} style={{ marginBottom: 16 }} />
+          <Alert type="error" title={createError} style={{ marginBottom: 16 }} />
         )}
         <Form<ProjectFormValues> form={form} layout="vertical" onFinish={(v) => void handleCreate(v)}>
           <Form.Item name="name" label="名称" extra="仅用于你自己识别，不是地址、不需要唯一">

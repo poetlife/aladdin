@@ -63,7 +63,7 @@ export function DeviceApprovalPage(): React.ReactNode {
         <Card style={{ width: '100%', maxWidth: 440, minWidth: 0 }}>
           <Alert
             type={decided === 'approved' ? 'success' : 'info'}
-            message={decided === 'approved' ? '已批准' : '已拒绝'}
+            title={decided === 'approved' ? '已批准' : '已拒绝'}
             description={
               decided === 'approved'
                 ? '可以回到终端继续了。这个代码已经失效。'
@@ -102,7 +102,7 @@ export function DeviceApprovalPage(): React.ReactNode {
             type="error"
             showIcon
             style={{ marginBottom: 16 }}
-            message="读不到当前账号，暂时不能批准"
+            title="读不到当前账号，暂时不能批准"
             description={profileError}
             action={
               <Button size="small" onClick={() => void reload()}>
@@ -116,11 +116,11 @@ export function DeviceApprovalPage(): React.ReactNode {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="只有当你刚刚在这台终端上发起登录时才继续"
+          title="只有当你刚刚在这台终端上发起登录时才继续"
           description="批准意味着把上面这个账号的登录状态交给那个终端。如果这个代码不是你自己发起的，请选择「拒绝」。"
         />
 
-        {error !== null && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
+        {error !== null && <Alert type="error" title={error} style={{ marginBottom: 16 }} />}
 
         <Form<DeviceFormValues> form={form} layout="vertical" onFinish={() => void decide(true)}>
           <Form.Item

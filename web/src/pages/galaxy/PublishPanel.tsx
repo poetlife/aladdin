@@ -88,7 +88,7 @@ export function PublishPanel({
       {failure !== null && (
         <Alert
           type="error"
-          message={failure.message}
+          title={failure.message}
           description={
             failure.traceId !== null && (
               <Typography.Text type="secondary" copyable>
@@ -103,7 +103,7 @@ export function PublishPanel({
         <Alert
           type="success"
           showIcon
-          message="已发布"
+          title="已发布"
           description={
             <Space orientation="vertical" size={4}>
               <Typography.Text copyable style={{ wordBreak: 'break-all' }}>

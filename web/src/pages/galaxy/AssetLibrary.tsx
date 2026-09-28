@@ -142,7 +142,7 @@ export function AssetLibrary({
       {failure !== null && (
         <Alert
           type="error"
-          message={failure.message}
+          title={failure.message}
           description={
             failure.traceId !== null && (
               <Typography.Text type="secondary" copyable>

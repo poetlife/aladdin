@@ -105,7 +105,7 @@ export function LoginPage(): React.ReactNode {
         <Typography.Paragraph type="secondary">
           权限判定发生在服务端。本界面只根据服务端返回的权限码集合做展示裁剪。
         </Typography.Paragraph>
-        {error !== null && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
+        {error !== null && <Alert type="error" title={error} style={{ marginBottom: 16 }} />}
 
         {google !== undefined && (
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
