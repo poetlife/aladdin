@@ -46,8 +46,9 @@ make test       # Go 全量测试（含竞态检测）
 make test-e2e   # 端到端测试
 make test-web   # 前端测试
 make lint       # gofmt + go vet + buf lint + golangci-lint
-make dev        # 以开发种子数据启动服务端
-make web-dev    # 启动前端开发服务器
+make dev        # 一键拉起开发环境（服务端 + 前端），Ctrl-C 一并停止
+make dev-server # 只起服务端（开发种子数据）
+make web-dev    # 只起前端开发服务器
 ```
 
 ## 开发规范

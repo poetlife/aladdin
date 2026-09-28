@@ -202,19 +202,43 @@ lint: ## 静态检查
 run: ## 启动服务端
 	go run ./cmd/aladdin-server
 
-.PHONY: dev
-dev: ## 以开发种子数据启动服务端（本地联调用）
-	ALADDIN_DEV_SEED=1 \
-	ALADDIN_DEV_TOKEN=dev-token \
-	ALADDIN_DEV_SUBJECT=dev-user \
-	ALADDIN_DEV_ROLE=system.admin \
-	ALADDIN_DEV_SCOPE=tenant/acme \
-	ALADDIN_LOG_LEVEL=debug \
-	go run ./cmd/aladdin-server
+# 开发环境的两条命令各自只有一处来源：单独起用 dev-server / web-dev，
+# 一起起用 dev，三者引用的都是下面这两个变量，不存在第二份拷贝。
+DEV_SERVER_CMD := ALADDIN_DEV_SEED=1 ALADDIN_DEV_TOKEN=dev-token ALADDIN_DEV_SUBJECT=dev-user ALADDIN_DEV_ROLE=system.admin ALADDIN_DEV_SCOPE=tenant/acme ALADDIN_LOG_LEVEL=debug go run ./cmd/aladdin-server
+WEB_DEV_CMD    := cd web && npm run dev
+
+.PHONY: dev-server
+dev-server: ## 以开发种子数据启动服务端（本地联调用）
+	$(DEV_SERVER_CMD)
 
 .PHONY: web-dev
 web-dev: ## 启动前端开发服务器
-	cd web && npm run dev
+	$(WEB_DEV_CMD)
+
+.PHONY: dev
+dev: ## 一键拉起开发环境（服务端 + 前端），Ctrl-C 一并停止
+	@# 这个目标只负责"同时起、一起停"，两边的命令都由上面的变量给出。
+	@#
+	@# 两处进程组处理都不能删，删掉任何一处都会留下一堆还在跑的服务：
+	@# 1) 服务端用 set -m 起，让它独占一个进程组。收尾时按组杀，才能连
+	@#    go run -> aladdin-server 一起收掉；只 kill go run 的 pid 会留下真正
+	@#    在监听 9090 的那个进程，下次 make dev 直接撞端口。
+	@# 2) 前端必须回到本 shell 的进程组（set +m）。终端 Ctrl-C 只发给前台
+	@#    进程组，job control 若把 vite 单独分出去，它就收不到 Ctrl-C，而配方
+	@#    shell 会一直等这个永不结束的前台 job——连下面的 trap 都轮不到执行。
+	@#
+	@# 130 是 Ctrl-C 下 shell 的常规退出码，折算成 0：中断是这里唯一的正常
+	@# 收场方式，留着会让 make 每次都打一行 "*** [dev] Error 130" 像崩了。
+	@# 其它非零码原样传出去——前端真起不来时必须让它看起来就是失败。
+	@set -m; \
+		$(DEV_SERVER_CMD) & \
+		server=$$!; \
+		set +m; \
+		trap 'kill -TERM -$$server 2>/dev/null; wait $$server 2>/dev/null' EXIT INT TERM; \
+		$(WEB_DEV_CMD); \
+		status=$$?; \
+		[ "$$status" = 130 ] && status=0; \
+		exit $$status
 
 .PHONY: clean
 clean: ## 清理构建产物

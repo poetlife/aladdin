@@ -40,10 +40,21 @@ make web-install  # 安装前端依赖
 ### 运行
 
 ```bash
-# 以开发种子数据启动服务端（本地联调用，勿用于生产）
-make dev           # RPC 监听 127.0.0.1:9090，同时服务 Connect / gRPC / gRPC-Web
+# 一键拉起本地开发环境：服务端（开发种子数据，RPC 监听 127.0.0.1:9090）
+# 与前端（http://localhost:5173）。两端日志同屏，Ctrl-C 一起停。勿用于生产。
+make dev
+```
 
-# 另开一个终端：用种子凭证登录
+只想单独起一边时用下面两个，`make dev` 就是它们的组合：
+
+```bash
+make dev-server   # 只起服务端，同时服务 Connect / gRPC / gRPC-Web
+make web-dev      # 只起前端，http://localhost:5173
+```
+
+在另一个终端用种子凭证登录 CLI：
+
+```bash
 export ALADDIN_ADDRESS=127.0.0.1:9090
 export ALADDIN_TOKEN=dev-token
 export ALADDIN_SCOPE=tenant/acme
@@ -51,9 +62,6 @@ export ALADDIN_SCOPE=tenant/acme
 aladdin whoami
 aladdin permissions
 aladdin role list
-
-# 启动前端
-make web-dev      # http://localhost:5173
 ```
 
 ## 配置与凭证

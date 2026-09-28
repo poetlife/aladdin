@@ -91,6 +91,7 @@
 | 指标名、属性键与记录入口 | 常量定义 + `observability.Metrics` 的方法 | [internal/observability/metrics.go](../internal/observability/metrics.go) |
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
 | 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh` | [deploy/deploy.sh](../deploy/deploy.sh) |
+| 本地开发环境的拉起（服务端 + 前端，同起同停） | `make dev`；两边的命令与种子配置各只有一处来源（`DEV_SERVER_CMD` / `WEB_DEV_CMD`），`dev` 与 `dev-server` / `web-dev` 都引用它们 | [Makefile](../Makefile) |
 | 本机命令行的替换（原子、按符号链接指向的真实文件） | `upgrade` 的替换入口 | [internal/upgrade/replace.go](../internal/upgrade/replace.go) |
 
 ## 数据源类（Data Sources）
