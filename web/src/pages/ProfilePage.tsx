@@ -99,11 +99,16 @@ export function ProfilePage(): React.ReactNode {
     }
   }
 
+  // 档案没到时给骨架，而不是一句"正在读取"：骨架的形状与真实页面一致，
+  // 数据到了就地替换，视线不用重新找位置。
+  // 骨架由 antd 的 Card loading 出（即它自带的 Skeleton），不自己画。
   if (loading && profile === null) {
     return (
-      <Card>
-        <Typography.Text type="secondary">正在读取档案…</Typography.Text>
-      </Card>
+      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+        <Card title="头像" loading />
+        <Card title="昵称与简介" loading />
+        <Card title="登录方式" loading />
+      </Space>
     )
   }
 
@@ -136,7 +141,9 @@ export function ProfilePage(): React.ReactNode {
         {avatarError !== null && (
           <Alert type="error" message={avatarError} style={{ marginBottom: 16 }} />
         )}
-        <Space size={24} align="center">
+        {/* 允许换行：96px 的头像加上一排按钮在手机上一行放不下，
+            换行总比让按钮被卡片裁掉强。 */}
+        <Space size={24} align="center" wrap>
           <Avatar size={96} src={profile.avatarUrl === '' ? undefined : profile.avatarUrl}>
             {avatarFallbackInitial(profile.displayName)}
           </Avatar>

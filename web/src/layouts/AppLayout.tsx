@@ -1,26 +1,25 @@
-import { Avatar, Button, Dropdown, Layout, Menu, theme } from 'antd'
-import type { MenuProps } from 'antd'
-import { ChevronDown, CircleUserRound, Lamp, LayoutDashboard, LogOut, ShieldCheck } from 'lucide-react'
+import { Drawer, Layout, theme } from 'antd'
+import { Menu as MenuIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 
-import { useAnyPermission, useSession } from '../auth'
-import { PermissionCodes } from '../gen/permission-codes'
-import { avatarFallbackInitial, ProfileProvider, useProfile } from '../profile'
+import { ProfileProvider } from '../profile'
 import { AppHeader } from './AppHeader'
+import { AppSidebar } from './AppSidebar'
+import { useNarrowViewport } from './use-narrow-viewport'
 
 const { Sider, Content } = Layout
 
-const ICON_SIZE = 16
+const TOGGLE_ICON_SIZE = 18
 
 /**
  * 应用外壳。
  *
- * 菜单项按权限裁剪——无权限的入口**不渲染**而不是置灰，
- * 避免导航栏被大量无权项占据。
- *
  * 外壳本身只要**已认证**：零权限的主体也看得到它，界面是空的。
  * 见 router.tsx 的两层准入。
+ *
+ * 宽窄两态：宽屏是常驻侧边栏（可收成导轨），窄屏换成抽屉。
+ * 两者承载的是同一个 AppSidebar，见 docs/design/web/README.md 的「响应式与窄屏」。
  */
 export function AppLayout(): React.ReactNode {
   // 档案由外壳持有：账号区要显示展示名，而档案页要改它。放在这里，
@@ -33,20 +32,21 @@ export function AppLayout(): React.ReactNode {
 }
 
 function AppShell(): React.ReactNode {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const canReadRoles = useAnyPermission([PermissionCodes.RbacRoleRead])
+  const { token } = theme.useToken()
+  const narrow = useNarrowViewport()
 
   const [collapsed, setCollapsed] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const items = [
-    { key: '/', label: '概览', icon: <LayoutDashboard size={ICON_SIZE} /> },
-    // 个人资料不需要权限码：它只作用于自己（见 docs/design/profile/README.md）。
-    { key: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
-    ...(canReadRoles
-      ? [{ key: '/roles', label: '角色', icon: <ShieldCheck size={ICON_SIZE} /> }]
-      : []),
-  ]
+  const closeDrawer = (): void => setDrawerOpen(false)
+
+  // 页头那个开关的图标、无障碍标签与行为都在这里定：页头只负责画出来。
+  // 宽屏管的是导轨的收放，窄屏管的是抽屉的开合——同一颗按钮，两种语义。
+  const toggle = narrow
+    ? { icon: <MenuIcon size={TOGGLE_ICON_SIZE} />, label: '打开导航', onClick: () => setDrawerOpen(true) }
+    : collapsed
+      ? { icon: <PanelLeftOpen size={TOGGLE_ICON_SIZE} />, label: '展开侧边栏', onClick: () => setCollapsed(false) }
+      : { icon: <PanelLeftClose size={TOGGLE_ICON_SIZE} />, label: '收起侧边栏', onClick: () => setCollapsed(true) }
 
   return (
     // 外壳占满视口且**不随内容变高**：内容超出时由内容区自己滚动。
@@ -54,152 +54,47 @@ function AppShell(): React.ReactNode {
     // 钉底的账号区就跑到文档底部去了——那正是滚动它就会跟着消失的原因。
     // 用 dvh 而非 vh：移动端浏览器收起地址栏时 vh 不会跟着变，底部会被切掉一截。
     <Layout style={{ height: '100dvh' }}>
-      {/* theme="light" 的底色是 colorBgContainer，它随明暗算法走——
-          这里不写死色值，暗色下侧边栏自然比内容区更亮一层。 */}
-      <Sider
-        theme="light"
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        trigger={null}
-        breakpoint="lg"
-        width={220}
-        collapsedWidth={64}
-      >
-        {/* 三段纵向排布：品牌区固定，导航占满剩余高度，账号区钉底。
-            导航自己滚动，账号区因此始终留在视口内。 */}
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <Brand collapsed={collapsed} />
-          <Menu
-            mode="inline"
-            selectedKeys={[location.pathname]}
-            items={items}
-            onClick={({ key }) => void navigate(key)}
-            style={{ flex: 1, overflowY: 'auto' }}
-          />
-          <SidebarAccount collapsed={collapsed} />
-        </div>
-      </Sider>
+      {narrow ? (
+        // 窄屏不渲染侧边栏：64px 的导轨手机上也占着地方，等于白白压窄内容区。
+        // 抽屉的内容与 Sider 是同一个组件，因此不出现第二份导航。
+        <Drawer
+          placement="left"
+          size={280}
+          open={drawerOpen}
+          onClose={closeDrawer}
+          // 没有页头（无标题、无可关闭按钮）时 antd 不渲染抽屉头部，body 直接满高；
+          // 再去掉 body 默认的 24px 内边距与自身滚动，让它和内层那份
+          // `height:100%` 的三段列贴合——否则会多出内边距并套一层滚动条。
+          closable={false}
+          styles={{
+            body: { padding: 0, overflow: 'hidden' },
+            // 抽屉面板默认是 colorBgElevated，而 Sider theme="light" 用的是
+            // colorBgContainer，暗色下两者有可见差别。对齐过来，仍是 token 取值。
+            section: { background: token.colorBgContainer },
+          }}
+        >
+          <AppSidebar collapsed={false} onNavigate={closeDrawer} onClose={closeDrawer} />
+        </Drawer>
+      ) : (
+        // theme="light" 的底色是 colorBgContainer，它随明暗算法走——
+        // 这里不写死色值，暗色下侧边栏自然比内容区更亮一层。
+        //
+        // 不设 breakpoint / collapsible / onCollapse：收放由上面那颗页头按钮直接驱动，
+        // 而 trigger={null} 之下后两者本来也不会被调用，留着就是死属性。
+        // 宽窄的判断只有一处——useNarrowViewport。
+        <Sider theme="light" collapsed={collapsed} trigger={null} width={220} collapsedWidth={64}>
+          <AppSidebar collapsed={collapsed} />
+        </Sider>
+      )}
       <Layout>
-        <AppHeader collapsed={collapsed} onToggleCollapsed={() => setCollapsed((prev) => !prev)} />
+        <AppHeader toggleIcon={toggle.icon} toggleLabel={toggle.label} onToggle={toggle.onClick} />
         {/* 内容区是唯一的滚动容器：滚动它不会带走侧边栏底部的账号区。
-            它自己撑满剩余高度靠的是 Layout 给的 flex，不需要再声明一次。 */}
-        <Content style={{ padding: 24, overflowY: 'auto' }}>
+            它自己撑满剩余高度靠的是 Layout 给的 flex，不需要再声明一次。
+            窄屏把内边距收一收：手机上一页只有 360 出头，24px 的边一圈就吃掉一成多。 */}
+        <Content style={{ padding: narrow ? 12 : 24, overflowY: 'auto' }}>
           <Outlet />
         </Content>
       </Layout>
     </Layout>
-  )
-}
-
-/**
- * 侧边栏顶部的品牌区。
- *
- * 高度取自 `controlHeight * 2`——与 antd 的页头默认高度同一个算式，
- * 于是品牌区与页头始终齐平，中间那条分隔线是连续的一根。
- */
-function Brand({ collapsed }: { collapsed: boolean }): React.ReactNode {
-  const { token } = theme.useToken()
-
-  return (
-    <div
-      style={{
-        height: token.controlHeight * 2,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'flex-start',
-        gap: 8,
-        paddingInline: collapsed ? 0 : 20,
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        overflow: 'hidden',
-      }}
-    >
-      <Lamp size={20} color={token.colorPrimary} />
-      {!collapsed && (
-        <span style={{ fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap' }}>阿拉丁神灯</span>
-      )}
-    </div>
-  )
-}
-
-/**
- * 侧边栏底部的账号区：头像、展示名，点开是个人资料与退出登录。
- *
- * 它放在这里而不是页头：账号与导航回答的是同一类问题——"我是谁、要去哪一页"，
- * 因此同处一侧；页头留给与当前视图相关的控件（折叠、作用域、主题）。
- * 侧边栏收起时只留头像，展示名靠 `title` 与下拉菜单表达。
- */
-function SidebarAccount({ collapsed }: { collapsed: boolean }): React.ReactNode {
-  const { token } = theme.useToken()
-  const navigate = useNavigate()
-  const { subject, signOut } = useSession()
-  const { profile } = useProfile()
-
-  // 展示名由服务端算好（未设昵称时回退到渠道标识）。它还没到时先显示主体
-  // 标识——那正是回退规则的最后一档，因此不是一个"错的中间态"，
-  // 只是暂时停在了最后一档。
-  const displayName = profile?.displayName ?? subject?.subjectId ?? '未登录'
-  const avatarUrl = profile?.avatarUrl ?? ''
-
-  const items: MenuProps['items'] = [
-    { key: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
-    { type: 'divider' },
-    { key: 'sign-out', label: '退出登录', icon: <LogOut size={ICON_SIZE} />, danger: true },
-  ]
-
-  return (
-    <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, padding: 8 }}>
-      <Dropdown
-        placement="topLeft"
-        trigger={['click']}
-        menu={{
-          items,
-          onClick: ({ key }) => {
-            if (key === 'sign-out') {
-              signOut()
-              void navigate('/login')
-              return
-            }
-            void navigate(key)
-          },
-        }}
-      >
-        {/* 内容包在自己这一层 flex 里，而不是让 Button 自己当 flex 容器：
-            antd 会把 Button 的子节点再包进一个块级 span，那个包裹层按内容撑开，
-            于是里面的元素拿不到可用宽度，展示名不会被截断。 */}
-        <Button type="text" title={displayName} style={{ width: '100%', padding: 6 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              gap: 8,
-              minWidth: 0,
-            }}
-          >
-            <Avatar size="small" src={avatarUrl === '' ? undefined : avatarUrl}>
-              {avatarFallbackInitial(displayName)}
-            </Avatar>
-            {!collapsed && (
-              <>
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    textAlign: 'left',
-                  }}
-                >
-                  {displayName}
-                </span>
-                <ChevronDown size={14} style={{ flexShrink: 0, opacity: 0.6 }} />
-              </>
-            )}
-          </div>
-        </Button>
-      </Dropdown>
-    </div>
   )
 }

@@ -57,8 +57,10 @@ export function DeviceApprovalPage(): React.ReactNode {
 
   if (decided !== null) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 96 }}>
-        <Card style={{ width: 440 }}>
+      // 本页挂在外壳的内容区里，左右的内边距由内容区给（窄屏 12px），这里只留纵向。
+      // 卡片宽度弹性化：桌面端封顶 440，手机上占满内容区。
+      <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 'clamp(24px, 10vh, 96px)' }}>
+        <Card style={{ width: '100%', maxWidth: 440, minWidth: 0 }}>
           <Alert
             type={decided === 'approved' ? 'success' : 'info'}
             message={decided === 'approved' ? '已批准' : '已拒绝'}
@@ -74,8 +76,8 @@ export function DeviceApprovalPage(): React.ReactNode {
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 96 }}>
-      <Card style={{ width: 440 }}>
+    <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 'clamp(24px, 10vh, 96px)' }}>
+      <Card style={{ width: '100%', maxWidth: 440, minWidth: 0 }}>
         <Space size={8} align="center" style={{ marginBottom: 12 }}>
           <Terminal size={22} color={token.colorPrimary} />
           <Typography.Title level={4} style={{ margin: 0 }}>

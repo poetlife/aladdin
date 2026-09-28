@@ -96,17 +96,17 @@ export function AuthCallbackPage(): React.ReactNode {
 
   if (error === null) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 96 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', padding: 'clamp(32px, 12vh, 96px) 16px 24px' }}>
         <Spin tip="正在完成…">
-          <div style={{ width: 320, height: 80 }} />
+          <div style={{ width: '100%', maxWidth: 320, height: 80 }} />
         </Spin>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 96 }}>
-      <Card style={{ width: 420 }}>
+    <div style={{ display: 'flex', justifyContent: 'center', padding: 'clamp(32px, 12vh, 96px) 16px 24px' }}>
+      <Card style={{ width: '100%', maxWidth: 420, minWidth: 0 }}>
         <Alert type="error" message={error} style={{ marginBottom: 16 }} />
         <a href="/login">返回登录页</a>
       </Card>

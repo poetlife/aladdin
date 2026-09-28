@@ -18,6 +18,7 @@
 | 权限码形状是否合法 | `rbac.PermissionCode.Valid` | [internal/rbac/permission.go](../internal/rbac/permission.go) |
 | 权限码是否已登记 | 权限目录 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
 | 前端当前会话是否持有某权限码（仅用于展示裁剪） | `usePermission()` | [web/src/auth/use-permission.ts](../web/src/auth/use-permission.ts) |
+| 当前视口是否为窄屏（手机），及窄屏断点的取值 | `useNarrowViewport()` / `NARROW_MEDIA_QUERY` | [web/src/layouts/use-narrow-viewport.ts](../web/src/layouts/use-narrow-viewport.ts) |
 | 一个 RPC 方法需要认证 / 需要哪个权限码 | `rbac.Resolve` | [internal/rbac/annotation.go](../internal/rbac/annotation.go) |
 | 数据库后端类型的合法取值 | `database.ParseDialect` | [internal/database/dialect.go](../internal/database/dialect.go) |
 | 该读哪一个配置文件（显式指定 > 环境变量 > 默认位置） | `config.locateFile` | [internal/config/file.go](../internal/config/file.go) |

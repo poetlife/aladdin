@@ -87,13 +87,24 @@ it('回调带回的认领结果给出「已并入」提示', async () => {
   expect(container.textContent).toContain('已把此前单独登录过')
 })
 
-// 读不到现状时必须给出出路，而不是永远停在"正在读取登录方式…"。
+// 读到之前给骨架，而不是先写一句"还没有绑定任何登录方式"再把它换掉——
+// 那句话在加载期间是错的。
+it('读到之前给骨架，不给一个空的结论', async () => {
+  vi.mocked(identityApi.listIdentities).mockReturnValue(new Promise<never>(() => {}))
+
+  const container = await renderCard()
+
+  expect(container.querySelector('.ant-skeleton')).not.toBeNull()
+  expect(container.textContent).not.toContain('还没有绑定任何登录方式')
+})
+
+// 读不到现状时必须给出出路，而不是永远停在加载骨架里。
 it('读不到现状时给出重试入口，而不是停在加载态', async () => {
   vi.mocked(identityApi.listIdentities).mockRejectedValue(new Error('服务不可用'))
 
   const container = await renderCard()
 
-  expect(container.textContent).not.toContain('正在读取登录方式')
+  expect(container.querySelector('.ant-skeleton')).toBeNull()
   // 按容器选而不是按文案：antd 会在两个汉字之间插空格（"重 试"）。
   const retry = container.querySelector<HTMLButtonElement>('.ant-alert-actions button')
   expect(retry).not.toBeNull()

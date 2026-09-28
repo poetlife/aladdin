@@ -104,10 +104,16 @@ export async function mountGoogleButton(
   }
   currentHandler = onCredential
 
+  // GIS 只接受 200–400 的像素宽度，且不接受百分比。桌面端维持原来的 380；
+  // 量不到容器宽度时（clientWidth 为 0，例如尚未布局的环境）同样按 380 处理，
+  // 免得把"没量出来"当成"容器很窄"。
+  const available = parent.clientWidth
+  const width = available > 0 ? Math.min(380, Math.max(200, available)) : 380
+
   api.accounts.id.renderButton(parent, {
     theme: 'outline',
     size: 'large',
     text: 'signin_with',
-    width: 380,
+    width,
   })
 }
