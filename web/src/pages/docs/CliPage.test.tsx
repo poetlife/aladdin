@@ -69,4 +69,35 @@ describe('命令行介绍页', () => {
     expect(container.textContent).toContain('aladdin_${tag}_linux_amd64.tar.gz')
     expect(container.textContent).toContain('sha256sum -c -')
   })
+
+  // 这些命令要么长、要么多行，手动选中容易漏掉续行。见 install.md 第 5 条。
+  it('每个命令块都自带复制入口', async () => {
+    const container = await renderPage()
+    await clickTab(container, 1)
+
+    const blocks = Array.from(container.querySelectorAll('pre'))
+    expect(blocks.length).toBeGreaterThan(1)
+    for (const block of blocks) {
+      const wrapper = block.parentElement
+      expect(
+        wrapper?.querySelector('button.ant-typography-copy'),
+        `命令块没有复制入口：${block.textContent?.slice(0, 30)}`,
+      ).not.toBeNull()
+    }
+  })
+
+  // 非特权用户装 /usr/local/bin 会 Permission denied；装得上的人此后每次升级也要
+  // sudo——而升级正是自更新要免掉的那个人工步骤（见 install.md「装在哪里」）。
+  // 这里钉住**落点**本身，而不是禁止某个字符串：那句"别装系统目录"的解释值得留在
+  // 命令旁边的注释里。
+  it('两个平台的安装落点都是用户可写目录', async () => {
+    const container = await renderPage()
+    await clickTab(container, 1)
+
+    const installs = Array.from(container.querySelectorAll('pre'))
+      .map((block) => /^install -m 0755 aladdin (\S+)$/m.exec(block.textContent ?? '')?.[1])
+      .filter((dest): dest is string => dest !== undefined)
+
+    expect(installs).toEqual(['~/.local/bin/aladdin', '~/.local/bin/aladdin'])
+  })
 })
