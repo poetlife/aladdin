@@ -95,6 +95,7 @@ func newRootCommand() *cobra.Command {
 		newWhoAmICommand(),
 		newPermissionsCommand(),
 		newRoleCommand(),
+		newGalaxyCommand(),
 	)
 	return root
 }
@@ -203,6 +204,20 @@ func noArgs(cmd *cobra.Command, args []string) error {
 		return usageErrorf("%s", err)
 	}
 	return nil
+}
+
+// exactArgs 与 cobra.ExactArgs 等价，但把错误标记为用法错误。
+//
+// 与 noArgs 同理：位置参数给错个数，脚本该看到的是"用法错误"这一个退出码，
+// 而不是 cobra 默认的未分类失败。
+func exactArgs(n int) cobra.PositionalArgs {
+	validate := cobra.ExactArgs(n)
+	return func(cmd *cobra.Command, args []string) error {
+		if err := validate(cmd, args); err != nil {
+			return usageErrorf("%s", err)
+		}
+		return nil
+	}
 }
 
 // effectiveScope 返回本次调用应当声明的作用域。

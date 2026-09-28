@@ -36,6 +36,8 @@
 
 **签发与提交各自都要过鉴权**：签发决定"谁可以往哪个键写"，提交决定"这条上传记到谁的名下"。两者是同一个资源上的两次操作，不是一次拆成两半。
 
+**第 2 步在两端各有一份实现，共享的是形状而不是代码。** 直传发生在客户端与对象存储之间，而客户端有两个：浏览器与命令行（见 [galaxy/cli.md](../galaxy/cli.md)）。两者读的是**同一份凭证定义**（`DirectUploadCredential`），实现在各自的语言里——跨语言共享不了代码，能共享的正是那份形状。**不得出现第三种形状**：换一个端上传就换一套凭证字段，是这条链路最贵的漂移。
+
 **约束落在存储侧，不落在客户端自觉。** 类型与大小上限写进临时凭证的策略里，由对象存储执行：不合规的请求根本进不了桶。客户端是**不可信**的一方——这正是"服务端嗅探"被换掉之后仍然要有约束的原因。
 
 ### 键由服务端分配，且不复用
@@ -146,6 +148,7 @@
 |---------|---------|
 | 个人档案 — 头像 | 消费本机制：键为 `avatars/<主体标识>`，替换即原地覆盖（见 [profile/avatar-storage.md](../profile/avatar-storage.md)） |
 | galaxy — 资产库 | 消费本机制：键为 `galaxy/<工程标识>/<资产标识>`，一次上传一个新键（见 [galaxy/asset-library.md](../galaxy/asset-library.md)） |
+| 命令行 — galaxy | 消费本机制做资产直传：读的是与浏览器同一份凭证定义，实现在 [cmd/aladdin/direct-upload.go](../../../cmd/aladdin/direct-upload.go)（见 [galaxy/cli.md](../galaxy/cli.md)） |
 | 腾讯云 STS（`GetFederationToken`） | 用长期密钥换取被策略限定的临时凭证 |
 | 腾讯云 COS | **一个桶**：临时凭证的直传、Head、删除、签发读取地址；发布物的公开区对象也在这个桶里，靠逐对象的公开读与其余对象区分（见 [galaxy/asset-library.md](../galaxy/asset-library.md)） |
 | 服务端配置 | 桶地址与启用与否；密钥只走环境变量 |
@@ -170,6 +173,8 @@
 | COS 实现（换取临时凭证、Head、删除、签发读取地址） | [internal/objectstore/cosupload/](../../../internal/objectstore/cosupload/) |
 | 头像的消费（键、白名单、上限） | [internal/profile/avatar.go](../../../internal/profile/avatar.go) |
 | 资产的消费（键、白名单、分档上限、提交时的摘要与媒体类型） | [internal/galaxy/asset.go](../../../internal/galaxy/asset.go) |
+| 客户端侧直传 — 浏览器 | [web/src/upload/direct-upload.ts](../../../web/src/upload/direct-upload.ts) |
+| 客户端侧直传 — 命令行 | [cmd/aladdin/direct-upload.go](../../../cmd/aladdin/direct-upload.go) |
 
 ---
 

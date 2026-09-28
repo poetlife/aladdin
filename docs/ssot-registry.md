@@ -97,6 +97,7 @@
 | 档案变更的留痕（含主体标识与改了哪一项，**不含头像字节与简介全文**） | `ProfileService` 的对应处理方法 | [internal/server/profile_service.go](../internal/server/profile_service.go) |
 | 发布各阶段的留痕（校验 / 上架 / 落库 / 生效，**不含正文全文**） | `galaxy` 发布流程的埋点（四阶段的唯一入口） | [internal/galaxy/publish.go](../internal/galaxy/publish.go) |
 | 资产字节上架到公开区 | 上架入口（按内容摘要幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
+| 客户端把字节直传到对象存储 | 两端的直传实现；**共享的是凭证形状（`DirectUploadCredential`），代码因跨语言各一份，不得出现第三种形状** | [web/src/upload/direct-upload.ts](../web/src/upload/direct-upload.ts) / [cmd/aladdin/direct-upload.go](../cmd/aladdin/direct-upload.go) |
 | 拒绝结论到 RPC 错误码与错误详情的转换 | `reject` / `DenyByAnnotation` | [internal/server/interceptor/rejection.go](../internal/server/interceptor/rejection.go) |
 | 按客户端协议写出错误响应（中间件层） | `connect.ErrorWriter` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 服务端为每个请求起 span、回写 `traceparent` 与 `x-trace-id` 响应头 | `observability.StartServerSpan` / `WriteTraceHeaders` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
