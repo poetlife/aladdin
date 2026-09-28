@@ -22,6 +22,7 @@
 | 持久化 | [docs/design/persistence/](docs/design/persistence/README.md) | 库结构、迁移语义、后端选择与连接串 |
 | 身份认证 | [docs/design/identity/](docs/design/identity/README.md) | 登录方式、主体标识的确定、会话凭证的签发与失效 |
 | 个人档案 | [docs/design/profile/](docs/design/profile/README.md) | 主体的展示信息（昵称、头像、简介）：存放、下发与边界 |
+| galaxy 创作与发布 | [docs/design/galaxy/](docs/design/galaxy/README.md) | 用户创作工程（多版本）、管理资产、发布成一个可公开访问的 HTML：引用完整性、公开匿名、渲染隔离 |
 | Web 界面 | [docs/design/web/](docs/design/web/README.md) | 呈现机制：主题（亮/暗/跟随系统）、图标与动效的来源、外壳结构，窄屏见 [responsive.md](docs/design/web/responsive.md) |
 | UI/UX 设计指导 | [docs/design/uiux/](docs/design/uiux/README.md) | 前端界面取舍：信息层级、间距节奏、空态与失败、文案、破坏性操作 |
 | 命令行 | [docs/design/cli/](docs/design/cli/README.md) | 安装与升级形态：自更新的支持范围、校验与原子替换 |
