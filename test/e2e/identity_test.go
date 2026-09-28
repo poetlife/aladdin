@@ -91,8 +91,8 @@ func connectIdentity(t *testing.T, h harness, token string) identityv1connect.Id
 
 // grpcIdentity 构造一个走 gRPC 协议的认证面客户端，以及一个已注入链路标识的上下文。
 //
-// **凭证在连接建立时注入**（见 pkg/client 的 metadata 注入点），因此"以谁的身份
-// 调用"由 token 决定：空 token 即匿名调用。
+// **凭证在连接建立时注入**（见 authz_test.go 里 harness.dial 的 credentialInterceptor），
+// 因此"以谁的身份调用"由 token 决定：空 token 即匿名调用。
 func grpcIdentity(t *testing.T, h harness, token string) (identityv1.IdentityServiceClient, context.Context) {
 	t.Helper()
 	c := h.dial(t, token, testScope)
