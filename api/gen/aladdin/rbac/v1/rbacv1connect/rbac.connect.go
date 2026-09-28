@@ -85,12 +85,14 @@ func NewRBACServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+RBACServiceGetRoleProcedure,
 			connect.WithSchema(rBACServiceMethods.ByName("GetRole")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listRoles: connect.NewClient[v1.ListRolesRequest, v1.ListRolesResponse](
 			httpClient,
 			baseURL+RBACServiceListRolesProcedure,
 			connect.WithSchema(rBACServiceMethods.ByName("ListRoles")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		putRole: connect.NewClient[v1.PutRoleRequest, v1.PutRoleResponse](
@@ -115,6 +117,7 @@ func NewRBACServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+RBACServiceListSubjectBindingsProcedure,
 			connect.WithSchema(rBACServiceMethods.ByName("ListSubjectBindings")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		publishPolicy: connect.NewClient[v1.PublishPolicyRequest, v1.PublishPolicyResponse](
@@ -202,12 +205,14 @@ func NewRBACServiceHandler(svc RBACServiceHandler, opts ...connect.HandlerOption
 		RBACServiceGetRoleProcedure,
 		svc.GetRole,
 		connect.WithSchema(rBACServiceMethods.ByName("GetRole")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	rBACServiceListRolesHandler := connect.NewUnaryHandler(
 		RBACServiceListRolesProcedure,
 		svc.ListRoles,
 		connect.WithSchema(rBACServiceMethods.ByName("ListRoles")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	rBACServicePutRoleHandler := connect.NewUnaryHandler(
@@ -232,6 +237,7 @@ func NewRBACServiceHandler(svc RBACServiceHandler, opts ...connect.HandlerOption
 		RBACServiceListSubjectBindingsProcedure,
 		svc.ListSubjectBindings,
 		connect.WithSchema(rBACServiceMethods.ByName("ListSubjectBindings")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	rBACServicePublishPolicyHandler := connect.NewUnaryHandler(

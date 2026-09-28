@@ -938,16 +938,16 @@ const file_aladdin_rbac_v1_rbac_proto_rawDesc = "" +
 	"\tchange_id\x18\x02 \x01(\tR\bchangeId\"e\n" +
 	"\x15PublishPolicyResponse\x12\x1b\n" +
 	"\tchange_id\x18\x01 \x01(\tR\bchangeId\x12/\n" +
-	"\x13invalidated_entries\x18\x02 \x01(\x05R\x12invalidatedEntries2\xb5\x06\n" +
-	"\vRBACService\x12d\n" +
-	"\aGetRole\x12\x1f.aladdin.rbac.v1.GetRoleRequest\x1a .aladdin.rbac.v1.GetRoleResponse\"\x16\x8a\x88'\x0erbac.role.read\x90\x88'\x01\x12j\n" +
-	"\tListRoles\x12!.aladdin.rbac.v1.ListRolesRequest\x1a\".aladdin.rbac.v1.ListRolesResponse\"\x16\x8a\x88'\x0erbac.role.read\x90\x88'\x01\x12e\n" +
+	"\x13invalidated_entries\x18\x02 \x01(\x05R\x12invalidatedEntries2\xbe\x06\n" +
+	"\vRBACService\x12g\n" +
+	"\aGetRole\x12\x1f.aladdin.rbac.v1.GetRoleRequest\x1a .aladdin.rbac.v1.GetRoleResponse\"\x19\x8a\x88'\x0erbac.role.read\x90\x88'\x01\x90\x02\x01\x12m\n" +
+	"\tListRoles\x12!.aladdin.rbac.v1.ListRolesRequest\x1a\".aladdin.rbac.v1.ListRolesResponse\"\x19\x8a\x88'\x0erbac.role.read\x90\x88'\x01\x90\x02\x01\x12e\n" +
 	"\aPutRole\x12\x1f.aladdin.rbac.v1.PutRoleRequest\x1a .aladdin.rbac.v1.PutRoleResponse\"\x17\x8a\x88'\x0frbac.role.write\x90\x88'\x01\x12n\n" +
 	"\n" +
 	"DeleteRole\x12\".aladdin.rbac.v1.DeleteRoleRequest\x1a#.aladdin.rbac.v1.DeleteRoleResponse\"\x17\x8a\x88'\x0frbac.role.write\x90\x88'\x01\x12r\n" +
 	"\n" +
-	"AssignRole\x12\".aladdin.rbac.v1.AssignRoleRequest\x1a#.aladdin.rbac.v1.AssignRoleResponse\"\x1b\x8a\x88'\x13rbac.subject.assign\x90\x88'\x01\x12\x8b\x01\n" +
-	"\x13ListSubjectBindings\x12+.aladdin.rbac.v1.ListSubjectBindingsRequest\x1a,.aladdin.rbac.v1.ListSubjectBindingsResponse\"\x19\x8a\x88'\x11rbac.subject.read\x90\x88'\x01\x12{\n" +
+	"AssignRole\x12\".aladdin.rbac.v1.AssignRoleRequest\x1a#.aladdin.rbac.v1.AssignRoleResponse\"\x1b\x8a\x88'\x13rbac.subject.assign\x90\x88'\x01\x12\x8e\x01\n" +
+	"\x13ListSubjectBindings\x12+.aladdin.rbac.v1.ListSubjectBindingsRequest\x1a,.aladdin.rbac.v1.ListSubjectBindingsResponse\"\x1c\x8a\x88'\x11rbac.subject.read\x90\x88'\x01\x90\x02\x01\x12{\n" +
 	"\rPublishPolicy\x12%.aladdin.rbac.v1.PublishPolicyRequest\x1a&.aladdin.rbac.v1.PublishPolicyResponse\"\x1b\x8a\x88'\x13rbac.policy.publish\x90\x88'\x01B<Z:github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1;rbacv1b\x06proto3"
 
 var (

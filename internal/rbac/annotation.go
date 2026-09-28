@@ -105,11 +105,13 @@ func Resolve(procedure string) (MethodRule, error) {
 	}
 }
 
-// methodOptions 通过全局描述符注册表取回方法上的注解。
+// MethodDescriptor 通过过程名取回方法描述符。
 //
-// 走描述符而非硬编码映射，是为了让"新增受控接口"只需要改 proto，
-// 不需要记得同步修改任何 Go 代码。
-func methodOptions(procedure string) (*descriptorpb.MethodOptions, error) {
+// 它是"过程名 → 描述符"这**唯一一处**查找：判定路径与文档生成都要问同一个
+// 问题，各写一份必然漂移（见 docs/ssot-registry.md）。**怎么解读选项由调用方
+// 决定**——鉴权语义在 Resolve，传输语义（如 idempotency_level）由需要它的
+// 调用方自己读，本包不替它们下结论。
+func MethodDescriptor(procedure string) (protoreflect.MethodDescriptor, error) {
 	service, method, err := splitProcedure(procedure)
 	if err != nil {
 		return nil, err
@@ -126,6 +128,18 @@ func methodOptions(procedure string) (*descriptorpb.MethodOptions, error) {
 	methodDesc := serviceDesc.Methods().ByName(protoreflect.Name(method))
 	if methodDesc == nil {
 		return nil, fmt.Errorf("服务 %s 上不存在方法 %s", service, method)
+	}
+	return methodDesc, nil
+}
+
+// methodOptions 取回方法上的注解。
+//
+// 走描述符而非硬编码映射，是为了让"新增受控接口"只需要改 proto，
+// 不需要记得同步修改任何 Go 代码。
+func methodOptions(procedure string) (*descriptorpb.MethodOptions, error) {
+	methodDesc, err := MethodDescriptor(procedure)
+	if err != nil {
+		return nil, err
 	}
 	opts, ok := methodDesc.Options().(*descriptorpb.MethodOptions)
 	if !ok || opts == nil {

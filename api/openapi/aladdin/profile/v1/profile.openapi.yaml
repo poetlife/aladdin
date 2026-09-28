@@ -12,6 +12,8 @@ paths:
       description: |-
         **鉴权**：需要登录。任何已认证主体均可调用。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         读取当前主体的档案。
       operationId: aladdin.profile.v1.ProfileService.GetProfile
       parameters:

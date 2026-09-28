@@ -1815,17 +1815,17 @@ const file_aladdin_identity_v1_identity_proto_rawDesc = "" +
 	"\x1aDEVICE_LOGIN_STATE_PENDING\x10\x01\x12\x1f\n" +
 	"\x1bDEVICE_LOGIN_STATE_APPROVED\x10\x02\x12\x1d\n" +
 	"\x19DEVICE_LOGIN_STATE_DENIED\x10\x03\x12\x1e\n" +
-	"\x1aDEVICE_LOGIN_STATE_EXPIRED\x10\x042\xd2\v\n" +
+	"\x1aDEVICE_LOGIN_STATE_EXPIRED\x10\x042\xde\v\n" +
 	"\x0fIdentityService\x12T\n" +
 	"\x05Login\x12!.aladdin.identity.v1.LoginRequest\x1a\".aladdin.identity.v1.LoginResponse\"\x04\x98\x88'\x01\x12Z\n" +
-	"\aRefresh\x12#.aladdin.identity.v1.RefreshRequest\x1a$.aladdin.identity.v1.RefreshResponse\"\x04\x98\x88'\x01\x12o\n" +
-	"\x0eGetAuthMethods\x12*.aladdin.identity.v1.GetAuthMethodsRequest\x1a+.aladdin.identity.v1.GetAuthMethodsResponse\"\x04\x98\x88'\x01\x12[\n" +
-	"\x06WhoAmI\x12\".aladdin.identity.v1.WhoAmIRequest\x1a#.aladdin.identity.v1.WhoAmIResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12\x88\x01\n" +
-	"\x15GetSessionPermissions\x121.aladdin.identity.v1.GetSessionPermissionsRequest\x1a2.aladdin.identity.v1.GetSessionPermissionsResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12i\n" +
+	"\aRefresh\x12#.aladdin.identity.v1.RefreshRequest\x1a$.aladdin.identity.v1.RefreshResponse\"\x04\x98\x88'\x01\x12r\n" +
+	"\x0eGetAuthMethods\x12*.aladdin.identity.v1.GetAuthMethodsRequest\x1a+.aladdin.identity.v1.GetAuthMethodsResponse\"\a\x98\x88'\x01\x90\x02\x01\x12^\n" +
+	"\x06WhoAmI\x12\".aladdin.identity.v1.WhoAmIRequest\x1a#.aladdin.identity.v1.WhoAmIResponse\"\v\x90\x88'\x03\xa0\x88'\x01\x90\x02\x01\x12\x8b\x01\n" +
+	"\x15GetSessionPermissions\x121.aladdin.identity.v1.GetSessionPermissionsRequest\x1a2.aladdin.identity.v1.GetSessionPermissionsResponse\"\v\x90\x88'\x03\xa0\x88'\x01\x90\x02\x01\x12i\n" +
 	"\fBindIdentity\x12(.aladdin.identity.v1.BindIdentityRequest\x1a).aladdin.identity.v1.BindIdentityResponse\"\x04\xa0\x88'\x01\x12o\n" +
 	"\x0eUnbindIdentity\x12*.aladdin.identity.v1.UnbindIdentityRequest\x1a+.aladdin.identity.v1.UnbindIdentityResponse\"\x04\xa0\x88'\x01\x12\x8a\x01\n" +
-	"\x17CompleteIdentityBinding\x123.aladdin.identity.v1.CompleteIdentityBindingRequest\x1a4.aladdin.identity.v1.CompleteIdentityBindingResponse\"\x04\xa0\x88'\x01\x12o\n" +
-	"\x0eListIdentities\x12*.aladdin.identity.v1.ListIdentitiesRequest\x1a+.aladdin.identity.v1.ListIdentitiesResponse\"\x04\xa0\x88'\x01\x12u\n" +
+	"\x17CompleteIdentityBinding\x123.aladdin.identity.v1.CompleteIdentityBindingRequest\x1a4.aladdin.identity.v1.CompleteIdentityBindingResponse\"\x04\xa0\x88'\x01\x12r\n" +
+	"\x0eListIdentities\x12*.aladdin.identity.v1.ListIdentitiesRequest\x1a+.aladdin.identity.v1.ListIdentitiesResponse\"\a\xa0\x88'\x01\x90\x02\x01\x12u\n" +
 	"\x10StartDeviceLogin\x12,.aladdin.identity.v1.StartDeviceLoginRequest\x1a-.aladdin.identity.v1.StartDeviceLoginResponse\"\x04\x98\x88'\x01\x12r\n" +
 	"\x0fPollDeviceLogin\x12+.aladdin.identity.v1.PollDeviceLoginRequest\x1a,.aladdin.identity.v1.PollDeviceLoginResponse\"\x04\x98\x88'\x01\x12{\n" +
 	"\x12ApproveDeviceLogin\x12..aladdin.identity.v1.ApproveDeviceLoginRequest\x1a/.aladdin.identity.v1.ApproveDeviceLoginResponse\"\x04\xa0\x88'\x01\x12r\n" +

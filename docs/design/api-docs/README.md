@@ -10,11 +10,13 @@ proto 是接口契约的唯一信源，注释也够密。但它只对能读到 p
 
 **但不是所有生成方式都可以。** grpc-gateway 那类方案会为同一个方法再开一条 REST 路径（`POST /v1/login`），于是文档描述的东西与真实调用形状分叉——这正是 [buf.gen.yaml](../../../buf.gen.yaml) 一直拒绝它的理由。本模块选的生成器描述的是 **Connect 路径本身**（`POST /aladdin.identity.v1.IdentityService/Login`），与实际请求同形，因此不产生第二条路径，也就不违反那条理由。
 
+**每条路径只给一个动词（POST）。** 只读方法在服务端**另外也接受 GET**（标了 `idempotency_level = NO_SIDE_EFFECTS`，理由与限制见 [CLAUDE.md 的"传输方式的既定选择"](../../../CLAUDE.md)），但文档不为它在同一条路径下再列一条 `get` operation——两条同名条目只是把同一个方法说了两遍。这一事实写进方法的说明里，读者一样能拿到，侧栏却不重复。
+
 成功的衡量标准：
 
 1. 文档从 proto 派生，**不手写**——proto 改了文档必然跟着改，或由 CI 拦下。
 2. 每个 RPC 方法都标明鉴权要求：公开 / 仅需认证 / 需要哪个权限码、作用域从哪来。
-3. 文档描述的调用形状与实际一致（Connect 路径），不另起一套 REST。
+3. 文档描述的调用形状与实际一致（Connect 路径），不另起一套 REST；服务端额外接受的动词（只读方法的 GET）在说明里写明。
 4. 文档与 proto 的同步由 CI 保证，不依赖人记得重跑。
 
 ## 模块边界
@@ -71,6 +73,8 @@ go run ./internal/tools/openapigen             # 补鉴权扩展
       scope-source: SCOPE_SOURCE_REQUEST_FIELD
 ```
 
+`GetRole` 是只读方法，它在服务端**另外也接受 GET**，但文档只给上面这一种形状——那个事实写在方法的说明里（见下文的「幂等」行），不占一条并列的同名条目。
+
 **只写出真正参与判定的字段**：`authenticated_only` 的方法拦截器在权限检查之前就放行了，不看作用域，所以不写 `scope-source`——写了会让读者以为它有约束力。`requires` 则相反，未声明作用域来源时鉴权以"作用域不符"拒绝，所以哪怕取值是 `SCOPE_SOURCE_UNSPECIFIED` 也如实写出。
 
 `kind: denied` 表示方法没写注解。**文档里出现它说明有缺陷**：`internal/rbac` 的测试会拦在构建期（见 [服务端权限](../rbac/server-permissions.md)）。
@@ -78,6 +82,8 @@ go run ./internal/tools/openapigen             # 补鉴权扩展
 取值 `public` / `authenticated_only` / `requires` 是**对外契约**，由 `rbac.Kind.String()` 单点给出，不随日志文案调整而变。
 
 同一个结论还有**第二种呈现**：每个方法的 `description` 开头会多一行可读的鉴权说明，例如"**鉴权**：需要权限 `rbac.role.read`；作用域取自请求字段。"。
+
+只读方法还会再多一行：「**幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。」——读者不必自己知道 Connect 里"GET ⇒ 无副作用"这条映射，也不必因为文档只画了 POST 就以为 GET 不可用。它的事实来源是 proto 的 `idempotency_level`，经 `rbac.MethodDescriptor` 从**与鉴权注解同一份方法描述符**读回，本模块只做呈现。刻意不从"文档里有没有 `get` operation"反推：那是让文档的形状去决定文档的内容。
 
 两种都要。标准渲染器只渲染 `description`：自定义扩展要么根本不显示，要么以原始 JSON 显示——对读文档的人，`{"kind":"requires","permission":"rbac.role.read"}` 等于没说。扩展留给机器，文字留给人，两者由同一次生成产出，不会不一致。
 
@@ -114,6 +120,7 @@ go run ./internal/tools/openapigen             # 补鉴权扩展
 约束：
 
 - **文档不得手改。** 它是派生物。手改会在 CI 被 `check-api-docs` 拦下，且下次生成即被覆盖。
+- **每条路径只给一个动词。** 工具按此产出契约工作，并在路径下出现多个动词时**硬失败**而不是只注入其一——只注入其一会让另一个动词悄悄没有鉴权信息，而 CI 拦不住。真要并列展示多个动词，先扩展工具使其逐个注入。
 - **新增服务必须在 [internal/tools/openapigen/descriptors.go](../../../internal/tools/openapigen/descriptors.go) 登记一行**，否则该服务的方法会以"未找到服务描述符"报错。这是刻意的：报错好过静默产出一份缺扩展的文档。
 - **扩展开关不得有默认值。** 方法三选一（public / authenticated_only / requires）是硬约束，不提供"未声明即公开"这类缺省。
 
@@ -122,7 +129,7 @@ go run ./internal/tools/openapigen             # 补鉴权扩展
 | 依赖对象 | 交互方式 |
 |---------|---------|
 | proto | **只读**：文档的接口、消息、注释都来自它 |
-| RBAC | **只读**：调 `rbac.Resolve` 取每个方法的鉴权结论 |
+| RBAC | **只读**：调 `rbac.Resolve` 取鉴权结论、调 `rbac.MethodDescriptor` 取方法描述符（幂等等标准选项由此读回） |
 | buf / OpenAPI 生成器 | 第一步用它产原始文档；版本钉在 Makefile 的 `TOOLS` |
 | CI | 校验文档与 proto 同步 |
 
@@ -147,7 +154,7 @@ go run ./internal/tools/openapigen             # 补鉴权扩展
 | 鉴权信息的两种呈现（扩展 + 描述行） | [internal/tools/openapigen/auth_ext.go](../../../internal/tools/openapigen/auth_ext.go) |
 | 多份文档合并成单份 | [internal/tools/openapigen/merge.go](../../../internal/tools/openapigen/merge.go) |
 | 服务描述符的注册登记 | [internal/tools/openapigen/descriptors.go](../../../internal/tools/openapigen/descriptors.go) |
-| 鉴权注解的唯一读取入口 | [internal/rbac/annotation.go](../../../internal/rbac/annotation.go) |
+| 方法描述符与鉴权注解的唯一读取入口 | [internal/rbac/annotation.go](../../../internal/rbac/annotation.go) |
 | 渲染页 | [web/public/api-docs/index.html](../../../web/public/api-docs/index.html) |
 | 生成与校验入口 | [Makefile](../../../Makefile) 的 `api-docs` / `check-api-docs` |
 | 产物 | [api/openapi/](../../../api/openapi/) 与 [web/public/api-docs/openapi.yaml](../../../web/public/api-docs/openapi.yaml) |

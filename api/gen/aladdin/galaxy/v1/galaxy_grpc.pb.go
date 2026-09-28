@@ -106,6 +106,9 @@ type GalaxyServiceClient interface {
 	// 发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
 	// 它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
 	// 存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+	//
+	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
+	// 带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
 	ValidateContent(ctx context.Context, in *ValidateContentRequest, opts ...grpc.CallOption) (*ValidateContentResponse, error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
 	ListAssets(ctx context.Context, in *ListAssetsRequest, opts ...grpc.CallOption) (*ListAssetsResponse, error)
@@ -411,6 +414,9 @@ type GalaxyServiceServer interface {
 	// 发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
 	// 它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
 	// 存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+	//
+	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
+	// 带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
 	ValidateContent(context.Context, *ValidateContentRequest) (*ValidateContentResponse, error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
 	ListAssets(context.Context, *ListAssetsRequest) (*ListAssetsResponse, error)

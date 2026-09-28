@@ -12,6 +12,8 @@ paths:
       description: |-
         **鉴权**：需要登录。任何已认证主体均可调用。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         读取当前部署下创作能力的边界：能不能传素材、能不能发布、各项上限。
 
          它是**能力下发点**，与档案的 avatar_upload_enabled 同一取向：能力由
@@ -58,6 +60,8 @@ paths:
       summary: ListProjects
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出调用者自己的工程。**只有这一个列表入口，且它的范围由凭证决定。**
 
@@ -150,6 +154,8 @@ paths:
       summary: GetProject
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         读取一个工程的元数据。不含草稿正文、版本正文与资产字节。
       operationId: aladdin.galaxy.v1.GalaxyService.GetProject
@@ -280,6 +286,8 @@ paths:
       summary: GetDraft
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         读取工程的当前草稿。草稿行是惰性创建的：从未保存过草稿时正文为空。
       operationId: aladdin.galaxy.v1.GalaxyService.GetDraft
@@ -414,6 +422,8 @@ paths:
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         列出工程的版本。按序号排序。**列表不带正文**（正文由 GetVersion 取）。
       operationId: aladdin.galaxy.v1.GalaxyService.ListVersions
       parameters:
@@ -456,6 +466,8 @@ paths:
       summary: GetVersion
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         读取一个版本，含正文。保存时的内容此后逐字不变。
       operationId: aladdin.galaxy.v1.GalaxyService.GetVersion
@@ -550,6 +562,9 @@ paths:
          发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
          它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
          存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+
+         它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
+         带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
       operationId: aladdin.galaxy.v1.GalaxyService.ValidateContent
       parameters:
         - name: Connect-Protocol-Version
@@ -591,6 +606,8 @@ paths:
       summary: ListAssets
       description: |-
         **鉴权**：需要权限 `galaxy.asset.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出工程资产库里的资产，含**短时有效**的读取地址。
       operationId: aladdin.galaxy.v1.GalaxyService.ListAssets

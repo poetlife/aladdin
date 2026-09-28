@@ -31,6 +31,7 @@ service GalaxyService {
   rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 列出调用者自己的工程。**只有这一个列表入口，且它的范围由凭证决定。**
@@ -40,6 +41,7 @@ service GalaxyService {
   rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
@@ -55,6 +57,7 @@ service GalaxyService {
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
@@ -74,6 +77,7 @@ service GalaxyService {
   rpc GetDraft(GetDraftRequest) returns (GetDraftResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 保存工程的当前草稿。**改草稿不产生版本**——它是工作区，不是历史。
@@ -96,12 +100,14 @@ service GalaxyService {
   rpc ListVersions(ListVersionsRequest) returns (ListVersionsResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 读取一个版本，含正文。保存时的内容此后逐字不变。
   rpc GetVersion(GetVersionRequest) returns (GetVersionResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 删除一个版本。**被当前发布指向的版本不可删**——那会让发布地址指向一个
@@ -117,6 +123,9 @@ service GalaxyService {
   // 发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
   // 它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
   // 存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+  //
+  // 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
+  // 带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
   rpc ValidateContent(ValidateContentRequest) returns (ValidateContentResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
@@ -126,6 +135,7 @@ service GalaxyService {
   rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.asset.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 开始一次资产上传：分配资产标识并签发一份直传凭证。

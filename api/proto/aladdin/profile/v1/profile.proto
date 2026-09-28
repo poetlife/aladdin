@@ -25,6 +25,7 @@ service ProfileService {
   rpc GetProfile(GetProfileRequest) returns (GetProfileResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 设置当前主体的昵称与简介。

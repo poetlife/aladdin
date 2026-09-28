@@ -92,6 +92,7 @@ func NewProfileServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+ProfileServiceGetProfileProcedure,
 			connect.WithSchema(profileServiceMethods.ByName("GetProfile")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		updateProfile: connect.NewClient[v1.UpdateProfileRequest, v1.UpdateProfileResponse](
@@ -193,6 +194,7 @@ func NewProfileServiceHandler(svc ProfileServiceHandler, opts ...connect.Handler
 		ProfileServiceGetProfileProcedure,
 		svc.GetProfile,
 		connect.WithSchema(profileServiceMethods.ByName("GetProfile")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	profileServiceUpdateProfileHandler := connect.NewUnaryHandler(

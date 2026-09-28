@@ -14,6 +14,8 @@ paths:
       description: |-
         **鉴权**：需要权限 `rbac.role.read`；作用域取自请求字段。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         读取角色定义。
       operationId: aladdin.rbac.v1.RBACService.GetRole
       parameters:
@@ -56,6 +58,8 @@ paths:
       summary: ListRoles
       description: |-
         **鉴权**：需要权限 `rbac.role.read`；作用域取自请求字段。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出某个作用域下可见的角色。
       operationId: aladdin.rbac.v1.RBACService.ListRoles
@@ -228,6 +232,8 @@ paths:
       summary: ListSubjectBindings
       description: |-
         **鉴权**：需要权限 `rbac.subject.read`；作用域取自请求字段。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出某个主体持有的角色绑定。
       operationId: aladdin.rbac.v1.RBACService.ListSubjectBindings

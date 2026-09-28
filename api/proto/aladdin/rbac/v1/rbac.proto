@@ -16,12 +16,14 @@ service RBACService {
   rpc GetRole(GetRoleRequest) returns (GetRoleResponse) {
     option (aladdin.rbac.v1.required_permission) = "rbac.role.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 列出某个作用域下可见的角色。
   rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {
     option (aladdin.rbac.v1.required_permission) = "rbac.role.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 创建或更新角色。属于不可逆操作，调用方需二次确认。
@@ -46,6 +48,7 @@ service RBACService {
   rpc ListSubjectBindings(ListSubjectBindingsRequest) returns (ListSubjectBindingsResponse) {
     option (aladdin.rbac.v1.required_permission) = "rbac.subject.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 使一次角色变更正式生效（缓存失效 + 生效确认）。

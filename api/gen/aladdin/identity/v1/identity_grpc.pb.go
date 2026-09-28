@@ -109,6 +109,10 @@ type IdentityServiceClient interface {
 	//
 	// 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
 	// 非已批准的状态（见 docs/design/identity/device-login.md）。
+	//
+	// 它读起来像只读，实则会推进状态（上面那句"恰好交付一次"），因此**不**标
+	// idempotency_level——标了就等于同时接受 GET，而 device_code 会随查询串
+	// 落进访问日志，这与它"不得进入日志"的要求冲突。
 	PollDeviceLogin(ctx context.Context, in *PollDeviceLoginRequest, opts ...grpc.CallOption) (*PollDeviceLoginResponse, error)
 	// 批准一次设备码登录。
 	//
@@ -339,6 +343,10 @@ type IdentityServiceServer interface {
 	//
 	// 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
 	// 非已批准的状态（见 docs/design/identity/device-login.md）。
+	//
+	// 它读起来像只读，实则会推进状态（上面那句"恰好交付一次"），因此**不**标
+	// idempotency_level——标了就等于同时接受 GET，而 device_code 会随查询串
+	// 落进访问日志，这与它"不得进入日志"的要求冲突。
 	PollDeviceLogin(context.Context, *PollDeviceLoginRequest) (*PollDeviceLoginResponse, error)
 	// 批准一次设备码登录。
 	//

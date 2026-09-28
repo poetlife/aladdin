@@ -17,6 +17,8 @@ paths:
       description: |-
         **鉴权**：需要登录。任何已认证主体均可调用。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         读取当前部署下创作能力的边界：能不能传素材、能不能发布、各项上限。
 
          它是**能力下发点**，与档案的 avatar_upload_enabled 同一取向：能力由
@@ -63,6 +65,8 @@ paths:
       summary: ListProjects
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出调用者自己的工程。**只有这一个列表入口，且它的范围由凭证决定。**
 
@@ -155,6 +159,8 @@ paths:
       summary: GetProject
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         读取一个工程的元数据。不含草稿正文、版本正文与资产字节。
       operationId: aladdin.galaxy.v1.GalaxyService.GetProject
@@ -285,6 +291,8 @@ paths:
       summary: GetDraft
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         读取工程的当前草稿。草稿行是惰性创建的：从未保存过草稿时正文为空。
       operationId: aladdin.galaxy.v1.GalaxyService.GetDraft
@@ -419,6 +427,8 @@ paths:
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         列出工程的版本。按序号排序。**列表不带正文**（正文由 GetVersion 取）。
       operationId: aladdin.galaxy.v1.GalaxyService.ListVersions
       parameters:
@@ -461,6 +471,8 @@ paths:
       summary: GetVersion
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         读取一个版本，含正文。保存时的内容此后逐字不变。
       operationId: aladdin.galaxy.v1.GalaxyService.GetVersion
@@ -555,6 +567,9 @@ paths:
          发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
          它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
          存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+
+         它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
+         带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
       operationId: aladdin.galaxy.v1.GalaxyService.ValidateContent
       parameters:
         - name: Connect-Protocol-Version
@@ -596,6 +611,8 @@ paths:
       summary: ListAssets
       description: |-
         **鉴权**：需要权限 `galaxy.asset.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出工程资产库里的资产，含**短时有效**的读取地址。
       operationId: aladdin.galaxy.v1.GalaxyService.ListAssets
@@ -962,6 +979,8 @@ paths:
       description: |-
         **鉴权**：公开接口，无需认证。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         返回当前启用的登录方式。前端据此决定渲染哪些登录入口。
 
          公开是必须的：调用方尚未认证，而这正是它要回答的问题的前提。它之所以
@@ -1008,6 +1027,8 @@ paths:
       description: |-
         **鉴权**：需要登录。任何已认证主体均可调用。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
       operationId: aladdin.identity.v1.IdentityService.WhoAmI
       parameters:
@@ -1048,6 +1069,8 @@ paths:
       summary: GetSessionPermissions
       description: |-
         **鉴权**：需要登录。任何已认证主体均可调用。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         返回当前主体在其可及作用域下展开后的权限码集合。
          这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
@@ -1239,6 +1262,8 @@ paths:
       description: |-
         **鉴权**：需要登录。任何已认证主体均可调用。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         列出当前主体已绑定的全部登录渠道。
       operationId: aladdin.identity.v1.IdentityService.ListIdentities
       parameters:
@@ -1335,6 +1360,10 @@ paths:
 
          已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
          非已批准的状态（见 docs/design/identity/device-login.md）。
+
+         它读起来像只读，实则会推进状态（上面那句"恰好交付一次"），因此**不**标
+         idempotency_level——标了就等于同时接受 GET，而 device_code 会随查询串
+         落进访问日志，这与它"不得进入日志"的要求冲突。
       operationId: aladdin.identity.v1.IdentityService.PollDeviceLogin
       parameters:
         - name: Connect-Protocol-Version
@@ -1466,6 +1495,8 @@ paths:
       summary: GetProfile
       description: |-
         **鉴权**：需要登录。任何已认证主体均可调用。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         读取当前主体的档案。
       operationId: aladdin.profile.v1.ProfileService.GetProfile
@@ -1687,6 +1718,8 @@ paths:
       description: |-
         **鉴权**：需要权限 `rbac.role.read`；作用域取自请求字段。
 
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
         读取角色定义。
       operationId: aladdin.rbac.v1.RBACService.GetRole
       parameters:
@@ -1729,6 +1762,8 @@ paths:
       summary: ListRoles
       description: |-
         **鉴权**：需要权限 `rbac.role.read`；作用域取自请求字段。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出某个作用域下可见的角色。
       operationId: aladdin.rbac.v1.RBACService.ListRoles
@@ -1901,6 +1936,8 @@ paths:
       summary: ListSubjectBindings
       description: |-
         **鉴权**：需要权限 `rbac.subject.read`；作用域取自请求字段。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出某个主体持有的角色绑定。
       operationId: aladdin.rbac.v1.RBACService.ListSubjectBindings

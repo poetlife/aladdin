@@ -139,6 +139,10 @@ type IdentityServiceClient interface {
 	//
 	// 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
 	// 非已批准的状态（见 docs/design/identity/device-login.md）。
+	//
+	// 它读起来像只读，实则会推进状态（上面那句"恰好交付一次"），因此**不**标
+	// idempotency_level——标了就等于同时接受 GET，而 device_code 会随查询串
+	// 落进访问日志，这与它"不得进入日志"的要求冲突。
 	PollDeviceLogin(context.Context, *connect.Request[v1.PollDeviceLoginRequest]) (*connect.Response[v1.PollDeviceLoginResponse], error)
 	// 批准一次设备码登录。
 	//
@@ -183,18 +187,21 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IdentityServiceGetAuthMethodsProcedure,
 			connect.WithSchema(identityServiceMethods.ByName("GetAuthMethods")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		whoAmI: connect.NewClient[v1.WhoAmIRequest, v1.WhoAmIResponse](
 			httpClient,
 			baseURL+IdentityServiceWhoAmIProcedure,
 			connect.WithSchema(identityServiceMethods.ByName("WhoAmI")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getSessionPermissions: connect.NewClient[v1.GetSessionPermissionsRequest, v1.GetSessionPermissionsResponse](
 			httpClient,
 			baseURL+IdentityServiceGetSessionPermissionsProcedure,
 			connect.WithSchema(identityServiceMethods.ByName("GetSessionPermissions")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		bindIdentity: connect.NewClient[v1.BindIdentityRequest, v1.BindIdentityResponse](
@@ -219,6 +226,7 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IdentityServiceListIdentitiesProcedure,
 			connect.WithSchema(identityServiceMethods.ByName("ListIdentities")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		startDeviceLogin: connect.NewClient[v1.StartDeviceLoginRequest, v1.StartDeviceLoginResponse](
@@ -398,6 +406,10 @@ type IdentityServiceHandler interface {
 	//
 	// 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
 	// 非已批准的状态（见 docs/design/identity/device-login.md）。
+	//
+	// 它读起来像只读，实则会推进状态（上面那句"恰好交付一次"），因此**不**标
+	// idempotency_level——标了就等于同时接受 GET，而 device_code 会随查询串
+	// 落进访问日志，这与它"不得进入日志"的要求冲突。
 	PollDeviceLogin(context.Context, *connect.Request[v1.PollDeviceLoginRequest]) (*connect.Response[v1.PollDeviceLoginResponse], error)
 	// 批准一次设备码登录。
 	//
@@ -438,18 +450,21 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		IdentityServiceGetAuthMethodsProcedure,
 		svc.GetAuthMethods,
 		connect.WithSchema(identityServiceMethods.ByName("GetAuthMethods")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	identityServiceWhoAmIHandler := connect.NewUnaryHandler(
 		IdentityServiceWhoAmIProcedure,
 		svc.WhoAmI,
 		connect.WithSchema(identityServiceMethods.ByName("WhoAmI")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	identityServiceGetSessionPermissionsHandler := connect.NewUnaryHandler(
 		IdentityServiceGetSessionPermissionsProcedure,
 		svc.GetSessionPermissions,
 		connect.WithSchema(identityServiceMethods.ByName("GetSessionPermissions")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	identityServiceBindIdentityHandler := connect.NewUnaryHandler(
@@ -474,6 +489,7 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		IdentityServiceListIdentitiesProcedure,
 		svc.ListIdentities,
 		connect.WithSchema(identityServiceMethods.ByName("ListIdentities")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	identityServiceStartDeviceLoginHandler := connect.NewUnaryHandler(

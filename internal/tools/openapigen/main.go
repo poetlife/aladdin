@@ -6,7 +6,7 @@
 //	go run ./internal/tools/openapigen -dir api/openapi -merge-out web/public/api-docs/openapi.yaml
 //
 // 输入：api/openapi 下由 protoc-gen-connect-openapi 产出的 *.openapi.yaml
-// 输出：原地更新，为每个 RPC 方法挂上 x-aladdin-auth 扩展
+// 输出：原地更新，为每个 RPC 方法的每个 HTTP operation 挂上 x-aladdin-auth 扩展
 // 输出：按 -merge-out 产出一份合并文档（渲染器一次只吃一份 spec）
 //
 // 为什么需要这一步：OpenAPI 生成器只认识公开的注解族（gnostic、
@@ -29,13 +29,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"google.golang.org/protobuf/types/descriptorpb"
 	"gopkg.in/yaml.v3"
 
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
 // httpMethods 是 path item 下可能出现的 HTTP 方法键。
-// 生成器默认只产 post，带 idempotency_level=NO_SIDE_EFFECTS 时可能产 get。
+// 生成器默认只产 post，本仓库的文档即以此为产出契约。
 var httpMethods = map[string]bool{
 	"get": true, "post": true, "put": true,
 	"delete": true, "patch": true, "head": true, "options": true,
@@ -129,11 +130,23 @@ func processFile(path string) (*yaml.Node, int, error) {
 			return nil, 0, fmt.Errorf("%s: 方法 %s 解析注解失败: %w", path, procedure, err)
 		}
 
-		op := operationNode(pathItem)
+		op, err := operationNode(pathItem)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%s: 方法 %s: %w", path, procedure, err)
+		}
 		if op == nil {
 			continue
 		}
-		setAuth(op, rule)
+
+		// 幂等这一事实取自 proto 的 idempotency_level，与鉴权注解同源（同一份方法
+		// 描述符）。文档只给 POST 一种形状，但该方法在服务端**确实也接受 GET**，
+		// 所以这句话要写出来：少写等于把一条真实可用的调用形状藏起来。
+		idempotent, err := noSideEffects(procedure)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%s: 方法 %s: %w", path, procedure, err)
+		}
+
+		setAuth(op, rule, idempotent)
 		injected++
 	}
 
@@ -165,16 +178,46 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 }
 
 // operationNode 取 path item 下的 HTTP operation 节点。
-func operationNode(pathItem *yaml.Node) *yaml.Node {
+//
+// 本工具的产出契约是**每条路径恰好一个 operation**：文档只给 POST 一种形状，
+// 只读方法也一样——GET 是服务端额外接受的动词，写在方法的说明里，不单列一条。
+// 出现多个动词时直接报错而不是只取其一：只取其一会让另一个动词静默地没有鉴权
+// 信息，而 CI 拦不住。真要并列展示，先扩展本工具使其逐个注入。
+func operationNode(pathItem *yaml.Node) (*yaml.Node, error) {
 	if pathItem == nil || pathItem.Kind != yaml.MappingNode {
-		return nil
+		return nil, nil
 	}
+	var (
+		node *yaml.Node
+		verb string
+	)
 	for i := 0; i+1 < len(pathItem.Content); i += 2 {
-		if httpMethods[pathItem.Content[i].Value] {
-			return pathItem.Content[i+1]
+		v := pathItem.Content[i].Value
+		if !httpMethods[v] {
+			continue
 		}
+		if node != nil {
+			return nil, fmt.Errorf("路径下有多个 HTTP operation（%s 与 %s）", verb, v)
+		}
+		node, verb = pathItem.Content[i+1], v
 	}
-	return nil
+	return node, nil
+}
+
+// noSideEffects 报告方法是否声明为无副作用（idempotency_level = NO_SIDE_EFFECTS）。
+//
+// 事实来源是 proto：走与鉴权注解同一份方法描述符。本模块只做呈现，不下判断，
+// 也不自己维护一份"哪些方法只读"的清单——那种清单必然与 proto 漂移。
+func noSideEffects(procedure string) (bool, error) {
+	desc, err := rbac.MethodDescriptor(procedure)
+	if err != nil {
+		return false, err
+	}
+	opts, ok := desc.Options().(*descriptorpb.MethodOptions)
+	if !ok || opts == nil {
+		return false, nil
+	}
+	return opts.GetIdempotencyLevel() == descriptorpb.MethodOptions_NO_SIDE_EFFECTS, nil
 }
 
 // removeKey 从 MappingNode 中摘除一个键。

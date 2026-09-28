@@ -622,10 +622,10 @@ const file_aladdin_profile_v1_profile_proto_rawDesc = "" +
 	"\aprofile\x18\x01 \x01(\v2\x1b.aladdin.profile.v1.ProfileR\aprofile\"\x15\n" +
 	"\x13DeleteAvatarRequest\"M\n" +
 	"\x14DeleteAvatarResponse\x125\n" +
-	"\aprofile\x18\x01 \x01(\v2\x1b.aladdin.profile.v1.ProfileR\aprofile2\xcf\x04\n" +
-	"\x0eProfileService\x12e\n" +
+	"\aprofile\x18\x01 \x01(\v2\x1b.aladdin.profile.v1.ProfileR\aprofile2\xd2\x04\n" +
+	"\x0eProfileService\x12h\n" +
 	"\n" +
-	"GetProfile\x12%.aladdin.profile.v1.GetProfileRequest\x1a&.aladdin.profile.v1.GetProfileResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12n\n" +
+	"GetProfile\x12%.aladdin.profile.v1.GetProfileRequest\x1a&.aladdin.profile.v1.GetProfileResponse\"\v\x90\x88'\x03\xa0\x88'\x01\x90\x02\x01\x12n\n" +
 	"\rUpdateProfile\x12(.aladdin.profile.v1.UpdateProfileRequest\x1a).aladdin.profile.v1.UpdateProfileResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12z\n" +
 	"\x11BeginAvatarUpload\x12,.aladdin.profile.v1.BeginAvatarUploadRequest\x1a-.aladdin.profile.v1.BeginAvatarUploadResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12}\n" +
 	"\x12CommitAvatarUpload\x12-.aladdin.profile.v1.CommitAvatarUploadRequest\x1a..aladdin.profile.v1.CommitAvatarUploadResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12k\n" +

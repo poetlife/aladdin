@@ -30,12 +30,14 @@ service IdentityService {
   // 会漂移的副本。若它将来开始返回需要保护的内容，就必须移出公开清单。
   rpc GetAuthMethods(GetAuthMethodsRequest) returns (GetAuthMethodsResponse) {
     option (aladdin.rbac.v1.public) = true;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 返回当前凭证对应的主体标识。客户端用它验证凭证是否仍然有效。
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 返回当前主体在其可及作用域下展开后的权限码集合。
@@ -44,6 +46,7 @@ service IdentityService {
   rpc GetSessionPermissions(GetSessionPermissionsRequest) returns (GetSessionPermissionsResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 把一个登录渠道绑到当前主体上。
@@ -88,6 +91,7 @@ service IdentityService {
   // 列出当前主体已绑定的全部登录渠道。
   rpc ListIdentities(ListIdentitiesRequest) returns (ListIdentitiesResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 
   // 发起一次命令行的设备码登录。
@@ -109,6 +113,10 @@ service IdentityService {
   //
   // 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
   // 非已批准的状态（见 docs/design/identity/device-login.md）。
+  //
+  // 它读起来像只读，实则会推进状态（上面那句"恰好交付一次"），因此**不**标
+  // idempotency_level——标了就等于同时接受 GET，而 device_code 会随查询串
+  // 落进访问日志，这与它"不得进入日志"的要求冲突。
   rpc PollDeviceLogin(PollDeviceLoginRequest) returns (PollDeviceLoginResponse) {
     option (aladdin.rbac.v1.public) = true;
   }

@@ -2658,25 +2658,25 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x16MEDIA_KIND_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10MEDIA_KIND_IMAGE\x10\x01\x12\x14\n" +
 	"\x10MEDIA_KIND_VIDEO\x10\x02\x12\x14\n" +
-	"\x10MEDIA_KIND_AUDIO\x10\x032\xd8\x12\n" +
-	"\rGalaxyService\x12r\n" +
-	"\x0fGetCapabilities\x12).aladdin.galaxy.v1.GetCapabilitiesRequest\x1a*.aladdin.galaxy.v1.GetCapabilitiesResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12|\n" +
-	"\fListProjects\x12&.aladdin.galaxy.v1.ListProjectsRequest\x1a'.aladdin.galaxy.v1.ListProjectsResponse\"\x1b\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x12\x80\x01\n" +
-	"\rCreateProject\x12'.aladdin.galaxy.v1.CreateProjectRequest\x1a(.aladdin.galaxy.v1.CreateProjectResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12v\n" +
+	"\x10MEDIA_KIND_AUDIO\x10\x032\xed\x12\n" +
+	"\rGalaxyService\x12u\n" +
+	"\x0fGetCapabilities\x12).aladdin.galaxy.v1.GetCapabilitiesRequest\x1a*.aladdin.galaxy.v1.GetCapabilitiesResponse\"\v\x90\x88'\x03\xa0\x88'\x01\x90\x02\x01\x12\x7f\n" +
+	"\fListProjects\x12&.aladdin.galaxy.v1.ListProjectsRequest\x1a'.aladdin.galaxy.v1.ListProjectsResponse\"\x1e\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x90\x02\x01\x12\x80\x01\n" +
+	"\rCreateProject\x12'.aladdin.galaxy.v1.CreateProjectRequest\x1a(.aladdin.galaxy.v1.CreateProjectResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12y\n" +
 	"\n" +
-	"GetProject\x12$.aladdin.galaxy.v1.GetProjectRequest\x1a%.aladdin.galaxy.v1.GetProjectResponse\"\x1b\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x12\x80\x01\n" +
+	"GetProject\x12$.aladdin.galaxy.v1.GetProjectRequest\x1a%.aladdin.galaxy.v1.GetProjectResponse\"\x1e\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x90\x02\x01\x12\x80\x01\n" +
 	"\rUpdateProject\x12'.aladdin.galaxy.v1.UpdateProjectRequest\x1a(.aladdin.galaxy.v1.UpdateProjectResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12\x80\x01\n" +
-	"\rDeleteProject\x12'.aladdin.galaxy.v1.DeleteProjectRequest\x1a(.aladdin.galaxy.v1.DeleteProjectResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12p\n" +
-	"\bGetDraft\x12\".aladdin.galaxy.v1.GetDraftRequest\x1a#.aladdin.galaxy.v1.GetDraftResponse\"\x1b\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x12t\n" +
+	"\rDeleteProject\x12'.aladdin.galaxy.v1.DeleteProjectRequest\x1a(.aladdin.galaxy.v1.DeleteProjectResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12s\n" +
+	"\bGetDraft\x12\".aladdin.galaxy.v1.GetDraftRequest\x1a#.aladdin.galaxy.v1.GetDraftResponse\"\x1e\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x90\x02\x01\x12t\n" +
 	"\tSaveDraft\x12#.aladdin.galaxy.v1.SaveDraftRequest\x1a$.aladdin.galaxy.v1.SaveDraftResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12z\n" +
-	"\vSaveVersion\x12%.aladdin.galaxy.v1.SaveVersionRequest\x1a&.aladdin.galaxy.v1.SaveVersionResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12|\n" +
-	"\fListVersions\x12&.aladdin.galaxy.v1.ListVersionsRequest\x1a'.aladdin.galaxy.v1.ListVersionsResponse\"\x1b\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x12v\n" +
+	"\vSaveVersion\x12%.aladdin.galaxy.v1.SaveVersionRequest\x1a&.aladdin.galaxy.v1.SaveVersionResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12\x7f\n" +
+	"\fListVersions\x12&.aladdin.galaxy.v1.ListVersionsRequest\x1a'.aladdin.galaxy.v1.ListVersionsResponse\"\x1e\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x90\x02\x01\x12y\n" +
 	"\n" +
-	"GetVersion\x12$.aladdin.galaxy.v1.GetVersionRequest\x1a%.aladdin.galaxy.v1.GetVersionResponse\"\x1b\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x12\x80\x01\n" +
+	"GetVersion\x12$.aladdin.galaxy.v1.GetVersionRequest\x1a%.aladdin.galaxy.v1.GetVersionResponse\"\x1e\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x90\x02\x01\x12\x80\x01\n" +
 	"\rDeleteVersion\x12'.aladdin.galaxy.v1.DeleteVersionRequest\x1a(.aladdin.galaxy.v1.DeleteVersionResponse\"\x1c\x8a\x88'\x14galaxy.project.write\x90\x88'\x03\x12\x85\x01\n" +
-	"\x0fValidateContent\x12).aladdin.galaxy.v1.ValidateContentRequest\x1a*.aladdin.galaxy.v1.ValidateContentResponse\"\x1b\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x12t\n" +
+	"\x0fValidateContent\x12).aladdin.galaxy.v1.ValidateContentRequest\x1a*.aladdin.galaxy.v1.ValidateContentResponse\"\x1b\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x12w\n" +
 	"\n" +
-	"ListAssets\x12$.aladdin.galaxy.v1.ListAssetsRequest\x1a%.aladdin.galaxy.v1.ListAssetsResponse\"\x19\x8a\x88'\x11galaxy.asset.read\x90\x88'\x03\x12\x87\x01\n" +
+	"ListAssets\x12$.aladdin.galaxy.v1.ListAssetsRequest\x1a%.aladdin.galaxy.v1.ListAssetsResponse\"\x1c\x8a\x88'\x11galaxy.asset.read\x90\x88'\x03\x90\x02\x01\x12\x87\x01\n" +
 	"\x10BeginAssetUpload\x12*.aladdin.galaxy.v1.BeginAssetUploadRequest\x1a+.aladdin.galaxy.v1.BeginAssetUploadResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12\x8a\x01\n" +
 	"\x11CommitAssetUpload\x12+.aladdin.galaxy.v1.CommitAssetUploadRequest\x1a,.aladdin.galaxy.v1.CommitAssetUploadResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12x\n" +
 	"\vDeleteAsset\x12%.aladdin.galaxy.v1.DeleteAssetRequest\x1a&.aladdin.galaxy.v1.DeleteAssetResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12p\n" +

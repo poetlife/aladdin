@@ -136,6 +136,9 @@ type GalaxyServiceClient interface {
 	// 发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
 	// 它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
 	// 存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+	//
+	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
+	// 带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
 	ValidateContent(context.Context, *connect.Request[v1.ValidateContentRequest]) (*connect.Response[v1.ValidateContentResponse], error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
 	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
@@ -192,12 +195,14 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+GalaxyServiceGetCapabilitiesProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("GetCapabilities")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listProjects: connect.NewClient[v1.ListProjectsRequest, v1.ListProjectsResponse](
 			httpClient,
 			baseURL+GalaxyServiceListProjectsProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("ListProjects")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		createProject: connect.NewClient[v1.CreateProjectRequest, v1.CreateProjectResponse](
@@ -210,6 +215,7 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+GalaxyServiceGetProjectProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("GetProject")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		updateProject: connect.NewClient[v1.UpdateProjectRequest, v1.UpdateProjectResponse](
@@ -228,6 +234,7 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+GalaxyServiceGetDraftProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("GetDraft")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		saveDraft: connect.NewClient[v1.SaveDraftRequest, v1.SaveDraftResponse](
@@ -246,12 +253,14 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+GalaxyServiceListVersionsProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("ListVersions")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getVersion: connect.NewClient[v1.GetVersionRequest, v1.GetVersionResponse](
 			httpClient,
 			baseURL+GalaxyServiceGetVersionProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("GetVersion")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		deleteVersion: connect.NewClient[v1.DeleteVersionRequest, v1.DeleteVersionResponse](
@@ -270,6 +279,7 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+GalaxyServiceListAssetsProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("ListAssets")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		beginAssetUpload: connect.NewClient[v1.BeginAssetUploadRequest, v1.BeginAssetUploadResponse](
@@ -471,6 +481,9 @@ type GalaxyServiceHandler interface {
 	// 发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
 	// 它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
 	// 存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+	//
+	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
+	// 带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
 	ValidateContent(context.Context, *connect.Request[v1.ValidateContentRequest]) (*connect.Response[v1.ValidateContentResponse], error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
 	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
@@ -523,12 +536,14 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		GalaxyServiceGetCapabilitiesProcedure,
 		svc.GetCapabilities,
 		connect.WithSchema(galaxyServiceMethods.ByName("GetCapabilities")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceListProjectsHandler := connect.NewUnaryHandler(
 		GalaxyServiceListProjectsProcedure,
 		svc.ListProjects,
 		connect.WithSchema(galaxyServiceMethods.ByName("ListProjects")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceCreateProjectHandler := connect.NewUnaryHandler(
@@ -541,6 +556,7 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		GalaxyServiceGetProjectProcedure,
 		svc.GetProject,
 		connect.WithSchema(galaxyServiceMethods.ByName("GetProject")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceUpdateProjectHandler := connect.NewUnaryHandler(
@@ -559,6 +575,7 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		GalaxyServiceGetDraftProcedure,
 		svc.GetDraft,
 		connect.WithSchema(galaxyServiceMethods.ByName("GetDraft")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceSaveDraftHandler := connect.NewUnaryHandler(
@@ -577,12 +594,14 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		GalaxyServiceListVersionsProcedure,
 		svc.ListVersions,
 		connect.WithSchema(galaxyServiceMethods.ByName("ListVersions")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceGetVersionHandler := connect.NewUnaryHandler(
 		GalaxyServiceGetVersionProcedure,
 		svc.GetVersion,
 		connect.WithSchema(galaxyServiceMethods.ByName("GetVersion")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceDeleteVersionHandler := connect.NewUnaryHandler(
@@ -601,6 +620,7 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		GalaxyServiceListAssetsProcedure,
 		svc.ListAssets,
 		connect.WithSchema(galaxyServiceMethods.ByName("ListAssets")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceBeginAssetUploadHandler := connect.NewUnaryHandler(

@@ -24,13 +24,25 @@ const extKey = "x-aladdin-auth"
 // authLinePrefix 标记注入到 description 的那一行，用于重复运行时识别并替换。
 const authLinePrefix = "**鉴权**："
 
-// setAuth 把鉴权规则写进一个 operation。
+// idempotentLinePrefix 同上，标记只读方法的幂等说明行。
+const idempotentLinePrefix = "**幂等**："
+
+// idempotentText 是只读方法的一句话说明。
+//
+// 为什么必须写出来：这条路径在服务端**同时接受 GET 与 POST**，而文档只给一种
+// 形状（POST，与其余方法一致）。不写这句，"GET 也能调"就成了一条被藏起来的
+// 事实；写了，读者不必自己知道 Connect 里"GET ⇒ 无副作用"这条映射。
+const idempotentText = "本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。"
+
+// setAuth 把鉴权规则与幂等说明写进一个 operation。
+//
+// idempotent 为真时追加幂等说明行。
 //
 // 两种呈现都是先删后插，因此对同一份文档重复执行结果一致。
-func setAuth(op *yaml.Node, rule rbac.MethodRule) {
+func setAuth(op *yaml.Node, rule rbac.MethodRule, idempotent bool) {
 	removeKey(op, extKey)
 	op.Content = append([]*yaml.Node{scalar(extKey), authExt(rule)}, op.Content...)
-	setAuthLine(op, rule)
+	setAuthLine(op, rule, idempotent)
 }
 
 // authExt 构造扩展的取值节点。
@@ -49,11 +61,14 @@ func authExt(rule rbac.MethodRule) *yaml.Node {
 	return fields
 }
 
-// setAuthLine 把可读的鉴权说明放在 description 开头。
+// setAuthLine 把可读的说明放在 description 开头。
 //
 // 放开头是因为它是调用方最先要知道的信息；proto 里的原始注释跟在后面。
-func setAuthLine(op *yaml.Node, rule rbac.MethodRule) {
+func setAuthLine(op *yaml.Node, rule rbac.MethodRule, idempotent bool) {
 	line := authLinePrefix + authText(rule)
+	if idempotent {
+		line += "\n\n" + idempotentLinePrefix + idempotentText
+	}
 
 	desc := mappingValue(op, "description")
 	if desc == nil || desc.Kind != yaml.ScalarNode {
@@ -61,19 +76,27 @@ func setAuthLine(op *yaml.Node, rule rbac.MethodRule) {
 		return
 	}
 
-	// 先剥掉上一次注入的那一行再重新加，否则重复运行会在描述里累积。
-	body := desc.Value
-	if strings.HasPrefix(body, authLinePrefix) {
-		body = ""
-		if i := strings.Index(desc.Value, "\n\n"); i >= 0 {
-			body = desc.Value[i+2:]
-		}
-	}
+	body := stripInjectedLines(desc.Value)
 	if body == "" {
 		desc.Value = line
 		return
 	}
 	desc.Value = line + "\n\n" + body
+}
+
+// stripInjectedLines 剥掉上一次注入的说明行，返回 proto 原始注释。
+//
+// 不剥的话，重复运行会在描述里把说明行越堆越多。注入块是开头连续的若干段
+// （每段以空行分隔），因此按前缀逐段剥即可。
+func stripInjectedLines(body string) string {
+	for strings.HasPrefix(body, authLinePrefix) || strings.HasPrefix(body, idempotentLinePrefix) {
+		i := strings.Index(body, "\n\n")
+		if i < 0 {
+			return ""
+		}
+		body = body[i+2:]
+	}
+	return body
 }
 
 // authText 是鉴权要求的一句话说明。
