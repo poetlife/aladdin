@@ -111,7 +111,7 @@ CLI 的退出码按 [../rbac/cli-permissions.md](../rbac/cli-permissions.md) 划
 | 配置加载（父模块） | 复用 [README.md](README.md) 的分层、合并与缺失语义 |
 | 凭证 | 提供令牌与作用域；本模块只负责目标地址与行为开关，不含凭证的存储 |
 | RBAC / CLI 接入 | 配置错误与鉴权失败的区分，需与 [../rbac/cli-permissions.md](../rbac/cli-permissions.md) 的退出码类别一一对应 |
-| gRPC 客户端 | 接收已解析完成的目标地址、超时与凭证，不自行读取来源 |
+| RPC 客户端 | 接收已解析完成的目标地址、超时与凭证，不自行读取来源；**出站协议固定为 Connect**，非回环地址走 TLS（见 [../cli/README.md](../cli/README.md) 与 [pkg/client](../../../pkg/client/client.go)） |
 
 ## 代码实现索引
 

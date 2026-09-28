@@ -49,7 +49,7 @@ aladdin 是前端（React + antd）、服务端（Go + gRPC）、命令行（cob
 
 前端到服务端走 **Connect RPC**，参考实现 [usememos/memos](https://github.com/usememos/memos)。
 
-一份 proto 经 `buf generate` 同时产出服务端 handler 与前端类型；服务端用 connect-go，**一个端口同讲 Connect / gRPC / gRPC-Web**，因此浏览器走 Connect、CLI 走原生 gRPC，两者共享同一份业务实现与同一条鉴权链路。
+一份 proto 经 `buf generate` 同时产出服务端 handler 与前端类型；服务端用 connect-go，**一个端口同讲 Connect / gRPC / gRPC-Web**，因此浏览器与命令行都走 Connect，两者共享同一份业务实现与同一条鉴权链路。
 
 选择理由与替代方案的取舍见 [server-permissions.md](server-permissions.md)。这条已经定下来，不再是开放问题——**留一个"以后再说"的传输方式，实际代价是前端只能手写接口类型，与 proto 各写一遍必然漂移。**
 

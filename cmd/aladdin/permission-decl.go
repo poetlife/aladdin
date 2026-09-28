@@ -1,11 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/status"
 
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/rbac"
@@ -144,16 +145,16 @@ func checkCommands(root *cobra.Command) error {
 // 它读取的是错误详情里的结构化 DenialDetail，而不是匹配错误文本——
 // 文本会变，枚举取值是契约（见 docs/ssot-registry.md）。
 //
-// 服务端是 Connect 服务，CLI 走 gRPC 协议：Connect 把详情编码进
-// grpc-status-details-bin，grpc-go 的 status.Details() 能直接解出来，
-// 因此这里不需要为"跨协议"做任何额外处理。
+// 详情随协议走：CLI 与浏览器同走 Connect，服务端把 DenialDetail 放进错误
+// 响应的详情里，connect-go 的 Error.Details() 直接解出强类型消息，因此这里
+// 不需要处理任何线格式。
 func describeDenial(err error) string {
-	st, ok := status.FromError(err)
+	ce, ok := connectError(err)
 	if !ok {
 		return ""
 	}
 
-	detail, found := denialDetail(st)
+	detail, found := denialDetail(ce)
 	if !found {
 		return ""
 	}
@@ -175,14 +176,30 @@ func describeDenial(err error) string {
 		return fmt.Sprintf("服务端方法 %q 未声明鉴权注解，请联系服务端开发",
 			detail.GetMetadata()["method"])
 	default:
-		return st.Message()
+		return ce.Message()
 	}
 }
 
-// denialDetail 从 gRPC 状态中取出结构化的拒绝详情。
-func denialDetail(st *status.Status) (*rbacv1.DenialDetail, bool) {
-	for _, d := range st.Details() {
-		if detail, ok := d.(*rbacv1.DenialDetail); ok {
+// connectError 取出错误里的 Connect 错误。
+//
+// 不是 Connect 错误（网络故障、配置错误等）时返回 false：那些错误没有拒绝
+// 详情可读，由一个统一的错误信息出口去讲。
+func connectError(err error) (*connect.Error, bool) {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return ce, true
+	}
+	return nil, false
+}
+
+// denialDetail 从 Connect 错误里取出结构化的拒绝详情。
+func denialDetail(ce *connect.Error) (*rbacv1.DenialDetail, bool) {
+	for _, d := range ce.Details() {
+		msg, err := d.Value()
+		if err != nil {
+			continue
+		}
+		if detail, ok := msg.(*rbacv1.DenialDetail); ok {
 			return detail, true
 		}
 	}

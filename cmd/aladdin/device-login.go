@@ -1,15 +1,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
+	"github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
 	"github.com/poetlife/aladdin/internal/auth"
 	"github.com/poetlife/aladdin/pkg/client"
 )
@@ -38,7 +39,7 @@ func runDeviceLogin(cmd *cobra.Command) error {
 	}
 	defer func() { _ = c.Close() }()
 
-	identity := identityv1.NewIdentityServiceClient(c.Conn())
+	identity := client.NewService(c, identityv1connect.NewIdentityServiceClient)
 
 	start, err := startDeviceLogin(c, identity)
 	if err != nil {
@@ -81,21 +82,22 @@ func runDeviceLogin(cmd *cobra.Command) error {
 }
 
 // startDeviceLogin 发起一次设备码登录。
-func startDeviceLogin(c *client.Client, identity identityv1.IdentityServiceClient) (*identityv1.StartDeviceLoginResponse, error) {
+func startDeviceLogin(c *client.Client, identity identityv1connect.IdentityServiceClient) (*identityv1.StartDeviceLoginResponse, error) {
 	ctx, cancel := c.Context()
 	defer cancel()
 
-	resp, err := identity.StartDeviceLogin(ctx, &identityv1.StartDeviceLoginRequest{})
+	resp, err := identity.StartDeviceLogin(ctx, connect.NewRequest(&identityv1.StartDeviceLoginRequest{}))
 	if err != nil {
 		return nil, err
 	}
-	if resp.GetDeviceCode() == "" || resp.GetUserCode() == "" {
+	start := resp.Msg
+	if start.GetDeviceCode() == "" || start.GetUserCode() == "" {
 		return nil, fmt.Errorf("服务端没有给出设备码或短码")
 	}
-	if resp.GetVerificationUri() == "" {
+	if start.GetVerificationUri() == "" {
 		return nil, fmt.Errorf("服务端没有给出批准页地址")
 	}
-	return resp, nil
+	return start, nil
 }
 
 // printDeviceLoginPrompt 把短码、地址与有效期显著地打出来。
@@ -119,7 +121,7 @@ func printDeviceLoginPrompt(cmd *cobra.Command, start *identityv1.StartDeviceLog
 }
 
 // awaitDeviceLogin 按服务端给出的间隔轮询，直到批准、拒绝或过期。
-func awaitDeviceLogin(c *client.Client, identity identityv1.IdentityServiceClient, start *identityv1.StartDeviceLoginResponse, expiresAt time.Time) (auth.Credential, error) {
+func awaitDeviceLogin(c *client.Client, identity identityv1connect.IdentityServiceClient, start *identityv1.StartDeviceLoginResponse, expiresAt time.Time) (auth.Credential, error) {
 	interval := deviceLoginIntervalFallback
 	if seconds := start.GetIntervalSeconds(); seconds > 0 {
 		interval = time.Duration(seconds) * time.Second
@@ -135,17 +137,18 @@ func awaitDeviceLogin(c *client.Client, identity identityv1.IdentityServiceClien
 		time.Sleep(interval)
 
 		ctx, cancel := c.Context()
-		resp, err := identity.PollDeviceLogin(ctx, &identityv1.PollDeviceLoginRequest{
+		resp, err := identity.PollDeviceLogin(ctx, connect.NewRequest(&identityv1.PollDeviceLoginRequest{
 			DeviceCode: start.GetDeviceCode(),
-		})
+		}))
 		cancel()
 		if err != nil {
 			return auth.Credential{}, err
 		}
+		poll := resp.Msg
 
-		switch resp.GetState() {
+		switch poll.GetState() {
 		case identityv1.DeviceLoginState_DEVICE_LOGIN_STATE_APPROVED:
-			return credentialFromPoll(resp)
+			return credentialFromPoll(poll)
 		case identityv1.DeviceLoginState_DEVICE_LOGIN_STATE_DENIED:
 			return auth.Credential{}, deviceLoginFailed("这次登录被拒绝了")
 		case identityv1.DeviceLoginState_DEVICE_LOGIN_STATE_EXPIRED:
@@ -153,7 +156,7 @@ func awaitDeviceLogin(c *client.Client, identity identityv1.IdentityServiceClien
 		case identityv1.DeviceLoginState_DEVICE_LOGIN_STATE_PENDING:
 			// 继续等。
 		default:
-			return auth.Credential{}, fmt.Errorf("服务端返回了未知的登录状态：%v", resp.GetState())
+			return auth.Credential{}, fmt.Errorf("服务端返回了未知的登录状态：%v", poll.GetState())
 		}
 	}
 }
@@ -183,7 +186,7 @@ func credentialFromPoll(resp *identityv1.PollDeviceLoginResponse) (auth.Credenti
 // 3 的含义是"脚本应触发重新登录"，这正是这里的情形。归入未分类失败会让脚本
 // 无法区分"登录没成"与"工具坏了"（见 exitcode.go）。
 func deviceLoginFailed(message string) error {
-	return status.Error(codes.Unauthenticated, message)
+	return connect.NewError(connect.CodeUnauthenticated, errors.New(message))
 }
 
 // credentialFileExists 报告本机是否已经有一份凭证。

@@ -3,9 +3,12 @@ package main
 import (
 	"strings"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
+	"github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
+	"github.com/poetlife/aladdin/pkg/client"
 )
 
 func newPermissionsCommand() *cobra.Command {
@@ -30,23 +33,23 @@ func newPermissionsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := identityv1.NewIdentityServiceClient(c.Conn()).
-				GetSessionPermissions(ctx, &identityv1.GetSessionPermissionsRequest{Scope: scope})
+			resp, err := client.NewService(c, identityv1connect.NewIdentityServiceClient).
+				GetSessionPermissions(ctx, connect.NewRequest(&identityv1.GetSessionPermissionsRequest{Scope: scope}))
 			if err != nil {
 				return err
 			}
 			if flags.output == "json" {
 				return printJSON(map[string]any{
-					"scope":       resp.GetScope(),
-					"permissions": resp.GetPermissions(),
+					"scope":       resp.Msg.GetScope(),
+					"permissions": resp.Msg.GetPermissions(),
 				})
 			}
-			printf(cmd.OutOrStdout(), "作用域: %s\n", resp.GetScope())
-			if len(resp.GetPermissions()) == 0 {
+			printf(cmd.OutOrStdout(), "作用域: %s\n", resp.Msg.GetScope())
+			if len(resp.Msg.GetPermissions()) == 0 {
 				println(cmd.OutOrStdout(), "（无生效权限）")
 				return nil
 			}
-			println(cmd.OutOrStdout(), strings.Join(resp.GetPermissions(), "\n"))
+			println(cmd.OutOrStdout(), strings.Join(resp.Msg.GetPermissions(), "\n"))
 			return nil
 		},
 	})

@@ -6,11 +6,11 @@
 
 | 端 | 技术栈 | 入口 |
 |----|--------|------|
-| 服务端 | Go + grpc-go | [cmd/aladdin-server](cmd/aladdin-server) |
+| 服务端 | Go + connect-go | [cmd/aladdin-server](cmd/aladdin-server) |
 | 命令行 | Go + cobra | [cmd/aladdin](cmd/aladdin) |
 | Web 前端 | React 19 + antd 6 + Vite | [web/](web) |
 
-三端之间的传输是 **Connect RPC**（connect-go）：服务端一个端口同时讲 Connect / gRPC / gRPC-Web，浏览器走 Connect、CLI 走原生 gRPC，共享同一份业务实现。参考实现 usememos/memos。
+三端之间的传输是 **Connect RPC**（connect-go）：服务端一个端口同时讲 Connect / gRPC / gRPC-Web，浏览器与命令行都走 Connect，共享同一份业务实现；gRPC 与 gRPC-Web 照常提供，三条协议结论一致由端到端测试保证。参考实现 usememos/memos。
 
 三端共享同一套 RBAC 权限体系：一份权限模型、一个决策引擎、一套权限码定义。
 
@@ -85,10 +85,11 @@ make web-dev    # 只起前端开发服务器
 
 ## 传输方式的既定选择
 
-前端到服务端走 Connect，已经定下来了，不再是开放问题。它的两个直接后果：
+前端与命令行到服务端都走 Connect，已经定下来了，不再是开放问题。它的三个直接后果：
 
 - **只有一份业务实现**：判定发生在协议无关的鉴权拦截器里，三种协议共用。改了判定逻辑不会出现"gRPC 生效、Connect 没生效"。
 - **改判定必须三种协议都对**：端到端测试同时用 grpc-go 客户端与 Connect 客户端打同一个端口，断言结论一致（`test/e2e/`）。只测一种协议等于没测。
+- **命令行不走原生 gRPC**：命令行经反向代理出网，而 **nginx 转发 gRPC 时会丢掉空正文响应的 trailers——也就是所有错误响应**，现象是客户端只拿到一个空的 Unknown。Connect 把错误放在 HTTP 状态与响应体里，不依赖 trailers，走的正是浏览器每天在用的那条路径。依据见 [docs/debugging/records/2026-09-29-grpc-trailers-dropped-by-nginx.md](docs/debugging/records/2026-09-29-grpc-trailers-dropped-by-nginx.md)。
 
 ## 模块化设计原则
 

@@ -60,5 +60,6 @@ aladdin: rpc error: code = Unavailable desc = connection error: desc =
   地址**（`aladdin --debug …` 会打印解析出的地址，本次一并把 login 路径也纳入了这行输出），
   再去怀疑反代。地址对了才轮到"反代把原生 gRPC 当 HTTP/1.1 转发了"这条。
 - 与 `connection refused` 是两回事：它说明对面**有**服务，只是不是 RPC 端点。
-- 修复方向（发布版默认指向生产、非回环强制 TLS、反代按 content-type 为原生 gRPC 分流）
+- 修复方向（发布版默认指向生产、非回环强制 TLS、命令行改走 Connect 而不是原生 gRPC）
   见 [deploy.md](../../deploy.md) 的「CLI 怎么连生产」与 [release.md](../../release.md) 的「产物」。
+  命令行为什么不走原生 gRPC，见 [2026-09-29-grpc-trailers-dropped-by-nginx.md](2026-09-29-grpc-trailers-dropped-by-nginx.md)。

@@ -20,14 +20,13 @@ aladdin 的服务端是一个只讲 RPC 的进程：它不托管静态文件、�
 
 ## aladdin 对宿主的要求
 
-只有五条，除此之外它不关心宿主机上还有什么：
+只有四条，除此之外它不关心宿主机上还有什么：
 
 | 要求 | 为什么 |
 |------|--------|
 | 一个在 **443 上终止 TLS** 的反向代理 | 前端与 RPC 必须**同源**：前端传输层的 `baseUrl` 是空串（[web/src/main.tsx](../web/src/main.tsx)），服务端也不返回 CORS 头。拆成两个域名会让浏览器开始发跨域请求，表现为"页面能打开但接口全挂" |
 | 把 `https://<域名>/` 指到一个**静态目录** | 前端是单独打包的静态产物，服务端不内嵌它（Go 侧没有 `go:embed`，见 [release.md](release.md)） |
-| 把 `https://<域名>/aladdin.*` 转发到 **127.0.0.1:9090** | Connect 的 handler 挂在过程名本身，没有 `/api` 前缀 |
-| 把同一前缀上的**原生 gRPC** 也转发到 **127.0.0.1:9090**，且**端到端保持 HTTP/2** | 命令行走原生 gRPC（grpc-go），它要求 HTTP/2 与 trailers 一路到服务端。按 HTTP/1.1 转发够浏览器 Connect 用，CLI 却会失败——现象是"读到的不是 HTTP/2 前言"，一句与 HTTP/2 有关的报错，看不出是反代的问题 |
+| 把 `https://<域名>/aladdin.*` 转发到 **127.0.0.1:9090** | Connect 的 handler 挂在过程名本身，没有 `/api` 前缀。浏览器与**命令行都走 Connect**，因此按 HTTP/1.1 转发上游即可——不要改成 `grpc_pass`，理由见下面"命令行登录"与 [debugging registry](debugging/registry.md) |
 | 允许服务端**只监听回环** | 它不需要对公网监听，反代在同一台机器上 |
 
 **443 已经被别的 TLS 服务占用时怎么办，本文不回答。** 那是那台宿主的既有约束——按 SNI 分流、换端口、还是别的方式，取决于具体是什么服务、能不能碰。为某一种共存方式提供模板，等于替所有部署者做了一次他们没做过的选择。
@@ -40,7 +39,7 @@ aladdin 的服务端是一个只讲 RPC 的进程：它不托管静态文件、�
      ▼
    nginx :443（终止 TLS，证书由 certbot 维护）
      ├─ location /          → /opt/aladdin/web（静态前端）
-     ├─ location /aladdin.  → 127.0.0.1:9090（Connect 走 HTTP/1.1；原生 gRPC 走 grpc_pass）
+     ├─ location /aladdin.  → 127.0.0.1:9090（Connect：浏览器与命令行共用）
      └─ location /grpc.health.v1.Health/ → 127.0.0.1:9090
                                    │
                                    ▼
@@ -56,14 +55,14 @@ aladdin 的服务端是一个只讲 RPC 的进程：它不托管静态文件、�
 
    浏览器 ── https://<发布域>/g/<工程标识> ──▶ 同一个回环端口（公开，不校验凭证）
 
-   CLI ── 原生 gRPC over TLS ──▶ 上面那个 nginx :443（发布产物默认走这条）
+   CLI ── Connect over TLS ──▶ 上面那个 nginx :443（发布产物默认走这条）
 
    源码构建的 CLI ── ssh -L 9090:127.0.0.1:9090 <主机别名> ──▶ 同一个回环端口
 ```
 
 > **发布域与主域是不同的域**，指向同一个 nginx。这不是可选的整洁问题：发布物里跑着用户写的脚本，同源（乃至同注册域）意味着它能读写应用的 cookie 与本地存储。服务端在启动时校验这一点，同源或同注册域一律拒绝启动。
 
-nginx 在这里只做三件事：终止 TLS、服务静态文件、把两类前缀转发给服务端。**转发要分协议**：浏览器的 Connect 走 HTTP/1.1，命令行的原生 gRPC 要求端到端 HTTP/2，两者按请求的 content-type 分流（站点配置里有这一段）。它不做鉴权——判定只有一处实现，在服务端（见 [design/rbac/README.md](design/rbac/README.md)）。
+nginx 在这里只做三件事：终止 TLS、服务静态文件、把两类前缀转发给服务端。它不做鉴权——判定只有一处实现，在服务端（见 [design/rbac/README.md](design/rbac/README.md)）。
 
 ### 端口
 
@@ -118,9 +117,9 @@ sudo ln -sf /etc/nginx/sites-available/<域名> /etc/nginx/sites-enabled/
 
 未替换就装上去，nginx 会因为 `server_name` 不合法而**直接起不来**——这比"看起来装好了却谁都不匹配"早暴露得多。
 
-模板里的 `/aladdin.` 与 `/grpc.health.v1.Health/` **各自带一段 gRPC 分流**：请求的 content-type 是 `application/grpc`（可带 `+proto` 之类后缀）时走 `grpc_pass`，其余仍走 `proxy_pass`。前者给命令行的原生 gRPC（需要端到端 HTTP/2 与 trailers），后者给浏览器的 Connect。两者共用同一段路径，所以只能用 content-type 区分——**不能**把整段改成 `grpc_pass`，那会让前端的接口全部 502。
+模板里的 `/aladdin.` 与 `/grpc.health.v1.Health/` **按 HTTP/1.1 转发上游即可**：浏览器与命令行都走 Connect，它把错误放在 HTTP 状态与响应体里。
 
-> 宿主的 443 若已被别的 TLS 服务占用（本文不规定怎么共存，见上文），分流要落在**真正终止 TLS 的那个站点块**里。若 443 上是 nginx 的 `stream` 层按 SNI 分流到另一个端口，`stream` 层**看不到 content-type**，因此这段配置只能写在它后面那个 `http` 站点块里。
+> **不要把这两条改成 `grpc_pass`。** nginx 转发 gRPC 时会丢掉空正文响应的 trailers——也就是**所有错误响应**，现象是调用没成功却只拿到一个空的 Unknown。命令行因此不走原生 gRPC，依据见 [debugging registry](debugging/registry.md)。
 
 ### 4. 申请证书
 
@@ -337,7 +336,7 @@ sudo systemctl restart aladdin-server
 
 ## CLI 怎么连生产
 
-**发布产物默认就连生产**，下载下来不需要任何配置：CI 在构建时把生产地址注入 CLI 二进制（见 [release.md](release.md)），`aladdin login` 直接走 HTTPS——原生 gRPC over TLS，端口 443，由部署形态里那套 nginx 分流接住（配置见第 3 步）。这个地址**不在仓库里**：它是部署实例的值，由 CI 的仓库变量提供，与 nginx 模板里的 `__SITE_DOMAIN__` 是同一条约束。
+**发布产物默认就连生产**，下载下来不需要任何配置：CI 在构建时把生产地址注入 CLI 二进制（见 [release.md](release.md)），`aladdin login` 直接走 HTTPS——Connect over TLS，端口 443，由上面那套反向代理接住。这个地址**不在仓库里**：它是部署实例的值，由 CI 的仓库变量提供，与 nginx 模板里的 `__SITE_DOMAIN__` 是同一条约束。
 
 **源码构建出来的 CLI 默认连本机**（`127.0.0.1:9090`）。注入只作用于发布构建，所以开发时的行为与从前完全一致；要连生产就显式给地址：
 
@@ -346,8 +345,6 @@ aladdin --address <域名>:443 whoami
 ```
 
 **非回环地址一律用 TLS，没有关掉它的开关。** 回环（本机开发、下面的隧道）才允许明文——CLI 的凭证是 `Authorization: Bearer`，明文过境等于把凭证交出去。因此一个"跳过证书校验"的开关也不会存在：它与"信任该来源"是同一类东西。
-
-> 前置条件是 nginx 那段 gRPC 分流（第 3 步）。少了它，CLI 报的是一个与 HTTP/2 有关的错误，看不出根因——见下面排障表。
 
 ### 老路仍然可用：SSH 隧道
 
@@ -387,7 +384,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 站点 502 | 服务端没起来：`systemctl status aladdin-server`、`ss -lntp \| grep 9090` |
 | 刷新 `/roles` 得到 404 | 站点配置里缺 `try_files $uri $uri/ /index.html` |
 | 健康检查端点返回 405 | 站点配置里缺 `/grpc.health.v1.Health/` 那条 location，被 SPA 兜底吃掉了 |
-| 命令行报 `read server preface` / `frame header looked like an HTTP/1.1 header` | 对面回了 HTTP/1.1，说明目标地址上不是 RPC 端点。先确认地址：发布产物应指生产站点的 443（`aladdin --debug ...` 会打印解析出的地址）。地址对，则是反代把原生 gRPC 当 HTTP/1.1 转发了——查第 3 步那段 content-type 分流 |
+| 命令行报 `read server preface` / `frame header looked like an HTTP/1.1 header` | 对面回了 HTTP/1.1，说明目标地址上不是 RPC 端点。先确认地址：发布产物应指生产站点的 443（`aladdin --debug ...` 会打印解析出的地址）。地址被别的服务占着也会这样（默认地址的 9090 是常见位置） |
 | 静态资源 404 但文件确实在 | 站点配置的 `root` 是否指向 `/opt/aladdin/web`；文件权限是否允许 nginx 用户读取 |
 | 浏览器报证书错误 | 证书名与站点 `server_name` 是否一致；`certbot renew --dry-run` 是否通过 |
 | 部署后健康检查失败并自动回滚 | `deploy.sh` 打印的服务端日志；若含"未知版本"，是迁移与回滚的冲突，见上文"回滚" |
@@ -419,7 +416,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 服务端配置 | `deploy.sh` 保证 `/opt/aladdin/config.yml` 存在后才发布 |
 | 持久化 | 备份策略消费 sqlite 的 WAL 语义 |
 | 身份认证 | 首次引导依赖一次真实登录产出的主体标识（见 [design/identity/channel-login.md](design/identity/channel-login.md)） |
-| 反向代理 | 提供 TLS 终止、静态托管与到 9090 的转发；**同一段路径要按 content-type 分流**，Connect 走 HTTP/1.1、原生 gRPC 走端到端 HTTP/2。具体用什么、443 上还有没有别人，由宿主决定 |
+| 反向代理 | 提供 TLS 终止、静态托管与到 9090 的转发；**按 HTTP/1.1 转发上游即可**（浏览器与命令行都走 Connect）。具体用什么、443 上还有没有别人，由宿主决定 |
 | CLI 的默认目标地址 | 发布产物里带着构建期注入的生产地址，注入值由 CI 的仓库变量提供（见 [release.md](release.md)）；仓库里只有模板与占位符 |
 | 可观测性 | 日志走 journald；`otel_endpoint` 留空表示不上报，链路标识照常生成与传播 |
 | 头像存储 | COS 桶；桶地址由 `cos_bucket_url` 给出，密钥由 systemd 的 `EnvironmentFile` 提供（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)） |
@@ -438,8 +435,6 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 端口三处一致 | `config.yml`、站点配置、`deploy.sh` 三处的 9090 相同（人工核对项） |
 | 前端 SPA 可深链 | 直接访问 `/roles` 返回页面而非 404（部署后冒烟） |
 | 健康检查从外部可达 | `curl -X POST https://<域名>/grpc.health.v1.Health/Check` 返回 SERVING |
-| 反代转发原生 gRPC | 在主机之外用发布产物执行 `aladdin whoami` 成功（部署后冒烟） |
-| 分流不误伤浏览器 | 浏览器打开首页并调用 `/aladdin.*` 正常，不出现 502（部署后冒烟） |
 | 发布产物默认指向生产 | `aladdin --debug whoami` 打印的正是生产地址（人工核对项：判据里不写实值） |
 | 非回环强制 TLS | 指向非回环明文端点时被拒绝，而不是明文过境（`pkg/client` 单测 + 冒烟） |
 | 只监听回环 | `ss -lnt \| grep 9090` 显示 `127.0.0.1:9090` 而非 `0.0.0.0:9090` |

@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
+	"github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/pkg/client"
 )
 
 func newRoleCommand() *cobra.Command {
@@ -38,15 +41,15 @@ func newRoleListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := rbacv1.NewRBACServiceClient(c.Conn()).
-				ListRoles(ctx, &rbacv1.ListRolesRequest{Scope: scope})
+			resp, err := client.NewService(c, rbacv1connect.NewRBACServiceClient).
+				ListRoles(ctx, connect.NewRequest(&rbacv1.ListRolesRequest{Scope: scope}))
 			if err != nil {
 				return err
 			}
 			if flags.output == "json" {
-				return printJSON(resp)
+				return printJSON(resp.Msg)
 			}
-			for _, r := range resp.GetRoles() {
+			for _, r := range resp.Msg.GetRoles() {
 				builtin := ""
 				if r.GetBuiltin() {
 					builtin = " [内置]"
@@ -93,21 +96,22 @@ func newRoleAssignCommand() *cobra.Command {
 			ctx, cancel := c.Context()
 			defer cancel()
 
-			resp, err := rbacv1.NewRBACServiceClient(c.Conn()).AssignRole(ctx, &rbacv1.AssignRoleRequest{
-				Scope:     scope,
-				SubjectId: subjectID,
-				RoleId:    roleID,
-				Grant:     true,
-			})
+			resp, err := client.NewService(c, rbacv1connect.NewRBACServiceClient).
+				AssignRole(ctx, connect.NewRequest(&rbacv1.AssignRoleRequest{
+					Scope:     scope,
+					SubjectId: subjectID,
+					RoleId:    roleID,
+					Grant:     true,
+				}))
 			if err != nil {
 				return err
 			}
 			if flags.output == "json" {
-				return printJSON(map[string]string{"change_id": resp.GetChangeId()})
+				return printJSON(map[string]string{"change_id": resp.Msg.GetChangeId()})
 			}
 			printf(cmd.OutOrStdout(),
 				"已授予。变更标识 %s\n注意：变更尚未生效，需执行 publish 使缓存失效后才会被新的判定观察到。\n",
-				resp.GetChangeId())
+				resp.Msg.GetChangeId())
 			return nil
 		},
 	}
