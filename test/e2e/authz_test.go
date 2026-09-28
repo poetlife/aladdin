@@ -22,6 +22,8 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
@@ -38,7 +40,7 @@ import (
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
-	"github.com/poetlife/aladdin/pkg/client"
+	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
 const (
@@ -216,20 +218,54 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 	}
 }
 
-// dial 构造一个已注入凭证的客户端。
-func (h harness) dial(t *testing.T, token, scope string) *client.Client {
+// dial 构造一个走**原生 gRPC**（h2c）的客户端。
+//
+// 端到端测试要证明"同一个请求无论走哪条协议，判定结论相同"，因此这里需要一条
+// gRPC 连接作为对照——浏览器与**命令行都走 Connect**（见 pkg/client），Connect
+// 那条路径的客户端由 connect_client_test.go 自己构造。
+//
+// 凭证与作用域由本函数注入：裸连接不带任何凭证，而"以谁的身份调用"正是这些
+// 断言的前提。
+func (h harness) dial(t *testing.T, token, scope string) *grpcClient {
 	t.Helper()
-	c, err := client.Dial(client.Options{
-		Address: h.address,
-		Token:   token,
-		Scope:   scope,
-		Timeout: 5 * time.Second,
-	})
+	conn, err := grpc.NewClient(h.address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(credentialInterceptor(token, scope)),
+	)
 	if err != nil {
-		t.Fatalf("连接失败: %v", err)
+		t.Fatalf("建立 gRPC 连接失败: %v", err)
 	}
-	t.Cleanup(func() { _ = c.Close() })
-	return c
+	t.Cleanup(func() { _ = conn.Close() })
+	return &grpcClient{conn: conn, timeout: 5 * time.Second}
+}
+
+// grpcClient 是测试用的 gRPC 客户端：一条连接加一份调用超时。
+type grpcClient struct {
+	conn    *grpc.ClientConn
+	timeout time.Duration
+}
+
+// Conn 返回底层连接，用于构造各服务的客户端。
+func (c *grpcClient) Conn() *grpc.ClientConn { return c.conn }
+
+// Context 返回一个带超时的 context。
+func (c *grpcClient) Context() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), c.timeout)
+}
+
+// credentialInterceptor 把凭证与作用域注入 gRPC 的 metadata。
+//
+// 头名取自服务端的常量（那是唯一来源），不在这里手写字符串。
+func credentialInterceptor(token, scope string) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if token != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, interceptor.HeaderAuthorization, "Bearer "+token)
+		}
+		if scope != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, interceptor.HeaderScope, scope)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 func TestWhoAmI(t *testing.T) {
