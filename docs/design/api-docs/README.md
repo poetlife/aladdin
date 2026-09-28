@@ -24,6 +24,7 @@ proto 是接口契约的唯一信源，注释也够密。但它只对能读到 p
 | 接口契约与消息定义 | proto（[api/proto/](../../../api/proto/)） |
 | 一个方法需要认证 / 需要哪个权限码 | `rbac.Resolve`（[internal/rbac/annotation.go](../../../internal/rbac/annotation.go)） |
 | 对外可读的接口文档 | **本模块** |
+| 站内哪个入口指向它 | web 的站内文档区（见 [../web/docs-area.md](../web/docs-area.md)）——一条链接，不是一章 |
 
 两个方向上的边界都要守住：
 

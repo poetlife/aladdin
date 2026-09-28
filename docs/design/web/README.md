@@ -62,6 +62,7 @@
 ## 相关
 
 - 窄屏与响应式：[responsive.md](responsive.md)
+- 站内文档区（它是前端的一部分，怎么加章节、将来怎么放出去）：[docs-area.md](docs-area.md)
 - 界面该长什么样（设计取舍）：[../uiux/README.md](../uiux/README.md)
 - 前端权限裁剪的边界：[../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)
 - 账号区显示的展示名与头像从哪来：[../profile/README.md](../profile/README.md)
