@@ -20,6 +20,16 @@ export const PermissionCodes = {
   AuditLogRead: 'audit.log.read',
   /** 导出审计日志。属批量操作 */
   AuditLogExport: 'audit.log.export',
+  /** 读取自己创建的工程、草稿与版本 */
+  GalaxyProjectRead: 'galaxy.project.read',
+  /** 创建、修改、删除工程，保存版本。删除属不可逆操作 */
+  GalaxyProjectWrite: 'galaxy.project.write',
+  /** 发布与撤回发布。唯一一个让内容离开私有边界的动作 */
+  GalaxyProjectPublish: 'galaxy.project.publish',
+  /** 读取自己工程下的资产列表与读取地址 */
+  GalaxyAssetRead: 'galaxy.asset.read',
+  /** 上传与删除工程资产 */
+  GalaxyAssetWrite: 'galaxy.asset.write',
   /** 全部权限。仅保留给系统管理员角色，不得授予其他角色 */
   All: '*',
 } as const
@@ -35,6 +45,8 @@ export const BuiltinRoleIds = {
   Auditor: 'auditor',
   /** 只读用户 */
   Viewer: 'viewer',
+  /** 创作者 */
+  GalaxyAuthor: 'galaxy.author',
 } as const
 
 export type BuiltinRoleId = (typeof BuiltinRoleIds)[keyof typeof BuiltinRoleIds]

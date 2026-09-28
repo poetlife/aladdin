@@ -48,11 +48,17 @@ aladdin 的服务端是一个只讲 RPC 的进程：它不托管静态文件、�
                           /opt/aladdin/secrets.env（0600，可选）
                           /opt/aladdin/data/aladdin.db（sqlite）
                                    │
-                                   └─▶ COS 桶（私有读写，头像；可选）
-   浏览器 ──〈用预签名地址直连取头像〉──▶ 同一个 COS 桶
+                                   └─▶ COS 桶（默认私有读写：头像 + 工程资产私有区；发布物的公开区靠逐对象公开读；可选）
+   浏览器 ──〈用临时凭证直传写入〉──▶ 桶（跨域写，需要桶侧 CORS）
+   浏览器 ──〈用预签名地址读取私有对象〉──▶ 桶
+   浏览器 ──〈发布页面的图片/视频/音频直连，公开读对象无需签名〉──▶ 桶
+
+   浏览器 ── https://<发布域>/g/<工程标识> ──▶ 同一个回环端口（公开，不校验凭证）
 
    CLI ── ssh -L 9090:127.0.0.1:9090 <主机别名> ──▶ 同一个回环端口
 ```
+
+> **发布域与主域是不同的域**，指向同一个 nginx。这不是可选的整洁问题：发布物里跑着用户写的脚本，同源（乃至同注册域）意味着它能读写应用的 cookie 与本地存储。服务端在启动时校验这一点，同源或同注册域一律拒绝启动。
 
 nginx 在这里只做三件事：终止 TLS、服务静态文件、把两类前缀转发给服务端。它不做鉴权——判定只有一处实现，在服务端（见 [design/rbac/README.md](design/rbac/README.md)）。
 
@@ -141,14 +147,14 @@ database_dsn: /opt/aladdin/data/aladdin.db
 
 > `/opt/aladdin/data` 必须已存在：服务端**不自动建目录**，这是刻意的——免得路径拼错时在一个奇怪的地方建出一个空库，看起来像数据全丢了。
 
-### 7. 建头像桶（可选）
+### 7. 建对象存储桶（可选）
 
-头像存在腾讯云 COS 上（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)）。**不做这一步服务端照样跑**：昵称与简介照常可用，只是前端不渲染头像上传区。
+头像、galaxy 工程的资产私有区与发布物的公开区都存在腾讯云 COS 上（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md) 与 [design/galaxy/asset-library.md](design/galaxy/asset-library.md)）。**不做这一步服务端照样跑**：昵称与简介照常可用，只是前端不渲染头像上传区与 galaxy 的资产入口。
 
 要做就一次做完。**半套配置会让服务端拒绝启动**——只配桶地址不给密钥、或只给密钥不配桶地址，都在启动时报错并指出缺的是哪一项。
 
-1. **建一个桶，读写权限设为私有读写。** 公开读的桶等于把所有人的头像公开可列举，而"预签名地址"这个设计的前提正是桶私有。
-2. **建一个子账号（CAM），只授予这一个桶的权限，且尽量收窄到头像前缀。** 不要用主账号密钥：主账号密钥能操作该账号下的全部云资源，而服务端只需要碰一个桶里的一段前缀。
+1. **建一个桶，读写权限设为私有读写。** 公开读的桶等于把所有人的头像与工程素材公开可列举，而"预签名地址"这个设计的前提正是桶私有。三处内容靠键前缀区分，前缀都是常量：`avatars/<主体标识>`、`galaxy/<工程标识>/<资产标识>`（私有区）与 `galaxy/release/<内容摘要>`（公开区）。**公开区也在这个桶里**，靠逐对象的公开读与其余对象区分，见下面"发布域与公开区"。
+2. **建一个子账号（CAM），只授予这一个桶的权限，且尽量收窄到这两段前缀（`avatars/` 与 `galaxy/`）。** 不要用主账号密钥：主账号密钥能操作该账号下的全部云资源，而服务端只需要碰一个桶里的两段前缀。这个子账号还需要 **`sts:GetFederationToken`**——直传凭证由服务端用长期密钥换出来（见 [design/objectstore/README.md](design/objectstore/README.md)）；不给这一项时上传会以"换取直传凭证失败"报错。
 3. **把密钥写进一个仅属主可读的文件**，交给 systemd 读：
 
 ```bash
@@ -167,9 +173,24 @@ EOF
 
 4. 在 `/opt/aladdin/config.yml` 填 `cos_bucket_url`——**完整桶主机名**（含 APPID 与地域，形如 `https://<桶名>-<APPID>.cos.<地域>.myqcloud.com`），然后重启。
 
-> **桶上不需要配 CORS。** 前端用 `<img src>` 直接取图，浏览器不发跨域读请求。将来若改成用 `fetch` 取字节再转 blob，就必须在桶上配 CORS——那时的表现是控制台报 CORS 错误、图片不显示。
+> **桶上必须配 CORS，且这是必做的一步。** 上传是**浏览器直接往桶里写**（跨域 PUT），桶侧不放行主应用源的写入时，表现为控制台报 CORS 错误、上传一直失败。规则只需要一条：允许主应用的源、方法 `PUT`、以及 `Content-Type` 与 `Authorization` 之类的请求头。**读取不需要 CORS**——前端用 `<img src>` 直接取预签名地址，浏览器不发跨域读请求。
 
-> **对象键是 `avatars/<主体标识>`，前缀是常量。** 换桶等于所有存量头像在新桶里都不存在（表现是所有人头像都不显示），而档案本身没有被动过——重新上传即可。
+> **换桶等于所有存量对象在新桶里都不存在**（表现是所有人头像与全部工程素材都不显示），而档案与工程本身没被动过——头像重新上传即可，galaxy 的资产重新上架即可。
+
+#### 发布域与公开区（只有要启用 galaxy 发布时才需要）
+
+galaxy 的发布把工程资产**按内容摘要**上架到上面那个桶的 `galaxy/release/` 下，并在上架时把那些对象**逐个设成公开读**；发布页面本身由服务端在一个**独立域**上返回。
+
+> **不需要第二个桶，也不需要第二份授权。** 公开区与私有区共用第 1 步那个桶：桶本身保持默认私有读写，公开读**不由桶级策略给出**——上架过程逐个对象设置它。子账号的权限范围不变。
+
+> **上架不用浏览器直传。** 服务端用长期密钥把字节从私有区读出来再写进公开区，因此那条路径不新增 CORS 规则。
+
+5. **给发布域做解析与证书**，方式与第 1–4 步的主域完全相同（两条域名指向同一台机器、同一个回环端口，由 SNI 分流），但**域名必须与主域不同源、且不同注册域**。服务端在启动时校验这一点，同源或同注册域一律拒绝启动。
+
+   这条不是整洁问题：发布物里跑着**用户写的脚本**，同源意味着它能读写应用的 cookie 与本地存储、能代表访问者向应用发请求。只判"不同源"不够——同注册域下的两个主机可能共享一张按域设置的 cookie，所以同注册域也拒。
+6. 在 `/opt/aladdin/config.yml` 填 `galaxy_publish_base_url`（形如 `https://pages.example.com`），然后重启。桶复用第 4 步那一项——**只给发布域不给桶地址会被拒绝启动**。
+
+> **发布域上不需要额外的鉴权。** 发布态是公开匿名的——拿到地址的人就能看。因此工程标识不可猜、且系统里不存在列出已发布工程的入口。反过来，**发布物内不得承载任何秘密**。
 
 ### 8. 装部署文件与 systemd 单元
 
@@ -358,6 +379,10 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 命令行打印的批准页地址打不开 | nginx 是否把 `/device` 也转发给了服务端；它必须由 `location /` 的 SPA 兜底接走 |
 | 命令行登录卡在等待批准 | 批准页要输入终端上显示的短码，且这一次登录有有效期；过期后终端会提示重新发起 |
 | 服务被 OOM 杀掉后自动重启 | `journalctl -u aladdin-server \| grep -i memory`；单元里的 `MemoryMax` 是保险丝，不是估算 |
+| 发布页面能打开但图片/视频不显示 | 那些对象有没有被设成公开读（上架那一步是否跑完）。**发布页面的脚本发不出请求是正常的**——内容安全策略按设计挡住了一切出站请求 |
+| 发布按钮不渲染 | `galaxy_publish_base_url` 与 `cos_bucket_url` 是否都配了；`sudo journalctl -u aladdin-server \| grep -i 发布` |
+| 发布域打不开而主域正常 | 发布域的解析、证书与 nginx `server_name` 三处；**不要图省事把它指回主域**——服务端会因同源而拒绝启动 |
+| 撤回发布后地址仍然出内容 | 撤回是把工程的发布指针置空；若内容还在，看是不是浏览器缓存了产物（服务端的返回不带长效缓存） |
 | 改了 nginx 配置没生效 | 需要 `sudo nginx -t && sudo systemctl reload nginx`；反过来，**只换静态产物不需要 reload** |
 | 头像不显示，昵称与简介正常 | 桶地址与密钥是否配好（`sudo journalctl -u aladdin-server \| grep -i 头像`）；预签名地址是否已过有效期——刷新页面即拿到新地址 |
 | 服务端起不来且日志说缺 COS 密钥 | 半套头像配置：只配了 `cos_bucket_url` 没给密钥，或反之。这是有意拒绝启动，不是故障 |
@@ -374,7 +399,9 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 身份认证 | 首次引导依赖一次真实登录产出的主体标识（见 [design/identity/channel-login.md](design/identity/channel-login.md)） |
 | 反向代理 | 提供 TLS 终止、静态托管与到 9090 的转发；具体用什么、443 上还有没有别人，由宿主决定 |
 | 可观测性 | 日志走 journald；`otel_endpoint` 留空表示不上报，链路标识照常生成与传播 |
-| 头像存储 | COS 私有桶；桶地址由 `cos_bucket_url` 给出，密钥由 systemd 的 `EnvironmentFile` 提供（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)） |
+| 头像存储 | COS 桶；桶地址由 `cos_bucket_url` 给出，密钥由 systemd 的 `EnvironmentFile` 提供（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)） |
+| galaxy 资产私有区 | 同一个桶的 `galaxy/` 前缀；地址同样由 `cos_bucket_url` 给出（见 [design/galaxy/asset-library.md](design/galaxy/asset-library.md)） |
+| galaxy 发布 | 与资产**同一个桶**的 `galaxy/release/` 前缀（公开读由每个对象自己带着）与一个**独立的发布域**（`galaxy_publish_base_url`）；发布域的可注册域必须与主域不同（见 [design/galaxy/publication.md](design/galaxy/publication.md)） |
 
 ## 可验证性与长程执行
 
@@ -394,7 +421,12 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 备份可用 | `VACUUM INTO` 产出的快照能被一个新进程打开并读到既有数据 |
 | 密钥文件仅属主可读 | `/opt/aladdin/secrets.env` 权限为 0600、属主为 aladdin（部署后核对） |
 | 密钥只有一份、只有一行 | `/opt/aladdin` 下没有按功能拆开的 env 文件（`cos.env`、`github.env` 等），单元里的 `EnvironmentFile=` 也恰好一行且指向 `secrets.env`（部署后核对） |
-| 桶为私有读写 | 去掉预签名参数直接访问对象地址被拒（部署后冒烟） |
+| 桶为默认私有读写 | 去掉预签名参数直接访问私有对象地址被拒（部署后冒烟） |
+| 公开区对象为公开读 | `galaxy/release/` 下的对象无需签名即可取到（部署后冒烟） |
+| 公开区不含私有内容 | `galaxy/release/` 下只有按内容摘要命名的发布物对象；桶未开启列举权限（部署后冒烟） |
+| 直传凭证不得能声明权限 | 用当前策略签发的临时凭证带 ACL 头与授权头各直传一次，两次都被存储侧拒绝（部署后冒烟，见 [design/objectstore/README.md](design/objectstore/README.md)） |
+| 发布域与主域不同注册域 | 两个域的注册域不同，且配置校验在启动时通过（`internal/config` 测试 + 部署后检查） |
+| 发布域上无凭证可达 | 不带任何凭证请求 `https://<发布域>/g/<工程标识>` 能取到当前产物（部署后冒烟） |
 | 头像功能可缺省 | 未做第 7 步的部署照常启动，前端不渲染头像上传区（部署后冒烟） |
 | 仓库不含实例值 | `git log --all -p \| grep -iE "真实域名\|主机别名\|公网 IP"` 无命中（长期项：**每次提交前**都要成立） |
 

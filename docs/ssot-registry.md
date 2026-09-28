@@ -27,7 +27,7 @@
 | 合入 / 发版前的门禁范围（跑哪些检查） | 可复用工作流 | [.github/workflows/gate.yml](../.github/workflows/gate.yml) |
 | 一份渠道凭证是否可信、代表哪个渠道上的哪个身份 | `identity.TokenVerifier` 接口；每个渠道一个实现 | [internal/identity/channel.go](../internal/identity/channel.go)（Google 实现见 [google_verifier.go](../internal/identity/google_verifier.go)、GitHub 见 [github_verifier.go](../internal/identity/github_verifier.go)） |
 | 当前启用了哪些登录渠道 | `identity.Registry` | [internal/identity/channel.go](../internal/identity/channel.go) |
-| 一个 HTTP 路径是不是浏览器直连的非 RPC 入口 | `isBrowserEntry` | [internal/server/middleware.go](../internal/server/middleware.go) |
+| 一个 HTTP 路径是不是浏览器直连的非 RPC 入口（含 galaxy 的发布地址） | `isBrowserEntry` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 服务端签发的浏览器 cookie 怎么构造、怎么取（属性集合唯一入口） | `opaqueCookie` / `cookieValue` | [internal/server/cookie.go](../internal/server/cookie.go) |
 | 一份浏览器直连的一次性凭据是否用过、是否还有效（导航状态与待绑定凭据共用） | `oneTimeStore` | [internal/server/one_time_store.go](../internal/server/one_time_store.go) |
 | 重定向型绑定的一份已校验身份是否还在等待兑换 | `pendingBindings` | [internal/server/pending_bindings.go](../internal/server/pending_bindings.go) |
@@ -36,7 +36,16 @@
 | 一份会话凭证是否有效、代表谁 | 会话存储的查询入口 | [internal/identity/session.go](../internal/identity/session.go) |
 | 某个邮箱（展示值）对应哪些已登记身份 | 身份别名的按展示值查询 | [internal/identity/identity.go](../internal/identity/identity.go) |
 | 一个主体的展示名（昵称，未设则回退到渠道标识，再回退到主体标识） | 档案的展示名解析入口 | [internal/profile/profiles.go](../internal/profile/profiles.go) |
-| 一段头像字节是不是一张可接受的图片 | 头像的类型嗅探与白名单（唯一入口，不接受上传方声明的类型） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
+| 字节数的展示文案（头像上限、资产上限、文件大小） | `describeBytes` | [web/src/format/bytes.ts](../web/src/format/bytes.ts) |
+| 发布产物里资产占位符到公开地址的改写 | 占位符的改写入口（逐字替换，不解析 HTML） | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) |
+| 发布产物交付时的内容安全策略 | CSP 响应头的构造入口 | [internal/galaxy/csp.go](../internal/galaxy/csp.go) |
+| 上传方声明的类型能不能作为头像 | 头像的类型白名单（唯一入口；声明不等于验证，见直传） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
+| 上传方声明的类型能不能作为资产 | 资产的类型白名单与分档上限（唯一入口；声明不等于验证，见直传） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
+| 一段正文能不能发布（引用完整性 + 体积上限） | `galaxy` 的校验入口（**编辑器提示与发布前置校验共用**，不得在前端复写） | [internal/galaxy/validate.go](../internal/galaxy/validate.go) |
+| 一段正文里引用了哪些资产 | 资产占位符的识别入口 | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) |
+| 一个资产标识是否属于某个工程 | 资产的归属查询（唯一入口，发布校验与删除拦阻共用） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
+| 一个工程是不是该主体的（资源归属） | galaxy 的归属校验唯一入口 | [internal/galaxy/ownership.go](../internal/galaxy/ownership.go) |
+| 发布态允许从哪个来源取资源（改写地址与内容安全策略同源） | 公开域的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | 一份短码或设备码是否已获批准、是否已被交付 | `deviceLogins`（状态流转与交付） | [internal/server/device_logins.go](../internal/server/device_logins.go) |
 | 本机二进制相对最新发布是旧是新（要不要升级） | 严格版本的解析与比较入口 | [internal/upgrade/version.go](../internal/upgrade/version.go) |
 
@@ -84,6 +93,8 @@
 | 鉴权决策留痕（含 subject/permission/decision/reason） | `rbac.Engine.Check` 内部统一埋点 | [internal/rbac/engine.go](../internal/rbac/engine.go) |
 | 登录、绑定与解绑的留痕（含主体标识与渠道，**不含令牌**） | `IdentityService` 的对应处理方法 | [internal/server/identity_service.go](../internal/server/identity_service.go) |
 | 档案变更的留痕（含主体标识与改了哪一项，**不含头像字节与简介全文**） | `ProfileService` 的对应处理方法 | [internal/server/profile_service.go](../internal/server/profile_service.go) |
+| 发布各阶段的留痕（校验 / 上架 / 落库 / 生效，**不含正文全文**） | `galaxy` 发布流程的埋点（四阶段的唯一入口） | [internal/galaxy/publish.go](../internal/galaxy/publish.go) |
+| 资产字节上架到公开区 | 上架入口（按内容摘要幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
 | 拒绝结论到 RPC 错误码与错误详情的转换 | `reject` / `DenyByAnnotation` | [internal/server/interceptor/rejection.go](../internal/server/interceptor/rejection.go) |
 | 按客户端协议写出错误响应（中间件层） | `connect.ErrorWriter` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 服务端为每个请求起 span、回写 `traceparent` 与 `x-trace-id` 响应头 | `observability.StartServerSpan` / `WriteTraceHeaders` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
@@ -108,7 +119,11 @@
 | 会话（谁、到什么时候为止、作用域）的持久化数据 | 会话存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/session.go](../internal/identity/session.go) / [internal/identity/gormstore/](../internal/identity/gormstore/store.go) |
 | 身份别名（（来源，身份标识）→ 主体）的持久化数据 | 身份别名的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/identity.go](../internal/identity/identity.go) / [internal/identity/gormstore/identity.go](../internal/identity/gormstore/identity.go) |
 | 档案（昵称、简介、头像对象键）的持久化数据 | 档案的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/profile/profile.go](../internal/profile/profile.go) / [internal/profile/gormstore/profile.go](../internal/profile/gormstore/profile.go) |
-| 头像字节与它的读取地址 | 头像存储接口（生产实现是 COS，测试注入假实现） | [internal/profile/avatar.go](../internal/profile/avatar.go) / [internal/profile/cosstore/avatar.go](../internal/profile/cosstore/avatar.go) |
+| 上传的字节怎么进对象存储（签发直传凭证、核对提交结果） | 直传的公共契约（生产实现是 COS，测试注入假实现） | [internal/objectstore/upload.go](../internal/objectstore/upload.go) / [internal/objectstore/cosupload/](../internal/objectstore/cosupload/) |
+| 工程、草稿、版本、资产与发布记录的持久化数据 | galaxy 的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/galaxy/project.go](../internal/galaxy/project.go) / [internal/galaxy/gormstore/](../internal/galaxy/gormstore/) |
+| 直传凭证里那条策略长什么样（动作、资源、类型与长度条件） | 策略的构造入口 | [internal/objectstore/cosupload/policy.go](../internal/objectstore/cosupload/policy.go) |
+| 公开区的对象与它的地址 | 上架入口（公开区唯一的写入口，按内容摘要幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
+| 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用） | [internal/galaxy/project.go](../internal/galaxy/project.go) |
 | 表结构与迁移清单（库里长什么样） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/schema.go](../internal/database/schema.go) / [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |
 | 服务端配置（监听地址、日志级别与路径） | 服务端 `config.yml` + `config.local.yml`，经 `config.LoadServer` 读取 | [internal/config/load.go](../internal/config/load.go) |
 | CLI 配置（目标地址、超时、输出详细度） | CLI `config.yml` + `config.local.yml`，经 `config.LoadCLI` 读取 | [internal/config/load.go](../internal/config/load.go) |

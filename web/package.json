@@ -20,6 +20,7 @@
     "@connectrpc/connect": "^2.2.0",
     "@connectrpc/connect-web": "^2.2.0",
     "antd": "^6.6.5",
+    "cos-js-sdk-v5": "^1.10.1",
     "lucide-react": "^1.48.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

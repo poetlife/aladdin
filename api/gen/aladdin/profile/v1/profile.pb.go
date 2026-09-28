@@ -7,6 +7,7 @@
 package profilev1
 
 import (
+	v1 "github.com/poetlife/aladdin/api/gen/aladdin/objectstore/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -327,29 +328,30 @@ func (x *UpdateProfileResponse) GetProfile() *Profile {
 	return nil
 }
 
-type UpdateAvatarRequest struct {
+type BeginAvatarUploadRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 图片字节。类型由服务端嗅探决定，此处不存在"声明类型"的字段。
-	// 超出大小上限时拒绝。
-	Image         []byte `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
+	// **声明**的内容类型。服务端只校验它在该部署接受的白名单内。
+	ContentType string `protobuf:"bytes,1,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	// **声明**的字节数。服务端据此在签发前早退；真正的上限由存储侧执行。
+	SizeBytes     uint64 `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateAvatarRequest) Reset() {
-	*x = UpdateAvatarRequest{}
+func (x *BeginAvatarUploadRequest) Reset() {
+	*x = BeginAvatarUploadRequest{}
 	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateAvatarRequest) String() string {
+func (x *BeginAvatarUploadRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateAvatarRequest) ProtoMessage() {}
+func (*BeginAvatarUploadRequest) ProtoMessage() {}
 
-func (x *UpdateAvatarRequest) ProtoReflect() protoreflect.Message {
+func (x *BeginAvatarUploadRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -361,40 +363,131 @@ func (x *UpdateAvatarRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateAvatarRequest.ProtoReflect.Descriptor instead.
-func (*UpdateAvatarRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use BeginAvatarUploadRequest.ProtoReflect.Descriptor instead.
+func (*BeginAvatarUploadRequest) Descriptor() ([]byte, []int) {
 	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *UpdateAvatarRequest) GetImage() []byte {
+func (x *BeginAvatarUploadRequest) GetContentType() string {
 	if x != nil {
-		return x.Image
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *BeginAvatarUploadRequest) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+type BeginAvatarUploadResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 直传凭证。**只允许写、只对头像这一个键有效、短时有效。**
+	Upload        *v1.DirectUploadCredential `protobuf:"bytes,1,opt,name=upload,proto3" json:"upload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginAvatarUploadResponse) Reset() {
+	*x = BeginAvatarUploadResponse{}
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginAvatarUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginAvatarUploadResponse) ProtoMessage() {}
+
+func (x *BeginAvatarUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginAvatarUploadResponse.ProtoReflect.Descriptor instead.
+func (*BeginAvatarUploadResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *BeginAvatarUploadResponse) GetUpload() *v1.DirectUploadCredential {
+	if x != nil {
+		return x.Upload
 	}
 	return nil
 }
 
-type UpdateAvatarResponse struct {
+type CommitAvatarUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommitAvatarUploadRequest) Reset() {
+	*x = CommitAvatarUploadRequest{}
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommitAvatarUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommitAvatarUploadRequest) ProtoMessage() {}
+
+func (x *CommitAvatarUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommitAvatarUploadRequest.ProtoReflect.Descriptor instead.
+func (*CommitAvatarUploadRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{7}
+}
+
+// 返回提交之后的完整档案，而不是一个成功标志：客户端刚做过一次会改变现状的
+// 操作，让它在同一次往返里拿到新现状，比再发一次查询更省事。avatar_url 按
+// 新状态重新签发。
+type CommitAvatarUploadResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateAvatarResponse) Reset() {
-	*x = UpdateAvatarResponse{}
-	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[6]
+func (x *CommitAvatarUploadResponse) Reset() {
+	*x = CommitAvatarUploadResponse{}
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateAvatarResponse) String() string {
+func (x *CommitAvatarUploadResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateAvatarResponse) ProtoMessage() {}
+func (*CommitAvatarUploadResponse) ProtoMessage() {}
 
-func (x *UpdateAvatarResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[6]
+func (x *CommitAvatarUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -405,12 +498,12 @@ func (x *UpdateAvatarResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateAvatarResponse.ProtoReflect.Descriptor instead.
-func (*UpdateAvatarResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{6}
+// Deprecated: Use CommitAvatarUploadResponse.ProtoReflect.Descriptor instead.
+func (*CommitAvatarUploadResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *UpdateAvatarResponse) GetProfile() *Profile {
+func (x *CommitAvatarUploadResponse) GetProfile() *Profile {
 	if x != nil {
 		return x.Profile
 	}
@@ -425,7 +518,7 @@ type DeleteAvatarRequest struct {
 
 func (x *DeleteAvatarRequest) Reset() {
 	*x = DeleteAvatarRequest{}
-	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[7]
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -437,7 +530,7 @@ func (x *DeleteAvatarRequest) String() string {
 func (*DeleteAvatarRequest) ProtoMessage() {}
 
 func (x *DeleteAvatarRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[7]
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -450,7 +543,7 @@ func (x *DeleteAvatarRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAvatarRequest.ProtoReflect.Descriptor instead.
 func (*DeleteAvatarRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{7}
+	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{9}
 }
 
 type DeleteAvatarResponse struct {
@@ -462,7 +555,7 @@ type DeleteAvatarResponse struct {
 
 func (x *DeleteAvatarResponse) Reset() {
 	*x = DeleteAvatarResponse{}
-	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[8]
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -474,7 +567,7 @@ func (x *DeleteAvatarResponse) String() string {
 func (*DeleteAvatarResponse) ProtoMessage() {}
 
 func (x *DeleteAvatarResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[8]
+	mi := &file_aladdin_profile_v1_profile_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -487,7 +580,7 @@ func (x *DeleteAvatarResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAvatarResponse.ProtoReflect.Descriptor instead.
 func (*DeleteAvatarResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{8}
+	return file_aladdin_profile_v1_profile_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DeleteAvatarResponse) GetProfile() *Profile {
@@ -501,7 +594,7 @@ var File_aladdin_profile_v1_profile_proto protoreflect.FileDescriptor
 
 const file_aladdin_profile_v1_profile_proto_rawDesc = "" +
 	"\n" +
-	" aladdin/profile/v1/profile.proto\x12\x12aladdin.profile.v1\x1a!aladdin/rbac/v1/annotations.proto\"\xd7\x01\n" +
+	" aladdin/profile/v1/profile.proto\x12\x12aladdin.profile.v1\x1a#aladdin/objectstore/v1/upload.proto\x1a!aladdin/rbac/v1/annotations.proto\"\xd7\x01\n" +
 	"\aProfile\x12\x1a\n" +
 	"\bnickname\x18\x01 \x01(\tR\bnickname\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x10\n" +
@@ -517,19 +610,25 @@ const file_aladdin_profile_v1_profile_proto_rawDesc = "" +
 	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x10\n" +
 	"\x03bio\x18\x02 \x01(\tR\x03bio\"N\n" +
 	"\x15UpdateProfileResponse\x125\n" +
-	"\aprofile\x18\x01 \x01(\v2\x1b.aladdin.profile.v1.ProfileR\aprofile\"+\n" +
-	"\x13UpdateAvatarRequest\x12\x14\n" +
-	"\x05image\x18\x01 \x01(\fR\x05image\"M\n" +
-	"\x14UpdateAvatarResponse\x125\n" +
+	"\aprofile\x18\x01 \x01(\v2\x1b.aladdin.profile.v1.ProfileR\aprofile\"\\\n" +
+	"\x18BeginAvatarUploadRequest\x12!\n" +
+	"\fcontent_type\x18\x01 \x01(\tR\vcontentType\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x02 \x01(\x04R\tsizeBytes\"c\n" +
+	"\x19BeginAvatarUploadResponse\x12F\n" +
+	"\x06upload\x18\x01 \x01(\v2..aladdin.objectstore.v1.DirectUploadCredentialR\x06upload\"\x1b\n" +
+	"\x19CommitAvatarUploadRequest\"S\n" +
+	"\x1aCommitAvatarUploadResponse\x125\n" +
 	"\aprofile\x18\x01 \x01(\v2\x1b.aladdin.profile.v1.ProfileR\aprofile\"\x15\n" +
 	"\x13DeleteAvatarRequest\"M\n" +
 	"\x14DeleteAvatarResponse\x125\n" +
-	"\aprofile\x18\x01 \x01(\v2\x1b.aladdin.profile.v1.ProfileR\aprofile2\xc1\x03\n" +
+	"\aprofile\x18\x01 \x01(\v2\x1b.aladdin.profile.v1.ProfileR\aprofile2\xcf\x04\n" +
 	"\x0eProfileService\x12e\n" +
 	"\n" +
 	"GetProfile\x12%.aladdin.profile.v1.GetProfileRequest\x1a&.aladdin.profile.v1.GetProfileResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12n\n" +
-	"\rUpdateProfile\x12(.aladdin.profile.v1.UpdateProfileRequest\x1a).aladdin.profile.v1.UpdateProfileResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12k\n" +
-	"\fUpdateAvatar\x12'.aladdin.profile.v1.UpdateAvatarRequest\x1a(.aladdin.profile.v1.UpdateAvatarResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12k\n" +
+	"\rUpdateProfile\x12(.aladdin.profile.v1.UpdateProfileRequest\x1a).aladdin.profile.v1.UpdateProfileResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12z\n" +
+	"\x11BeginAvatarUpload\x12,.aladdin.profile.v1.BeginAvatarUploadRequest\x1a-.aladdin.profile.v1.BeginAvatarUploadResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12}\n" +
+	"\x12CommitAvatarUpload\x12-.aladdin.profile.v1.CommitAvatarUploadRequest\x1a..aladdin.profile.v1.CommitAvatarUploadResponse\"\b\x90\x88'\x03\xa0\x88'\x01\x12k\n" +
 	"\fDeleteAvatar\x12'.aladdin.profile.v1.DeleteAvatarRequest\x1a(.aladdin.profile.v1.DeleteAvatarResponse\"\b\x90\x88'\x03\xa0\x88'\x01BBZ@github.com/poetlife/aladdin/api/gen/aladdin/profile/v1;profilev1b\x06proto3"
 
 var (
@@ -544,36 +643,42 @@ func file_aladdin_profile_v1_profile_proto_rawDescGZIP() []byte {
 	return file_aladdin_profile_v1_profile_proto_rawDescData
 }
 
-var file_aladdin_profile_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_aladdin_profile_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_aladdin_profile_v1_profile_proto_goTypes = []any{
-	(*Profile)(nil),               // 0: aladdin.profile.v1.Profile
-	(*GetProfileRequest)(nil),     // 1: aladdin.profile.v1.GetProfileRequest
-	(*GetProfileResponse)(nil),    // 2: aladdin.profile.v1.GetProfileResponse
-	(*UpdateProfileRequest)(nil),  // 3: aladdin.profile.v1.UpdateProfileRequest
-	(*UpdateProfileResponse)(nil), // 4: aladdin.profile.v1.UpdateProfileResponse
-	(*UpdateAvatarRequest)(nil),   // 5: aladdin.profile.v1.UpdateAvatarRequest
-	(*UpdateAvatarResponse)(nil),  // 6: aladdin.profile.v1.UpdateAvatarResponse
-	(*DeleteAvatarRequest)(nil),   // 7: aladdin.profile.v1.DeleteAvatarRequest
-	(*DeleteAvatarResponse)(nil),  // 8: aladdin.profile.v1.DeleteAvatarResponse
+	(*Profile)(nil),                    // 0: aladdin.profile.v1.Profile
+	(*GetProfileRequest)(nil),          // 1: aladdin.profile.v1.GetProfileRequest
+	(*GetProfileResponse)(nil),         // 2: aladdin.profile.v1.GetProfileResponse
+	(*UpdateProfileRequest)(nil),       // 3: aladdin.profile.v1.UpdateProfileRequest
+	(*UpdateProfileResponse)(nil),      // 4: aladdin.profile.v1.UpdateProfileResponse
+	(*BeginAvatarUploadRequest)(nil),   // 5: aladdin.profile.v1.BeginAvatarUploadRequest
+	(*BeginAvatarUploadResponse)(nil),  // 6: aladdin.profile.v1.BeginAvatarUploadResponse
+	(*CommitAvatarUploadRequest)(nil),  // 7: aladdin.profile.v1.CommitAvatarUploadRequest
+	(*CommitAvatarUploadResponse)(nil), // 8: aladdin.profile.v1.CommitAvatarUploadResponse
+	(*DeleteAvatarRequest)(nil),        // 9: aladdin.profile.v1.DeleteAvatarRequest
+	(*DeleteAvatarResponse)(nil),       // 10: aladdin.profile.v1.DeleteAvatarResponse
+	(*v1.DirectUploadCredential)(nil),  // 11: aladdin.objectstore.v1.DirectUploadCredential
 }
 var file_aladdin_profile_v1_profile_proto_depIdxs = []int32{
-	0, // 0: aladdin.profile.v1.GetProfileResponse.profile:type_name -> aladdin.profile.v1.Profile
-	0, // 1: aladdin.profile.v1.UpdateProfileResponse.profile:type_name -> aladdin.profile.v1.Profile
-	0, // 2: aladdin.profile.v1.UpdateAvatarResponse.profile:type_name -> aladdin.profile.v1.Profile
-	0, // 3: aladdin.profile.v1.DeleteAvatarResponse.profile:type_name -> aladdin.profile.v1.Profile
-	1, // 4: aladdin.profile.v1.ProfileService.GetProfile:input_type -> aladdin.profile.v1.GetProfileRequest
-	3, // 5: aladdin.profile.v1.ProfileService.UpdateProfile:input_type -> aladdin.profile.v1.UpdateProfileRequest
-	5, // 6: aladdin.profile.v1.ProfileService.UpdateAvatar:input_type -> aladdin.profile.v1.UpdateAvatarRequest
-	7, // 7: aladdin.profile.v1.ProfileService.DeleteAvatar:input_type -> aladdin.profile.v1.DeleteAvatarRequest
-	2, // 8: aladdin.profile.v1.ProfileService.GetProfile:output_type -> aladdin.profile.v1.GetProfileResponse
-	4, // 9: aladdin.profile.v1.ProfileService.UpdateProfile:output_type -> aladdin.profile.v1.UpdateProfileResponse
-	6, // 10: aladdin.profile.v1.ProfileService.UpdateAvatar:output_type -> aladdin.profile.v1.UpdateAvatarResponse
-	8, // 11: aladdin.profile.v1.ProfileService.DeleteAvatar:output_type -> aladdin.profile.v1.DeleteAvatarResponse
-	8, // [8:12] is the sub-list for method output_type
-	4, // [4:8] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0,  // 0: aladdin.profile.v1.GetProfileResponse.profile:type_name -> aladdin.profile.v1.Profile
+	0,  // 1: aladdin.profile.v1.UpdateProfileResponse.profile:type_name -> aladdin.profile.v1.Profile
+	11, // 2: aladdin.profile.v1.BeginAvatarUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
+	0,  // 3: aladdin.profile.v1.CommitAvatarUploadResponse.profile:type_name -> aladdin.profile.v1.Profile
+	0,  // 4: aladdin.profile.v1.DeleteAvatarResponse.profile:type_name -> aladdin.profile.v1.Profile
+	1,  // 5: aladdin.profile.v1.ProfileService.GetProfile:input_type -> aladdin.profile.v1.GetProfileRequest
+	3,  // 6: aladdin.profile.v1.ProfileService.UpdateProfile:input_type -> aladdin.profile.v1.UpdateProfileRequest
+	5,  // 7: aladdin.profile.v1.ProfileService.BeginAvatarUpload:input_type -> aladdin.profile.v1.BeginAvatarUploadRequest
+	7,  // 8: aladdin.profile.v1.ProfileService.CommitAvatarUpload:input_type -> aladdin.profile.v1.CommitAvatarUploadRequest
+	9,  // 9: aladdin.profile.v1.ProfileService.DeleteAvatar:input_type -> aladdin.profile.v1.DeleteAvatarRequest
+	2,  // 10: aladdin.profile.v1.ProfileService.GetProfile:output_type -> aladdin.profile.v1.GetProfileResponse
+	4,  // 11: aladdin.profile.v1.ProfileService.UpdateProfile:output_type -> aladdin.profile.v1.UpdateProfileResponse
+	6,  // 12: aladdin.profile.v1.ProfileService.BeginAvatarUpload:output_type -> aladdin.profile.v1.BeginAvatarUploadResponse
+	8,  // 13: aladdin.profile.v1.ProfileService.CommitAvatarUpload:output_type -> aladdin.profile.v1.CommitAvatarUploadResponse
+	10, // 14: aladdin.profile.v1.ProfileService.DeleteAvatar:output_type -> aladdin.profile.v1.DeleteAvatarResponse
+	10, // [10:15] is the sub-list for method output_type
+	5,  // [5:10] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_aladdin_profile_v1_profile_proto_init() }
@@ -587,7 +692,7 @@ func file_aladdin_profile_v1_profile_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aladdin_profile_v1_profile_proto_rawDesc), len(file_aladdin_profile_v1_profile_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -105,7 +105,7 @@ export function IdentityCard(): React.ReactNode {
           type="success"
           showIcon
           style={{ marginBottom: 16 }}
-          message={
+          title={
             result.reclaimed === true
               ? `已把此前单独登录过的 ${sourceLabel(result.identityBound)} 账号并入当前账号`
               : `已绑定 ${sourceLabel(result.identityBound)}`
@@ -116,7 +116,7 @@ export function IdentityCard(): React.ReactNode {
         <Alert
           type="error"
           showIcon
-          message={error}
+          title={error}
           style={{ marginBottom: 16 }}
           // 读不到现状时给一条出路：否则卡片会永远停在"正在读取登录方式…"，
           // 用户除了整页刷新之外没有别的办法。

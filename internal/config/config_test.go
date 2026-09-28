@@ -23,11 +23,26 @@ func clearEnv(t *testing.T) {
 		EnvAddress, EnvLogLevel, EnvLogFile, EnvTimeout, EnvConfig,
 		EnvDatabaseDriver, EnvDatabaseDSN,
 		EnvCOSBucketURL, EnvCOSSecretID, EnvCOSSecretKey,
+		EnvGalaxyPublishBaseURL,
 		EnvGoogleClientID, EnvGithubClientID, EnvGithubClientSecret, EnvPublicBaseURL,
-		EnvBootstrapAdminSubject, EnvBootstrapAdminScope,
+		EnvBootstrapAdminSubject, EnvBootstrapAdminEmail, EnvBootstrapAdminScope,
 	} {
 		t.Setenv(k, "")
 	}
+}
+
+// testBucket 是对象存储桶的样例地址：形状与配置文件里给的一致。
+// 头像、资产的私有区与发布物的公开区**共用这一个桶**。
+const testBucket = "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
+
+// galaxyOn 打开发布：桶 + 发布域。
+//
+// 发布**没有自己的桶**——公开区与私有区在同一个桶里，靠逐对象的公开读区分，
+// 因此这里必须把 COS 一起配上：只给发布域会被校验拒绝，那样这个用例测的就成了
+// "半套配置被拒吗"，那是另一回事。
+func galaxyOn(c *ServerConfig, publishBaseURL string) {
+	c.COS = COSConfig{BucketURL: testBucket, SecretID: "id", SecretKey: "key"}
+	c.Galaxy = GalaxyConfig{PublishBaseURL: publishBaseURL}
 }
 
 // isolateHome 把用户配置目录指到临时目录，避免测试写到真实的家目录里。
@@ -466,6 +481,41 @@ func TestValidate(t *testing.T) {
 			c.Bootstrap = BootstrapConfig{Scope: "root"}
 		}, false},
 		{"客户端标识为空即未启用", func(c *ServerConfig) { c.GoogleClientID = "" }, true},
+		// galaxy 的发布：只给发布域不行（素材住在桶里），且发布域不得与主应用同站。
+		{"发布未配置", func(c *ServerConfig) { c.Galaxy = GalaxyConfig{} }, true},
+		{"发布已启用", func(c *ServerConfig) { galaxyOn(c, "https://pub.example.com") }, true},
+		{"只给发布域而不给桶", func(c *ServerConfig) {
+			c.Galaxy = GalaxyConfig{PublishBaseURL: "https://pub.example.com"}
+		}, false},
+		{"发布域不是绝对地址", func(c *ServerConfig) {
+			galaxyOn(c, "pub.example.com")
+		}, false},
+		{"发布域带路径", func(c *ServerConfig) {
+			galaxyOn(c, "https://pub.example.com/g")
+		}, false},
+		{"发布域与对外地址同源", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.com"
+			galaxyOn(c, "https://app.example.com")
+		}, false},
+		{"发布域与对外地址同注册域", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.com"
+			galaxyOn(c, "https://pub.example.com")
+		}, false},
+		{"发布域多段后缀同注册域", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.co.uk"
+			galaxyOn(c, "https://pub.example.co.uk")
+		}, false},
+		{"发布域多段后缀不同注册域", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.co.uk"
+			galaxyOn(c, "https://pub.other.co.uk")
+		}, true},
+		{"发布域不同注册域", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.com"
+			galaxyOn(c, "https://pages.example.net")
+		}, true},
+		{"主应用未配置对外地址时发布域合法", func(c *ServerConfig) {
+			galaxyOn(c, "https://pub.example.com")
+		}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -637,6 +687,7 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyDatabaseDriver:        "mysql",
 			keyDatabaseDSN:           "aladdin@tcp(127.0.0.1:3306)/aladdin",
 			keyCOSBucketURL:          "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com",
+			keyGalaxyPublishBaseURL:  "https://pub.example.com",
 			keyGoogleClientID:        "1234567890.apps.googleusercontent.com",
 			keyGithubClientID:        "Iv1.0123456789abcdef",
 			keyPublicBaseURL:         "https://aladdin.example.com",
@@ -656,6 +707,10 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			// 重定向型登录渠道的三项也必须成对出现，理由同上。
 			keyGithubClientID: keyPublicBaseURL + ": https://aladdin.example.com\n",
 			keyPublicBaseURL:  keyGithubClientID + ": Iv1.0123456789abcdef\n",
+			// 发布没有自己的桶（公开区与私有区在同一个桶里），但**没有桶就发不了
+			// 发布**，因此这个键要连桶地址一起给——否则走的是"只给发布域"那条
+			// 拒绝路径，而那是另一回事，另有专门的用例守着。
+			keyGalaxyPublishBaseURL: keyCOSBucketURL + ": https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com\n",
 		}
 		// 生效前提来自环境变量的键。头像桶地址本身不是秘密、可以写进配置文件，
 		// 但它的两项密钥只有环境变量这一个来源（见 EnvCOSSecretID），因此这个
@@ -668,6 +723,11 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			},
 			keyGithubClientID: {EnvGithubClientSecret: "test-github-secret"},
 			keyPublicBaseURL:  {EnvGithubClientSecret: "test-github-secret"},
+			// 发布需要桶，桶的密钥只有环境变量这一个来源（见上）。
+			keyGalaxyPublishBaseURL: {
+				EnvCOSSecretID:  "test-secret-id",
+				EnvCOSSecretKey: "test-secret-key",
+			},
 		}
 
 		for _, key := range serverKeys {

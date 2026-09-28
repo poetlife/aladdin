@@ -25,13 +25,25 @@ export async function updateMyProfile(nickname: string, bio: string) {
 }
 
 /**
- * 上传或替换头像。
+ * 开始一次头像上传：服务端签发一份**只对头像这一个键、只允许写、短时有效**
+ * 的直传凭证（见 docs/design/objectstore/README.md）。
  *
- * 这里**不声明内容类型**：类型由服务端从字节本身判定。让上传方声明等于把
- * 一个安全属性交给它自证（见 docs/design/profile/avatar-storage.md）。
+ * 类型与大小由**上传方声明**，服务端只校验声明在白名单与上限内：直传的服务端
+ * 从不接触字节，因此声明是它唯一能据以早退的输入；真正的约束由存储侧执行。
+ * 拿到的凭证用完即弃，**不要缓存、不要复用到别的上传**。
  */
-export async function updateMyAvatar(image: Uint8Array) {
-  return profileClient().updateAvatar({ image })
+export async function beginAvatarUpload(contentType: string, sizeBytes: number) {
+  return profileClient().beginAvatarUpload({ contentType, sizeBytes: BigInt(sizeBytes) })
+}
+
+/**
+ * 提交一次头像上传：服务端对那个键做一次存在性与字节数核对，通过后返回新档案。
+ *
+ * 参数里没有键，也没有类型——两次调用之间服务端不保留状态，"哪个键"由签发时
+ * 分配、提交时按主体重新确认。返回的是完整档案，客户端据此直接更新本地状态。
+ */
+export async function commitAvatarUpload() {
+  return profileClient().commitAvatarUpload({})
 }
 
 /** 删除头像。没有头像时也成功。 */

@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import * as profileApi from '../api/profile'
 import { messageOf } from '../api/errors'
 import type { Profile } from '../gen/proto/aladdin/profile/v1/profile_pb'
+import { directUpload } from '../upload/direct-upload'
 
 /**
  * 当前主体的档案在客户端的唯一副本。
@@ -30,8 +31,17 @@ export interface ProfileState {
    * 该说的话不一样。
    */
   updateProfile: (nickname: string, bio: string) => Promise<void>
-  /** 上传或替换头像。类型由服务端判定，参数里没有它。 */
-  updateAvatar: (image: Uint8Array) => Promise<void>
+  /**
+   * 上传或替换头像。
+   *
+   * 走三步：向服务端取一份直传凭证 → 用凭证把字节直传到对象存储 → 提交，
+   * 让服务端核对（见 docs/design/objectstore/README.md）。**类型由上传方声明**，
+   * 用 file.type；调用方不负责白名单判断，服务端是权威。
+   *
+   * 失败时**抛出**错误：直传失败与提交失败都可能发生，由调用方决定怎么呈现，
+   * 并给用户一次重试的机会。
+   */
+  updateAvatar: (file: File) => Promise<void>
   /** 删除头像。没有头像时也成功。 */
   deleteAvatar: () => Promise<void>
 }
@@ -72,8 +82,15 @@ export function ProfileProvider({ children }: { children: React.ReactNode }): Re
     setProfile(response.profile ?? null)
   }, [])
 
-  const updateAvatar = useCallback(async (image: Uint8Array) => {
-    const response = await profileApi.updateMyAvatar(image)
+  // 三步：签发 → 直传 → 提交。凭证用完即弃，不缓存、不复用到别的上传。
+  // 提交返回的是**服务端的那一份档案**，据此更新本地状态。
+  const updateAvatar = useCallback(async (file: File) => {
+    const begin = await profileApi.beginAvatarUpload(file.type, file.size)
+    if (begin.upload === undefined) {
+      throw new Error('服务端没有返回直传凭证')
+    }
+    await directUpload(begin.upload, file, file.type)
+    const response = await profileApi.commitAvatarUpload()
     setProfile(response.profile ?? null)
   }, [])
 

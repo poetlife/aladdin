@@ -28,10 +28,12 @@ import (
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/galaxy"
+	galaxygormstore "github.com/poetlife/aladdin/internal/galaxy/gormstore"
 	"github.com/poetlife/aladdin/internal/identity"
 	identitygormstore "github.com/poetlife/aladdin/internal/identity/gormstore"
+	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/observability"
-	"github.com/poetlife/aladdin/internal/profile"
 	profilegormstore "github.com/poetlife/aladdin/internal/profile/gormstore"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
@@ -47,6 +49,11 @@ const (
 
 // harness 是一次端到端测试的全部依赖。
 type harness struct {
+	// srv 是这台被测服务端。
+	//
+	// 用例用它注入第二个主体（归属、生命周期这类用例需要"另一个人"），
+	// 走的是与生产完全相同的入口：Authenticator 与 Store。
+	srv     *server.Server
 	address string
 	// logs 是服务端在内置接线上吐出的日志。
 	//
@@ -54,6 +61,17 @@ type harness struct {
 	// 头像字节都属于这一类，而它们的价值恰在于"没出现"，只有真去读一遍
 	// 才能守住。
 	logs *observer.ObservedLogs
+	// objects 是这个装配里的私有区对象存储。
+	//
+	// 直传之后**服务端不接触字节**，因此"客户端把字节传上去"这一步由测试
+	// 扮演：签发凭证之后往这个实例里写一份，再提交（见 uploadAsset）。
+	objects *objectstore.MemoryStore
+	// public 是公开区的假存储，用来断言"只上架了被引用的资产"。
+	public *galaxy.MemoryPublicStore
+	// publishBase 是发布域的取值，bucket 是发布物素材所在的桶——**公开区与
+	// 私有区共用它**，因此断言对外地址与响应头里的允许来源时用的是同一个主机。
+	publishBase string
+	bucket      string
 }
 
 // startServer 在随机端口上启动服务端，并注入一个测试主体。
@@ -118,6 +136,22 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
+	// 私有区对象存储用内存实现替代：契约要求测试不访问任何网络（见
+	// docs/design/objectstore/README.md）。**同一个实例交给头像与资产两处**，
+	// 因为生产上它们本来就是同一个桶上的同一套机制。
+	objects := objectstore.NewMemoryStore()
+
+	// 公开区与发布域：让发布这条路在端到端测试里是**启用**的，于是"发布—对外
+	// 地址返回产物"会被真的走一遍，而不是因为没配而整条跳过。发布没有自己的桶：
+	// 公开区与上面那个私有区共用同一个（靠逐对象的公开读区分）。
+	bucket := "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
+	publishBase := "https://pub.example.com"
+	public := galaxy.NewMemoryPublicStore()
+	origin, err := galaxy.NewPublicOrigin(bucket, publishBase)
+	if err != nil {
+		t.Fatalf("构造发布地址失败: %v", err)
+	}
+
 	// 认证模块的存储同样落在真实连接上：会话与身份别名是这条链路上的
 	// 一等数据，用内存实现在这里等于把"表没建、写入没落盘"挡在测试之外。
 	identityStore := identitygormstore.NewIdentityStore(store.DB())
@@ -131,11 +165,13 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 	srv := server.New(cfg, logger, nil, store, ident, server.ProfileStores{
 		// 档案的存储同样落在真实连接上。
 		Profiles: profilegormstore.New(store.DB()),
-		// 头像字节用一个内存实现替代对象存储：契约要求测试不访问任何网络
-		// （见 docs/design/profile/avatar-storage.md）。它带来的另一个好处是
-		// 头像功能在端到端测试里是**启用**的，于是"上传—下发地址"这条路径
-		// 会被真的走一遍，而不是因为没配对象存储整条跳过。
-		Avatars: profile.NewMemoryAvatarStore(),
+		// 头像字节走直传：签发的那份凭证在测试里由 objects 扮演对象存储。
+		Avatars: objects,
+	}, server.GalaxyStores{
+		Projects: galaxygormstore.New(store.DB()),
+		Assets:   objects,
+		Public:   public,
+		Origin:   origin,
 	})
 	if err := srv.Store().PutSubject(context.Background(), rbac.Subject{
 		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,
@@ -169,7 +205,15 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 		}
 	})
 
-	return harness{address: lis.Addr().String(), logs: logs}
+	return harness{
+		srv:         srv,
+		address:     lis.Addr().String(),
+		logs:        logs,
+		objects:     objects,
+		public:      public,
+		publishBase: publishBase,
+		bucket:      bucket,
+	}
 }
 
 // dial 构造一个已注入凭证的客户端。

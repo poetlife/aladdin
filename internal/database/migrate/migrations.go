@@ -23,5 +23,6 @@ func migrations() []*gormigrate.Migration {
 		migration0003IdentitiesTable,
 		migration0004SessionSubjectType,
 		migration0005SubjectProfiles,
+		migration0006GalaxyTables,
 	}
 }

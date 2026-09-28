@@ -25,6 +25,16 @@ permissions:
     description: "查阅审计日志"
   - code: "audit.log.export"
     description: "导出审计日志。属批量操作"
+  - code: "galaxy.project.read"
+    description: "读取自己创建的工程、草稿与版本"
+  - code: "galaxy.project.write"
+    description: "创建、修改、删除工程，保存版本。删除属不可逆操作"
+  - code: "galaxy.project.publish"
+    description: "发布与撤回发布。唯一一个让内容离开私有边界的动作"
+  - code: "galaxy.asset.read"
+    description: "读取自己工程下的资产列表与读取地址"
+  - code: "galaxy.asset.write"
+    description: "上传与删除工程资产"
   - code: "*"
     description: "全部权限。仅保留给系统管理员角色，不得授予其他角色"
 
@@ -59,3 +69,14 @@ roles:
     permissions:
       - "rbac.role.read"
       - "rbac.subject.read"
+  # 业务领域角色。随业务资源（galaxy 工程）落地而加入，见 docs/design/galaxy/README.md。
+  # 角色决定"能不能创作"，资源归属决定"能创作哪些"，两把闸门都要过。
+  - id: "galaxy.author"
+    display_name: "创作者"
+    builtin: true
+    permissions:
+      - "galaxy.project.read"
+      - "galaxy.project.write"
+      - "galaxy.project.publish"
+      - "galaxy.asset.read"
+      - "galaxy.asset.write"

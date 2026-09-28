@@ -17,7 +17,8 @@
 | `log_file` | 日志文件路径；为空表示写标准错误 | 空（写标准错误） |
 | `database_driver` | 数据库后端，取值集合见 [../persistence/README.md](../persistence/README.md) | `sqlite` |
 | `database_dsn` | 数据库连接串，形状随后端而异 | `aladdin.db` |
-| `cos_bucket_url` | 头像存放的 COS 桶地址（含 APPID 与地域的完整主机名）；为空表示**未启用**头像 | 空 |
+| `cos_bucket_url` | 对象存储的桶地址（含 APPID 与地域的完整主机名）；为空表示**未启用头像、galaxy 资产与发布** | 空 |
+| `galaxy_publish_base_url` | galaxy 发布页面的**对外地址**（发布域）；为空表示**未启用发布** | 空 |
 | `google_client_id` | Google 登录的客户端标识；为空表示**未启用**该登录方式 | 空 |
 | `github_client_id` | GitHub 登录的客户端标识；为空表示**未启用**该登录方式 | 空 |
 | `public_base_url` | 服务端的**对外地址**，用于构造重定向型登录的回调与回跳地址、以及命令行登录的批准页地址；**可以单独存在**，启用重定向型渠道时才必填 | 空 |
@@ -36,9 +37,21 @@
 
 **连接串可能含口令，因此它不进日志。** 这一项与配置模块的"配置可以进启动日志、凭证不可以"是同一条规则的两面：连接串在本端的地位等同于 CLIENT 端的凭证文件。启动日志里出现的是脱敏摘要——后端类型与不含口令的定位信息，足以回答"我改的那一行到底有没有被读到"。
 
-### 头像存储
+### 对象存储
 
-`cos_bucket_url` 指向一个腾讯云 COS 桶，头像字节存在那里（见 [../profile/avatar-storage.md](../profile/avatar-storage.md)）。它是完整的桶主机名，形如 `https://<桶名>-<APPID>.cos.<地域>.myqcloud.com`。
+`cos_bucket_url` 指向一个腾讯云 COS 桶，**默认私有读写**。三处内容把它当仓库，用不同的键前缀区分：
+
+| 消费方 | 前缀 | 谁读得到 |
+|--------|------|---------|
+| 头像 | `avatars/` | 只有本人，经短时预签名地址（见 [../profile/avatar-storage.md](../profile/avatar-storage.md)） |
+| galaxy 资产（私有区） | `galaxy/<工程标识>/` | 只有工程拥有者，经短时预签名地址（见 [../galaxy/asset-library.md](../galaxy/asset-library.md)） |
+| galaxy 发布物（公开区） | `galaxy/release/` | **所有人**，经公开读地址（同上） |
+
+**这几处前缀都是常量，不是配置项**：做成配置项只会多出一种失败方式——改了前缀，存量对象在一瞬间全部变成孤儿。
+
+**公开区与私有区在同一个桶里，靠逐对象的公开读区分。** 桶本身不改公开读策略；公开区的对象由上架路径逐个对象设成公开读，其余对象不设任何公开读。因此"哪些对象是公开的"是**对象自己的属性**，不由本文件的一项配置决定，也不由桶级策略决定——配置里没有"公开桶"这一项。
+
+它是完整的桶主机名，形如 `https://<桶名>-<APPID>.cos.<地域>.myqcloud.com`。
 
 **密钥不是配置键，只从环境变量读。** 需要两项：`ALADDIN_COS_SECRET_ID` 与 `ALADDIN_COS_SECRET_KEY`。
 
@@ -57,6 +70,37 @@
 > 头像未启用**不影响**昵称与简介：档案的其余部分照常可用，前端只是不渲染头像上传区（见 [../profile/README.md](../profile/README.md)）。
 
 **密钥不进启动日志，也不进任何错误信息与脱敏摘要。** 桶地址进启动日志——它与数据库的定位信息同类，用来回答"我改的那一行到底有没有被读到"。
+
+### galaxy 的发布存储
+
+发布**复用上面那一项桶配置**（公开区与私有区在同一个桶里），只多一项：
+
+| 配置键 | 含义 | 从哪来 | 是不是秘密 |
+|--------|------|--------|-----------|
+| `cos_bucket_url` | 公开区素材与私有资产共用的桶 | 配置文件 | 不是。它只是一个主机名 |
+| `galaxy_publish_base_url` | 发布页面的对外地址 | 配置文件 | 不是 |
+
+密钥**沿用同一对**（`ALADDIN_COS_SECRET_ID` / `ALADDIN_COS_SECRET_KEY`，见上），不新增环境变量：公开与私有由**对象权限**决定，不由凭证决定。
+
+| 情形 | 行为 |
+|------|------|
+| 发布域为空 | 不启用发布。这是默认情形，工程与资产的其余部分照常可用 |
+| 发布域与桶都给 | 启用发布 |
+| **发布域给了、桶为空** | **拒绝启动**，信息里指出缺的是 `cos_bucket_url` |
+| `galaxy_publish_base_url` 不是合法取值 | **拒绝启动** |
+| **`galaxy_publish_base_url` 与 `public_base_url` 同源** | **拒绝启动** |
+
+**"只缺发布域"不是半套配置**，因此不拒绝启动：那是"没启用发布"，与"没启用头像"同类，是配置的常态。反过来那一半才是半套——只给发布域而没有桶，等于有页面地址、没有放素材的地方。这与 `validateCOS`、`validateGithubLogin` 是同一条取向：半套配置的失败方式既不是"没启用"（前端会渲染一个点了报错的入口），也不是"配错了"（启动时能看见），而是"看起来配好了"，直到第一次发布才失败。
+
+> 发布未启用**不影响**工程与资产：工程、草稿、版本与资产照常可用，前端只是不渲染发布入口（见 [../galaxy/README.md](../galaxy/README.md)）。
+
+#### 发布域为什么必须与主应用不同源
+
+发布物里跑着**用户写的脚本**。同源意味着那段脚本与应用共享 origin，于是它能读写应用的 cookie 与本地存储、能代表访问者向应用发起请求——**每一次"我发布了一个页面"都会变成一次注入**。
+
+**只判"不同源"不够。** 同一注册域下的两个主机虽然不同源，却可能共享一张按域设置的 cookie——脚本读不到 `document.cookie` 里的 HttpOnly 条目，但它可以把请求发到同站的应用地址上带着 cookie 走。因此这条校验要求发布域的可注册域与主应用**不同**，而不只是主机名不同。这与 [../galaxy/publication.md](../galaxy/publication.md) 里那条"不同源是一条硬约束"是同一条规则的配置侧落点，**判据只有一个**：两个地址的比较入口。
+
+取值本身的要求与 `public_base_url` 相同：必须是**绝对 URL**、有主机名、不带用户信息、不带查询串与 fragment，路径为空或只有 `/`（见"重定向型渠道"）。协议必须是 https，本地回环主机例外。
 
 ### 登录方式
 
@@ -161,6 +205,9 @@
 - `cos_bucket_url` 不是合法的 https 地址
 - `cos_bucket_url` 非空而 COS 的任一项密钥缺失（半套头像配置）
 - COS 的两项密钥都存在而 `cos_bucket_url` 为空（半套头像配置：密钥有主、桶没主）
+- `galaxy_publish_base_url` 非空而 `cos_bucket_url` 为空（半套发布配置：有页面地址、没有放素材的地方）
+- `galaxy_publish_base_url` 不是合法取值
+- `galaxy_publish_base_url` 与 `public_base_url` 同源，或同属一个注册域
 - `public_base_url` 非空但不是合法取值（见"重定向型渠道"）
 - GitHub 登录的客户端标识与客户端密钥只给出其中之一，或两者齐备而缺 `public_base_url`（半套登录配置）
 - `bootstrap_admin_subject` 与 `bootstrap_admin_email` **同时给出**（不知道以谁为准）
@@ -183,7 +230,7 @@
 
 ### 生效值的可见性
 
-启动时必须输出一条包含最终生效配置的日志（**不含凭证，配置中也不应有凭证，环境变量里的凭证同样不出现**），至少包含监听地址、日志级别、数据库后端与脱敏后的定位信息、头像存储是否启用（含桶地址，不含密钥），以及**已启用的登录渠道与对外地址**。这条日志的作用是回答"我改的那个文件到底有没有被读到"——这是配置类问题排查中最高频的疑问，而它无法从"服务能启动"这个事实中推断出来。数据库这一项尤其如此：连到另一个库的表现形式是"数据看起来全丢了"，不写出来就只能靠猜。
+启动时必须输出一条包含最终生效配置的日志（**不含凭证，配置中也不应有凭证，环境变量里的凭证同样不出现**），至少包含监听地址、日志级别、数据库后端与脱敏后的定位信息、头像存储是否启用（含桶地址，不含密钥）、galaxy 发布是否启用（含桶地址与发布域，不含密钥），以及**已启用的登录渠道与对外地址**。这条日志的作用是回答"我改的那个文件到底有没有被读到"——这是配置类问题排查中最高频的疑问，而它无法从"服务能启动"这个事实中推断出来。数据库这一项尤其如此：连到另一个库的表现形式是"数据看起来全丢了"，不写出来就只能靠猜。
 
 ### 开发用种子数据不属于配置体系
 
@@ -243,6 +290,11 @@
 | 登录方式可缺省 | `google_client_id` 为空时不构成一条可用的登录方式，且不影响其余配置加载（`internal/config` 测试） |
 | 头像可缺省 | 桶地址与密钥都为空时不构成一条可用的头像存储，且不影响其余配置加载（`internal/config` 测试）；此时昵称与简介照常可用（`internal/profile` 测试） |
 | 头像半套拒绝启动 | 只配桶地址、或只配密钥时启动失败，错误信息指出缺的是哪一项（`internal/config` 测试） |
+| 发布可缺省 | 发布域为空时不构成一项发布能力，且不影响其余配置加载（`internal/config` 测试）；此时工程与资产照常可用（`internal/galaxy` 测试） |
+| 发布半套拒绝启动 | 给了发布域而桶为空时启动失败，错误信息指出缺的是桶（`internal/config` 测试） |
+| 发布域不同源强制 | 发布域与 `public_base_url` 同源、或同属一个注册域时启动失败，错误信息含两项（`internal/config` 测试） |
+| 发布配置是否被读到 | 启动日志里列出发布是否启用、桶地址与发布域，且不含任何密钥（启动冒烟） |
+| 对象前缀是常量 | 键集合里没有承载 `avatars/`、`galaxy/` 与 `galaxy/release/` 前缀的键（`internal/config` 测试：键集合与示例一致） |
 | 密钥不入日志 | 启动日志、错误信息与脱敏摘要中不出现 COS 密钥与 GitHub 客户端密钥（`internal/config` 测试 + 启动冒烟） |
 | 密钥不可由配置提供 | 配置文件的键集合里没有承载 COS 密钥或 GitHub 客户端密钥的键（`internal/config` 测试：键集合与示例一致） |
 | GitHub 登录半套拒绝启动 | 客户端标识与客户端密钥只给其一、或两者齐备而缺对外地址时启动失败，信息里指出缺的是哪一项（`internal/config` 测试） |
@@ -258,6 +310,8 @@
 | 可观测性 | `log_level` 与 `log_file` 的取值经日志构建入口消费 |
 | 持久化 | `database_driver` 与 `database_dsn` 交给持久化模块消费；本模块只做形状校验，方言语义由它定义（见 [../persistence/schema.md](../persistence/schema.md)） |
 | 身份认证 | `google_client_id` 交给认证模块消费，用于校验身份令牌的受众；引导键由服务端在存储为空时消费（见 [../identity/](../identity/README.md)） |
+| 个人档案 | `cos_bucket_url` 与 COS 密钥交给头像存储消费（见 [../profile/avatar-storage.md](../profile/avatar-storage.md)） |
+| galaxy | `cos_bucket_url` 与 COS 密钥交给资产与发布共同消费（公开区与私有区在同一个桶里）；发布域交给发布消费，且它的取值**必须与 `public_base_url` 不同源**（见 [../galaxy/publication.md](../galaxy/publication.md)） |
 | 服务端业务实现 | 接收已解析完成的配置，不自行读取来源 |
 
 ## 代码实现索引
@@ -271,7 +325,7 @@
 | 数据库连接的建立 | [internal/database/database.go](../../../internal/database/database.go) |
 | 结构迁移的执行 | [internal/database/migrate/migrate.go](../../../internal/database/migrate/migrate.go) |
 | 开发用种子数据旁路 | [internal/server/devseed.go](../../../internal/server/devseed.go) |
-| 头像存储的装配 | [internal/profile/cosstore/](../../../internal/profile/cosstore/) |
+| 直传存储的装配 | [internal/objectstore/cosupload/](../../../internal/objectstore/cosupload/) |
 | 引导第一个管理员的生效 | [internal/server/bootstrap.go](../../../internal/server/bootstrap.go) |
 
 ---

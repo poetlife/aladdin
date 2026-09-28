@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package aladdin.profile.v1;
 
+import "aladdin/objectstore/v1/upload.proto";
 import "aladdin/rbac/v1/annotations.proto";
 
 option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1;profilev1";
@@ -35,16 +36,24 @@ service ProfileService {
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
 
-  // 上传或替换当前主体的头像。
+  // 开始一次头像上传：签发一份直传凭证。
   //
-  // **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
-  // 内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
-  // 一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
-  // 看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
-  // 时以谁为准"这个问题。
+  // **字节不经过服务端**（见 docs/design/objectstore/README.md）。服务端在这里
+  // 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写头像这一个
+  // 键、类型与大小受条件约束"的策略交给对象存储执行。
   //
-  // 一个主体一个对象，替换即原地覆盖。
-  rpc UpdateAvatar(UpdateAvatarRequest) returns (UpdateAvatarResponse) {
+  // 一个主体一个键，替换即原地覆盖：**头像是这条链路上唯一允许覆盖的用途**，
+  // 因为它本来就是一个"覆盖写"的字段。
+  rpc BeginAvatarUpload(BeginAvatarUploadRequest) returns (BeginAvatarUploadResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 提交一次头像上传：核对字节确实到了，把档案指向它。
+  //
+  // 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
+  // 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。
+  rpc CommitAvatarUpload(CommitAvatarUploadRequest) returns (CommitAvatarUploadResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
@@ -130,13 +139,24 @@ message UpdateProfileResponse {
   Profile profile = 1;
 }
 
-message UpdateAvatarRequest {
-  // 图片字节。类型由服务端嗅探决定，此处不存在"声明类型"的字段。
-  // 超出大小上限时拒绝。
-  bytes image = 1;
+message BeginAvatarUploadRequest {
+  // **声明**的内容类型。服务端只校验它在该部署接受的白名单内。
+  string content_type = 1;
+  // **声明**的字节数。服务端据此在签发前早退；真正的上限由存储侧执行。
+  uint64 size_bytes = 2;
 }
 
-message UpdateAvatarResponse {
+message BeginAvatarUploadResponse {
+  // 直传凭证。**只允许写、只对头像这一个键有效、短时有效。**
+  aladdin.objectstore.v1.DirectUploadCredential upload = 1;
+}
+
+message CommitAvatarUploadRequest {}
+
+// 返回提交之后的完整档案，而不是一个成功标志：客户端刚做过一次会改变现状的
+// 操作，让它在同一次往返里拿到新现状，比再发一次查询更省事。avatar_url 按
+// 新状态重新签发。
+message CommitAvatarUploadResponse {
   Profile profile = 1;
 }
 

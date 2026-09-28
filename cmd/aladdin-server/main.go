@@ -14,11 +14,13 @@ import (
 
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/galaxy"
+	galaxygormstore "github.com/poetlife/aladdin/internal/galaxy/gormstore"
 	"github.com/poetlife/aladdin/internal/identity"
 	identitygormstore "github.com/poetlife/aladdin/internal/identity/gormstore"
+	"github.com/poetlife/aladdin/internal/objectstore"
+	"github.com/poetlife/aladdin/internal/objectstore/cosupload"
 	"github.com/poetlife/aladdin/internal/observability"
-	"github.com/poetlife/aladdin/internal/profile"
-	"github.com/poetlife/aladdin/internal/profile/cosstore"
 	profilegormstore "github.com/poetlife/aladdin/internal/profile/gormstore"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
@@ -114,6 +116,9 @@ func run() error {
 		zap.String("database", database.Describe(cfg.Database)),
 		// 头像存储同理：只记桶地址，**不记密钥**（见 config.COSConfig.Describe）。
 		zap.String("cos", cfg.COS.Describe()),
+		// 发布这一项没有密钥，因此原样给出发布域：它的失败方式是"发布入口没
+		// 渲染"，而那可能只是配置没读到。它用的桶地址已经记在上面那一项里了。
+		zap.String("galaxy", cfg.Galaxy.Describe()),
 		// 已启用的登录方式与对外地址。两项都不是秘密；客户端密钥没有配置键，
 		// 自然也进不来这里。
 		zap.Strings("login_channels", channels.Sources()),
@@ -140,12 +145,30 @@ func run() error {
 	identityStore := identitygormstore.NewIdentityStore(store.DB())
 	identities := identity.NewIdentities(identityStore, store)
 
-	// 头像存储是可选能力。未配置时返回一个**真正的 nil**：头像功能整体缺席，
-	// 而不是退化成一个"什么都存不下"的实现——服务端据此把"头像功能不可用"
-	// 下发给前端，前端不渲染上传区（见 docs/design/profile/avatar-storage.md）。
-	avatars, err := newAvatarStore(cfg.COS)
+	// 私有区对象存储是**一条公共链路**：头像与 galaxy 资产共用它，差别只在键、
+	// 白名单与上限（见 docs/design/objectstore/README.md）。未配置时返回一个
+	// **真正的 nil**：两项功能整体缺席，而不是退化成一个"什么都存不下"的实现。
+	objects, err := newObjectStore(cfg.COS)
 	if err != nil {
 		return err
+	}
+
+	// 公开区与发布域：公开区与资产私有区共用上面那个桶（靠逐对象的公开读区分），
+	// 因此这里只多一个发布域。配置校验已经强制"给了发布域就必须有桶"，所以发布
+	// 启用时 objects 必然非 nil。未配置时 Public 为 nil、Origin 为零值，领域层
+	// 据此让发布这条路整体缺席。
+	var publicWriter galaxy.PublicStore
+	origin := galaxy.PublicOrigin{}
+	if cfg.Galaxy.Enabled() {
+		writer, err := cosupload.NewPublicWriter(cfg.COS.BucketURL, cfg.COS.SecretID, cfg.COS.SecretKey)
+		if err != nil {
+			return fmt.Errorf("构造公开区存储失败: %w", err)
+		}
+		publicWriter = writer
+		origin, err = galaxy.NewPublicOrigin(cfg.COS.BucketURL, cfg.Galaxy.PublishBaseURL)
+		if err != nil {
+			return fmt.Errorf("构造发布地址失败: %w", err)
+		}
 	}
 
 	srv := server.New(cfg, logger, metrics, store, server.IdentityStores{
@@ -154,7 +177,12 @@ func run() error {
 		Channels:   channels,
 	}, server.ProfileStores{
 		Profiles: profilegormstore.New(store.DB()),
-		Avatars:  avatars,
+		Avatars:  objects,
+	}, server.GalaxyStores{
+		Projects: galaxygormstore.New(store.DB()),
+		Assets:   objects,
+		Public:   publicWriter,
+		Origin:   origin,
 	})
 
 	// 引导先于种子：它只在存储里一条绑定都没有时生效，而种子会写入绑定。
@@ -178,24 +206,25 @@ func run() error {
 	return serveErr
 }
 
-// newAvatarStore 按配置构造头像存储；未配置时返回真正的 nil。
+// newObjectStore 按配置构造私有区的直传存储；未配置时返回真正的 nil。
 //
-// 返回 nil 而不是一个"空实现"，是为了让"这个部署有没有头像功能"在
-// server.ProfileStores 里是一个**可判定的布尔事实**，而不是一个总是成功、
-// 但什么也存不下的实现——后者会让前端渲染出一个传不上去的上传区。
+// 返回 nil 而不是一个"空实现"，是为了让"这个部署有没有对象存储"在
+// server.ProfileStores / server.GalaxyStores 里是一个**可判定的布尔事实**，
+// 而不是一个总是成功、但什么也存不下的实现——后者会让前端渲染出一个传不上去
+// 的上传区。
 //
 // 半套配置不会走到这里：config.LoadServer 已经拒绝启动了。
-func newAvatarStore(cos config.COSConfig) (profile.AvatarStore, error) {
+func newObjectStore(cos config.COSConfig) (objectstore.Store, error) {
 	if !cos.Enabled() {
 		return nil, nil
 	}
-	store, err := cosstore.New(cosstore.Config{
+	store, err := cosupload.New(cosupload.Config{
 		BucketURL: cos.BucketURL,
 		SecretID:  cos.SecretID,
 		SecretKey: cos.SecretKey,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("构造头像存储失败: %w", err)
+		return nil, fmt.Errorf("构造对象存储失败: %w", err)
 	}
 	return store, nil
 }

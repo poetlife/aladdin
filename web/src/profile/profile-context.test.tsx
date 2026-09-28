@@ -1,17 +1,31 @@
+import { create } from '@bufbuild/protobuf'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as profileApi from '../api/profile'
+import {
+  BeginAvatarUploadResponseSchema,
+  CommitAvatarUploadResponseSchema,
+} from '../gen/proto/aladdin/profile/v1/profile_pb'
+import { DirectUploadCredentialSchema } from '../gen/proto/aladdin/objectstore/v1/upload_pb'
 import type { Profile } from '../gen/proto/aladdin/profile/v1/profile_pb'
+import { directUpload } from '../upload/direct-upload'
 import { ProfileProvider, useProfile } from './profile-context'
 import type { ProfileState } from './profile-context'
 
 vi.mock('../api/profile', () => ({
   getMyProfile: vi.fn(),
   updateMyProfile: vi.fn(),
-  updateMyAvatar: vi.fn(),
+  beginAvatarUpload: vi.fn(),
+  commitAvatarUpload: vi.fn(),
   deleteMyAvatar: vi.fn(),
+}))
+
+// 直传模块单独 mock：这里断言的是"上下文把凭证、文件与声明的类型原样交给它"，
+// 而不是让真实的 COS SDK 发请求（那是 direct-upload 自己的测试）。
+vi.mock('../upload/direct-upload', () => ({
+  directUpload: vi.fn(),
 }))
 
 // React 19 要求显式声明这是 act 环境，否则每次 render 都会打印警告。
@@ -108,21 +122,64 @@ describe('档案状态', () => {
     expect(latest?.profile?.displayName).toBe('阿拉丁')
   })
 
-  it('上传头像后用服务端返回的地址更新状态', async () => {
+  it('上传头像走签发 → 直传 → 提交，并用服务端返回的地址更新状态', async () => {
     vi.mocked(profileApi.getMyProfile).mockResolvedValue({
       $typeName: 'aladdin.profile.v1.GetProfileResponse',
       profile: profile(),
     })
-    vi.mocked(profileApi.updateMyAvatar).mockResolvedValue({
-      $typeName: 'aladdin.profile.v1.UpdateAvatarResponse',
-      profile: profile({ avatarUrl: 'https://bucket.example.com/avatars/u1?sig=x' }),
+    const credential = create(DirectUploadCredentialSchema, {
+      bucket: 'examplebucket-1250000000',
+      region: 'ap-guangzhou',
+      key: 'avatars/u1',
+      secretId: 'tmp-id',
+      secretKey: 'tmp-key',
+      sessionToken: 'tmp-token',
+      expiresAt: '2030-01-01T00:00:00Z',
     })
+    vi.mocked(profileApi.beginAvatarUpload).mockResolvedValue(
+      create(BeginAvatarUploadResponseSchema, { upload: credential }),
+    )
+    vi.mocked(profileApi.commitAvatarUpload).mockResolvedValue(
+      create(CommitAvatarUploadResponseSchema, {
+        profile: profile({ avatarUrl: 'https://bucket.example.com/avatars/u1?sig=x' }),
+      }),
+    )
 
     await mountProvider()
+    const file = new File([new Uint8Array([1, 2, 3])], 'me.png', { type: 'image/png' })
     await act(async () => {
-      await latest?.updateAvatar(new Uint8Array([1, 2, 3]))
+      await latest?.updateAvatar(file)
     })
 
+    // 类型与大小由上传方声明，原样带给签发；凭证原样交给直传模块，不复用、不改写。
+    expect(profileApi.beginAvatarUpload).toHaveBeenCalledWith('image/png', 3)
+    expect(directUpload).toHaveBeenCalledWith(credential, file, 'image/png')
+    expect(profileApi.commitAvatarUpload).toHaveBeenCalledWith()
     expect(latest?.profile?.avatarUrl).toBe('https://bucket.example.com/avatars/u1?sig=x')
+  })
+
+  it('直传失败时向上抛出，而不是把半截状态留在本地', async () => {
+    vi.mocked(profileApi.getMyProfile).mockResolvedValue({
+      $typeName: 'aladdin.profile.v1.GetProfileResponse',
+      profile: profile(),
+    })
+    vi.mocked(profileApi.beginAvatarUpload).mockResolvedValue(
+      create(BeginAvatarUploadResponseSchema, {
+        upload: create(DirectUploadCredentialSchema, { key: 'avatars/u1' }),
+      }),
+    )
+    vi.mocked(directUpload).mockRejectedValue(new Error('直传失败：Network Error'))
+
+    await mountProvider()
+    const file = new File([new Uint8Array([1, 2, 3])], 'me.png', { type: 'image/png' })
+
+    await expect(
+      act(async () => {
+        await latest?.updateAvatar(file)
+      }),
+    ).rejects.toThrow('直传失败：Network Error')
+    // 提交没发生，本地档案保持原样。
+    expect(profileApi.commitAvatarUpload).not.toHaveBeenCalled()
+    expect(latest?.profile?.avatarUrl).toBe('')
   })
 })

@@ -4,6 +4,8 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { DirectUploadCredential } from "../../objectstore/v1/upload_pb";
+import { file_aladdin_objectstore_v1_upload } from "../../objectstore/v1/upload_pb";
 import { file_aladdin_rbac_v1_annotations } from "../../rbac/v1/annotations_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -11,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/profile/v1/profile.proto.
  */
 export const file_aladdin_profile_v1_profile: GenFile = /*@__PURE__*/
-  fileDesc("CiBhbGFkZGluL3Byb2ZpbGUvdjEvcHJvZmlsZS5wcm90bxISYWxhZGRpbi5wcm9maWxlLnYxIosBCgdQcm9maWxlEhAKCG5pY2tuYW1lGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRILCgNiaW8YAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIdChVhdmF0YXJfdXBsb2FkX2VuYWJsZWQYBSABKAgSGAoQYXZhdGFyX21heF9ieXRlcxgGIAEoDSITChFHZXRQcm9maWxlUmVxdWVzdCJCChJHZXRQcm9maWxlUmVzcG9uc2USLAoHcHJvZmlsZRgBIAEoCzIbLmFsYWRkaW4ucHJvZmlsZS52MS5Qcm9maWxlIjUKFFVwZGF0ZVByb2ZpbGVSZXF1ZXN0EhAKCG5pY2tuYW1lGAEgASgJEgsKA2JpbxgCIAEoCSJFChVVcGRhdGVQcm9maWxlUmVzcG9uc2USLAoHcHJvZmlsZRgBIAEoCzIbLmFsYWRkaW4ucHJvZmlsZS52MS5Qcm9maWxlIiQKE1VwZGF0ZUF2YXRhclJlcXVlc3QSDQoFaW1hZ2UYASABKAwiRAoUVXBkYXRlQXZhdGFyUmVzcG9uc2USLAoHcHJvZmlsZRgBIAEoCzIbLmFsYWRkaW4ucHJvZmlsZS52MS5Qcm9maWxlIhUKE0RlbGV0ZUF2YXRhclJlcXVlc3QiRAoURGVsZXRlQXZhdGFyUmVzcG9uc2USLAoHcHJvZmlsZRgBIAEoCzIbLmFsYWRkaW4ucHJvZmlsZS52MS5Qcm9maWxlMsEDCg5Qcm9maWxlU2VydmljZRJlCgpHZXRQcm9maWxlEiUuYWxhZGRpbi5wcm9maWxlLnYxLkdldFByb2ZpbGVSZXF1ZXN0GiYuYWxhZGRpbi5wcm9maWxlLnYxLkdldFByb2ZpbGVSZXNwb25zZSIIkIgnA6CIJwESbgoNVXBkYXRlUHJvZmlsZRIoLmFsYWRkaW4ucHJvZmlsZS52MS5VcGRhdGVQcm9maWxlUmVxdWVzdBopLmFsYWRkaW4ucHJvZmlsZS52MS5VcGRhdGVQcm9maWxlUmVzcG9uc2UiCJCIJwOgiCcBEmsKDFVwZGF0ZUF2YXRhchInLmFsYWRkaW4ucHJvZmlsZS52MS5VcGRhdGVBdmF0YXJSZXF1ZXN0GiguYWxhZGRpbi5wcm9maWxlLnYxLlVwZGF0ZUF2YXRhclJlc3BvbnNlIgiQiCcDoIgnARJrCgxEZWxldGVBdmF0YXISJy5hbGFkZGluLnByb2ZpbGUudjEuRGVsZXRlQXZhdGFyUmVxdWVzdBooLmFsYWRkaW4ucHJvZmlsZS52MS5EZWxldGVBdmF0YXJSZXNwb25zZSIIkIgnA6CIJwFCQlpAZ2l0aHViLmNvbS9wb2V0bGlmZS9hbGFkZGluL2FwaS9nZW4vYWxhZGRpbi9wcm9maWxlL3YxO3Byb2ZpbGV2MWIGcHJvdG8z", [file_aladdin_rbac_v1_annotations]);
+  fileDesc("CiBhbGFkZGluL3Byb2ZpbGUvdjEvcHJvZmlsZS5wcm90bxISYWxhZGRpbi5wcm9maWxlLnYxIosBCgdQcm9maWxlEhAKCG5pY2tuYW1lGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRILCgNiaW8YAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIdChVhdmF0YXJfdXBsb2FkX2VuYWJsZWQYBSABKAgSGAoQYXZhdGFyX21heF9ieXRlcxgGIAEoDSITChFHZXRQcm9maWxlUmVxdWVzdCJCChJHZXRQcm9maWxlUmVzcG9uc2USLAoHcHJvZmlsZRgBIAEoCzIbLmFsYWRkaW4ucHJvZmlsZS52MS5Qcm9maWxlIjUKFFVwZGF0ZVByb2ZpbGVSZXF1ZXN0EhAKCG5pY2tuYW1lGAEgASgJEgsKA2JpbxgCIAEoCSJFChVVcGRhdGVQcm9maWxlUmVzcG9uc2USLAoHcHJvZmlsZRgBIAEoCzIbLmFsYWRkaW4ucHJvZmlsZS52MS5Qcm9maWxlIkQKGEJlZ2luQXZhdGFyVXBsb2FkUmVxdWVzdBIUCgxjb250ZW50X3R5cGUYASABKAkSEgoKc2l6ZV9ieXRlcxgCIAEoBCJbChlCZWdpbkF2YXRhclVwbG9hZFJlc3BvbnNlEj4KBnVwbG9hZBgBIAEoCzIuLmFsYWRkaW4ub2JqZWN0c3RvcmUudjEuRGlyZWN0VXBsb2FkQ3JlZGVudGlhbCIbChlDb21taXRBdmF0YXJVcGxvYWRSZXF1ZXN0IkoKGkNvbW1pdEF2YXRhclVwbG9hZFJlc3BvbnNlEiwKB3Byb2ZpbGUYASABKAsyGy5hbGFkZGluLnByb2ZpbGUudjEuUHJvZmlsZSIVChNEZWxldGVBdmF0YXJSZXF1ZXN0IkQKFERlbGV0ZUF2YXRhclJlc3BvbnNlEiwKB3Byb2ZpbGUYASABKAsyGy5hbGFkZGluLnByb2ZpbGUudjEuUHJvZmlsZTLPBAoOUHJvZmlsZVNlcnZpY2USZQoKR2V0UHJvZmlsZRIlLmFsYWRkaW4ucHJvZmlsZS52MS5HZXRQcm9maWxlUmVxdWVzdBomLmFsYWRkaW4ucHJvZmlsZS52MS5HZXRQcm9maWxlUmVzcG9uc2UiCJCIJwOgiCcBEm4KDVVwZGF0ZVByb2ZpbGUSKC5hbGFkZGluLnByb2ZpbGUudjEuVXBkYXRlUHJvZmlsZVJlcXVlc3QaKS5hbGFkZGluLnByb2ZpbGUudjEuVXBkYXRlUHJvZmlsZVJlc3BvbnNlIgiQiCcDoIgnARJ6ChFCZWdpbkF2YXRhclVwbG9hZBIsLmFsYWRkaW4ucHJvZmlsZS52MS5CZWdpbkF2YXRhclVwbG9hZFJlcXVlc3QaLS5hbGFkZGluLnByb2ZpbGUudjEuQmVnaW5BdmF0YXJVcGxvYWRSZXNwb25zZSIIkIgnA6CIJwESfQoSQ29tbWl0QXZhdGFyVXBsb2FkEi0uYWxhZGRpbi5wcm9maWxlLnYxLkNvbW1pdEF2YXRhclVwbG9hZFJlcXVlc3QaLi5hbGFkZGluLnByb2ZpbGUudjEuQ29tbWl0QXZhdGFyVXBsb2FkUmVzcG9uc2UiCJCIJwOgiCcBEmsKDERlbGV0ZUF2YXRhchInLmFsYWRkaW4ucHJvZmlsZS52MS5EZWxldGVBdmF0YXJSZXF1ZXN0GiguYWxhZGRpbi5wcm9maWxlLnYxLkRlbGV0ZUF2YXRhclJlc3BvbnNlIgiQiCcDoIgnAUJCWkBnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL3Byb2ZpbGUvdjE7cHJvZmlsZXYxYgZwcm90bzM", [file_aladdin_objectstore_v1_upload, file_aladdin_rbac_v1_annotations]);
 
 /**
  * Profile 是一个主体的展示信息。
@@ -180,29 +182,71 @@ export const UpdateProfileResponseSchema: GenMessage<UpdateProfileResponse> = /*
   messageDesc(file_aladdin_profile_v1_profile, 4);
 
 /**
- * @generated from message aladdin.profile.v1.UpdateAvatarRequest
+ * @generated from message aladdin.profile.v1.BeginAvatarUploadRequest
  */
-export type UpdateAvatarRequest = Message<"aladdin.profile.v1.UpdateAvatarRequest"> & {
+export type BeginAvatarUploadRequest = Message<"aladdin.profile.v1.BeginAvatarUploadRequest"> & {
   /**
-   * 图片字节。类型由服务端嗅探决定，此处不存在"声明类型"的字段。
-   * 超出大小上限时拒绝。
+   * **声明**的内容类型。服务端只校验它在该部署接受的白名单内。
    *
-   * @generated from field: bytes image = 1;
+   * @generated from field: string content_type = 1;
    */
-  image: Uint8Array;
+  contentType: string;
+
+  /**
+   * **声明**的字节数。服务端据此在签发前早退；真正的上限由存储侧执行。
+   *
+   * @generated from field: uint64 size_bytes = 2;
+   */
+  sizeBytes: bigint;
 };
 
 /**
- * Describes the message aladdin.profile.v1.UpdateAvatarRequest.
- * Use `create(UpdateAvatarRequestSchema)` to create a new message.
+ * Describes the message aladdin.profile.v1.BeginAvatarUploadRequest.
+ * Use `create(BeginAvatarUploadRequestSchema)` to create a new message.
  */
-export const UpdateAvatarRequestSchema: GenMessage<UpdateAvatarRequest> = /*@__PURE__*/
+export const BeginAvatarUploadRequestSchema: GenMessage<BeginAvatarUploadRequest> = /*@__PURE__*/
   messageDesc(file_aladdin_profile_v1_profile, 5);
 
 /**
- * @generated from message aladdin.profile.v1.UpdateAvatarResponse
+ * @generated from message aladdin.profile.v1.BeginAvatarUploadResponse
  */
-export type UpdateAvatarResponse = Message<"aladdin.profile.v1.UpdateAvatarResponse"> & {
+export type BeginAvatarUploadResponse = Message<"aladdin.profile.v1.BeginAvatarUploadResponse"> & {
+  /**
+   * 直传凭证。**只允许写、只对头像这一个键有效、短时有效。**
+   *
+   * @generated from field: aladdin.objectstore.v1.DirectUploadCredential upload = 1;
+   */
+  upload?: DirectUploadCredential | undefined;
+};
+
+/**
+ * Describes the message aladdin.profile.v1.BeginAvatarUploadResponse.
+ * Use `create(BeginAvatarUploadResponseSchema)` to create a new message.
+ */
+export const BeginAvatarUploadResponseSchema: GenMessage<BeginAvatarUploadResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_profile_v1_profile, 6);
+
+/**
+ * @generated from message aladdin.profile.v1.CommitAvatarUploadRequest
+ */
+export type CommitAvatarUploadRequest = Message<"aladdin.profile.v1.CommitAvatarUploadRequest"> & {
+};
+
+/**
+ * Describes the message aladdin.profile.v1.CommitAvatarUploadRequest.
+ * Use `create(CommitAvatarUploadRequestSchema)` to create a new message.
+ */
+export const CommitAvatarUploadRequestSchema: GenMessage<CommitAvatarUploadRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_profile_v1_profile, 7);
+
+/**
+ * 返回提交之后的完整档案，而不是一个成功标志：客户端刚做过一次会改变现状的
+ * 操作，让它在同一次往返里拿到新现状，比再发一次查询更省事。avatar_url 按
+ * 新状态重新签发。
+ *
+ * @generated from message aladdin.profile.v1.CommitAvatarUploadResponse
+ */
+export type CommitAvatarUploadResponse = Message<"aladdin.profile.v1.CommitAvatarUploadResponse"> & {
   /**
    * @generated from field: aladdin.profile.v1.Profile profile = 1;
    */
@@ -210,11 +254,11 @@ export type UpdateAvatarResponse = Message<"aladdin.profile.v1.UpdateAvatarRespo
 };
 
 /**
- * Describes the message aladdin.profile.v1.UpdateAvatarResponse.
- * Use `create(UpdateAvatarResponseSchema)` to create a new message.
+ * Describes the message aladdin.profile.v1.CommitAvatarUploadResponse.
+ * Use `create(CommitAvatarUploadResponseSchema)` to create a new message.
  */
-export const UpdateAvatarResponseSchema: GenMessage<UpdateAvatarResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_profile_v1_profile, 6);
+export const CommitAvatarUploadResponseSchema: GenMessage<CommitAvatarUploadResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_profile_v1_profile, 8);
 
 /**
  * @generated from message aladdin.profile.v1.DeleteAvatarRequest
@@ -227,7 +271,7 @@ export type DeleteAvatarRequest = Message<"aladdin.profile.v1.DeleteAvatarReques
  * Use `create(DeleteAvatarRequestSchema)` to create a new message.
  */
 export const DeleteAvatarRequestSchema: GenMessage<DeleteAvatarRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_profile_v1_profile, 7);
+  messageDesc(file_aladdin_profile_v1_profile, 9);
 
 /**
  * @generated from message aladdin.profile.v1.DeleteAvatarResponse
@@ -244,7 +288,7 @@ export type DeleteAvatarResponse = Message<"aladdin.profile.v1.DeleteAvatarRespo
  * Use `create(DeleteAvatarResponseSchema)` to create a new message.
  */
 export const DeleteAvatarResponseSchema: GenMessage<DeleteAvatarResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_profile_v1_profile, 8);
+  messageDesc(file_aladdin_profile_v1_profile, 10);
 
 /**
  * ProfileService 是个人档案面：主体自己的展示信息（昵称、简介、头像）。
@@ -288,22 +332,34 @@ export const ProfileService: GenService<{
     output: typeof UpdateProfileResponseSchema;
   },
   /**
-   * 上传或替换当前主体的头像。
+   * 开始一次头像上传：签发一份直传凭证。
    *
-   * **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
-   * 内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
-   * 一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
-   * 看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
-   * 时以谁为准"这个问题。
+   * **字节不经过服务端**（见 docs/design/objectstore/README.md）。服务端在这里
+   * 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写头像这一个
+   * 键、类型与大小受条件约束"的策略交给对象存储执行。
    *
-   * 一个主体一个对象，替换即原地覆盖。
+   * 一个主体一个键，替换即原地覆盖：**头像是这条链路上唯一允许覆盖的用途**，
+   * 因为它本来就是一个"覆盖写"的字段。
    *
-   * @generated from rpc aladdin.profile.v1.ProfileService.UpdateAvatar
+   * @generated from rpc aladdin.profile.v1.ProfileService.BeginAvatarUpload
    */
-  updateAvatar: {
+  beginAvatarUpload: {
     methodKind: "unary";
-    input: typeof UpdateAvatarRequestSchema;
-    output: typeof UpdateAvatarResponseSchema;
+    input: typeof BeginAvatarUploadRequestSchema;
+    output: typeof BeginAvatarUploadResponseSchema;
+  },
+  /**
+   * 提交一次头像上传：核对字节确实到了，把档案指向它。
+   *
+   * 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
+   * 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。
+   *
+   * @generated from rpc aladdin.profile.v1.ProfileService.CommitAvatarUpload
+   */
+  commitAvatarUpload: {
+    methodKind: "unary";
+    input: typeof CommitAvatarUploadRequestSchema;
+    output: typeof CommitAvatarUploadResponseSchema;
   },
   /**
    * 删除当前主体的头像。没有头像时也成功（幂等）。

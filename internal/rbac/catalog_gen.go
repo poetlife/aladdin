@@ -28,6 +28,21 @@ const (
 	// PermissionAuditLogExport 导出审计日志。属批量操作
 	PermissionAuditLogExport PermissionCode = "audit.log.export"
 
+	// PermissionGalaxyProjectRead 读取自己创建的工程、草稿与版本
+	PermissionGalaxyProjectRead PermissionCode = "galaxy.project.read"
+
+	// PermissionGalaxyProjectWrite 创建、修改、删除工程，保存版本。删除属不可逆操作
+	PermissionGalaxyProjectWrite PermissionCode = "galaxy.project.write"
+
+	// PermissionGalaxyProjectPublish 发布与撤回发布。唯一一个让内容离开私有边界的动作
+	PermissionGalaxyProjectPublish PermissionCode = "galaxy.project.publish"
+
+	// PermissionGalaxyAssetRead 读取自己工程下的资产列表与读取地址
+	PermissionGalaxyAssetRead PermissionCode = "galaxy.asset.read"
+
+	// PermissionGalaxyAssetWrite 上传与删除工程资产
+	PermissionGalaxyAssetWrite PermissionCode = "galaxy.asset.write"
+
 	// PermissionAll 全部权限。仅保留给系统管理员角色，不得授予其他角色
 	PermissionAll PermissionCode = "*"
 )
@@ -41,6 +56,11 @@ var AllPermissionCodes = []PermissionCode{
 	PermissionRbacPolicyPublish,
 	PermissionAuditLogRead,
 	PermissionAuditLogExport,
+	PermissionGalaxyProjectRead,
+	PermissionGalaxyProjectWrite,
+	PermissionGalaxyProjectPublish,
+	PermissionGalaxyAssetRead,
+	PermissionGalaxyAssetWrite,
 	PermissionAll,
 }
 
@@ -57,6 +77,9 @@ const (
 
 	// RoleViewer 只读用户
 	RoleViewer = "viewer"
+
+	// RoleGalaxyAuthor 创作者
+	RoleGalaxyAuthor = "galaxy.author"
 )
 
 // BuiltinRoles 是内置角色定义，由权限目录派生。
@@ -105,6 +128,20 @@ var BuiltinRoles = []RoleDefinition{
 		Permissions: []PermissionCode{
 			PermissionRbacRoleRead,
 			PermissionRbacSubjectRead,
+		},
+		Inherits:              nil,
+		MutuallyExclusiveWith: nil,
+	},
+	{
+		ID:          RoleGalaxyAuthor,
+		DisplayName: "创作者",
+		Builtin:     true,
+		Permissions: []PermissionCode{
+			PermissionGalaxyProjectRead,
+			PermissionGalaxyProjectWrite,
+			PermissionGalaxyProjectPublish,
+			PermissionGalaxyAssetRead,
+			PermissionGalaxyAssetWrite,
 		},
 		Inherits:              nil,
 		MutuallyExclusiveWith: nil,

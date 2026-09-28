@@ -1,0 +1,104 @@
+openapi: 3.1.0
+info:
+  title: aladdin.objectstore.v1
+paths: {}
+components:
+  schemas:
+    aladdin.objectstore.v1.DirectUploadCredential:
+      type: object
+      properties:
+        bucket:
+          type: string
+          title: bucket
+          description: 桶名（含 APPID），不是地址：客户端 SDK 要的是桶名与地域。
+        region:
+          type: string
+          title: region
+          description: 桶所在地域，形如 ap-guangzhou。
+        key:
+          type: string
+          title: key
+          description: 这次唯一允许写入的对象键。由服务端分配，客户端改不了。
+        secretId:
+          type: string
+          title: secret_id
+          description: 临时凭证三元组。
+        secretKey:
+          type: string
+          title: secret_key
+        sessionToken:
+          type: string
+          title: session_token
+        expiresAt:
+          type: string
+          title: expires_at
+          description: 凭证的失效时刻。它是**给客户端的提示值**，实际失效以对象存储的判断为准。
+      title: DirectUploadCredential
+      additionalProperties: false
+      description: |-
+        DirectUploadCredential 是一次直传所需的全部取值。
+
+         它是**一份短时凭证**：在有效期内，拿到它的人可以用它往 key 上写一次。因此
+         它只下发给发起上传的那个客户端。
+
+         **它只允许写。** 约束写在换取来的策略里，由对象存储执行：动作只有写入对象，
+         资源只有 key 这一个对象，条件限定声明的内容类型与请求体长度上限。
+
+         **它不得进日志。** 把它写进日志等于把一次写入的能力留在了日志文件里。
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      enum:
+        - 1
+      description: Define the version of the Connect protocol
+      const: 1
+    connect-timeout-header:
+      type: number
+      title: Connect-Timeout-Ms
+      description: Define the timeout, in ms
+    connect.error:
+      type: object
+      properties:
+        code:
+          type: string
+          examples:
+            - CodeNotFound
+          enum:
+            - CodeCanceled
+            - CodeUnknown
+            - CodeInvalidArgument
+            - CodeDeadlineExceeded
+            - CodeNotFound
+            - CodeAlreadyExists
+            - CodePermissionDenied
+            - CodeResourceExhausted
+            - CodeFailedPrecondition
+            - CodeAborted
+            - CodeOutOfRange
+            - CodeInternal
+            - CodeUnavailable
+            - CodeDataLoss
+            - CodeUnauthenticated
+          description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+        message:
+          type: string
+          description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+        detail:
+          $ref: '#/components/schemas/google.protobuf.Any'
+      title: Connect Error
+      additionalProperties: true
+      description: 'Error type returned by Connect: https://connectrpc.com/docs/go/errors/#http-representation'
+    google.protobuf.Any:
+      type: object
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+          format: binary
+        debug:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+security: []

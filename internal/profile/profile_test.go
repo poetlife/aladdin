@@ -10,22 +10,20 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/identity"
+	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
 const subjectA = "usr_a"
 
-// 几段真实到能被标准库嗅探出来的字节。
+// 几段假的图片字节。
 //
-// 用真的签名而不是"随便几个字节"：这一层要挡的正是"看起来像图片、其实不是"，
-// 而如果夹具本身过不了嗅探，测得的就是夹具而不是被测代码。
+// **类型不再由字节决定**：直传之后服务端看不到字节，媒体类型是上传方声明的
+// （见 docs/design/objectstore/README.md）。这些字节因此在测试里只充当"客户端
+// 传上去的那份内容"，形状不再有任何含义。
 var (
-	pngBytes  = append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
-	jpegBytes = append([]byte("\xff\xd8\xff\xe0"), make([]byte, 64)...)
-	gifBytes  = append([]byte("GIF89a"), make([]byte, 64)...)
-	// 一段 HTML 与一段 SVG：都是"能顶着 image/png 存进去"的那类字节。
-	htmlBytes = []byte("<html><body>这不是图片</body></html>")
-	svgBytes  = []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>`)
+	pngBytes = append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	gifBytes = append([]byte("GIF89a"), make([]byte, 64)...)
 )
 
 // fakeIdentities 是 IdentityLister 的假实现，顺序完全由用例给定。
@@ -48,7 +46,7 @@ func display(value string) identity.Identity {
 
 type testOptions struct {
 	identities IdentityLister
-	avatars    AvatarStore
+	avatars    objectstore.Store
 	register   bool
 }
 
@@ -239,116 +237,206 @@ func TestUpdateRequiresRegisteredSubject(t *testing.T) {
 	}
 }
 
+// uploadAvatar 走一遍直传：签发、把字节写进假存储（模拟客户端直传）、提交。
+//
+// 服务端在整条路径上**不接触字节**，因此夹具里那一步 Put 扮演的是浏览器的角色
+// （见 docs/design/objectstore/README.md）。
+func uploadAvatar(t *testing.T, profiles *Profiles, objects *objectstore.MemoryStore, subjectID, contentType string, data []byte) (View, error) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := profiles.BeginAvatarUpload(ctx, subjectID, contentType, int64(len(data))); err != nil {
+		return View{}, err
+	}
+	objects.Put(AvatarKey(subjectID), data)
+	return profiles.CommitAvatarUpload(ctx, subjectID)
+}
+
 // 未配置对象存储时，头像相关动作明确报"未启用"，而不是静默成功。
 func TestAvatarUnavailableWithoutStore(t *testing.T) {
 	profiles, _ := newTestProfiles(t, testOptions{register: true})
+	ctx := context.Background()
 
 	if profiles.AvatarUploadEnabled() {
 		t.Error("没给头像存储，却报告头像可用")
 	}
-	if _, err := profiles.SetAvatar(context.Background(), subjectA, pngBytes); !errors.Is(err, ErrAvatarUnavailable) {
-		t.Errorf("err = %v，期望 ErrAvatarUnavailable", err)
+	if _, err := profiles.BeginAvatarUpload(ctx, subjectA, "image/png", int64(len(pngBytes))); !errors.Is(err, ErrAvatarUnavailable) {
+		t.Errorf("签发 err = %v，期望 ErrAvatarUnavailable", err)
+	}
+	if _, err := profiles.CommitAvatarUpload(ctx, subjectA); !errors.Is(err, ErrAvatarUnavailable) {
+		t.Errorf("提交 err = %v，期望 ErrAvatarUnavailable", err)
 	}
 
 	// 昵称与简介不受影响：头像是可选能力，不是档案的前提。
-	if _, err := profiles.Update(context.Background(), subjectA, "阿拉丁", ""); err != nil {
+	if _, err := profiles.Update(ctx, subjectA, "阿拉丁", ""); err != nil {
 		t.Errorf("未启用头像不该影响昵称: %v", err)
 	}
 }
 
-// 类型由字节本身判定，白名单之外一律拒绝——包括"能顶着 image/png 存进去"的那些。
-func TestSniffAvatarType(t *testing.T) {
-	cases := []struct {
-		name string
-		data []byte
-		want string
+// 声明的类型必须在白名单内，否则**拒于签发这一步**。
+//
+// 直传之后服务端看不到字节，因此白名单从"字节确实是图片"降级成了"下发时的类型
+// 必属一个无害集合"（见 docs/design/objectstore/README.md）。白名单里刻意没有
+// 任何可执行类型，测试也把这三种钉住。
+func TestBeginAvatarUploadChecksDeclaredType(t *testing.T) {
+	allowed := []struct {
+		name     string
+		declared string
+		want     string
 	}{
-		{"PNG", pngBytes, "image/png"},
-		{"JPEG", jpegBytes, "image/jpeg"},
-		{"GIF", gifBytes, "image/gif"},
-		{"HTML", htmlBytes, ""},
-		// SVG 是 XML：即便放在 <img> 里不执行脚本，把它纳入白名单也等于给
-		// 将来某次"改成直接打开"留下一颗雷。
-		{"SVG", svgBytes, ""},
-		{"空字节", nil, ""},
+		{"PNG", "image/png", "image/png"},
+		{"JPEG", "image/jpeg", "image/jpeg"},
+		{"GIF", "image/gif", "image/gif"},
+		// 归一化：大小写与参数都算同一个类型。
+		{"大写", "IMAGE/PNG", "image/png"},
+		{"带参数", "image/jpeg; charset=binary", "image/jpeg"},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := SniffAvatarType(tc.data)
-			if tc.want == "" {
-				if !errors.Is(err, ErrAvatarTypeNotAllowed) {
-					t.Errorf("err = %v，期望 ErrAvatarTypeNotAllowed", err)
-				}
-				return
-			}
-			if err != nil {
+	rejected := []struct {
+		name     string
+		declared string
+	}{
+		{"HTML", "text/html"},
+		// SVG 是 XML，可以内嵌脚本：它在下发路径上的隔离需要单独论证，首版不收。
+		{"SVG", "image/svg+xml"},
+		{"不在白名单的图片", "image/webp"},
+		{"空", ""},
+	}
+
+	for _, tc := range allowed {
+		t.Run("接受/"+tc.name, func(t *testing.T) {
+			avatars := objectstore.NewMemoryStore()
+			profiles, _ := newTestProfiles(t, testOptions{register: true, avatars: avatars})
+
+			if _, err := profiles.BeginAvatarUpload(context.Background(), subjectA, tc.declared, 8); err != nil {
 				t.Fatalf("err = %v，期望通过", err)
 			}
-			if got != tc.want {
-				t.Errorf("类型 = %q，期望 %q", got, tc.want)
+			// 签发出去的类型必须是**归一化之后**的那一个：库里、存储上、下发时
+			// 都该是同一个字符串。
+			issued := avatars.Issued()
+			if len(issued) != 1 {
+				t.Fatalf("签发 %d 次，期望 1 次", len(issued))
+			}
+			if issued[0].Key != AvatarKey(subjectA) {
+				t.Errorf("键 = %q，期望 %q（一个主体一个键）", issued[0].Key, AvatarKey(subjectA))
+			}
+			assertAvatarRules(t, issued[0].Rules)
+		})
+	}
+
+	for _, tc := range rejected {
+		t.Run("拒绝/"+tc.name, func(t *testing.T) {
+			avatars := objectstore.NewMemoryStore()
+			profiles, _ := newTestProfiles(t, testOptions{register: true, avatars: avatars})
+
+			if _, err := profiles.BeginAvatarUpload(context.Background(), subjectA, tc.declared, 8); !errors.Is(err, ErrAvatarTypeNotAllowed) {
+				t.Errorf("err = %v，期望 ErrAvatarTypeNotAllowed", err)
+			}
+			if len(avatars.Issued()) != 0 {
+				t.Error("被拒的类型仍然签发了凭证")
 			}
 		})
 	}
 }
 
-// 非图片字节被拒之后，**不留任何痕迹**：存储里没有对象，库里也没有键。
-func TestSetAvatarRejectsAndLeavesNothing(t *testing.T) {
-	avatars := NewMemoryAvatarStore()
+// assertAvatarRules 断言签发给存储的类型规则就是白名单本身。
+//
+// 规则**由白名单派生**：两处各写一份的表现是"服务端接受了、存储侧拒绝"
+// （或反过来），而用户看到的是一句无法归因的失败。
+func assertAvatarRules(t *testing.T, rules []objectstore.TypeRule) {
+	t.Helper()
+	if len(rules) != len(avatarAllowedTypes) {
+		t.Fatalf("规则 %d 条，期望与白名单一样多（%d）", len(rules), len(avatarAllowedTypes))
+	}
+	got := map[string]int64{}
+	for _, rule := range rules {
+		got[rule.ContentType] = rule.MaxBytes
+	}
+	for _, contentType := range avatarAllowedTypes {
+		if got[contentType] != AvatarMaxBytes {
+			t.Errorf("%s 的上限 = %d，期望 %d", contentType, got[contentType], AvatarMaxBytes)
+		}
+	}
+}
+
+// 声明超过上限即拒绝签发：这是**给用户的省事**（别把一个几十 MB 的文件整个传
+// 上来只为了被拒），不是安全边界——真正的上限由存储侧执行。
+func TestBeginAvatarUploadRejectsTooLargeDeclaration(t *testing.T) {
+	avatars := objectstore.NewMemoryStore()
+	profiles, _ := newTestProfiles(t, testOptions{register: true, avatars: avatars})
+
+	_, err := profiles.BeginAvatarUpload(context.Background(), subjectA, "image/png", AvatarMaxBytes+1)
+	if !errors.Is(err, ErrAvatarTooLarge) {
+		t.Errorf("err = %v，期望 ErrAvatarTooLarge", err)
+	}
+	if len(avatars.Issued()) != 0 {
+		t.Error("超限的声明仍然签发了凭证")
+	}
+}
+
+// 提交核对**真实**字节数：存储侧已经按声明卡过一次，这里核对的是服务端自己的
+// 结论，而核对不过的对象会被删掉。
+func TestCommitAvatarUploadRejectsOversizedObject(t *testing.T) {
+	avatars := objectstore.NewMemoryStore()
 	profiles, store := newTestProfiles(t, testOptions{register: true, avatars: avatars})
 	ctx := context.Background()
 
-	if _, err := profiles.SetAvatar(ctx, subjectA, htmlBytes); !errors.Is(err, ErrAvatarTypeNotAllowed) {
-		t.Fatalf("err = %v，期望 ErrAvatarTypeNotAllowed", err)
+	// 声明一个合法大小，实际却传了超过上限的字节。
+	if _, err := profiles.BeginAvatarUpload(ctx, subjectA, "image/png", 1024); err != nil {
+		t.Fatalf("签发失败: %v", err)
 	}
-	if _, _, ok := avatars.Object(subjectA); ok {
-		t.Error("被拒的字节仍然产生了对象")
-	}
+	avatars.Put(AvatarKey(subjectA), make([]byte, AvatarMaxBytes+1))
 
-	view, err := profiles.Get(ctx, subjectA)
-	if err != nil {
-		t.Fatalf("读取档案失败: %v", err)
+	if _, err := profiles.CommitAvatarUpload(ctx, subjectA); !errors.Is(err, ErrAvatarTooLarge) {
+		t.Fatalf("err = %v，期望 ErrAvatarTooLarge", err)
 	}
-	if view.AvatarURL != "" {
-		t.Errorf("AvatarURL = %q，期望为空", view.AvatarURL)
+	if _, err := avatars.Head(ctx, AvatarKey(subjectA)); !errors.Is(err, objectstore.ErrObjectNotFound) {
+		t.Error("超限的对象没有被删掉")
 	}
+	// 库里也不能留下键：库内是"这个主体有没有头像"的权威。
 	if stored, err := store.Get(ctx, subjectA); err == nil && stored.AvatarKey != "" {
 		t.Errorf("AvatarKey = %q，期望为空", stored.AvatarKey)
 	}
 }
 
-// 超过字节上限即拒绝，且**不产生对象**。
-func TestSetAvatarRejectsTooLarge(t *testing.T) {
-	avatars := NewMemoryAvatarStore()
-	profiles, _ := newTestProfiles(t, testOptions{register: true, avatars: avatars})
-
-	if _, err := profiles.SetAvatar(context.Background(), subjectA, make([]byte, AvatarMaxBytes+1)); !errors.Is(err, ErrAvatarTooLarge) {
-		t.Errorf("err = %v，期望 ErrAvatarTooLarge", err)
-	}
-	if _, _, ok := avatars.Object(subjectA); ok {
-		t.Error("超限的字节仍然产生了对象")
-	}
-}
-
-// 一个主体一个对象键，替换即原地覆盖：不产生孤儿对象。
-func TestSetAvatarReplacesInPlace(t *testing.T) {
-	avatars := NewMemoryAvatarStore()
+// 提交核对存在性：对象不在就报"上传可能没有完成"，而不是把它当成一次成功。
+func TestCommitAvatarUploadRequiresObject(t *testing.T) {
+	avatars := objectstore.NewMemoryStore()
 	profiles, _ := newTestProfiles(t, testOptions{register: true, avatars: avatars})
 	ctx := context.Background()
 
-	if _, err := profiles.SetAvatar(ctx, subjectA, pngBytes); err != nil {
+	if _, err := profiles.BeginAvatarUpload(ctx, subjectA, "image/png", 8); err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	// 刻意不 Put：模拟上传中断。
+	if _, err := profiles.CommitAvatarUpload(ctx, subjectA); !errors.Is(err, ErrAvatarObjectMissing) {
+		t.Errorf("err = %v，期望 ErrAvatarObjectMissing", err)
+	}
+}
+
+// 一个主体一个键，替换即原地覆盖：不产生孤儿对象。
+func TestAvatarUploadReplacesInPlace(t *testing.T) {
+	avatars := objectstore.NewMemoryStore()
+	profiles, _ := newTestProfiles(t, testOptions{register: true, avatars: avatars})
+	ctx := context.Background()
+
+	if _, err := uploadAvatar(t, profiles, avatars, subjectA, "image/png", pngBytes); err != nil {
 		t.Fatalf("首次上传失败: %v", err)
 	}
-	view, err := profiles.SetAvatar(ctx, subjectA, gifBytes)
+	view, err := uploadAvatar(t, profiles, avatars, subjectA, "image/gif", gifBytes)
 	if err != nil {
 		t.Fatalf("替换失败: %v", err)
 	}
 
-	contentType, data, ok := avatars.Object(subjectA)
-	if !ok {
-		t.Fatal("替换之后对象不见了")
+	// 两次签发落在**同一个键**上，因此桶上只有一个对象（对象存储的覆盖写）。
+	issued := avatars.Issued()
+	if len(issued) != 2 {
+		t.Fatalf("签发 %d 次，期望 2 次", len(issued))
 	}
-	if contentType != "image/gif" {
-		t.Errorf("类型 = %q，期望被替换成 image/gif", contentType)
+	if issued[0].Key != issued[1].Key {
+		t.Errorf("两次上传的键不同（%q / %q），替换会产生孤儿对象", issued[0].Key, issued[1].Key)
+	}
+	data, err := avatars.Read(ctx, AvatarKey(subjectA))
+	if err != nil {
+		t.Fatalf("读取对象失败: %v", err)
 	}
 	if len(data) != len(gifBytes) {
 		t.Errorf("字节数 = %d，期望 %d", len(data), len(gifBytes))
@@ -361,7 +449,7 @@ func TestSetAvatarReplacesInPlace(t *testing.T) {
 
 // 删头像幂等：本来就没有头像时也成功。
 func TestClearAvatarIsIdempotent(t *testing.T) {
-	avatars := NewMemoryAvatarStore()
+	avatars := objectstore.NewMemoryStore()
 	profiles, _ := newTestProfiles(t, testOptions{register: true, avatars: avatars})
 	ctx := context.Background()
 
@@ -369,7 +457,7 @@ func TestClearAvatarIsIdempotent(t *testing.T) {
 		t.Errorf("删除一个不存在的头像失败: %v", err)
 	}
 
-	if _, err := profiles.SetAvatar(ctx, subjectA, pngBytes); err != nil {
+	if _, err := uploadAvatar(t, profiles, avatars, subjectA, "image/png", pngBytes); err != nil {
 		t.Fatalf("上传失败: %v", err)
 	}
 	view, err := profiles.ClearAvatar(ctx, subjectA)
@@ -379,21 +467,21 @@ func TestClearAvatarIsIdempotent(t *testing.T) {
 	if view.AvatarURL != "" {
 		t.Errorf("AvatarURL = %q，期望为空", view.AvatarURL)
 	}
-	if _, _, ok := avatars.Object(subjectA); ok {
+	if _, err := avatars.Head(ctx, AvatarKey(subjectA)); !errors.Is(err, objectstore.ErrObjectNotFound) {
 		t.Error("对象没有被删掉")
 	}
 }
 
 // 删头像**不动**昵称与简介：两件事互不相干。
 func TestClearAvatarKeepsText(t *testing.T) {
-	avatars := NewMemoryAvatarStore()
+	avatars := objectstore.NewMemoryStore()
 	profiles, _ := newTestProfiles(t, testOptions{register: true, avatars: avatars})
 	ctx := context.Background()
 
 	if _, err := profiles.Update(ctx, subjectA, "阿拉丁", "一盏灯"); err != nil {
 		t.Fatalf("写入档案失败: %v", err)
 	}
-	if _, err := profiles.SetAvatar(ctx, subjectA, pngBytes); err != nil {
+	if _, err := uploadAvatar(t, profiles, avatars, subjectA, "image/png", pngBytes); err != nil {
 		t.Fatalf("上传失败: %v", err)
 	}
 	view, err := profiles.ClearAvatar(ctx, subjectA)
@@ -408,16 +496,17 @@ func TestClearAvatarKeepsText(t *testing.T) {
 // 地址签发失败**不让整个档案读取失败**：昵称与简介与头像无关，为了一张图
 // 让页头连名字都显示不出来，是拿次要功能去挡主要功能。
 func TestGetDegradesWhenAvatarURLFails(t *testing.T) {
+	avatars := objectstore.NewMemoryStore()
 	profiles, _ := newTestProfiles(t, testOptions{
 		register: true,
-		avatars:  failingAvatarStore{NewMemoryAvatarStore()},
+		avatars:  failingPresignStore{avatars},
 	})
 	ctx := context.Background()
 
 	if _, err := profiles.Update(ctx, subjectA, "阿拉丁", ""); err != nil {
 		t.Fatalf("写入档案失败: %v", err)
 	}
-	if _, err := profiles.SetAvatar(ctx, subjectA, pngBytes); err != nil {
+	if _, err := uploadAvatar(t, profiles, avatars, subjectA, "image/png", pngBytes); err != nil {
 		t.Fatalf("上传失败: %v", err)
 	}
 
@@ -433,12 +522,12 @@ func TestGetDegradesWhenAvatarURLFails(t *testing.T) {
 	}
 }
 
-// failingAvatarStore 的写入成功、地址签发失败，用来验证降级路径。
+// failingPresignStore 的直传一切正常、只有地址签发失败，用来验证降级路径。
 //
-// 它嵌入**指针**而不是值：内存实现里有一个 map，零值那个 map 是 nil，
-// 值嵌入会让写入直接 panic——那样测的就不是降级，而是夹具自己的 bug。
-type failingAvatarStore struct{ *MemoryAvatarStore }
+// 它嵌入**指针**而不是值：内存实现里有一个 map，值嵌入会让写入直接 panic——
+// 那样测的就不是降级，而是夹具自己的 bug。
+type failingPresignStore struct{ *objectstore.MemoryStore }
 
-func (failingAvatarStore) PresignGet(context.Context, string, time.Duration) (string, error) {
+func (failingPresignStore) PresignGet(context.Context, string, time.Duration) (string, error) {
 	return "", errors.New("签发失败")
 }

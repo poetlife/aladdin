@@ -39,7 +39,9 @@ export enum ScopeSource {
   METADATA = 2,
 
   /**
-   * 使用凭证自身绑定的默认作用域。仅用于身份类方法。
+   * 使用凭证自身绑定的默认作用域。用于**自服务类方法**：操作对象只可能是
+   * 调用者自身，作用域不体现在消息体里，也不接受调用方指定（见 profile 与
+   * galaxy 两个服务）。
    *
    * @generated from enum value: SCOPE_SOURCE_CREDENTIAL = 3;
    */

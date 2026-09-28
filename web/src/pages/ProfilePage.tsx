@@ -4,6 +4,7 @@ import { CircleUserRound, ImageUp, Info, Pencil, Trash2 } from 'lucide-react'
 
 import { messageOf } from '../api/errors'
 import { useSession } from '../auth'
+import { describeBytes } from '../format/bytes'
 import { IdentityCard } from '../identity/identity-card'
 import { avatarFallbackInitial, useProfile } from '../profile'
 
@@ -35,6 +36,9 @@ export function ProfilePage(): React.ReactNode {
 
   const [avatarBusy, setAvatarBusy] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
+  // 最近一次失败的文件：留着它，用户点「重试」时能原样再来一次。上传失败
+  // （网络中断、提交报"上传没有完成"）必须有一条可重试的提示，不许静默。
+  const [avatarFailedFile, setAvatarFailedFile] = useState<File | null>(null)
 
   // 进这一页时重取一次：档案在别处可能已经变了；而头像是**短时地址**，
   // 上一次读到的那个可能已经过期（见 docs/design/profile/avatar-storage.md）。
@@ -69,19 +73,25 @@ export function ProfilePage(): React.ReactNode {
     // 早退检查用的是**服务端下发的上限**，不在前端另写一份：写死一份就会与
     // 服务端漂移，而漂移的表现是"前端放行、上传之后被拒"。
     //
-    // 它只是省一次往返，**不是校验**：真正的边界在服务端，那里对字节做嗅探
-    // 与大小判定（见 docs/design/profile/avatar-storage.md）。
+    // 它只是省一次往返，**不是校验**：真正的边界在服务端，那里按上传方声明的
+    // 类型与大小签发策略（见 docs/design/objectstore/README.md）。
     if (profile !== null && file.size > profile.avatarMaxBytes) {
       setAvatarError(`头像不能超过 ${describeBytes(profile.avatarMaxBytes)}`)
+      // 超限重试同一个文件没有意义，不给重试入口。
+      setAvatarFailedFile(null)
       return
     }
 
     setAvatarBusy(true)
     setAvatarError(null)
+    setAvatarFailedFile(null)
     try {
-      await updateAvatar(new Uint8Array(await file.arrayBuffer()))
+      // 类型由上传方声明（file.type）；不在白名单时把服务端的错误原样呈现，
+      // 前端不另写一份白名单判断——服务端才是权威。
+      await updateAvatar(file)
     } catch (err) {
       setAvatarError(messageOf(err))
+      setAvatarFailedFile(file)
     } finally {
       setAvatarBusy(false)
     }
@@ -120,7 +130,7 @@ export function ProfilePage(): React.ReactNode {
         <Alert
           type="error"
           showIcon
-          message="读取档案失败"
+          title="读取档案失败"
           description={error ?? '请稍后重试'}
           action={<Button onClick={() => void reload()}>重试</Button>}
         />
@@ -139,7 +149,18 @@ export function ProfilePage(): React.ReactNode {
         }
       >
         {avatarError !== null && (
-          <Alert type="error" message={avatarError} style={{ marginBottom: 16 }} />
+          <Alert
+            type="error"
+            title={avatarError}
+            action={
+              avatarFailedFile === null ? null : (
+                <Button size="small" onClick={() => void handleAvatarFile(avatarFailedFile)}>
+                  重试
+                </Button>
+              )
+            }
+            style={{ marginBottom: 16 }}
+          />
         )}
         {/* 允许换行：96px 的头像加上一排按钮在手机上一行放不下，
             换行总比让按钮被卡片裁掉强。 */}
@@ -197,9 +218,9 @@ export function ProfilePage(): React.ReactNode {
         }
       >
         {saveError !== null && (
-          <Alert type="error" message={saveError} style={{ marginBottom: 16 }} />
+          <Alert type="error" title={saveError} style={{ marginBottom: 16 }} />
         )}
-        {saved && <Alert type="success" message="已保存" style={{ marginBottom: 16 }} />}
+        {saved && <Alert type="success" title="已保存" style={{ marginBottom: 16 }} />}
 
         <Form<ProfileFormValues>
           form={form}
@@ -238,15 +259,4 @@ export function ProfilePage(): React.ReactNode {
       </Card>
     </Space>
   )
-}
-
-/**
- * 把字节数说成人话，用于提示文案。
- */
-function describeBytes(bytes: number): string {
-  const mib = bytes / (1024 * 1024)
-  if (mib >= 1) {
-    return `${Number.isInteger(mib) ? mib : mib.toFixed(1)} MiB`
-  }
-  return `${Math.round(bytes / 1024)} KB`
 }
