@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { RequirePermission } from './auth'
 import { AppLayout } from './layouts/AppLayout'
 import { AuthCallbackPage } from './pages/AuthCallbackPage'
+import { DeviceApprovalPage } from './pages/DeviceApprovalPage'
 import { ForbiddenPage } from './pages/ForbiddenPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
@@ -41,6 +42,12 @@ export const router = createBrowserRouter([
         children: [
           { path: '/', element: <HomePage /> },
           { path: '/profile', element: <ProfilePage /> },
+          // 命令行登录的批准页。它只要**已认证**：零权限的主体也要能批准
+          // 自己的登录，因此不挂在任何权限码之下。
+          //
+          // 地址由服务端拼进对外地址交给终端（internal/server 的
+          // DeviceApprovalPath），改这里的路径要同时改那里。
+          { path: '/device', element: <DeviceApprovalPage /> },
           {
             element: <RequirePermission require={[PermissionCodes.RbacRoleRead]} />,
             children: [{ path: '/roles', element: <RolesPage /> }],

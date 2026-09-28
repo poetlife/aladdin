@@ -9,7 +9,9 @@
 
 两者都不自己定义"什么算通过"，而是共同调用 [gate.yml](../.github/workflows/gate.yml)。
 
-**tag 必须严格形如 `vX.Y.Z`**。`tags: ['v*']` 只是粗筛，`release.yml` 的 `validate` 步骤用 `^v[0-9]+\.[0-9]+\.[0-9]+$` 再拦一道：形如 `v1.0.0-rc.1` 的 tag 会被拒绝，什么都不会产出。
+**tag 必须严格形如 `vX.Y.Z`，且不接受前导零**（`v01.2.3` 不合法）。`tags: ['v*']` 只是粗筛，`release.yml` 的 `validate` 步骤用 `^v(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$` 再拦一道：形如 `v1.0.0-rc.1` 的 tag 会被拒绝，什么都不会产出。
+
+这个形状**必须与客户端解析能接受的一模一样**（[internal/upgrade/version.go](../internal/upgrade/version.go) 的 `ParseVersion`，见 [design/cli/self-update.md](design/cli/self-update.md)）。放开一点就会发布一个客户端解析不了的版本号，而它的表现是：`releases/latest` 指向它之后，**全体用户的自更新一直失败**，直到出现一个形态干净的 tag。前导零正是这样一处——它让同一个版本有两种写法，严格比较不接受它。
 
 ## 门禁（Gate）
 
@@ -74,6 +76,7 @@
 - **前端单独打包**。服务端不内嵌前端（Go 侧没有 `go:embed`），三端独立部署，所以前端有自己的产物。
 - **交叉编译带 `-trimpath` 与 `CGO_ENABLED=0`**，产物可复现且不依赖动态库。
 - 前端产物名带版本号：前端界面不显示版本，`web/dist` 也不进 Go 二进制，文件名是它唯一的版本载体。
+- **命名与 `SHA256SUMS` 从此是对外契约。** 命令行的自更新会解析两者（见 [design/cli/self-update.md](design/cli/self-update.md)）：包名形如 `aladdin_<tag>_<os>_<arch>.tar.gz`，校验和清单是 `<摘要>  <文件名>` 的标准两列格式。改命名、改清单格式、或把二进制从包根挪走，都会让**已经装出去的命令行**失去升级能力——而它们的表现是使用者那一侧的一句"升级失败"，不会在这里报任何错。
 
 ## 保留最近 5 个版本
 
@@ -91,6 +94,8 @@
 两次发版由 `concurrency: group: release` 串行，避免清理时读到过期的列表。
 
 > 清理写在 `release.yml` 里，而不是单独做一个 `on: release: published` 的工作流：用 `GITHUB_TOKEN` 创建的 Release **不会**触发其他工作流（GitHub 防递归的规定），那种写法对本流水线自己发的 Release 根本不生效。
+
+**这条策略对命令行自更新的含义**：产物地址随 Release 一起消失（tag 还在，但 `…/releases/download/<tag>/<产物>` 会 404）。因此自更新只面向 **latest**，不提供"升级到某个指定旧版本"的形态——那会在第 6 次发版之后开始随机失败，而失败与用户的版本落差相关，是个很难复现的表象。
 
 ## 本地怎么发版
 

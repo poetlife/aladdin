@@ -137,7 +137,11 @@ func newIdentityServiceOn(
 		Channels:        identity.NewRegistry(channels...),
 		Logger:          logger,
 		PendingBindings: newPendingBindings(time.Now, false),
-		LifecycleGate:   &subjectLifecycleGate{},
+		DeviceLogins:    newDeviceLogins(time.Now),
+		// 这里一律启用命令行登录：需要"未启用"的用例自己装配一个不带它的
+		// 认证面（见 device_logins_test.go）。
+		DeviceApprovalURL: testPublicBaseURL + DeviceApprovalPath,
+		LifecycleGate:     &subjectLifecycleGate{},
 	})
 }
 

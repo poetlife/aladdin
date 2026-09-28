@@ -2,8 +2,8 @@
 // @generated from file aladdin/identity/v1/identity.proto (package aladdin.identity.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_aladdin_rbac_v1_annotations } from "../../rbac/v1/annotations_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/identity/v1/identity.proto.
  */
 export const file_aladdin_identity_v1_identity: GenFile = /*@__PURE__*/
-  fileDesc("CiJhbGFkZGluL2lkZW50aXR5L3YxL2lkZW50aXR5LnByb3RvEhNhbGFkZGluLmlkZW50aXR5LnYxIskBCgxMb2dpblJlcXVlc3QSOwoIcGFzc3dvcmQYASABKAsyJy5hbGFkZGluLmlkZW50aXR5LnYxLlBhc3N3b3JkQ3JlZGVudGlhbEgAEjUKBXRva2VuGAIgASgLMiQuYWxhZGRpbi5pZGVudGl0eS52MS5Ub2tlbkNyZWRlbnRpYWxIABI3CgZnb29nbGUYAyABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIjgKElBhc3N3b3JkQ3JlZGVudGlhbBIQCgh1c2VybmFtZRgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSIgCg9Ub2tlbkNyZWRlbnRpYWwSDQoFdG9rZW4YASABKAkiJAoQR29vZ2xlQ3JlZGVudGlhbBIQCghpZF90b2tlbhgBIAEoCSIXChVHZXRBdXRoTWV0aG9kc1JlcXVlc3QiSgoWR2V0QXV0aE1ldGhvZHNSZXNwb25zZRIwCgdtZXRob2RzGAEgAygLMh8uYWxhZGRpbi5pZGVudGl0eS52MS5BdXRoTWV0aG9kIi8KCkF1dGhNZXRob2QSDgoGc291cmNlGAEgASgJEhEKCWNsaWVudF9pZBgCIAEoCSI5Cg1Mb2dpblJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRISCgpleHBpcmVzX2F0GAIgASgJIiYKDlJlZnJlc2hSZXF1ZXN0EhQKDGFjY2Vzc190b2tlbhgBIAEoCSI7Cg9SZWZyZXNoUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfYXQYAiABKAkiDwoNV2hvQW1JUmVxdWVzdCJRCg5XaG9BbUlSZXNwb25zZRISCgpzdWJqZWN0X2lkGAEgASgJEhQKDHN1YmplY3RfdHlwZRgCIAEoCRIVCg1kZWZhdWx0X3Njb3BlGAMgASgJIi0KHEdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QSDQoFc2NvcGUYASABKAkiQwodR2V0U2Vzc2lvblBlcm1pc3Npb25zUmVzcG9uc2USDQoFc2NvcGUYASABKAkSEwoLcGVybWlzc2lvbnMYAiADKAkiXAoTQmluZElkZW50aXR5UmVxdWVzdBI3CgZnb29nbGUYASABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIlwKFEJpbmRJZGVudGl0eVJlc3BvbnNlEjEKCmlkZW50aXRpZXMYASADKAsyHS5hbGFkZGluLmlkZW50aXR5LnYxLklkZW50aXR5EhEKCXJlY2xhaW1lZBgCIAEoCCIwCh5Db21wbGV0ZUlkZW50aXR5QmluZGluZ1JlcXVlc3QSDgoGc291cmNlGAEgASgJImcKH0NvbXBsZXRlSWRlbnRpdHlCaW5kaW5nUmVzcG9uc2USMQoKaWRlbnRpdGllcxgBIAMoCzIdLmFsYWRkaW4uaWRlbnRpdHkudjEuSWRlbnRpdHkSEQoJcmVjbGFpbWVkGAIgASgIIjwKFVVuYmluZElkZW50aXR5UmVxdWVzdBIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkiSwoWVW5iaW5kSWRlbnRpdHlSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSIXChVMaXN0SWRlbnRpdGllc1JlcXVlc3QiSwoWTGlzdElkZW50aXRpZXNSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSJACghJZGVudGl0eRIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkSDwoHZGlzcGxheRgDIAEoCTL2BwoPSWRlbnRpdHlTZXJ2aWNlElQKBUxvZ2luEiEuYWxhZGRpbi5pZGVudGl0eS52MS5Mb2dpblJlcXVlc3QaIi5hbGFkZGluLmlkZW50aXR5LnYxLkxvZ2luUmVzcG9uc2UiBJiIJwESWgoHUmVmcmVzaBIjLmFsYWRkaW4uaWRlbnRpdHkudjEuUmVmcmVzaFJlcXVlc3QaJC5hbGFkZGluLmlkZW50aXR5LnYxLlJlZnJlc2hSZXNwb25zZSIEmIgnARJvCg5HZXRBdXRoTWV0aG9kcxIqLmFsYWRkaW4uaWRlbnRpdHkudjEuR2V0QXV0aE1ldGhvZHNSZXF1ZXN0GisuYWxhZGRpbi5pZGVudGl0eS52MS5HZXRBdXRoTWV0aG9kc1Jlc3BvbnNlIgSYiCcBElsKBldob0FtSRIiLmFsYWRkaW4uaWRlbnRpdHkudjEuV2hvQW1JUmVxdWVzdBojLmFsYWRkaW4uaWRlbnRpdHkudjEuV2hvQW1JUmVzcG9uc2UiCJCIJwOgiCcBEogBChVHZXRTZXNzaW9uUGVybWlzc2lvbnMSMS5hbGFkZGluLmlkZW50aXR5LnYxLkdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QaMi5hbGFkZGluLmlkZW50aXR5LnYxLkdldFNlc3Npb25QZXJtaXNzaW9uc1Jlc3BvbnNlIgiQiCcDoIgnARJpCgxCaW5kSWRlbnRpdHkSKC5hbGFkZGluLmlkZW50aXR5LnYxLkJpbmRJZGVudGl0eVJlcXVlc3QaKS5hbGFkZGluLmlkZW50aXR5LnYxLkJpbmRJZGVudGl0eVJlc3BvbnNlIgSgiCcBEm8KDlVuYmluZElkZW50aXR5EiouYWxhZGRpbi5pZGVudGl0eS52MS5VbmJpbmRJZGVudGl0eVJlcXVlc3QaKy5hbGFkZGluLmlkZW50aXR5LnYxLlVuYmluZElkZW50aXR5UmVzcG9uc2UiBKCIJwESigEKF0NvbXBsZXRlSWRlbnRpdHlCaW5kaW5nEjMuYWxhZGRpbi5pZGVudGl0eS52MS5Db21wbGV0ZUlkZW50aXR5QmluZGluZ1JlcXVlc3QaNC5hbGFkZGluLmlkZW50aXR5LnYxLkNvbXBsZXRlSWRlbnRpdHlCaW5kaW5nUmVzcG9uc2UiBKCIJwESbwoOTGlzdElkZW50aXRpZXMSKi5hbGFkZGluLmlkZW50aXR5LnYxLkxpc3RJZGVudGl0aWVzUmVxdWVzdBorLmFsYWRkaW4uaWRlbnRpdHkudjEuTGlzdElkZW50aXRpZXNSZXNwb25zZSIEoIgnAUJEWkJnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL2lkZW50aXR5L3YxO2lkZW50aXR5djFiBnByb3RvMw", [file_aladdin_rbac_v1_annotations]);
+  fileDesc("CiJhbGFkZGluL2lkZW50aXR5L3YxL2lkZW50aXR5LnByb3RvEhNhbGFkZGluLmlkZW50aXR5LnYxIskBCgxMb2dpblJlcXVlc3QSOwoIcGFzc3dvcmQYASABKAsyJy5hbGFkZGluLmlkZW50aXR5LnYxLlBhc3N3b3JkQ3JlZGVudGlhbEgAEjUKBXRva2VuGAIgASgLMiQuYWxhZGRpbi5pZGVudGl0eS52MS5Ub2tlbkNyZWRlbnRpYWxIABI3CgZnb29nbGUYAyABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIjgKElBhc3N3b3JkQ3JlZGVudGlhbBIQCgh1c2VybmFtZRgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSIgCg9Ub2tlbkNyZWRlbnRpYWwSDQoFdG9rZW4YASABKAkiJAoQR29vZ2xlQ3JlZGVudGlhbBIQCghpZF90b2tlbhgBIAEoCSIXChVHZXRBdXRoTWV0aG9kc1JlcXVlc3QiaAoWR2V0QXV0aE1ldGhvZHNSZXNwb25zZRIwCgdtZXRob2RzGAEgAygLMh8uYWxhZGRpbi5pZGVudGl0eS52MS5BdXRoTWV0aG9kEhwKFGRldmljZV9sb2dpbl9lbmFibGVkGAIgASgIIi8KCkF1dGhNZXRob2QSDgoGc291cmNlGAEgASgJEhEKCWNsaWVudF9pZBgCIAEoCSI5Cg1Mb2dpblJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRISCgpleHBpcmVzX2F0GAIgASgJIiYKDlJlZnJlc2hSZXF1ZXN0EhQKDGFjY2Vzc190b2tlbhgBIAEoCSI7Cg9SZWZyZXNoUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfYXQYAiABKAkiDwoNV2hvQW1JUmVxdWVzdCJRCg5XaG9BbUlSZXNwb25zZRISCgpzdWJqZWN0X2lkGAEgASgJEhQKDHN1YmplY3RfdHlwZRgCIAEoCRIVCg1kZWZhdWx0X3Njb3BlGAMgASgJIi0KHEdldFNlc3Npb25QZXJtaXNzaW9uc1JlcXVlc3QSDQoFc2NvcGUYASABKAkiQwodR2V0U2Vzc2lvblBlcm1pc3Npb25zUmVzcG9uc2USDQoFc2NvcGUYASABKAkSEwoLcGVybWlzc2lvbnMYAiADKAkiXAoTQmluZElkZW50aXR5UmVxdWVzdBI3CgZnb29nbGUYASABKAsyJS5hbGFkZGluLmlkZW50aXR5LnYxLkdvb2dsZUNyZWRlbnRpYWxIAEIMCgpjcmVkZW50aWFsIlwKFEJpbmRJZGVudGl0eVJlc3BvbnNlEjEKCmlkZW50aXRpZXMYASADKAsyHS5hbGFkZGluLmlkZW50aXR5LnYxLklkZW50aXR5EhEKCXJlY2xhaW1lZBgCIAEoCCIwCh5Db21wbGV0ZUlkZW50aXR5QmluZGluZ1JlcXVlc3QSDgoGc291cmNlGAEgASgJImcKH0NvbXBsZXRlSWRlbnRpdHlCaW5kaW5nUmVzcG9uc2USMQoKaWRlbnRpdGllcxgBIAMoCzIdLmFsYWRkaW4uaWRlbnRpdHkudjEuSWRlbnRpdHkSEQoJcmVjbGFpbWVkGAIgASgIIjwKFVVuYmluZElkZW50aXR5UmVxdWVzdBIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkiSwoWVW5iaW5kSWRlbnRpdHlSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSIXChVMaXN0SWRlbnRpdGllc1JlcXVlc3QiSwoWTGlzdElkZW50aXRpZXNSZXNwb25zZRIxCgppZGVudGl0aWVzGAEgAygLMh0uYWxhZGRpbi5pZGVudGl0eS52MS5JZGVudGl0eSJACghJZGVudGl0eRIOCgZzb3VyY2UYASABKAkSEwoLZXh0ZXJuYWxfaWQYAiABKAkSDwoHZGlzcGxheRgDIAEoCSIZChdTdGFydERldmljZUxvZ2luUmVxdWVzdCKKAQoYU3RhcnREZXZpY2VMb2dpblJlc3BvbnNlEhMKC2RldmljZV9jb2RlGAEgASgJEhEKCXVzZXJfY29kZRgCIAEoCRIYChB2ZXJpZmljYXRpb25fdXJpGAMgASgJEhgKEGludGVydmFsX3NlY29uZHMYBCABKAUSEgoKZXhwaXJlc19hdBgFIAEoCSItChZQb2xsRGV2aWNlTG9naW5SZXF1ZXN0EhMKC2RldmljZV9jb2RlGAEgASgJInkKF1BvbGxEZXZpY2VMb2dpblJlc3BvbnNlEjQKBXN0YXRlGAEgASgOMiUuYWxhZGRpbi5pZGVudGl0eS52MS5EZXZpY2VMb2dpblN0YXRlEhQKDGFjY2Vzc190b2tlbhgCIAEoCRISCgpleHBpcmVzX2F0GAMgASgJIi4KGUFwcHJvdmVEZXZpY2VMb2dpblJlcXVlc3QSEQoJdXNlcl9jb2RlGAEgASgJIhwKGkFwcHJvdmVEZXZpY2VMb2dpblJlc3BvbnNlIisKFkRlbnlEZXZpY2VMb2dpblJlcXVlc3QSEQoJdXNlcl9jb2RlGAEgASgJIhkKF0RlbnlEZXZpY2VMb2dpblJlc3BvbnNlKrYBChBEZXZpY2VMb2dpblN0YXRlEiIKHkRFVklDRV9MT0dJTl9TVEFURV9VTlNQRUNJRklFRBAAEh4KGkRFVklDRV9MT0dJTl9TVEFURV9QRU5ESU5HEAESHwobREVWSUNFX0xPR0lOX1NUQVRFX0FQUFJPVkVEEAISHQoZREVWSUNFX0xPR0lOX1NUQVRFX0RFTklFRBADEh4KGkRFVklDRV9MT0dJTl9TVEFURV9FWFBJUkVEEAQy0gsKD0lkZW50aXR5U2VydmljZRJUCgVMb2dpbhIhLmFsYWRkaW4uaWRlbnRpdHkudjEuTG9naW5SZXF1ZXN0GiIuYWxhZGRpbi5pZGVudGl0eS52MS5Mb2dpblJlc3BvbnNlIgSYiCcBEloKB1JlZnJlc2gSIy5hbGFkZGluLmlkZW50aXR5LnYxLlJlZnJlc2hSZXF1ZXN0GiQuYWxhZGRpbi5pZGVudGl0eS52MS5SZWZyZXNoUmVzcG9uc2UiBJiIJwESbwoOR2V0QXV0aE1ldGhvZHMSKi5hbGFkZGluLmlkZW50aXR5LnYxLkdldEF1dGhNZXRob2RzUmVxdWVzdBorLmFsYWRkaW4uaWRlbnRpdHkudjEuR2V0QXV0aE1ldGhvZHNSZXNwb25zZSIEmIgnARJbCgZXaG9BbUkSIi5hbGFkZGluLmlkZW50aXR5LnYxLldob0FtSVJlcXVlc3QaIy5hbGFkZGluLmlkZW50aXR5LnYxLldob0FtSVJlc3BvbnNlIgiQiCcDoIgnARKIAQoVR2V0U2Vzc2lvblBlcm1pc3Npb25zEjEuYWxhZGRpbi5pZGVudGl0eS52MS5HZXRTZXNzaW9uUGVybWlzc2lvbnNSZXF1ZXN0GjIuYWxhZGRpbi5pZGVudGl0eS52MS5HZXRTZXNzaW9uUGVybWlzc2lvbnNSZXNwb25zZSIIkIgnA6CIJwESaQoMQmluZElkZW50aXR5EiguYWxhZGRpbi5pZGVudGl0eS52MS5CaW5kSWRlbnRpdHlSZXF1ZXN0GikuYWxhZGRpbi5pZGVudGl0eS52MS5CaW5kSWRlbnRpdHlSZXNwb25zZSIEoIgnARJvCg5VbmJpbmRJZGVudGl0eRIqLmFsYWRkaW4uaWRlbnRpdHkudjEuVW5iaW5kSWRlbnRpdHlSZXF1ZXN0GisuYWxhZGRpbi5pZGVudGl0eS52MS5VbmJpbmRJZGVudGl0eVJlc3BvbnNlIgSgiCcBEooBChdDb21wbGV0ZUlkZW50aXR5QmluZGluZxIzLmFsYWRkaW4uaWRlbnRpdHkudjEuQ29tcGxldGVJZGVudGl0eUJpbmRpbmdSZXF1ZXN0GjQuYWxhZGRpbi5pZGVudGl0eS52MS5Db21wbGV0ZUlkZW50aXR5QmluZGluZ1Jlc3BvbnNlIgSgiCcBEm8KDkxpc3RJZGVudGl0aWVzEiouYWxhZGRpbi5pZGVudGl0eS52MS5MaXN0SWRlbnRpdGllc1JlcXVlc3QaKy5hbGFkZGluLmlkZW50aXR5LnYxLkxpc3RJZGVudGl0aWVzUmVzcG9uc2UiBKCIJwESdQoQU3RhcnREZXZpY2VMb2dpbhIsLmFsYWRkaW4uaWRlbnRpdHkudjEuU3RhcnREZXZpY2VMb2dpblJlcXVlc3QaLS5hbGFkZGluLmlkZW50aXR5LnYxLlN0YXJ0RGV2aWNlTG9naW5SZXNwb25zZSIEmIgnARJyCg9Qb2xsRGV2aWNlTG9naW4SKy5hbGFkZGluLmlkZW50aXR5LnYxLlBvbGxEZXZpY2VMb2dpblJlcXVlc3QaLC5hbGFkZGluLmlkZW50aXR5LnYxLlBvbGxEZXZpY2VMb2dpblJlc3BvbnNlIgSYiCcBEnsKEkFwcHJvdmVEZXZpY2VMb2dpbhIuLmFsYWRkaW4uaWRlbnRpdHkudjEuQXBwcm92ZURldmljZUxvZ2luUmVxdWVzdBovLmFsYWRkaW4uaWRlbnRpdHkudjEuQXBwcm92ZURldmljZUxvZ2luUmVzcG9uc2UiBKCIJwEScgoPRGVueURldmljZUxvZ2luEisuYWxhZGRpbi5pZGVudGl0eS52MS5EZW55RGV2aWNlTG9naW5SZXF1ZXN0GiwuYWxhZGRpbi5pZGVudGl0eS52MS5EZW55RGV2aWNlTG9naW5SZXNwb25zZSIEoIgnAUJEWkJnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL2lkZW50aXR5L3YxO2lkZW50aXR5djFiBnByb3RvMw", [file_aladdin_rbac_v1_annotations]);
 
 /**
  * @generated from message aladdin.identity.v1.LoginRequest
@@ -147,6 +147,17 @@ export type GetAuthMethodsResponse = Message<"aladdin.identity.v1.GetAuthMethods
    * @generated from field: repeated aladdin.identity.v1.AuthMethod methods = 1;
    */
   methods: AuthMethod[];
+
+  /**
+   * 命令行的设备码登录是否可用。
+   *
+   * 它**不是一个渠道**，因此不在 methods 里：它不引入任何渠道身份，只是把
+   * 一个已有主体的会话交给终端。不可用时命令行据此不去发起，而不是发起了
+   * 再收到一次"未实现"。
+   *
+   * @generated from field: bool device_login_enabled = 2;
+   */
+  deviceLoginEnabled: boolean;
 };
 
 /**
@@ -557,6 +568,233 @@ export const IdentitySchema: GenMessage<Identity> = /*@__PURE__*/
   messageDesc(file_aladdin_identity_v1_identity, 22);
 
 /**
+ * @generated from message aladdin.identity.v1.StartDeviceLoginRequest
+ */
+export type StartDeviceLoginRequest = Message<"aladdin.identity.v1.StartDeviceLoginRequest"> & {
+};
+
+/**
+ * Describes the message aladdin.identity.v1.StartDeviceLoginRequest.
+ * Use `create(StartDeviceLoginRequestSchema)` to create a new message.
+ */
+export const StartDeviceLoginRequestSchema: GenMessage<StartDeviceLoginRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 23);
+
+/**
+ * StartDeviceLoginResponse 同时承载**两份凭据**与一个给人用的地址。
+ *
+ * @generated from message aladdin.identity.v1.StartDeviceLoginResponse
+ */
+export type StartDeviceLoginResponse = Message<"aladdin.identity.v1.StartDeviceLoginResponse"> & {
+  /**
+   * 设备码：终端保管，用它轮询。不可人工输入，因此没有任何可读性要求。
+   * **不得进入日志**：它能换来一份会话。
+   *
+   * @generated from field: string device_code = 1;
+   */
+  deviceCode: string;
+
+  /**
+   * 短码：给人读、给人打。大小写不敏感，连字符可有可无。
+   * 它与设备码同级——能换来一次批准，因此**不得进入日志**。
+   *
+   * @generated from field: string user_code = 2;
+   */
+  userCode: string;
+
+  /**
+   * 批准页地址。**不含短码**：短码要由人与终端上显示的比对，把短码放进地址
+   * 会消掉这次核对，而那正是"受害者把终端登进攻击者账号"的唯一防线。
+   *
+   * @generated from field: string verification_uri = 3;
+   */
+  verificationUri: string;
+
+  /**
+   * 建议的轮询间隔（秒）。
+   *
+   * @generated from field: int32 interval_seconds = 4;
+   */
+  intervalSeconds: number;
+
+  /**
+   * ISO 8601 UTC。终端的轮询不得越过它。
+   *
+   * @generated from field: string expires_at = 5;
+   */
+  expiresAt: string;
+};
+
+/**
+ * Describes the message aladdin.identity.v1.StartDeviceLoginResponse.
+ * Use `create(StartDeviceLoginResponseSchema)` to create a new message.
+ */
+export const StartDeviceLoginResponseSchema: GenMessage<StartDeviceLoginResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 24);
+
+/**
+ * @generated from message aladdin.identity.v1.PollDeviceLoginRequest
+ */
+export type PollDeviceLoginRequest = Message<"aladdin.identity.v1.PollDeviceLoginRequest"> & {
+  /**
+   * 服务端在发起时交给终端的设备码。
+   *
+   * @generated from field: string device_code = 1;
+   */
+  deviceCode: string;
+};
+
+/**
+ * Describes the message aladdin.identity.v1.PollDeviceLoginRequest.
+ * Use `create(PollDeviceLoginRequestSchema)` to create a new message.
+ */
+export const PollDeviceLoginRequestSchema: GenMessage<PollDeviceLoginRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 25);
+
+/**
+ * @generated from message aladdin.identity.v1.PollDeviceLoginResponse
+ */
+export type PollDeviceLoginResponse = Message<"aladdin.identity.v1.PollDeviceLoginResponse"> & {
+  /**
+   * @generated from field: aladdin.identity.v1.DeviceLoginState state = 1;
+   */
+  state: DeviceLoginState;
+
+  /**
+   * 仅 state 为 APPROVED 时存在：会话凭证与它的过期时间。
+   *
+   * @generated from field: string access_token = 2;
+   */
+  accessToken: string;
+
+  /**
+   * @generated from field: string expires_at = 3;
+   */
+  expiresAt: string;
+};
+
+/**
+ * Describes the message aladdin.identity.v1.PollDeviceLoginResponse.
+ * Use `create(PollDeviceLoginResponseSchema)` to create a new message.
+ */
+export const PollDeviceLoginResponseSchema: GenMessage<PollDeviceLoginResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 26);
+
+/**
+ * @generated from message aladdin.identity.v1.ApproveDeviceLoginRequest
+ */
+export type ApproveDeviceLoginRequest = Message<"aladdin.identity.v1.ApproveDeviceLoginRequest"> & {
+  /**
+   * 要批准的短码。**不是归属输入**——目标主体只取当前凭证代表的主体。
+   *
+   * @generated from field: string user_code = 1;
+   */
+  userCode: string;
+};
+
+/**
+ * Describes the message aladdin.identity.v1.ApproveDeviceLoginRequest.
+ * Use `create(ApproveDeviceLoginRequestSchema)` to create a new message.
+ */
+export const ApproveDeviceLoginRequestSchema: GenMessage<ApproveDeviceLoginRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 27);
+
+/**
+ * @generated from message aladdin.identity.v1.ApproveDeviceLoginResponse
+ */
+export type ApproveDeviceLoginResponse = Message<"aladdin.identity.v1.ApproveDeviceLoginResponse"> & {
+};
+
+/**
+ * Describes the message aladdin.identity.v1.ApproveDeviceLoginResponse.
+ * Use `create(ApproveDeviceLoginResponseSchema)` to create a new message.
+ */
+export const ApproveDeviceLoginResponseSchema: GenMessage<ApproveDeviceLoginResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 28);
+
+/**
+ * @generated from message aladdin.identity.v1.DenyDeviceLoginRequest
+ */
+export type DenyDeviceLoginRequest = Message<"aladdin.identity.v1.DenyDeviceLoginRequest"> & {
+  /**
+   * @generated from field: string user_code = 1;
+   */
+  userCode: string;
+};
+
+/**
+ * Describes the message aladdin.identity.v1.DenyDeviceLoginRequest.
+ * Use `create(DenyDeviceLoginRequestSchema)` to create a new message.
+ */
+export const DenyDeviceLoginRequestSchema: GenMessage<DenyDeviceLoginRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 29);
+
+/**
+ * @generated from message aladdin.identity.v1.DenyDeviceLoginResponse
+ */
+export type DenyDeviceLoginResponse = Message<"aladdin.identity.v1.DenyDeviceLoginResponse"> & {
+};
+
+/**
+ * Describes the message aladdin.identity.v1.DenyDeviceLoginResponse.
+ * Use `create(DenyDeviceLoginResponseSchema)` to create a new message.
+ */
+export const DenyDeviceLoginResponseSchema: GenMessage<DenyDeviceLoginResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_identity_v1_identity, 30);
+
+/**
+ * DeviceLoginState 是一次轮询的结果。
+ *
+ * 它是一个**状态**而不是一组错误码：调用方据此决定继续等、停下、还是重新
+ * 发起。四种取值互斥且穷尽——分不出类别的取值会让调用方只能猜。
+ *
+ * @generated from enum aladdin.identity.v1.DeviceLoginState
+ */
+export enum DeviceLoginState {
+  /**
+   * @generated from enum value: DEVICE_LOGIN_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * 尚未批准。继续等。
+   *
+   * @generated from enum value: DEVICE_LOGIN_STATE_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * 已批准。**只有这一次**返回凭证；此后同一份设备码只会得到 EXPIRED。
+   *
+   * @generated from enum value: DEVICE_LOGIN_STATE_APPROVED = 2;
+   */
+  APPROVED = 2,
+
+  /**
+   * 使用者拒绝了。
+   *
+   * @generated from enum value: DEVICE_LOGIN_STATE_DENIED = 3;
+   */
+  DENIED = 3,
+
+  /**
+   * 已过期、已交付、或从未存在。对调用方是同一件事：重新发起。
+   *
+   * 三者合并为一个取值是刻意的：区分它们只会把一次失败的轮询变成对
+   * "这份设备码是否曾经有效"的探测。
+   *
+   * @generated from enum value: DEVICE_LOGIN_STATE_EXPIRED = 4;
+   */
+  EXPIRED = 4,
+}
+
+/**
+ * Describes the enum aladdin.identity.v1.DeviceLoginState.
+ */
+export const DeviceLoginStateSchema: GenEnum<DeviceLoginState> = /*@__PURE__*/
+  enumDesc(file_aladdin_identity_v1_identity, 0);
+
+/**
  * IdentityService 是身份认证面。
  *
  * 边界：本服务只做认证（你是谁）。判定（你能做什么）由 RBAC 负责。
@@ -686,6 +924,69 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof ListIdentitiesRequestSchema;
     output: typeof ListIdentitiesResponseSchema;
+  },
+  /**
+   * 发起一次命令行的设备码登录。
+   *
+   * 公开是必须的：调用方正是那个还没登录的终端。它拿到一个给人看的短码与
+   * 一个给终端保管的设备码，后者是这台设备在批准之前的唯一凭据来源。
+   *
+   * 未配置对外地址时**本路径整体缺席**，返回"未实现"而不是"设备码无效"——
+   * 把配置缺失说成凭证问题，会让排障的人去查终端拿的是什么。
+   *
+   * @generated from rpc aladdin.identity.v1.IdentityService.StartDeviceLogin
+   */
+  startDeviceLogin: {
+    methodKind: "unary";
+    input: typeof StartDeviceLoginRequestSchema;
+    output: typeof StartDeviceLoginResponseSchema;
+  },
+  /**
+   * 轮询一次设备码登录的结果。
+   *
+   * 公开，理由同上。**结果是一个状态，不是一个错误**：把"还没批准"表达成
+   * 一个错误码，会让"这一次轮询没结果"与"你未认证"变成同一个结论，而它们
+   * 该有完全不同的走向——前者该继续等，后者该重新登录。
+   *
+   * 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
+   * 非已批准的状态（见 docs/design/identity/device-login.md）。
+   *
+   * @generated from rpc aladdin.identity.v1.IdentityService.PollDeviceLogin
+   */
+  pollDeviceLogin: {
+    methodKind: "unary";
+    input: typeof PollDeviceLoginRequestSchema;
+    output: typeof PollDeviceLoginResponseSchema;
+  },
+  /**
+   * 批准一次设备码登录。
+   *
+   * **归属只由当前凭证决定**：请求里只有短码，没有主体——不存在"替某个主体
+   * 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定
+   * 的账号（见 docs/design/identity/device-login.md）。
+   *
+   * 交付的会话其作用域是**当前主体既有的默认作用域快照**：本方法不为这次
+   * 登录新算作用域，也不接受请求里给的作用域，因此不需要声明作用域来源。
+   *
+   * @generated from rpc aladdin.identity.v1.IdentityService.ApproveDeviceLogin
+   */
+  approveDeviceLogin: {
+    methodKind: "unary";
+    input: typeof ApproveDeviceLoginRequestSchema;
+    output: typeof ApproveDeviceLoginResponseSchema;
+  },
+  /**
+   * 拒绝一次设备码登录。
+   *
+   * 与批准同一条归属规则。拒绝是**给使用者的出口**：短码被误输入、或这次
+   * 登录不是自己发起的，人需要一个明确的"不"。
+   *
+   * @generated from rpc aladdin.identity.v1.IdentityService.DenyDeviceLogin
+   */
+  denyDeviceLogin: {
+    methodKind: "unary";
+    input: typeof DenyDeviceLoginRequestSchema;
+    output: typeof DenyDeviceLoginResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_aladdin_identity_v1_identity, 0);

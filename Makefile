@@ -8,6 +8,11 @@ BIN_DIR     := bin
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X main.version=$(VERSION)
 
+# 发布产物比本机构建多带一个标记，自更新据此区分两者（见 internal/upgrade）。
+# 版本号形态单独作不了判据：在恰好处于某个 tag 的干净工作树上，
+# `git describe --tags` 输出的就是一个合法的 vX.Y.Z。
+RELEASE_LDFLAGS := $(LDFLAGS) -X main.released=true
+
 # 发布产物的形态（make release-build）。发版时 VERSION 由 tag 传入，
 # 与 LDFLAGS 共用同一处版本注入，不另起一份 -X。
 DIST_DIR    := dist
@@ -147,7 +152,7 @@ release-build: web-build ## 产出发布产物到 dist/（跨平台二进制、�
 		for b in $(GO_BINS); do \
 			echo ">>> $$os/$$arch $$b"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 \
-				go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST_DIR)/$$b ./cmd/$$b || exit 1; \
+				go build -trimpath -ldflags '$(RELEASE_LDFLAGS)' -o $(DIST_DIR)/$$b ./cmd/$$b || exit 1; \
 			tar -czf $(DIST_DIR)/$${b}_$(VERSION)_$${os}_$${arch}.tar.gz -C $(DIST_DIR) $$b || exit 1; \
 			rm $(DIST_DIR)/$$b; \
 		done; \

@@ -89,6 +89,49 @@ service IdentityService {
   rpc ListIdentities(ListIdentitiesRequest) returns (ListIdentitiesResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
   }
+
+  // 发起一次命令行的设备码登录。
+  //
+  // 公开是必须的：调用方正是那个还没登录的终端。它拿到一个给人看的短码与
+  // 一个给终端保管的设备码，后者是这台设备在批准之前的唯一凭据来源。
+  //
+  // 未配置对外地址时**本路径整体缺席**，返回"未实现"而不是"设备码无效"——
+  // 把配置缺失说成凭证问题，会让排障的人去查终端拿的是什么。
+  rpc StartDeviceLogin(StartDeviceLoginRequest) returns (StartDeviceLoginResponse) {
+    option (aladdin.rbac.v1.public) = true;
+  }
+
+  // 轮询一次设备码登录的结果。
+  //
+  // 公开，理由同上。**结果是一个状态，不是一个错误**：把"还没批准"表达成
+  // 一个错误码，会让"这一次轮询没结果"与"你未认证"变成同一个结论，而它们
+  // 该有完全不同的走向——前者该继续等，后者该重新登录。
+  //
+  // 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
+  // 非已批准的状态（见 docs/design/identity/device-login.md）。
+  rpc PollDeviceLogin(PollDeviceLoginRequest) returns (PollDeviceLoginResponse) {
+    option (aladdin.rbac.v1.public) = true;
+  }
+
+  // 批准一次设备码登录。
+  //
+  // **归属只由当前凭证决定**：请求里只有短码，没有主体——不存在"替某个主体
+  // 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定
+  // 的账号（见 docs/design/identity/device-login.md）。
+  //
+  // 交付的会话其作用域是**当前主体既有的默认作用域快照**：本方法不为这次
+  // 登录新算作用域，也不接受请求里给的作用域，因此不需要声明作用域来源。
+  rpc ApproveDeviceLogin(ApproveDeviceLoginRequest) returns (ApproveDeviceLoginResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+  }
+
+  // 拒绝一次设备码登录。
+  //
+  // 与批准同一条归属规则。拒绝是**给使用者的出口**：短码被误输入、或这次
+  // 登录不是自己发起的，人需要一个明确的"不"。
+  rpc DenyDeviceLogin(DenyDeviceLoginRequest) returns (DenyDeviceLoginResponse) {
+    option (aladdin.rbac.v1.authenticated_only) = true;
+  }
 }
 
 message LoginRequest {
@@ -134,6 +177,12 @@ message GetAuthMethodsResponse {
   // 已启用的登录渠道，顺序稳定。为空表示没有任何渠道登录方式可用，
   // 前端据此不渲染任何渠道入口。
   repeated AuthMethod methods = 1;
+  // 命令行的设备码登录是否可用。
+  //
+  // 它**不是一个渠道**，因此不在 methods 里：它不引入任何渠道身份，只是把
+  // 一个已有主体的会话交给终端。不可用时命令行据此不去发起，而不是发起了
+  // 再收到一次"未实现"。
+  bool device_login_enabled = 2;
 }
 
 // AuthMethod 是一个已启用的登录渠道。
@@ -249,3 +298,66 @@ message Identity {
   // 该渠道给出的可读标识（如邮箱），仅供展示。
   string display = 3;
 }
+
+message StartDeviceLoginRequest {}
+
+// StartDeviceLoginResponse 同时承载**两份凭据**与一个给人用的地址。
+message StartDeviceLoginResponse {
+  // 设备码：终端保管，用它轮询。不可人工输入，因此没有任何可读性要求。
+  // **不得进入日志**：它能换来一份会话。
+  string device_code = 1;
+  // 短码：给人读、给人打。大小写不敏感，连字符可有可无。
+  // 它与设备码同级——能换来一次批准，因此**不得进入日志**。
+  string user_code = 2;
+  // 批准页地址。**不含短码**：短码要由人与终端上显示的比对，把短码放进地址
+  // 会消掉这次核对，而那正是"受害者把终端登进攻击者账号"的唯一防线。
+  string verification_uri = 3;
+  // 建议的轮询间隔（秒）。
+  int32 interval_seconds = 4;
+  // ISO 8601 UTC。终端的轮询不得越过它。
+  string expires_at = 5;
+}
+
+message PollDeviceLoginRequest {
+  // 服务端在发起时交给终端的设备码。
+  string device_code = 1;
+}
+
+// DeviceLoginState 是一次轮询的结果。
+//
+// 它是一个**状态**而不是一组错误码：调用方据此决定继续等、停下、还是重新
+// 发起。四种取值互斥且穷尽——分不出类别的取值会让调用方只能猜。
+enum DeviceLoginState {
+  DEVICE_LOGIN_STATE_UNSPECIFIED = 0;
+  // 尚未批准。继续等。
+  DEVICE_LOGIN_STATE_PENDING = 1;
+  // 已批准。**只有这一次**返回凭证；此后同一份设备码只会得到 EXPIRED。
+  DEVICE_LOGIN_STATE_APPROVED = 2;
+  // 使用者拒绝了。
+  DEVICE_LOGIN_STATE_DENIED = 3;
+  // 已过期、已交付、或从未存在。对调用方是同一件事：重新发起。
+  //
+  // 三者合并为一个取值是刻意的：区分它们只会把一次失败的轮询变成对
+  // "这份设备码是否曾经有效"的探测。
+  DEVICE_LOGIN_STATE_EXPIRED = 4;
+}
+
+message PollDeviceLoginResponse {
+  DeviceLoginState state = 1;
+  // 仅 state 为 APPROVED 时存在：会话凭证与它的过期时间。
+  string access_token = 2;
+  string expires_at = 3;
+}
+
+message ApproveDeviceLoginRequest {
+  // 要批准的短码。**不是归属输入**——目标主体只取当前凭证代表的主体。
+  string user_code = 1;
+}
+
+message ApproveDeviceLoginResponse {}
+
+message DenyDeviceLoginRequest {
+  string user_code = 1;
+}
+
+message DenyDeviceLoginResponse {}

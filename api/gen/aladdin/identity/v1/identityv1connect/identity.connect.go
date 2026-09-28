@@ -57,6 +57,18 @@ const (
 	// IdentityServiceListIdentitiesProcedure is the fully-qualified name of the IdentityService's
 	// ListIdentities RPC.
 	IdentityServiceListIdentitiesProcedure = "/aladdin.identity.v1.IdentityService/ListIdentities"
+	// IdentityServiceStartDeviceLoginProcedure is the fully-qualified name of the IdentityService's
+	// StartDeviceLogin RPC.
+	IdentityServiceStartDeviceLoginProcedure = "/aladdin.identity.v1.IdentityService/StartDeviceLogin"
+	// IdentityServicePollDeviceLoginProcedure is the fully-qualified name of the IdentityService's
+	// PollDeviceLogin RPC.
+	IdentityServicePollDeviceLoginProcedure = "/aladdin.identity.v1.IdentityService/PollDeviceLogin"
+	// IdentityServiceApproveDeviceLoginProcedure is the fully-qualified name of the IdentityService's
+	// ApproveDeviceLogin RPC.
+	IdentityServiceApproveDeviceLoginProcedure = "/aladdin.identity.v1.IdentityService/ApproveDeviceLogin"
+	// IdentityServiceDenyDeviceLoginProcedure is the fully-qualified name of the IdentityService's
+	// DenyDeviceLogin RPC.
+	IdentityServiceDenyDeviceLoginProcedure = "/aladdin.identity.v1.IdentityService/DenyDeviceLogin"
 )
 
 // IdentityServiceClient is a client for the aladdin.identity.v1.IdentityService service.
@@ -111,6 +123,37 @@ type IdentityServiceClient interface {
 	CompleteIdentityBinding(context.Context, *connect.Request[v1.CompleteIdentityBindingRequest]) (*connect.Response[v1.CompleteIdentityBindingResponse], error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error)
+	// 发起一次命令行的设备码登录。
+	//
+	// 公开是必须的：调用方正是那个还没登录的终端。它拿到一个给人看的短码与
+	// 一个给终端保管的设备码，后者是这台设备在批准之前的唯一凭据来源。
+	//
+	// 未配置对外地址时**本路径整体缺席**，返回"未实现"而不是"设备码无效"——
+	// 把配置缺失说成凭证问题，会让排障的人去查终端拿的是什么。
+	StartDeviceLogin(context.Context, *connect.Request[v1.StartDeviceLoginRequest]) (*connect.Response[v1.StartDeviceLoginResponse], error)
+	// 轮询一次设备码登录的结果。
+	//
+	// 公开，理由同上。**结果是一个状态，不是一个错误**：把"还没批准"表达成
+	// 一个错误码，会让"这一次轮询没结果"与"你未认证"变成同一个结论，而它们
+	// 该有完全不同的走向——前者该继续等，后者该重新登录。
+	//
+	// 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
+	// 非已批准的状态（见 docs/design/identity/device-login.md）。
+	PollDeviceLogin(context.Context, *connect.Request[v1.PollDeviceLoginRequest]) (*connect.Response[v1.PollDeviceLoginResponse], error)
+	// 批准一次设备码登录。
+	//
+	// **归属只由当前凭证决定**：请求里只有短码，没有主体——不存在"替某个主体
+	// 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定
+	// 的账号（见 docs/design/identity/device-login.md）。
+	//
+	// 交付的会话其作用域是**当前主体既有的默认作用域快照**：本方法不为这次
+	// 登录新算作用域，也不接受请求里给的作用域，因此不需要声明作用域来源。
+	ApproveDeviceLogin(context.Context, *connect.Request[v1.ApproveDeviceLoginRequest]) (*connect.Response[v1.ApproveDeviceLoginResponse], error)
+	// 拒绝一次设备码登录。
+	//
+	// 与批准同一条归属规则。拒绝是**给使用者的出口**：短码被误输入、或这次
+	// 登录不是自己发起的，人需要一个明确的"不"。
+	DenyDeviceLogin(context.Context, *connect.Request[v1.DenyDeviceLoginRequest]) (*connect.Response[v1.DenyDeviceLoginResponse], error)
 }
 
 // NewIdentityServiceClient constructs a client for the aladdin.identity.v1.IdentityService service.
@@ -178,6 +221,30 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("ListIdentities")),
 			connect.WithClientOptions(opts...),
 		),
+		startDeviceLogin: connect.NewClient[v1.StartDeviceLoginRequest, v1.StartDeviceLoginResponse](
+			httpClient,
+			baseURL+IdentityServiceStartDeviceLoginProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("StartDeviceLogin")),
+			connect.WithClientOptions(opts...),
+		),
+		pollDeviceLogin: connect.NewClient[v1.PollDeviceLoginRequest, v1.PollDeviceLoginResponse](
+			httpClient,
+			baseURL+IdentityServicePollDeviceLoginProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("PollDeviceLogin")),
+			connect.WithClientOptions(opts...),
+		),
+		approveDeviceLogin: connect.NewClient[v1.ApproveDeviceLoginRequest, v1.ApproveDeviceLoginResponse](
+			httpClient,
+			baseURL+IdentityServiceApproveDeviceLoginProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("ApproveDeviceLogin")),
+			connect.WithClientOptions(opts...),
+		),
+		denyDeviceLogin: connect.NewClient[v1.DenyDeviceLoginRequest, v1.DenyDeviceLoginResponse](
+			httpClient,
+			baseURL+IdentityServiceDenyDeviceLoginProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("DenyDeviceLogin")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -192,6 +259,10 @@ type identityServiceClient struct {
 	unbindIdentity          *connect.Client[v1.UnbindIdentityRequest, v1.UnbindIdentityResponse]
 	completeIdentityBinding *connect.Client[v1.CompleteIdentityBindingRequest, v1.CompleteIdentityBindingResponse]
 	listIdentities          *connect.Client[v1.ListIdentitiesRequest, v1.ListIdentitiesResponse]
+	startDeviceLogin        *connect.Client[v1.StartDeviceLoginRequest, v1.StartDeviceLoginResponse]
+	pollDeviceLogin         *connect.Client[v1.PollDeviceLoginRequest, v1.PollDeviceLoginResponse]
+	approveDeviceLogin      *connect.Client[v1.ApproveDeviceLoginRequest, v1.ApproveDeviceLoginResponse]
+	denyDeviceLogin         *connect.Client[v1.DenyDeviceLoginRequest, v1.DenyDeviceLoginResponse]
 }
 
 // Login calls aladdin.identity.v1.IdentityService.Login.
@@ -237,6 +308,26 @@ func (c *identityServiceClient) CompleteIdentityBinding(ctx context.Context, req
 // ListIdentities calls aladdin.identity.v1.IdentityService.ListIdentities.
 func (c *identityServiceClient) ListIdentities(ctx context.Context, req *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error) {
 	return c.listIdentities.CallUnary(ctx, req)
+}
+
+// StartDeviceLogin calls aladdin.identity.v1.IdentityService.StartDeviceLogin.
+func (c *identityServiceClient) StartDeviceLogin(ctx context.Context, req *connect.Request[v1.StartDeviceLoginRequest]) (*connect.Response[v1.StartDeviceLoginResponse], error) {
+	return c.startDeviceLogin.CallUnary(ctx, req)
+}
+
+// PollDeviceLogin calls aladdin.identity.v1.IdentityService.PollDeviceLogin.
+func (c *identityServiceClient) PollDeviceLogin(ctx context.Context, req *connect.Request[v1.PollDeviceLoginRequest]) (*connect.Response[v1.PollDeviceLoginResponse], error) {
+	return c.pollDeviceLogin.CallUnary(ctx, req)
+}
+
+// ApproveDeviceLogin calls aladdin.identity.v1.IdentityService.ApproveDeviceLogin.
+func (c *identityServiceClient) ApproveDeviceLogin(ctx context.Context, req *connect.Request[v1.ApproveDeviceLoginRequest]) (*connect.Response[v1.ApproveDeviceLoginResponse], error) {
+	return c.approveDeviceLogin.CallUnary(ctx, req)
+}
+
+// DenyDeviceLogin calls aladdin.identity.v1.IdentityService.DenyDeviceLogin.
+func (c *identityServiceClient) DenyDeviceLogin(ctx context.Context, req *connect.Request[v1.DenyDeviceLoginRequest]) (*connect.Response[v1.DenyDeviceLoginResponse], error) {
+	return c.denyDeviceLogin.CallUnary(ctx, req)
 }
 
 // IdentityServiceHandler is an implementation of the aladdin.identity.v1.IdentityService service.
@@ -291,6 +382,37 @@ type IdentityServiceHandler interface {
 	CompleteIdentityBinding(context.Context, *connect.Request[v1.CompleteIdentityBindingRequest]) (*connect.Response[v1.CompleteIdentityBindingResponse], error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error)
+	// 发起一次命令行的设备码登录。
+	//
+	// 公开是必须的：调用方正是那个还没登录的终端。它拿到一个给人看的短码与
+	// 一个给终端保管的设备码，后者是这台设备在批准之前的唯一凭据来源。
+	//
+	// 未配置对外地址时**本路径整体缺席**，返回"未实现"而不是"设备码无效"——
+	// 把配置缺失说成凭证问题，会让排障的人去查终端拿的是什么。
+	StartDeviceLogin(context.Context, *connect.Request[v1.StartDeviceLoginRequest]) (*connect.Response[v1.StartDeviceLoginResponse], error)
+	// 轮询一次设备码登录的结果。
+	//
+	// 公开，理由同上。**结果是一个状态，不是一个错误**：把"还没批准"表达成
+	// 一个错误码，会让"这一次轮询没结果"与"你未认证"变成同一个结论，而它们
+	// 该有完全不同的走向——前者该继续等，后者该重新登录。
+	//
+	// 已批准时**恰好交付一次**会话凭证，此后再轮询同一份设备码只会得到
+	// 非已批准的状态（见 docs/design/identity/device-login.md）。
+	PollDeviceLogin(context.Context, *connect.Request[v1.PollDeviceLoginRequest]) (*connect.Response[v1.PollDeviceLoginResponse], error)
+	// 批准一次设备码登录。
+	//
+	// **归属只由当前凭证决定**：请求里只有短码，没有主体——不存在"替某个主体
+	// 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定
+	// 的账号（见 docs/design/identity/device-login.md）。
+	//
+	// 交付的会话其作用域是**当前主体既有的默认作用域快照**：本方法不为这次
+	// 登录新算作用域，也不接受请求里给的作用域，因此不需要声明作用域来源。
+	ApproveDeviceLogin(context.Context, *connect.Request[v1.ApproveDeviceLoginRequest]) (*connect.Response[v1.ApproveDeviceLoginResponse], error)
+	// 拒绝一次设备码登录。
+	//
+	// 与批准同一条归属规则。拒绝是**给使用者的出口**：短码被误输入、或这次
+	// 登录不是自己发起的，人需要一个明确的"不"。
+	DenyDeviceLogin(context.Context, *connect.Request[v1.DenyDeviceLoginRequest]) (*connect.Response[v1.DenyDeviceLoginResponse], error)
 }
 
 // NewIdentityServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -354,6 +476,30 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("ListIdentities")),
 		connect.WithHandlerOptions(opts...),
 	)
+	identityServiceStartDeviceLoginHandler := connect.NewUnaryHandler(
+		IdentityServiceStartDeviceLoginProcedure,
+		svc.StartDeviceLogin,
+		connect.WithSchema(identityServiceMethods.ByName("StartDeviceLogin")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServicePollDeviceLoginHandler := connect.NewUnaryHandler(
+		IdentityServicePollDeviceLoginProcedure,
+		svc.PollDeviceLogin,
+		connect.WithSchema(identityServiceMethods.ByName("PollDeviceLogin")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceApproveDeviceLoginHandler := connect.NewUnaryHandler(
+		IdentityServiceApproveDeviceLoginProcedure,
+		svc.ApproveDeviceLogin,
+		connect.WithSchema(identityServiceMethods.ByName("ApproveDeviceLogin")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceDenyDeviceLoginHandler := connect.NewUnaryHandler(
+		IdentityServiceDenyDeviceLoginProcedure,
+		svc.DenyDeviceLogin,
+		connect.WithSchema(identityServiceMethods.ByName("DenyDeviceLogin")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/aladdin.identity.v1.IdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IdentityServiceLoginProcedure:
@@ -374,6 +520,14 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 			identityServiceCompleteIdentityBindingHandler.ServeHTTP(w, r)
 		case IdentityServiceListIdentitiesProcedure:
 			identityServiceListIdentitiesHandler.ServeHTTP(w, r)
+		case IdentityServiceStartDeviceLoginProcedure:
+			identityServiceStartDeviceLoginHandler.ServeHTTP(w, r)
+		case IdentityServicePollDeviceLoginProcedure:
+			identityServicePollDeviceLoginHandler.ServeHTTP(w, r)
+		case IdentityServiceApproveDeviceLoginProcedure:
+			identityServiceApproveDeviceLoginHandler.ServeHTTP(w, r)
+		case IdentityServiceDenyDeviceLoginProcedure:
+			identityServiceDenyDeviceLoginHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -417,4 +571,20 @@ func (UnimplementedIdentityServiceHandler) CompleteIdentityBinding(context.Conte
 
 func (UnimplementedIdentityServiceHandler) ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.ListIdentities is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) StartDeviceLogin(context.Context, *connect.Request[v1.StartDeviceLoginRequest]) (*connect.Response[v1.StartDeviceLoginResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.StartDeviceLogin is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) PollDeviceLogin(context.Context, *connect.Request[v1.PollDeviceLoginRequest]) (*connect.Response[v1.PollDeviceLoginResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.PollDeviceLogin is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) ApproveDeviceLogin(context.Context, *connect.Request[v1.ApproveDeviceLoginRequest]) (*connect.Response[v1.ApproveDeviceLoginResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.ApproveDeviceLogin is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) DenyDeviceLogin(context.Context, *connect.Request[v1.DenyDeviceLoginRequest]) (*connect.Response[v1.DenyDeviceLoginResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.DenyDeviceLogin is not implemented"))
 }

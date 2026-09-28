@@ -102,3 +102,21 @@ export async function completeIdentityBinding(source: string) {
 export async function unbindIdentity(source: string, externalId: string) {
   return identityClient().unbindIdentity({ source, externalId })
 }
+
+/**
+ * 批准一次命令行的设备码登录。
+ *
+ * 归属只由**当前会话**决定：请求里只有短码，没有主体——不存在"替某个主体
+ * 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定的
+ * 账号（见 docs/design/identity/device-login.md）。
+ *
+ * 交付的会话其作用域是当前主体既有的默认作用域快照，页面不指定、也无从指定。
+ */
+export async function approveDeviceLogin(userCode: string) {
+  return identityClient().approveDeviceLogin({ userCode })
+}
+
+/** 拒绝一次命令行的设备码登录。与批准同一条归属规则。 */
+export async function denyDeviceLogin(userCode: string) {
+  return identityClient().denyDeviceLogin({ userCode })
+}
