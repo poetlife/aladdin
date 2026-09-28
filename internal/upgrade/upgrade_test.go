@@ -84,16 +84,30 @@ func (f failTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("不应到达这里")
 }
 
-// 本机构建被拒绝，且**拒绝发生在任何网络请求之前**。
+// 不是发布产物时被拒绝，且**拒绝发生在任何网络请求之前**。
 func TestNewRejectsNonReleaseVersionsWithoutNetwork(t *testing.T) {
-	for _, version := range []string{"dev", "v0.4.3-5-gabc1234", "v1.0.0-dirty", ""} {
+	// 本机构建没有发布标记，版本号是什么形态都不行——包括一个合法的 vX.Y.Z：
+	// 在恰好处于某个 tag 的干净工作树上，make build 注入的正是它。
+	for _, version := range []string{"dev", "v0.4.3-5-gabc1234", "v1.0.0-dirty", "", "v0.4.3"} {
 		_, err := New(Options{
 			Current:    version,
 			HTTPClient: &http.Client{Transport: failTransport{t: t}},
 		})
 		if !errors.Is(err, ErrNotReleased) {
-			t.Errorf("版本 %q 应被拒绝，实际 %v", version, err)
+			t.Errorf("本机构建的版本 %q 应被拒绝，实际 %v", version, err)
 		}
+	}
+}
+
+// 带了发布标记但版本号解析不了，是发布流水线出了问题：一样拒绝，不发请求。
+func TestNewRejectsUnparseableReleasedVersion(t *testing.T) {
+	_, err := New(Options{
+		Current:    "v0.4.3-rc.1",
+		Released:   true,
+		HTTPClient: &http.Client{Transport: failTransport{t: t}},
+	})
+	if !errors.Is(err, ErrNotReleased) {
+		t.Fatalf("不可解析的发布版本应被拒绝，实际 %v", err)
 	}
 }
 
@@ -198,6 +212,7 @@ func testUpdater(t *testing.T, current, exePath string, release *fakeRelease) Up
 
 	updater, err := New(Options{
 		Current:        current,
+		Released:       true,
 		GOOS:           testGOOS,
 		GOARCH:         testGOARCH,
 		ExecutablePath: exePath,
@@ -293,7 +308,7 @@ func TestResolveRejectsRateLimit(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	updater, err := New(Options{Current: "v0.4.3", GOOS: testGOOS, GOARCH: testGOARCH, APIBaseURL: server.URL})
+	updater, err := New(Options{Current: "v0.4.3", Released: true, GOOS: testGOOS, GOARCH: testGOARCH, APIBaseURL: server.URL})
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}

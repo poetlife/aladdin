@@ -27,9 +27,14 @@ jobs:
       - name: tag 必须形如 vX.Y.Z
         # `tags: ['v*']` 只是粗筛，这里才是真正的约束。
         # 不合法就立刻失败，不创建任何东西。
+        #
+        # 这个形状必须与**客户端解析**能接受的一模一样（internal/upgrade/version.go
+        # 的 ParseVersion）：放开一点，就会发布一个客户端解析不了的 tag，而它的
+        # 表现是全体用户的自更新在那之后一直失败。前导零（v01.2.3）因此不合法——
+        # 同一个版本有两种写法，客户端的严格比较不接受。
         run: |
-          if ! [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "tag 必须形如 vX.Y.Z，收到：${GITHUB_REF_NAME}" >&2
+          if ! [[ "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$ ]]; then
+            echo "tag 必须形如 vX.Y.Z（不接受前导零），收到：${GITHUB_REF_NAME}" >&2
             exit 1
           fi
           echo "tag 合法：${GITHUB_REF_NAME}"
@@ -148,6 +153,7 @@ jobs:
 
           # 候选集 = 本流水线会创建的 Release：非草稿、非预发布、tag 形如 vX.Y.Z。
           # 这里的 tag 形状判断同时保护了"非本流水线创建的 Release"。
+          # 形状与 validate 步骤、与客户端解析三处一致（见 validate 步骤的说明）。
           if ! releases=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1000 \
                 --exclude-drafts --exclude-pre-releases \
                 --json tagName,createdAt,isLatest); then
@@ -156,7 +162,7 @@ jobs:
             exit 1
           fi
 
-          candidates=$(jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))]' <<<"$releases")
+          candidates=$(jq '[.[] | select(.tagName | test("^v(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)){2}$"))]' <<<"$releases")
           total=$(jq 'length' <<<"$candidates")
 
           echo "候选 Release 共 ${total} 个，保留最近 ${KEEP} 个。"

@@ -431,6 +431,39 @@ func TestDeviceLoginDisabledWithoutPublicURL(t *testing.T) {
 		t.Fatalf("未启用时应返回未实现，实际 %v", err)
 	}
 
+	// 四个方法都要说"这条路没开"，一个都不能说成"设备码无效"：后者会让人去查
+	// 终端拿的码，而真正的原因在服务端配置上。
+	disabled := []struct {
+		name string
+		call func() error
+	}{
+		{"发起", func() error {
+			_, err := service.StartDeviceLogin(context.Background(),
+				connect.NewRequest(&identityv1.StartDeviceLoginRequest{}))
+			return err
+		}},
+		{"轮询", func() error {
+			_, err := service.PollDeviceLogin(context.Background(),
+				connect.NewRequest(&identityv1.PollDeviceLoginRequest{DeviceCode: "device-code"}))
+			return err
+		}},
+		{"批准", func() error {
+			_, err := service.ApproveDeviceLogin(context.Background(),
+				connect.NewRequest(&identityv1.ApproveDeviceLoginRequest{UserCode: "BCDF-GHJK"}))
+			return err
+		}},
+		{"拒绝", func() error {
+			_, err := service.DenyDeviceLogin(context.Background(),
+				connect.NewRequest(&identityv1.DenyDeviceLoginRequest{UserCode: "BCDF-GHJK"}))
+			return err
+		}},
+	}
+	for _, call := range disabled {
+		if got := connect.CodeOf(call.call()); got != connect.CodeUnimplemented {
+			t.Errorf("%s：未启用时应返回未实现，实际 %v", call.name, got)
+		}
+	}
+
 	methods, err := service.GetAuthMethods(context.Background(),
 		connect.NewRequest(&identityv1.GetAuthMethodsRequest{}))
 	if err != nil {

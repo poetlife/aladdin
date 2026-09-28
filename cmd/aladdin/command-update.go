@@ -17,8 +17,8 @@ func newUpdateCommand() *cobra.Command {
 		Short: "把本机命令行升级到最新发布版本",
 		Long: `从本仓库的发布取回产物、校验、替换本机正在运行的这个二进制。
 
-只支持**由发布产物安装**的二进制：本机构建（make build、go install）的版本号
-不是 vX.Y.Z 形态，一律拒绝——把某人的工作副本无声换成一份发布产物不是升级。
+只支持**由发布产物安装**的二进制：本机构建（make build、go install）不带发布
+流水线注入的标记，一律拒绝——把某人的工作副本无声换成一份发布产物不是升级。
 升级源不可配置，只指向本仓库的发布。
 
 只有这条命令会访问网络；其它命令（含 version）都不发任何出站请求。`,
@@ -32,7 +32,7 @@ func newUpdateCommand() *cobra.Command {
 }
 
 func runUpdate(cmd *cobra.Command, checkOnly bool) error {
-	updater, err := upgrade.New(upgrade.Options{Current: version})
+	updater, err := upgrade.New(upgrade.Options{Current: version, Released: released != ""})
 	if err != nil {
 		if errors.Is(err, upgrade.ErrNotReleased) {
 			// 拒绝的理由要说清楚：当前是什么版本、为什么不能自更新、该怎么做。
@@ -82,12 +82,12 @@ func runUpdate(cmd *cobra.Command, checkOnly bool) error {
 		return err
 	}
 	if flags.output == "json" {
+		// 只报"从哪换到了哪"：新装上的版本是 to，from 是升级前那个进程的版本。
 		return printJSON(map[string]string{
-			"status":  "updated",
-			"from":    result.From.String(),
-			"to":      result.To.String(),
-			"path":    result.Path,
-			"version": version,
+			"status": "updated",
+			"from":   result.From.String(),
+			"to":     result.To.String(),
+			"path":   result.Path,
 		})
 	}
 	printf(cmd.OutOrStdout(),

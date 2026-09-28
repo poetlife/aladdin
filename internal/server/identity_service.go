@@ -262,10 +262,7 @@ func (s *IdentityService) GetAuthMethods(_ context.Context, _ *connect.Request[i
 // 公开方法：调用方正是那个还没登录的终端。
 func (s *IdentityService) StartDeviceLogin(_ context.Context, _ *connect.Request[identityv1.StartDeviceLoginRequest]) (*connect.Response[identityv1.StartDeviceLoginResponse], error) {
 	if !s.deviceLoginEnabled() {
-		// 与"渠道未启用"同一套语义：说"这条路没开"，不说"设备码无效"。
-		// 把配置缺失说成凭证问题，会让排障的人去查终端拿的是什么。
-		return nil, connect.NewError(connect.CodeUnimplemented,
-			errors.New("未启用命令行登录（服务端未配置对外地址）"))
+		return nil, deviceLoginDisabled()
 	}
 
 	issued, err := s.deviceLogins.start()
@@ -304,8 +301,7 @@ func (s *IdentityService) PollDeviceLogin(ctx context.Context, req *connect.Requ
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("device_code 不能为空"))
 	}
 	if !s.deviceLoginEnabled() {
-		return nil, connect.NewError(connect.CodeUnimplemented,
-			errors.New("未启用命令行登录（服务端未配置对外地址）"))
+		return nil, deviceLoginDisabled()
 	}
 
 	state, subject := s.deviceLogins.poll(deviceCode)
@@ -331,6 +327,11 @@ func (s *IdentityService) PollDeviceLogin(ctx context.Context, req *connect.Requ
 // 批准"的形状。若存在，任何拿到别人短码的人都能让别人的终端登进自己指定的
 // 账号（见 docs/design/identity/device-login.md）。
 func (s *IdentityService) ApproveDeviceLogin(ctx context.Context, req *connect.Request[identityv1.ApproveDeviceLoginRequest]) (*connect.Response[identityv1.ApproveDeviceLoginResponse], error) {
+	// 与发起、轮询同一道判定：这条路径没开时，四个方法都要说"这条路没开"，
+	// 不能有两个说"设备码无效"——那两种结论的排障方向完全不同。
+	if !s.deviceLoginEnabled() {
+		return nil, deviceLoginDisabled()
+	}
 	subject, ok := interceptor.SubjectFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("未认证"))
@@ -348,6 +349,10 @@ func (s *IdentityService) ApproveDeviceLogin(ctx context.Context, req *connect.R
 // 拒绝同样要求已认证——不要求的话，"猜一个短码把它拒掉"就成了谁都能做的
 // 一次打断。
 func (s *IdentityService) DenyDeviceLogin(ctx context.Context, req *connect.Request[identityv1.DenyDeviceLoginRequest]) (*connect.Response[identityv1.DenyDeviceLoginResponse], error) {
+	// 理由同批准。
+	if !s.deviceLoginEnabled() {
+		return nil, deviceLoginDisabled()
+	}
 	subject, ok := interceptor.SubjectFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("未认证"))
@@ -357,6 +362,16 @@ func (s *IdentityService) DenyDeviceLogin(ctx context.Context, req *connect.Requ
 	}
 	s.logger.Info("已拒绝命令行登录", zap.String("subject_id", subject.ID))
 	return connect.NewResponse(&identityv1.DenyDeviceLoginResponse{}), nil
+}
+
+// deviceLoginDisabled 是"这条路径整体没有开启"的统一答复。
+//
+// 与"渠道未启用"同一套语义：说"这条路没开"，不说"设备码无效"。把配置缺失说成
+// 凭证问题，会让排障的人去查终端拿的是什么（见 docs/design/identity/device-login.md）。
+// 四个方法共用它，是为了让这条结论不会只在其中两个上生效。
+func deviceLoginDisabled() error {
+	return connect.NewError(connect.CodeUnimplemented,
+		errors.New("未启用命令行登录（服务端未配置对外地址）"))
 }
 
 // deviceLoginFailed 是"这次批准或拒绝不能完成"的统一拒绝。

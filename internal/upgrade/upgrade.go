@@ -5,7 +5,7 @@
 //
 //   - **升级源不可配置**：它固定指向本仓库的发布。一个"从哪升级"的配置项，
 //     等于一个把任意二进制装进使用者机器的开关。
-//   - **只支持发布产物**：本机版本不是严格 vX.Y.Z 时一律拒绝，且拒绝发生在
+//   - **只支持发布产物**：不是发布流水线产出的二进制一律拒绝，且拒绝发生在
 //     任何网络请求之前。
 //   - **校验是替换的前置条件**：校验不通过的字节永远不会落到可执行的位置上。
 package upgrade
@@ -76,6 +76,13 @@ type Result struct {
 type Options struct {
 	// Current 是本机版本，由构建期注入。
 	Current string
+	// Released 表示这份二进制来自发布产物，由发布流水线注入的标记决定。
+	//
+	// **这才是"能不能自更新"的判据，版本号的形态不是。** 本机构建（make build、
+	// go install）注入的是同一处 -X main.version，在恰好处于某个 tag 的干净
+	// 工作树上它同样是一个合法的 vX.Y.Z——按形态判断会把某人的工作副本
+	// 当成发布产物替换掉。
+	Released bool
 	// GOOS 与 GOARCH 是挑选产物的平台；留空时取运行期平台。
 	GOOS   string
 	GOARCH string
@@ -99,12 +106,17 @@ type Updater struct {
 
 // New 构造自更新入口。
 //
-// 本机版本不是严格 vX.Y.Z 时**在这里就失败**，调用方因此不会为"本机是工作
-// 副本"这件事发出任何网络请求。
+// 不是发布产物时**在这里就失败**，调用方因此不会为"本机是工作副本"这件事
+// 发出任何网络请求。
 func New(opts Options) (Updater, error) {
+	if !opts.Released {
+		return Updater{}, fmt.Errorf("%w：当前版本是 %q", ErrNotReleased, opts.Current)
+	}
+
 	current, ok := ParseVersion(opts.Current)
 	if !ok {
-		return Updater{}, fmt.Errorf("%w：当前版本是 %q", ErrNotReleased, opts.Current)
+		// 发布产物里注入了不可解析的版本号：流水线出了问题。不猜，也不更新。
+		return Updater{}, fmt.Errorf("%w：发布产物注入了不可解析的版本号 %q", ErrNotReleased, opts.Current)
 	}
 
 	goos, goarch := opts.GOOS, opts.GOARCH

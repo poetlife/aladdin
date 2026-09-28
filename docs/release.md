@@ -9,7 +9,9 @@
 
 两者都不自己定义"什么算通过"，而是共同调用 [gate.yml](../.github/workflows/gate.yml)。
 
-**tag 必须严格形如 `vX.Y.Z`**。`tags: ['v*']` 只是粗筛，`release.yml` 的 `validate` 步骤用 `^v[0-9]+\.[0-9]+\.[0-9]+$` 再拦一道：形如 `v1.0.0-rc.1` 的 tag 会被拒绝，什么都不会产出。
+**tag 必须严格形如 `vX.Y.Z`，且不接受前导零**（`v01.2.3` 不合法）。`tags: ['v*']` 只是粗筛，`release.yml` 的 `validate` 步骤用 `^v(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$` 再拦一道：形如 `v1.0.0-rc.1` 的 tag 会被拒绝，什么都不会产出。
+
+这个形状**必须与客户端解析能接受的一模一样**（[internal/upgrade/version.go](../internal/upgrade/version.go) 的 `ParseVersion`，见 [design/cli/self-update.md](design/cli/self-update.md)）。放开一点就会发布一个客户端解析不了的版本号，而它的表现是：`releases/latest` 指向它之后，**全体用户的自更新一直失败**，直到出现一个形态干净的 tag。前导零正是这样一处——它让同一个版本有两种写法，严格比较不接受它。
 
 ## 门禁（Gate）
 

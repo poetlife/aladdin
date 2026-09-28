@@ -21,7 +21,7 @@ interface DeviceFormValues {
  * "被登进别人账号"的唯一防线（见 docs/design/identity/device-login.md）。
  */
 export function DeviceApprovalPage(): React.ReactNode {
-  const { profile } = useProfile()
+  const { profile, loading: profileLoading, error: profileError, reload } = useProfile()
   const { token } = theme.useToken()
   const [form] = Form.useForm<DeviceFormValues>()
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +29,12 @@ export function DeviceApprovalPage(): React.ReactNode {
   const [decided, setDecided] = useState<'approved' | 'denied' | null>(null)
 
   const displayName = profile?.displayName ?? ''
+  // 批准意味着"以这个账号的名义"把会话交给终端。账号还没读到（或读失败）时，
+  // 人做不了这次核对，因此"批准"保持不可用——这不是装饰，见
+  // docs/design/identity/device-login.md 的"批准页必须先显示你正在以哪个账号批准"。
+  // "拒绝"是安全的那一侧，任何时候都能按：读不到账号不该反过来挡住唯一能挡住
+  // 这次登录的动作。
+  const identityKnown = profile !== null
 
   async function decide(approve: boolean): Promise<void> {
     const userCode = form.getFieldValue('userCode') ?? ''
@@ -85,9 +91,24 @@ export function DeviceApprovalPage(): React.ReactNode {
         <Typography.Paragraph>
           当前账号：
           <Typography.Text strong>
-            {displayName === '' ? '（读取中…）' : displayName}
+            {displayName !== '' ? displayName : profileLoading ? '（读取中…）' : '未能读取'}
           </Typography.Text>
         </Typography.Paragraph>
+
+        {profileError !== null && (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="读不到当前账号，暂时不能批准"
+            description={profileError}
+            action={
+              <Button size="small" onClick={() => void reload()}>
+                重新读取
+              </Button>
+            }
+          />
+        )}
 
         <Alert
           type="warning"
@@ -121,6 +142,7 @@ export function DeviceApprovalPage(): React.ReactNode {
             block
             icon={<Check size={16} />}
             loading={submitting}
+            disabled={!identityKnown}
             onClick={() => void form.submit()}
           >
             批准

@@ -155,4 +155,28 @@ describe('命令行登录的批准页', () => {
     // 失败之后留在原页，可以改一个码重试。
     expect(container.querySelector('input')).not.toBeNull()
   })
+
+  it('账号还没读到时不能批准：人必须先看清是以谁的名义', async () => {
+    // 档案一直不返回：账号行停在"读取中"，此时不能让人批准。
+    vi.mocked(profileApi.getMyProfile).mockReturnValue(new Promise<never>(() => {}))
+    const container = await renderPage()
+
+    expect(container.textContent).toContain('（读取中…）')
+    expect(buttonByText(container, '批准').disabled).toBe(true)
+    // 拒绝是安全的那一侧：读不到账号不该挡住唯一能挡住这次登录的动作。
+    expect(buttonByText(container, '拒绝').disabled).toBe(false)
+  })
+
+  it('读不到账号时说明原因并给重试，而不是装作在读', async () => {
+    vi.mocked(profileApi.getMyProfile).mockRejectedValue(
+      new ConnectError('服务暂时不可用', Code.Unavailable),
+    )
+    const container = await renderPage()
+
+    expect(container.textContent).toContain('读不到当前账号')
+    expect(container.textContent).toContain('服务暂时不可用')
+    expect(buttonByText(container, '批准').disabled).toBe(true)
+    // 给出重新读取的出口，而不是让人刷新整页。
+    buttonByText(container, '重新读取')
+  })
 })

@@ -43,9 +43,15 @@ func runDeviceLogin(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	printDeviceLoginPrompt(cmd, start)
+	// 有效期只解析一次，提示与轮询共用：两边各解析一遍，就会出现"提示里说的
+	// 截止时间"与"轮询实际用的截止时间"漂移的可能。
+	expiresAt, err := time.Parse(time.RFC3339, start.GetExpiresAt())
+	if err != nil {
+		return fmt.Errorf("服务端返回的 expires_at 不是 RFC3339: %w", err)
+	}
+	printDeviceLoginPrompt(cmd, start, expiresAt)
 
-	credential, err := awaitDeviceLogin(c, identity, start)
+	credential, err := awaitDeviceLogin(c, identity, start, expiresAt)
 	if err != nil {
 		return err
 	}
@@ -91,26 +97,28 @@ func startDeviceLogin(c *client.Client, identity identityv1.IdentityServiceClien
 	return resp, nil
 }
 
-// printDeviceLoginPrompt 把短码与地址显著地打出来。
+// printDeviceLoginPrompt 把短码、地址与有效期显著地打出来。
 //
 // 短码要由人**手动输入**到浏览器里，而不是点一个带着码的链接：终端上显示它
 // 的意义就在于人会去核对"页面上说的这次请求，是不是我刚发起的这一次"。把码
 // 嵌进地址会消掉这次核对，而那正是挡住"被登进别人账号"的唯一防线（见
 // docs/design/identity/device-login.md）。
-func printDeviceLoginPrompt(cmd *cobra.Command, start *identityv1.StartDeviceLoginResponse) {
-	out := cmd.OutOrStdout()
+//
+// 有效期必须说出来：不说，人就会对着一个早就失效的短码反复输入。
+//
+// 它写 **stderr**：这是给人看的提示，不是命令的结果（见 docs/observability.md）。
+// 写在 stdout 上会污染 --output json，也会把与口令同级的短码送进脚本的管道。
+func printDeviceLoginPrompt(cmd *cobra.Command, start *identityv1.StartDeviceLoginResponse, expiresAt time.Time) {
+	out := cmd.ErrOrStderr()
 	printf(out, "\n  在浏览器打开：%s\n", start.GetVerificationUri())
 	printf(out, "  输入代码：%s\n\n", start.GetUserCode())
+	printf(out, "这个代码在 %s 之前有效（本机时间），过期后重新执行 aladdin login。\n",
+		expiresAt.Local().Format("2006-01-02 15:04"))
 	printf(out, "只有当你刚刚在这台机器上发起登录时才继续。等待批准…\n")
 }
 
 // awaitDeviceLogin 按服务端给出的间隔轮询，直到批准、拒绝或过期。
-func awaitDeviceLogin(c *client.Client, identity identityv1.IdentityServiceClient, start *identityv1.StartDeviceLoginResponse) (auth.Credential, error) {
-	expiresAt, err := time.Parse(time.RFC3339, start.GetExpiresAt())
-	if err != nil {
-		return auth.Credential{}, fmt.Errorf("服务端返回的 expires_at 不是 RFC3339: %w", err)
-	}
-
+func awaitDeviceLogin(c *client.Client, identity identityv1.IdentityServiceClient, start *identityv1.StartDeviceLoginResponse, expiresAt time.Time) (auth.Credential, error) {
 	interval := deviceLoginIntervalFallback
 	if seconds := start.GetIntervalSeconds(); seconds > 0 {
 		interval = time.Duration(seconds) * time.Second
