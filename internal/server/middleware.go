@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"go.uber.org/zap"
 
+	"github.com/poetlife/aladdin/internal/galaxy"
 	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
@@ -54,12 +55,24 @@ func isInfraProcedure(path string) bool {
 //
 // 用精确路径而不是前缀：前缀会让将来某个业务路径误吃前缀而被静默放行，
 // 也会让遥测的路径归一失去上界。
+//
+// **唯一一处例外是 galaxy 的发布地址**，它在下面单独处理：它的最后一段是
+// 不可猜的工程标识，因此不可能枚举成一张精确路径表。那条入口的注册、放行与
+// 指标归一都引用同一个前缀常量，三处不会漂移。
 var browserEntryPaths = map[string]bool{
 	identity.GithubStartPath:    true,
 	identity.GithubCallbackPath: true,
 }
 
-func isBrowserEntry(path string) bool { return browserEntryPaths[path] }
+// isBrowserEntry 判定一条路径是不是浏览器直连的非 RPC 入口（唯一入口）。
+func isBrowserEntry(path string) bool {
+	if browserEntryPaths[path] {
+		return true
+	}
+	// 发布地址：`<发布域>/g/<工程标识>`。前缀之外的形状由 handler 自己判
+	// （多一段路径就不是一个工程标识），这里只负责"它不走鉴权"。
+	return strings.HasPrefix(path, galaxy.PublicPathPrefix)
+}
 
 // procedureUnmatched 是未落在任何已注册服务下的路径共用的指标属性值。
 //
@@ -141,6 +154,12 @@ func (m *telemetryMiddleware) logRequest(ctx context.Context, procedure string, 
 
 // procedureOf 把请求路径归一成有界的指标属性值。
 func (m *telemetryMiddleware) procedureOf(path string) string {
+	// 发布地址的最后一段是**不可猜的工程标识**。直接拿它当指标属性会让时序
+	// 数量随被访问的页面数增长，而"每个页面各占一个时序"正是这条约束要防的事。
+	// 归一到前缀：前缀之外的部分没有可聚合的信息。
+	if strings.HasPrefix(path, galaxy.PublicPathPrefix) {
+		return galaxy.PublicPathPrefix
+	}
 	for _, registered := range m.registeredPaths {
 		if strings.HasPrefix(path, registered) {
 			return path

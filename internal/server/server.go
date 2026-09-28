@@ -23,11 +23,14 @@ import (
 	"connectrpc.com/grpcreflect"
 	"go.uber.org/zap"
 
+	galaxyv1connect "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1/galaxyv1connect"
 	identityv1connect "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
 	profilev1connect "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1/profilev1connect"
 	rbacv1connect "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
 	"github.com/poetlife/aladdin/internal/config"
+	"github.com/poetlife/aladdin/internal/galaxy"
 	"github.com/poetlife/aladdin/internal/identity"
+	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/profile"
 	"github.com/poetlife/aladdin/internal/rbac"
@@ -76,22 +79,39 @@ type IdentityStores struct {
 type ProfileStores struct {
 	// Profiles 是档案的持久化存储。
 	Profiles profile.Store
-	// Avatars 是头像字节的存储。**为 nil 表示这个部署没有配置对象存储**：
+	// Avatars 是**头像字节的直传存储**。**为 nil 表示这个部署没有配置对象存储**：
 	// 头像功能整体缺席，而不是退化成一个"什么都存不下"的实现——前端据此
 	// 不渲染上传区（见 docs/design/profile/avatar-storage.md）。
-	Avatars profile.AvatarStore
+	Avatars objectstore.Store
 }
 
-// profileReadMaxBytes 是档案服务的单条消息读上限。
+// GalaxyStores 是 galaxy 模块的存储与地址派生，由入口进程构造后传入。
 //
-// 必须显式设：connect-go 的默认是**不限制大小**，而头像上传是本服务端唯一
-// 一个由客户端决定大小的入口。没有它，一个几百 MB 的请求体在被
-// profile.Profiles 拒绝之前就已经整份读进内存了。
+// 与档案模块同理：四张表由同一份迁移建好，因此它的实现必须长在同一条连接上。
+// 资产字节的存储与头像是**同一个对象存储的同一套机制**（见
+// docs/design/objectstore/README.md），入口进程把同一个实例交给两处。
+type GalaxyStores struct {
+	// Projects 是工程、草稿、版本、资产元数据与发布记录的持久化存储。
+	Projects galaxy.MutableStore
+	// Assets 是私有区对象的直传入口。**为 nil 表示没有配置私有桶**：资产
+	// 功能整体缺席，而工程与版本照常可用。
+	Assets objectstore.Store
+	// Public 是公开区的写入口。**为 nil 表示没有配置公开桶**：发布不可用。
+	Public galaxy.PublicStore
+	// Origin 是发布态地址的派生入口。零值表示没有配置发布域。
+	Origin galaxy.PublicOrigin
+}
+
+// galaxyReadMaxBytes 是创作服务的单条消息读上限。
 //
-// 取领域上限的两倍：请求体除了字节本身还有消息外壳，而走 JSON 线格式时
-// bytes 字段还会被 base64 撑大三分之一。宁可在这里留宽一点，也不要让"换一种
-// 线格式"变成一次莫名的大小上限失败。
-const profileReadMaxBytes = 2 * profile.AvatarMaxBytes
+// 必须显式设：connect-go 的默认是**不限制大小**，而正文（草稿、校验请求）正是
+// 由客户端决定大小的那一类入口。没有它，一个几百 MB 的请求体在被领域层拒绝之前
+// 就已经整份读进内存了。
+//
+// 取领域上限的两倍：请求体除了正文还有消息外壳，而走 JSON 线格式时字符串里的
+// 多字节字符与转义还会再撑一层。宁可留宽一点，也不要让"换一种线格式"变成一次
+// 莫名的大小上限失败。
+const galaxyReadMaxBytes = 2 * galaxy.MaxDocumentBytes
 
 // New 按配置装配服务端。
 //
@@ -101,7 +121,7 @@ const profileReadMaxBytes = 2 * profile.AvatarMaxBytes
 //
 // metrics 为 nil 时不记录请求指标；遥测的 provider 生命周期由调用方
 // （入口进程）管理，服务端只消费它建好的全局实现。
-func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores, prof ProfileStores) *Server {
+func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores, prof ProfileStores, gal GalaxyStores) *Server {
 	engine := rbac.NewEngine(store, logger, metrics)
 	machine := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
@@ -184,13 +204,35 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	register(identity.GithubStartPath, http.HandlerFunc(githubFlow.Start))
 	register(identity.GithubCallbackPath, http.HandlerFunc(githubFlow.Callback))
 
-	// 档案服务单独一组 handler options：它是唯一一个由客户端决定请求体大小的
-	// 入口（头像上传），因此显式设了读上限（见 profileReadMaxBytes）。
-	profileOpts := append([]connect.HandlerOption{
-		connect.WithReadMaxBytes(profileReadMaxBytes),
-	}, opts...)
-	profilePath, profileHandler := profilev1connect.NewProfileServiceHandler(profileSrv, profileOpts...)
+	// 档案服务不再需要单独一组 handler options：头像改为**直传**之后，它没有
+	// 任何一个由客户端决定大小的入口——字节根本不经过这里（见
+	// docs/design/objectstore/README.md）。
+	profilePath, profileHandler := profilev1connect.NewProfileServiceHandler(profileSrv, opts...)
 	register(profilePath, profileHandler)
+
+	// 创作服务：正文由客户端决定大小（草稿与校验请求），因此显式设了读上限
+	// （见 galaxyReadMaxBytes）。头像那种"字节在请求体里"的入口已经没有了——
+	// 两条上传链路都改成了直传。
+	galaxyCore := galaxy.NewService(galaxy.Deps{
+		Store:  gal.Projects,
+		Assets: gal.Assets,
+		Public: gal.Public,
+		Origin: gal.Origin,
+		Logger: logger,
+	})
+	galaxySrv := NewGalaxyService(galaxyCore, logger)
+	galaxyOpts := append([]connect.HandlerOption{
+		connect.WithReadMaxBytes(galaxyReadMaxBytes),
+	}, opts...)
+	galaxyPath, galaxyHandler := galaxyv1connect.NewGalaxyServiceHandler(galaxySrv, galaxyOpts...)
+	register(galaxyPath, galaxyHandler)
+
+	// 发布地址：浏览器直连的非 RPC 入口。它**不经过鉴权**（发布态公开匿名，
+	// 地址即凭据），因此必须登记在 middleware 的浏览器直连清单里，否则会在
+	// rbac.Resolve 之前被当成一个没有注解的方法拦下。
+	//
+	// 它按前缀注册，而清单里的判定也按同一个前缀——两处引用同一个常量。
+	register(galaxy.PublicPathPrefix, PublicProjectHandler(galaxyCore, logger))
 
 	// 健康检查与反射：不参与业务鉴权，由 authMiddleware 的
 	// infraProcedurePrefixes 显式放行。
@@ -198,6 +240,7 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		rbacv1connect.RBACServiceName,
 		identityv1connect.IdentityServiceName,
 		profilev1connect.ProfileServiceName,
+		galaxyv1connect.GalaxyServiceName,
 	}
 	healthPath, healthHandler := grpchealth.NewHandler(grpchealth.NewStaticChecker(serviceNames...))
 	register(healthPath, healthHandler)

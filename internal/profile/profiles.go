@@ -3,6 +3,7 @@ package profile
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -10,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/identity"
+	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -33,7 +35,10 @@ type ProfilesDeps struct {
 	Identities IdentityLister
 	// Avatars 为 nil 表示这个部署没有配置头像存储。这是合法且常见的：头像
 	// 是可选能力，未配置时昵称与简介照常可用。
-	Avatars AvatarStore
+	//
+	// 它的类型是**直传这条公共链路的契约**（见 internal/objectstore）：头像与
+	// galaxy 资产消费同一个 Store，差别只在键、白名单与上限。
+	Avatars objectstore.Store
 	// Logger 记录"影响展示、但不值得让整个请求失败"的降级事件。为空时丢弃。
 	Logger *zap.Logger
 }
@@ -57,7 +62,7 @@ type Profiles struct {
 	store      Store
 	subjects   rbac.Store
 	identities IdentityLister
-	avatars    AvatarStore
+	avatars    objectstore.Store
 	logger     *zap.Logger
 }
 
@@ -121,30 +126,58 @@ func (p *Profiles) Update(ctx context.Context, subjectID, nickname, bio string) 
 	return p.Get(ctx, subjectID)
 }
 
-// SetAvatar 上传或替换头像。类型由字节本身决定，**不接受上传方声明的类型**。
-func (p *Profiles) SetAvatar(ctx context.Context, subjectID string, data []byte) (View, error) {
+// BeginAvatarUpload 签发一次头像直传的凭证。
+//
+// **字节不经过本服务端**（见 docs/design/objectstore/README.md）：这里只做三件事
+// ——校验声明的类型在白名单内、按声明的大小早退、把"只许写头像这一个键、类型与
+// 大小受条件约束"的策略交给对象存储执行。
+//
+// 两次校验都不能省，理由是它们各自解决一件事：不校验类型，白名单就只剩服务端
+// 的一句承诺；不校验大小，用户会把一个 50 MiB 的文件整份传上去只为了被拒。
+// 而两者都不是最终边界——真正的边界在存储侧。
+func (p *Profiles) BeginAvatarUpload(ctx context.Context, subjectID, declaredType string, declaredSize int64) (objectstore.Credential, error) {
+	if p.avatars == nil {
+		return objectstore.Credential{}, ErrAvatarUnavailable
+	}
+	if _, err := NormalizeAvatarType(declaredType); err != nil {
+		return objectstore.Credential{}, err
+	}
+	if declaredSize > AvatarMaxBytes {
+		return objectstore.Credential{}, fmt.Errorf("%w: 声明 %d 字节，上限 %d 字节",
+			ErrAvatarTooLarge, declaredSize, AvatarMaxBytes)
+	}
+	if err := p.requireSubject(ctx, subjectID); err != nil {
+		return objectstore.Credential{}, err
+	}
+	return p.avatars.IssueUpload(ctx, AvatarKey(subjectID), AvatarTypeRules())
+}
+
+// CommitAvatarUpload 提交一次头像上传：核对对象确实到了，把档案指向它。
+//
+// **顺序是先有对象、再有键。** 反过来的话，库里那一行会声称有一个不存在的
+// 头像，表现为"图片一直显示不出来"；而按这个顺序，最坏的结果只是留下一个无从
+// 被引用的孤儿对象——它没有功能影响（见 docs/design/profile/avatar-storage.md
+// 的待定决策）。
+func (p *Profiles) CommitAvatarUpload(ctx context.Context, subjectID string) (View, error) {
 	if p.avatars == nil {
 		return View{}, ErrAvatarUnavailable
-	}
-	if len(data) > AvatarMaxBytes {
-		return View{}, ErrAvatarTooLarge
-	}
-	contentType, err := SniffAvatarType(data)
-	if err != nil {
-		return View{}, err
 	}
 	if err := p.requireSubject(ctx, subjectID); err != nil {
 		return View{}, err
 	}
-
-	// **先写对象、再写键。** 反过来的话，对象写入失败会让库里那一行声称有
-	// 一个不存在的头像，表现为"图片一直显示不出来"；而按这个顺序，最坏的结果
-	// 只是留下一个无从被引用的孤儿对象——它没有功能影响（见
-	// docs/design/profile/avatar-storage.md 的待定决策）。
-	if err := p.avatars.Put(ctx, subjectID, contentType, data); err != nil {
-		return View{}, err
+	key := AvatarKey(subjectID)
+	// 核对共用一处：存在性、真实字节数、超限即删（见 objectstore.VerifyUploaded）。
+	if _, err := objectstore.VerifyUploaded(ctx, p.avatars, key, AvatarMaxBytes); err != nil {
+		switch {
+		case errors.Is(err, objectstore.ErrObjectNotFound):
+			return View{}, ErrAvatarObjectMissing
+		case errors.Is(err, objectstore.ErrUploadTooLarge):
+			return View{}, fmt.Errorf("%w: 上限 %d 字节", ErrAvatarTooLarge, AvatarMaxBytes)
+		default:
+			return View{}, err
+		}
 	}
-	if err := p.store.PutAvatarKey(ctx, subjectID, AvatarKey(subjectID), time.Now().UTC()); err != nil {
+	if err := p.store.PutAvatarKey(ctx, subjectID, key, time.Now().UTC()); err != nil {
 		return View{}, err
 	}
 	return p.Get(ctx, subjectID)
@@ -165,7 +198,7 @@ func (p *Profiles) ClearAvatar(ctx context.Context, subjectID string) (View, err
 	if p.avatars != nil {
 		// 对象删除失败**不影响**"档案已清空"这个结论，因此只留痕、不返回错误。
 		// 代价是对象存储上可能留下一个孤儿对象，而它无从被引用、没有功能影响。
-		if err := p.avatars.Delete(ctx, subjectID); err != nil {
+		if err := p.avatars.Delete(ctx, AvatarKey(subjectID)); err != nil {
 			p.logger.Warn("删除头像对象失败，档案已清空",
 				zap.String("subject_id", subjectID),
 				zap.Error(err))
@@ -227,7 +260,7 @@ func (p *Profiles) avatarURL(ctx context.Context, subjectID, key string) string 
 	if key == "" || p.avatars == nil {
 		return ""
 	}
-	url, err := p.avatars.PresignGet(ctx, subjectID, AvatarURLTTL)
+	url, err := p.avatars.PresignGet(ctx, key, AvatarURLTTL)
 	if err != nil {
 		p.logger.Warn("生成头像读取地址失败，按没有头像处理",
 			zap.String("subject_id", subjectID),

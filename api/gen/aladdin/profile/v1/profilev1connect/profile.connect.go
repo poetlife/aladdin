@@ -39,9 +39,12 @@ const (
 	// ProfileServiceUpdateProfileProcedure is the fully-qualified name of the ProfileService's
 	// UpdateProfile RPC.
 	ProfileServiceUpdateProfileProcedure = "/aladdin.profile.v1.ProfileService/UpdateProfile"
-	// ProfileServiceUpdateAvatarProcedure is the fully-qualified name of the ProfileService's
-	// UpdateAvatar RPC.
-	ProfileServiceUpdateAvatarProcedure = "/aladdin.profile.v1.ProfileService/UpdateAvatar"
+	// ProfileServiceBeginAvatarUploadProcedure is the fully-qualified name of the ProfileService's
+	// BeginAvatarUpload RPC.
+	ProfileServiceBeginAvatarUploadProcedure = "/aladdin.profile.v1.ProfileService/BeginAvatarUpload"
+	// ProfileServiceCommitAvatarUploadProcedure is the fully-qualified name of the ProfileService's
+	// CommitAvatarUpload RPC.
+	ProfileServiceCommitAvatarUploadProcedure = "/aladdin.profile.v1.ProfileService/CommitAvatarUpload"
 	// ProfileServiceDeleteAvatarProcedure is the fully-qualified name of the ProfileService's
 	// DeleteAvatar RPC.
 	ProfileServiceDeleteAvatarProcedure = "/aladdin.profile.v1.ProfileService/DeleteAvatar"
@@ -56,16 +59,20 @@ type ProfileServiceClient interface {
 	// 请求表达的是**期望的完整状态**，不是一次增量修改：空字符串表示清空
 	// 该项。因为没有"只改一个字段"的形状，也就不需要区分"没传"与"传空"。
 	UpdateProfile(context.Context, *connect.Request[v1.UpdateProfileRequest]) (*connect.Response[v1.UpdateProfileResponse], error)
-	// 上传或替换当前主体的头像。
+	// 开始一次头像上传：签发一份直传凭证。
 	//
-	// **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
-	// 内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
-	// 一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
-	// 看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
-	// 时以谁为准"这个问题。
+	// **字节不经过服务端**（见 docs/design/objectstore/README.md）。服务端在这里
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写头像这一个
+	// 键、类型与大小受条件约束"的策略交给对象存储执行。
 	//
-	// 一个主体一个对象，替换即原地覆盖。
-	UpdateAvatar(context.Context, *connect.Request[v1.UpdateAvatarRequest]) (*connect.Response[v1.UpdateAvatarResponse], error)
+	// 一个主体一个键，替换即原地覆盖：**头像是这条链路上唯一允许覆盖的用途**，
+	// 因为它本来就是一个"覆盖写"的字段。
+	BeginAvatarUpload(context.Context, *connect.Request[v1.BeginAvatarUploadRequest]) (*connect.Response[v1.BeginAvatarUploadResponse], error)
+	// 提交一次头像上传：核对字节确实到了，把档案指向它。
+	//
+	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
+	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。
+	CommitAvatarUpload(context.Context, *connect.Request[v1.CommitAvatarUploadRequest]) (*connect.Response[v1.CommitAvatarUploadResponse], error)
 	// 删除当前主体的头像。没有头像时也成功（幂等）。
 	DeleteAvatar(context.Context, *connect.Request[v1.DeleteAvatarRequest]) (*connect.Response[v1.DeleteAvatarResponse], error)
 }
@@ -93,10 +100,16 @@ func NewProfileServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(profileServiceMethods.ByName("UpdateProfile")),
 			connect.WithClientOptions(opts...),
 		),
-		updateAvatar: connect.NewClient[v1.UpdateAvatarRequest, v1.UpdateAvatarResponse](
+		beginAvatarUpload: connect.NewClient[v1.BeginAvatarUploadRequest, v1.BeginAvatarUploadResponse](
 			httpClient,
-			baseURL+ProfileServiceUpdateAvatarProcedure,
-			connect.WithSchema(profileServiceMethods.ByName("UpdateAvatar")),
+			baseURL+ProfileServiceBeginAvatarUploadProcedure,
+			connect.WithSchema(profileServiceMethods.ByName("BeginAvatarUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		commitAvatarUpload: connect.NewClient[v1.CommitAvatarUploadRequest, v1.CommitAvatarUploadResponse](
+			httpClient,
+			baseURL+ProfileServiceCommitAvatarUploadProcedure,
+			connect.WithSchema(profileServiceMethods.ByName("CommitAvatarUpload")),
 			connect.WithClientOptions(opts...),
 		),
 		deleteAvatar: connect.NewClient[v1.DeleteAvatarRequest, v1.DeleteAvatarResponse](
@@ -110,10 +123,11 @@ func NewProfileServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // profileServiceClient implements ProfileServiceClient.
 type profileServiceClient struct {
-	getProfile    *connect.Client[v1.GetProfileRequest, v1.GetProfileResponse]
-	updateProfile *connect.Client[v1.UpdateProfileRequest, v1.UpdateProfileResponse]
-	updateAvatar  *connect.Client[v1.UpdateAvatarRequest, v1.UpdateAvatarResponse]
-	deleteAvatar  *connect.Client[v1.DeleteAvatarRequest, v1.DeleteAvatarResponse]
+	getProfile         *connect.Client[v1.GetProfileRequest, v1.GetProfileResponse]
+	updateProfile      *connect.Client[v1.UpdateProfileRequest, v1.UpdateProfileResponse]
+	beginAvatarUpload  *connect.Client[v1.BeginAvatarUploadRequest, v1.BeginAvatarUploadResponse]
+	commitAvatarUpload *connect.Client[v1.CommitAvatarUploadRequest, v1.CommitAvatarUploadResponse]
+	deleteAvatar       *connect.Client[v1.DeleteAvatarRequest, v1.DeleteAvatarResponse]
 }
 
 // GetProfile calls aladdin.profile.v1.ProfileService.GetProfile.
@@ -126,9 +140,14 @@ func (c *profileServiceClient) UpdateProfile(ctx context.Context, req *connect.R
 	return c.updateProfile.CallUnary(ctx, req)
 }
 
-// UpdateAvatar calls aladdin.profile.v1.ProfileService.UpdateAvatar.
-func (c *profileServiceClient) UpdateAvatar(ctx context.Context, req *connect.Request[v1.UpdateAvatarRequest]) (*connect.Response[v1.UpdateAvatarResponse], error) {
-	return c.updateAvatar.CallUnary(ctx, req)
+// BeginAvatarUpload calls aladdin.profile.v1.ProfileService.BeginAvatarUpload.
+func (c *profileServiceClient) BeginAvatarUpload(ctx context.Context, req *connect.Request[v1.BeginAvatarUploadRequest]) (*connect.Response[v1.BeginAvatarUploadResponse], error) {
+	return c.beginAvatarUpload.CallUnary(ctx, req)
+}
+
+// CommitAvatarUpload calls aladdin.profile.v1.ProfileService.CommitAvatarUpload.
+func (c *profileServiceClient) CommitAvatarUpload(ctx context.Context, req *connect.Request[v1.CommitAvatarUploadRequest]) (*connect.Response[v1.CommitAvatarUploadResponse], error) {
+	return c.commitAvatarUpload.CallUnary(ctx, req)
 }
 
 // DeleteAvatar calls aladdin.profile.v1.ProfileService.DeleteAvatar.
@@ -145,16 +164,20 @@ type ProfileServiceHandler interface {
 	// 请求表达的是**期望的完整状态**，不是一次增量修改：空字符串表示清空
 	// 该项。因为没有"只改一个字段"的形状，也就不需要区分"没传"与"传空"。
 	UpdateProfile(context.Context, *connect.Request[v1.UpdateProfileRequest]) (*connect.Response[v1.UpdateProfileResponse], error)
-	// 上传或替换当前主体的头像。
+	// 开始一次头像上传：签发一份直传凭证。
 	//
-	// **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
-	// 内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
-	// 一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
-	// 看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
-	// 时以谁为准"这个问题。
+	// **字节不经过服务端**（见 docs/design/objectstore/README.md）。服务端在这里
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写头像这一个
+	// 键、类型与大小受条件约束"的策略交给对象存储执行。
 	//
-	// 一个主体一个对象，替换即原地覆盖。
-	UpdateAvatar(context.Context, *connect.Request[v1.UpdateAvatarRequest]) (*connect.Response[v1.UpdateAvatarResponse], error)
+	// 一个主体一个键，替换即原地覆盖：**头像是这条链路上唯一允许覆盖的用途**，
+	// 因为它本来就是一个"覆盖写"的字段。
+	BeginAvatarUpload(context.Context, *connect.Request[v1.BeginAvatarUploadRequest]) (*connect.Response[v1.BeginAvatarUploadResponse], error)
+	// 提交一次头像上传：核对字节确实到了，把档案指向它。
+	//
+	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
+	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。
+	CommitAvatarUpload(context.Context, *connect.Request[v1.CommitAvatarUploadRequest]) (*connect.Response[v1.CommitAvatarUploadResponse], error)
 	// 删除当前主体的头像。没有头像时也成功（幂等）。
 	DeleteAvatar(context.Context, *connect.Request[v1.DeleteAvatarRequest]) (*connect.Response[v1.DeleteAvatarResponse], error)
 }
@@ -178,10 +201,16 @@ func NewProfileServiceHandler(svc ProfileServiceHandler, opts ...connect.Handler
 		connect.WithSchema(profileServiceMethods.ByName("UpdateProfile")),
 		connect.WithHandlerOptions(opts...),
 	)
-	profileServiceUpdateAvatarHandler := connect.NewUnaryHandler(
-		ProfileServiceUpdateAvatarProcedure,
-		svc.UpdateAvatar,
-		connect.WithSchema(profileServiceMethods.ByName("UpdateAvatar")),
+	profileServiceBeginAvatarUploadHandler := connect.NewUnaryHandler(
+		ProfileServiceBeginAvatarUploadProcedure,
+		svc.BeginAvatarUpload,
+		connect.WithSchema(profileServiceMethods.ByName("BeginAvatarUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	profileServiceCommitAvatarUploadHandler := connect.NewUnaryHandler(
+		ProfileServiceCommitAvatarUploadProcedure,
+		svc.CommitAvatarUpload,
+		connect.WithSchema(profileServiceMethods.ByName("CommitAvatarUpload")),
 		connect.WithHandlerOptions(opts...),
 	)
 	profileServiceDeleteAvatarHandler := connect.NewUnaryHandler(
@@ -196,8 +225,10 @@ func NewProfileServiceHandler(svc ProfileServiceHandler, opts ...connect.Handler
 			profileServiceGetProfileHandler.ServeHTTP(w, r)
 		case ProfileServiceUpdateProfileProcedure:
 			profileServiceUpdateProfileHandler.ServeHTTP(w, r)
-		case ProfileServiceUpdateAvatarProcedure:
-			profileServiceUpdateAvatarHandler.ServeHTTP(w, r)
+		case ProfileServiceBeginAvatarUploadProcedure:
+			profileServiceBeginAvatarUploadHandler.ServeHTTP(w, r)
+		case ProfileServiceCommitAvatarUploadProcedure:
+			profileServiceCommitAvatarUploadHandler.ServeHTTP(w, r)
 		case ProfileServiceDeleteAvatarProcedure:
 			profileServiceDeleteAvatarHandler.ServeHTTP(w, r)
 		default:
@@ -217,8 +248,12 @@ func (UnimplementedProfileServiceHandler) UpdateProfile(context.Context, *connec
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.profile.v1.ProfileService.UpdateProfile is not implemented"))
 }
 
-func (UnimplementedProfileServiceHandler) UpdateAvatar(context.Context, *connect.Request[v1.UpdateAvatarRequest]) (*connect.Response[v1.UpdateAvatarResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.profile.v1.ProfileService.UpdateAvatar is not implemented"))
+func (UnimplementedProfileServiceHandler) BeginAvatarUpload(context.Context, *connect.Request[v1.BeginAvatarUploadRequest]) (*connect.Response[v1.BeginAvatarUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.profile.v1.ProfileService.BeginAvatarUpload is not implemented"))
+}
+
+func (UnimplementedProfileServiceHandler) CommitAvatarUpload(context.Context, *connect.Request[v1.CommitAvatarUploadRequest]) (*connect.Response[v1.CommitAvatarUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.profile.v1.ProfileService.CommitAvatarUpload is not implemented"))
 }
 
 func (UnimplementedProfileServiceHandler) DeleteAvatar(context.Context, *connect.Request[v1.DeleteAvatarRequest]) (*connect.Response[v1.DeleteAvatarResponse], error) {

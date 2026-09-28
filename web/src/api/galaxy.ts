@@ -1,0 +1,133 @@
+import { galaxyClient } from './transport'
+
+/**
+ * galaxy 创作面的调用封装。
+ *
+ * 与 profile.ts 同构：这里只提供有名字的调用入口，类型全部来自 proto 生成，
+ * **不做任何业务判断**。判断只有一处实现——"这段正文能不能发布"由服务端的
+ * ValidateContent 回答（见 docs/design/galaxy/README.md 的"引用完整性的唯一
+ * 入口"），前端不复写引用解析。
+ *
+ * 所有方法的目标工程都取自参数里的工程标识，而**归属由凭证决定**：接口面上
+ * 没有"指定拥有者"这个形状，因此这里也没有接收拥有者的参数。
+ */
+
+/** 读取当前部署下创作能力的边界（能不能传素材、能不能发布、各项上限）。 */
+export async function getCapabilities() {
+  return galaxyClient().getCapabilities({})
+}
+
+/** 列出调用者自己的工程。 */
+export async function listProjects() {
+  return galaxyClient().listProjects({})
+}
+
+/** 创建一个工程。标识由服务端分配。 */
+export async function createProject(name: string, description: string) {
+  return galaxyClient().createProject({ name, description })
+}
+
+/** 读取一个工程的元数据。不含草稿与版本正文。 */
+export async function getProject(projectId: string) {
+  return galaxyClient().getProject({ projectId })
+}
+
+/** 修改工程的名称与简介。空串表示清空。 */
+export async function updateProject(projectId: string, name: string, description: string) {
+  return galaxyClient().updateProject({ projectId, name, description })
+}
+
+/** 删除一个工程。连带删除它的全部版本、资产与发布记录。 */
+export async function deleteProject(projectId: string) {
+  return galaxyClient().deleteProject({ projectId })
+}
+
+/** 读取工程的当前草稿。从未保存过时正文为空。 */
+export async function getDraft(projectId: string) {
+  return galaxyClient().getDraft({ projectId })
+}
+
+/** 保存工程的当前草稿。改草稿不产生版本。 */
+export async function saveDraft(projectId: string, content: string) {
+  return galaxyClient().saveDraft({ projectId, content })
+}
+
+/** 把草稿的当前内容保存成一个不可变版本。 */
+export async function saveVersion(projectId: string) {
+  return galaxyClient().saveVersion({ projectId })
+}
+
+/** 列出工程的版本。按序号排序，不含正文。 */
+export async function listVersions(projectId: string) {
+  return galaxyClient().listVersions({ projectId })
+}
+
+/** 读取一个版本，含正文。 */
+export async function getVersion(projectId: string, versionId: string) {
+  return galaxyClient().getVersion({ projectId, versionId })
+}
+
+/** 删除一个版本。被当前发布指向的版本会被服务端拒绝。 */
+export async function deleteVersion(projectId: string, versionId: string) {
+  return galaxyClient().deleteVersion({ projectId, versionId })
+}
+
+/** 校验一段正文能不能发布。编辑器提示与发布前置校验共用这一个入口。 */
+export async function validateContent(projectId: string, content: string) {
+  return galaxyClient().validateContent({ projectId, content })
+}
+
+/** 列出工程资产库里的资产，含短时有效的读取地址。 */
+export async function listAssets(projectId: string) {
+  return galaxyClient().listAssets({ projectId })
+}
+
+/**
+ * 开始一次资产上传：服务端分配一个资产标识并签发一份**只对那一个键、只允许
+ * 写、短时有效**的直传凭证（见 docs/design/objectstore/README.md）。
+ *
+ * content_type 与 size_bytes 都是**上传方声明**：直传路径上服务端没有字节，
+ * 声明是它据以早退、签发策略的输入；类型必须在白名单内、大小不得超过对应
+ * 类别的上限，真正的约束由存储侧按声明执行。声明**不是**内容嗅探。
+ */
+export async function beginAssetUpload(projectId: string, contentType: string, sizeBytes: number) {
+  return galaxyClient().beginAssetUpload({
+    projectId,
+    contentType,
+    sizeBytes: BigInt(sizeBytes),
+  })
+}
+
+/**
+ * 提交一次资产上传。
+ *
+ * digest 是文件字节的 **SHA-256 十六进制**（见 upload/content-digest.ts），
+ * 由浏览器算好带上来——它是公开区地址的键，服务端没有字节可以算它。服务端在
+ * 提交时不校验它，但会在发布时读回对象核对，所以**必须算对**。
+ *
+ * filename 只是一个展示标签，不进对象键、不参与任何判断。
+ */
+export async function commitAssetUpload(
+  projectId: string,
+  assetId: string,
+  contentType: string,
+  digest: string,
+  filename: string,
+) {
+  return galaxyClient().commitAssetUpload({ projectId, assetId, contentType, digest, filename })
+}
+
+/** 删除一个资产。被任一版本引用时会被服务端拒绝。 */
+export async function deleteAsset(projectId: string, assetId: string) {
+  return galaxyClient().deleteAsset({ projectId, assetId })
+}
+
+/** 发布一个版本。只能发布版本，不能发布草稿。 */
+export async function publish(projectId: string, versionId: string) {
+  return galaxyClient().publish({ projectId, versionId })
+}
+
+/** 撤回发布。地址立刻不可达；发布记录保留。 */
+export async function unpublish(projectId: string) {
+  return galaxyClient().unpublish({ projectId })
+}

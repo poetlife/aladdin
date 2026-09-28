@@ -87,26 +87,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.profile.v1.UpdateProfileResponse'
-  /aladdin.profile.v1.ProfileService/UpdateAvatar:
+  /aladdin.profile.v1.ProfileService/BeginAvatarUpload:
     post:
       x-aladdin-auth:
         kind: authenticated_only
       tags:
         - aladdin.profile.v1.ProfileService
-      summary: UpdateAvatar
+      summary: BeginAvatarUpload
       description: |-
         **鉴权**：需要登录。任何已认证主体均可调用。
 
-        上传或替换当前主体的头像。
+        开始一次头像上传：签发一份直传凭证。
 
-         **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
-         内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
-         一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
-         看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
-         时以谁为准"这个问题。
+         **字节不经过服务端**（见 docs/design/objectstore/README.md）。服务端在这里
+         校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写头像这一个
+         键、类型与大小受条件约束"的策略交给对象存储执行。
 
-         一个主体一个对象，替换即原地覆盖。
-      operationId: aladdin.profile.v1.ProfileService.UpdateAvatar
+         一个主体一个键，替换即原地覆盖：**头像是这条链路上唯一允许覆盖的用途**，
+         因为它本来就是一个"覆盖写"的字段。
+      operationId: aladdin.profile.v1.ProfileService.BeginAvatarUpload
       parameters:
         - name: Connect-Protocol-Version
           in: header
@@ -121,7 +120,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/aladdin.profile.v1.UpdateAvatarRequest'
+              $ref: '#/components/schemas/aladdin.profile.v1.BeginAvatarUploadRequest'
         required: true
       responses:
         default:
@@ -135,7 +134,51 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/aladdin.profile.v1.UpdateAvatarResponse'
+                $ref: '#/components/schemas/aladdin.profile.v1.BeginAvatarUploadResponse'
+  /aladdin.profile.v1.ProfileService/CommitAvatarUpload:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.profile.v1.ProfileService
+      summary: CommitAvatarUpload
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        提交一次头像上传：核对字节确实到了，把档案指向它。
+
+         签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
+         一次 Head：不存在即失败，字节数超过上限即失败并删除对象。
+      operationId: aladdin.profile.v1.ProfileService.CommitAvatarUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.profile.v1.CommitAvatarUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.profile.v1.CommitAvatarUploadResponse'
   /aladdin.profile.v1.ProfileService/DeleteAvatar:
     post:
       x-aladdin-auth:
@@ -179,6 +222,91 @@ paths:
                 $ref: '#/components/schemas/aladdin.profile.v1.DeleteAvatarResponse'
 components:
   schemas:
+    aladdin.objectstore.v1.DirectUploadCredential:
+      type: object
+      properties:
+        bucket:
+          type: string
+          title: bucket
+          description: 桶名（含 APPID），不是地址：客户端 SDK 要的是桶名与地域。
+        region:
+          type: string
+          title: region
+          description: 桶所在地域，形如 ap-guangzhou。
+        key:
+          type: string
+          title: key
+          description: 这次唯一允许写入的对象键。由服务端分配，客户端改不了。
+        secretId:
+          type: string
+          title: secret_id
+          description: 临时凭证三元组。
+        secretKey:
+          type: string
+          title: secret_key
+        sessionToken:
+          type: string
+          title: session_token
+        expiresAt:
+          type: string
+          title: expires_at
+          description: 凭证的失效时刻。它是**给客户端的提示值**，实际失效以对象存储的判断为准。
+      title: DirectUploadCredential
+      additionalProperties: false
+      description: |-
+        DirectUploadCredential 是一次直传所需的全部取值。
+
+         它是**一份短时凭证**：在有效期内，拿到它的人可以用它往 key 上写一次。因此
+         它只下发给发起上传的那个客户端。
+
+         **它只允许写。** 约束写在换取来的策略里，由对象存储执行：动作只有写入对象，
+         资源只有 key 这一个对象，条件限定声明的内容类型与请求体长度上限。
+
+         **它不得进日志。** 把它写进日志等于把一次写入的能力留在了日志文件里。
+    aladdin.profile.v1.BeginAvatarUploadRequest:
+      type: object
+      properties:
+        contentType:
+          type: string
+          title: content_type
+          description: '**声明**的内容类型。服务端只校验它在该部署接受的白名单内。'
+        sizeBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: size_bytes
+          description: '**声明**的字节数。服务端据此在签发前早退；真正的上限由存储侧执行。'
+      title: BeginAvatarUploadRequest
+      additionalProperties: false
+    aladdin.profile.v1.BeginAvatarUploadResponse:
+      type: object
+      properties:
+        upload:
+          allOf:
+            - title: upload
+              description: 直传凭证。**只允许写、只对头像这一个键有效、短时有效。**
+            - $ref: '#/components/schemas/aladdin.objectstore.v1.DirectUploadCredential'
+      title: BeginAvatarUploadResponse
+      additionalProperties: false
+    aladdin.profile.v1.CommitAvatarUploadRequest:
+      type: object
+      title: CommitAvatarUploadRequest
+      additionalProperties: false
+    aladdin.profile.v1.CommitAvatarUploadResponse:
+      type: object
+      properties:
+        profile:
+          allOf:
+            - title: profile
+            - $ref: '#/components/schemas/aladdin.profile.v1.Profile'
+      title: CommitAvatarUploadResponse
+      additionalProperties: false
+      description: |-
+        返回提交之后的完整档案，而不是一个成功标志：客户端刚做过一次会改变现状的
+         操作，让它在同一次往返里拿到新现状，比再发一次查询更省事。avatar_url 按
+         新状态重新签发。
     aladdin.profile.v1.DeleteAvatarRequest:
       type: object
       title: DeleteAvatarRequest
@@ -271,27 +399,6 @@ components:
 
          **没有任何一个字段参与判定**，也没有任何一个字段是身份键。它们只影响
          界面上显示什么。
-    aladdin.profile.v1.UpdateAvatarRequest:
-      type: object
-      properties:
-        image:
-          type: string
-          title: image
-          format: byte
-          description: |-
-            图片字节。类型由服务端嗅探决定，此处不存在"声明类型"的字段。
-             超出大小上限时拒绝。
-      title: UpdateAvatarRequest
-      additionalProperties: false
-    aladdin.profile.v1.UpdateAvatarResponse:
-      type: object
-      properties:
-        profile:
-          allOf:
-            - title: profile
-            - $ref: '#/components/schemas/aladdin.profile.v1.Profile'
-      title: UpdateAvatarResponse
-      additionalProperties: false
     aladdin.profile.v1.UpdateProfileRequest:
       type: object
       properties:

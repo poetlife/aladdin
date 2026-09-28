@@ -151,9 +151,9 @@
 |------|---------|
 | 领域类型、字段上限、存储契约与内存实现 | [internal/profile/profile.go](../../../internal/profile/profile.go) |
 | 档案的读写入口与**展示名回退规则的唯一实现** | [internal/profile/profiles.go](../../../internal/profile/profiles.go) |
-| 头像的对象键、类型嗅探与存储契约 | [internal/profile/avatar.go](../../../internal/profile/avatar.go) |
+| 头像的对象键、类型白名单与上限 | [internal/profile/avatar.go](../../../internal/profile/avatar.go) |
 | 档案的关系库实现 | [internal/profile/gormstore/profile.go](../../../internal/profile/gormstore/profile.go) |
-| 头像的 COS 实现 | [internal/profile/cosstore/avatar.go](../../../internal/profile/cosstore/avatar.go) |
+| 头像的直传（签发、提交） | [internal/profile/profiles.go](../../../internal/profile/profiles.go) 与 [internal/objectstore/](../../../internal/objectstore/) |
 | 接口定义 | [api/proto/aladdin/profile/v1/profile.proto](../../../api/proto/aladdin/profile/v1/profile.proto) |
 | 四个方法的接入与留痕 | [internal/server/profile_service.go](../../../internal/server/profile_service.go) |
 | 服务装配（含对象存储的有无） | [internal/server/server.go](../../../internal/server/server.go) |

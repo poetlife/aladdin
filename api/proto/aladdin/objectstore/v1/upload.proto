@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package aladdin.objectstore.v1;
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/objectstore/v1;objectstorev1";
+
+// 本文件定义"用户上传的字节怎么进对象存储"这条链路上**对外的那个形状**：
+// 一份被限定的直传凭证。
+//
+// 它被个人档案（头像）与 galaxy（资产）两处共用，因此**只有这一份定义**——
+// 两处各写一份的表现是"换一个功能上传，客户端接到的凭证形状就变了一套"。
+// 行为约定见 docs/design/objectstore/README.md。
+
+// DirectUploadCredential 是一次直传所需的全部取值。
+//
+// 它是**一份短时凭证**：在有效期内，拿到它的人可以用它往 key 上写一次。因此
+// 它只下发给发起上传的那个客户端。
+//
+// **它只允许写。** 约束写在换取来的策略里，由对象存储执行：动作只有写入对象，
+// 资源只有 key 这一个对象，条件限定声明的内容类型与请求体长度上限。
+//
+// **它不得进日志。** 把它写进日志等于把一次写入的能力留在了日志文件里。
+message DirectUploadCredential {
+  // 桶名（含 APPID），不是地址：客户端 SDK 要的是桶名与地域。
+  string bucket = 1;
+  // 桶所在地域，形如 ap-guangzhou。
+  string region = 2;
+  // 这次唯一允许写入的对象键。由服务端分配，客户端改不了。
+  string key = 3;
+  // 临时凭证三元组。
+  string secret_id = 4;
+  string secret_key = 5;
+  string session_token = 6;
+  // 凭证的失效时刻。它是**给客户端的提示值**，实际失效以对象存储的判断为准。
+  string expires_at = 7;
+}

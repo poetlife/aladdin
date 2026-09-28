@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/poetlife/aladdin/internal/observability"
 )
 
@@ -41,6 +43,12 @@ const (
 	EnvDatabaseDSN    = "ALADDIN_DATABASE_DSN"
 
 	EnvCOSBucketURL = "ALADDIN_COS_BUCKET_URL"
+	// EnvGalaxyPublicBucketURL 与 EnvGalaxyPublishBaseURL 是 galaxy 发布的公开桶
+	// 地址与对外地址。**它们复用同一对 COS 密钥**：子账号同时被授权两个桶，而
+	// "公开还是私有"由桶侧策略决定，不由凭证决定（见
+	// docs/design/galaxy/publication.md）。
+	EnvGalaxyPublicBucketURL = "ALADDIN_GALAXY_PUBLIC_BUCKET_URL"
+	EnvGalaxyPublishBaseURL  = "ALADDIN_GALAXY_PUBLISH_BASE_URL"
 	// EnvCOSSecretID 与 EnvCOSSecretKey 是头像存储的子账号密钥。
 	//
 	// **它们与 EnvGithubClientSecret 是本仓库仅有的两组"只有环境变量、没有
@@ -80,6 +88,9 @@ const (
 	keyDatabaseDSN    = "database_dsn"
 
 	keyCOSBucketURL = "cos_bucket_url"
+
+	keyGalaxyPublicBucketURL = "galaxy_public_bucket_url"
+	keyGalaxyPublishBaseURL  = "galaxy_publish_base_url"
 
 	keyGoogleClientID        = "google_client_id"
 	keyGithubClientID        = "github_client_id"
@@ -161,6 +172,42 @@ type COSConfig struct {
 // 启动），因此这里不需要再回答"配了一半算不算"。
 func (c COSConfig) Enabled() bool { return c.BucketURL != "" }
 
+// GalaxyConfig 是 galaxy 发布所需的两个地址。
+//
+// 它们**成对出现**：一个指向公开读的桶（发布物引用的媒体从那里取），一个指向
+// 发布页面的对外地址。二者缺一即发布不可用，而"只配一半"由 validateGalaxy
+// 拒绝启动——半套配置的失败方式既不是"没启用"，也不是"配错了"，而是"看起来
+// 配好了"，直到第一次发布才失败。
+type GalaxyConfig struct {
+	// PublicBucketURL 是发布物资产的**公开读**桶地址。
+	//
+	// 它与私有桶（COS.BucketURL）是两个独立的桶，不是同一个桶的两个前缀：桶的
+	// 公开读是一个"整个桶"级别的策略，把公开与私有的东西放进同一个桶，意味着
+	// 一次策略写错就是全桶公开。它**不是秘密**（只是一个主机名），因此留在
+	// 配置文件里。
+	PublicBucketURL string
+	// PublishBaseURL 是发布页面的对外地址（发布域）。
+	//
+	// **它必须与 PublicBaseURL 不同源**，且不只是主机名不同：同一注册域下的
+	// 两个主机虽然不同源，却可能共享一张按域设置的 cookie。这条由
+	// validateGalaxy 强制（见 docs/design/galaxy/publication.md）。
+	PublishBaseURL string
+}
+
+// Enabled 表示这个部署配置了发布存储。校验通过之后才调用它。
+func (c GalaxyConfig) Enabled() bool { return c.PublicBucketURL != "" && c.PublishBaseURL != "" }
+
+// Describe 描述这项配置。它没有密钥，因此原样给出两个地址。
+//
+// 启动日志要能回答"我改的那一行到底有没有被读到"——发布这一项尤其如此：
+// 它的失败方式是"发布入口没渲染"，而那可能只是配置没读到。
+func (c GalaxyConfig) Describe() string {
+	if !c.Enabled() {
+		return "未启用"
+	}
+	return "公开桶 " + c.PublicBucketURL + "，发布域 " + c.PublishBaseURL
+}
+
 // Describe 描述这项配置，**不含密钥**。
 //
 // 与 database.Describe 同理：启动日志要能回答"我改的那一行到底有没有被读到"，
@@ -230,6 +277,8 @@ type ServerConfig struct {
 	Database DatabaseConfig
 	// COS 是头像存放的对象存储。零值表示未启用头像。
 	COS COSConfig
+	// Galaxy 是 galaxy 发布所需的存储与对外地址。零值表示未启用发布。
+	Galaxy GalaxyConfig
 	// GoogleClientID 是 Google 登录用的客户端标识；为空表示未启用该登录方式。
 	//
 	// 它**不是秘密**：这个值明文出现在浏览器里，是这类登录方式的设计前提，
@@ -375,6 +424,9 @@ func (c ServerConfig) Validate() error {
 	if err := validateCOS(c.COS); err != nil {
 		return err
 	}
+	if err := validateGalaxy(c); err != nil {
+		return err
+	}
 	if err := validatePublicBaseURL(c.PublicBaseURL); err != nil {
 		return err
 	}
@@ -499,9 +551,123 @@ func validateCOS(cos COSConfig) error {
 	return nil
 }
 
+// checkOriginShape 是"一个地址能不能当作对外源"的**唯一判据**。
+//
+// 服务端的对外地址与发布域两处用它，因此它只实现一次：两处各写一份的表现是
+// "一处允许 http 回环、另一处不允许"，而配置的合法性不该取决于读的是哪一份代码。
+//
+// 要求：绝对地址、有主机名、不带用户信息、不带查询串与 fragment、路径为空或只有
+// `/`。协议必须 https，**唯一例外是本地回环主机**——本地开发没有证书。
+func checkOriginShape(key, env, raw, pathReason string) error {
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return invalidKey(key, env, fmt.Sprintf("必须是带主机名的绝对地址，当前 %q", raw))
+	}
+	if u.User != nil {
+		return invalidKey(key, env, "不得带用户信息")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return invalidKey(key, env, "不得带查询串或 fragment")
+	}
+	if u.Path != "" && u.Path != "/" {
+		return invalidKey(key, env, fmt.Sprintf("路径必须为空或只有 /，当前 %q：%s", u.Path, pathReason))
+	}
+	loopbackHTTP := u.Scheme == "http" && isLoopbackHost(u.Hostname())
+	if u.Scheme != "https" && !loopbackHTTP {
+		return invalidKey(key, env, fmt.Sprintf("必须是 https（仅本地回环主机允许 http），当前协议 %q", u.Scheme))
+	}
+	return nil
+}
+
+// validateGalaxy 校验 galaxy 发布所需的两个地址。
+//
+// 只有两种情形放行：**两项全空**（不启用发布）与**两项齐全**（启用发布）。部分
+// 给出一律拒绝启动——半套配置的失败方式既不是"没启用"（前端会渲染一个点了报错
+// 的发布入口），也不是"配错了"（启动时能看见），而是"看起来配好了"，直到第一次
+// 发布才失败。这与 validateCOS、validateGithubLogin 是同一条取向。
+//
+// **发布域必须与主应用不同源，且不只是主机名不同。** 发布物里跑着用户写的脚本，
+// 同源意味着那段脚本与应用共享 origin。而"同一注册域"这一条更隐蔽：同一注册域下
+// 的两个主机虽然不同源，却可能共享一张按域设置的 cookie——脚本读不到 HttpOnly
+// 条目，但它可以把请求发到同站的应用地址上带着 cookie 走。因此判据是**可注册域
+// 必须不同**。
+func validateGalaxy(c ServerConfig) error {
+	hasPublicBucket := c.Galaxy.PublicBucketURL != ""
+	hasPublishBase := c.Galaxy.PublishBaseURL != ""
+	switch {
+	case !hasPublicBucket && !hasPublishBase:
+		return nil // 未启用发布。这是默认情形
+	case !hasPublicBucket:
+		return invalidKey(keyGalaxyPublicBucketURL, EnvGalaxyPublicBucketURL,
+			"与 "+keyGalaxyPublishBaseURL+"（"+EnvGalaxyPublishBaseURL+"）必须同时给出：只给发布域等于有页面地址、没有放页面的地方")
+	case !hasPublishBase:
+		return invalidKey(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL,
+			"与 "+keyGalaxyPublicBucketURL+"（"+EnvGalaxyPublicBucketURL+"）必须同时给出：只给公开桶等于有存的地方、没有对外地址")
+	}
+
+	// 公开桶是"资源从哪来"，它必须是带主机名的 https 地址。
+	bucket, err := url.Parse(c.Galaxy.PublicBucketURL)
+	if err != nil || bucket.Scheme != "https" || bucket.Host == "" {
+		return invalidKey(keyGalaxyPublicBucketURL, EnvGalaxyPublicBucketURL,
+			fmt.Sprintf("必须是带主机名的 https 地址，当前 %q", c.Galaxy.PublicBucketURL))
+	}
+	if err := checkOriginShape(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL, c.Galaxy.PublishBaseURL,
+		"带路径会让 /g/<工程标识> 变成一个子路径，而那不在本 spec 的地址形状里"); err != nil {
+		return err
+	}
+
+	// 主应用没有配置对外地址时无从比较：此时"不同源"这条没有对象，而不是
+	// "自动通过"——发布域自己的取值要求已经在上一步查过。
+	if c.PublicBaseURL == "" {
+		return nil
+	}
+	return validateDifferentSite(c.PublicBaseURL, c.Galaxy.PublishBaseURL)
+}
+
+// validateDifferentSite 判定两个地址是否属于**同一站点**（同源或同注册域）。
+//
+// 判据只有一个，因为"发布域与主应用不同源"这条约束的解释只有一种：它们是两个
+// 互不信任的站点。同源比同注册域更强，因此先判前者。
+//
+// 注册域的判定用公共后缀表（Public Suffix List）而不是"取最后两段"：后者在
+// `example.co.uk` 这类多段后缀上会错，而错的方向是把两个不同站点判成同一个
+// （或反过来），两种都不该出现在一条安全约束里。
+func validateDifferentSite(appBaseURL, publishBaseURL string) error {
+	app, err := url.Parse(appBaseURL)
+	if err != nil {
+		return nil // 主应用地址自身的形状由它自己的校验负责
+	}
+	publish, err := url.Parse(publishBaseURL)
+	if err != nil {
+		return nil
+	}
+	if strings.EqualFold(app.Host, publish.Host) {
+		return invalidKey(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL,
+			"与 "+keyPublicBaseURL+"（"+EnvPublicBaseURL+"）同源：发布物里跑着用户写的脚本，同源意味着它能读写应用的 cookie 与本地存储")
+	}
+	appSite, appErr := registrableDomain(app.Hostname())
+	publishSite, publishErr := registrableDomain(publish.Hostname())
+	if appErr != nil || publishErr != nil {
+		// 取不出注册域（回环地址、或用不了公共后缀表的主机）时，不同主机名已经
+		// 足够：这一条是"更强的那一条"，不该因为判不出来而变成拒绝启动。
+		return nil
+	}
+	if appSite == publishSite {
+		return invalidKey(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL,
+			fmt.Sprintf("与 %s（%s）同属注册域 %s：同一注册域下的两个主机可能共享一张按域设置的 cookie，脚本可以把请求发到同站的应用地址上",
+				keyPublicBaseURL, EnvPublicBaseURL, appSite))
+	}
+	return nil
+}
+
+// registrableDomain 返回一个主机名的可注册域（eTLD+1）。
+func registrableDomain(host string) (string, error) {
+	return publicsuffix.EffectiveTLDPlusOne(host)
+}
+
 // validatePublicBaseURL 校验服务端对外地址的形状。
 //
-// 空值是合法的：它表示"没有配置"。**是否需要它由 validateGithubLogin 判定**
+// 空值是合法的：它表示"没有配置"（是否需要它由 validateGithubLogin 判定）。
 // ——只有重定向型登录渠道才用它，因此不能在这里要求它非空。
 //
 // 路径必须为空或只有 `/`：带路径前缀会衍生出一个同样要登记在渠道控制台里的
@@ -511,29 +677,8 @@ func validatePublicBaseURL(raw string) error {
 	if raw == "" {
 		return nil
 	}
-	u, err := url.Parse(raw)
-	if err != nil || !u.IsAbs() || u.Host == "" {
-		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL,
-			fmt.Sprintf("必须是带主机名的绝对地址，当前 %q", raw))
-	}
-	if u.User != nil {
-		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL, "不得带用户信息")
-	}
-	if u.RawQuery != "" || u.Fragment != "" {
-		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL, "不得带查询串或 fragment")
-	}
-	if u.Path != "" && u.Path != "/" {
-		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL,
-			fmt.Sprintf("路径必须为空或只有 /，当前 %q：带路径会衍生出一个也要登记在渠道控制台里的回调地址", u.Path))
-	}
-	// 允许 https；此外只允许**本地回环上的** http——本地开发没有证书，
-	// 写死 https 会让登录在本机根本跑不通。
-	loopbackHTTP := u.Scheme == "http" && isLoopbackHost(u.Hostname())
-	if u.Scheme != "https" && !loopbackHTTP {
-		return invalidKey(keyPublicBaseURL, EnvPublicBaseURL,
-			fmt.Sprintf("必须是 https（仅本地回环主机允许 http），当前协议 %q", u.Scheme))
-	}
-	return nil
+	return checkOriginShape(keyPublicBaseURL, EnvPublicBaseURL, raw,
+		"带路径会衍生出一个也要登记在渠道控制台里的回调地址")
 }
 
 // isLoopbackHost 判断主机名是不是本地回环地址。

@@ -1,0 +1,1614 @@
+openapi: 3.1.0
+info:
+  title: aladdin.galaxy.v1
+paths:
+  /aladdin.galaxy.v1.GalaxyService/GetCapabilities:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: GetCapabilities
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        读取当前部署下创作能力的边界：能不能传素材、能不能发布、各项上限。
+
+         它是**能力下发点**，与档案的 avatar_upload_enabled 同一取向：能力由
+         服务端说，客户端不猜。前端据此不渲染未启用的入口，而不是渲染一个点了
+         报错的控件。它退回的每一项都是部署形态的公开事实，不因调用者而异。
+      operationId: aladdin.galaxy.v1.GalaxyService.GetCapabilities
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.GetCapabilitiesRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.GetCapabilitiesResponse'
+  /aladdin.galaxy.v1.GalaxyService/ListProjects:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: ListProjects
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        列出调用者自己的工程。**只有这一个列表入口，且它的范围由凭证决定。**
+
+         刻意没有"列出所有工程"或"列出某个主体的工程"的形状：工程标识不可猜
+         是发布态匿名可读的唯一防线，任何枚举入口都会把它降级成"打开就能逛"。
+      operationId: aladdin.galaxy.v1.GalaxyService.ListProjects
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.ListProjectsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.ListProjectsResponse'
+  /aladdin.galaxy.v1.GalaxyService/CreateProject:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: CreateProject
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
+
+         名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
+         一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
+      operationId: aladdin.galaxy.v1.GalaxyService.CreateProject
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.CreateProjectRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.CreateProjectResponse'
+  /aladdin.galaxy.v1.GalaxyService/GetProject:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: GetProject
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        读取一个工程的元数据。不含草稿正文、版本正文与资产字节。
+      operationId: aladdin.galaxy.v1.GalaxyService.GetProject
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.GetProjectRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.GetProjectResponse'
+  /aladdin.galaxy.v1.GalaxyService/UpdateProject:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: UpdateProject
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
+      operationId: aladdin.galaxy.v1.GalaxyService.UpdateProject
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateProjectRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateProjectResponse'
+  /aladdin.galaxy.v1.GalaxyService/DeleteProject:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: DeleteProject
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        删除一个工程。**连带删除它的全部版本、资产与发布记录**，因此已发布的
+         地址立刻变成"不存在"。公开区上已上架的字节不回收（见发布一节）。
+      operationId: aladdin.galaxy.v1.GalaxyService.DeleteProject
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteProjectRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteProjectResponse'
+  /aladdin.galaxy.v1.GalaxyService/GetDraft:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: GetDraft
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        读取工程的当前草稿。草稿行是惰性创建的：从未保存过草稿时正文为空。
+      operationId: aladdin.galaxy.v1.GalaxyService.GetDraft
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.GetDraftRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.GetDraftResponse'
+  /aladdin.galaxy.v1.GalaxyService/SaveDraft:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: SaveDraft
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        保存工程的当前草稿。**改草稿不产生版本**——它是工作区，不是历史。
+      operationId: aladdin.galaxy.v1.GalaxyService.SaveDraft
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.SaveDraftRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.SaveDraftResponse'
+  /aladdin.galaxy.v1.GalaxyService/SaveVersion:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: SaveVersion
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        把草稿的当前内容保存成一个**不可变**版本。
+
+         保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
+         连续保存两次相同正文产生两个版本，而不是"检测到重复就不新增"——两份
+         看起来一样的正文对用户是两次不同的保存动作。
+      operationId: aladdin.galaxy.v1.GalaxyService.SaveVersion
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.SaveVersionRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.SaveVersionResponse'
+  /aladdin.galaxy.v1.GalaxyService/ListVersions:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: ListVersions
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        列出工程的版本。按序号排序。**列表不带正文**（正文由 GetVersion 取）。
+      operationId: aladdin.galaxy.v1.GalaxyService.ListVersions
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.ListVersionsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.ListVersionsResponse'
+  /aladdin.galaxy.v1.GalaxyService/GetVersion:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: GetVersion
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        读取一个版本，含正文。保存时的内容此后逐字不变。
+      operationId: aladdin.galaxy.v1.GalaxyService.GetVersion
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.GetVersionRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.GetVersionResponse'
+  /aladdin.galaxy.v1.GalaxyService/DeleteVersion:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: DeleteVersion
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        删除一个版本。**被当前发布指向的版本不可删**——那会让发布地址指向一个
+         不存在的版本。序号不因删除而重排，因此删中间一个会留下空洞。
+      operationId: aladdin.galaxy.v1.GalaxyService.DeleteVersion
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteVersionRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteVersionResponse'
+  /aladdin.galaxy.v1.GalaxyService/ValidateContent:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: ValidateContent
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        校验一段正文能不能发布。**编辑器提示与发布前置校验共用这一个入口。**
+
+         前端**不得**复写一套引用解析：两端各写一份的表现是"编辑器说没问题、
+         发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
+         它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
+         存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+      operationId: aladdin.galaxy.v1.GalaxyService.ValidateContent
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.ValidateContentRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.ValidateContentResponse'
+  /aladdin.galaxy.v1.GalaxyService/ListAssets:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.asset.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: ListAssets
+      description: |-
+        **鉴权**：需要权限 `galaxy.asset.read`；作用域取自凭证的默认作用域。
+
+        列出工程资产库里的资产，含**短时有效**的读取地址。
+      operationId: aladdin.galaxy.v1.GalaxyService.ListAssets
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.ListAssetsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.ListAssetsResponse'
+  /aladdin.galaxy.v1.GalaxyService/BeginAssetUpload:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.asset.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: BeginAssetUpload
+      description: |-
+        **鉴权**：需要权限 `galaxy.asset.write`；作用域取自凭证的默认作用域。
+
+        开始一次资产上传：分配资产标识并签发一份直传凭证。
+
+         **字节不经过服务端**（见 docs/design/objectstore/README.md）。服务端在这里
+         做三件事：校验调用的工程属于调用者、校验**声明的**内容类型在白名单内、
+         按声明的大小早退；然后把"只许写这一个键、类型与大小受条件约束"的策略交给
+         对象存储，由它执行。
+
+         **类型与摘要都是上传方声明的，服务端不看字节。** 类型决定此后下发时回给
+         浏览器的内容类型，而白名单里没有任何可执行类型——因此公开区上的对象永远
+         以一个无害类型下发；摘要则在上架到公开区时被核对，不一致即拒绝发布。
+      operationId: aladdin.galaxy.v1.GalaxyService.BeginAssetUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.BeginAssetUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.BeginAssetUploadResponse'
+  /aladdin.galaxy.v1.GalaxyService/CommitAssetUpload:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.asset.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: CommitAssetUpload
+      description: |-
+        **鉴权**：需要权限 `galaxy.asset.write`；作用域取自凭证的默认作用域。
+
+        提交一次资产上传：核对字节确实到了，写入资产元数据。
+
+         签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
+         一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
+         上传不会进入任何清单**（元数据行不存在）。
+      operationId: aladdin.galaxy.v1.GalaxyService.CommitAssetUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.CommitAssetUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.CommitAssetUploadResponse'
+  /aladdin.galaxy.v1.GalaxyService/DeleteAsset:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.asset.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: DeleteAsset
+      description: |-
+        **鉴权**：需要权限 `galaxy.asset.write`；作用域取自凭证的默认作用域。
+
+        删除一个资产。**被任一版本引用时拒绝**，错误信息指出被哪些版本引用。
+
+         拒绝的理由是版本不可变的含义包括"它此后永远可以发布"：一个引用了已删
+         除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
+         从版本内容里知道该怎么做。把问题挡在它产生的地方。
+      operationId: aladdin.galaxy.v1.GalaxyService.DeleteAsset
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteAssetRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteAssetResponse'
+  /aladdin.galaxy.v1.GalaxyService/Publish:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.publish
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: Publish
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.publish`；作用域取自凭证的默认作用域。
+
+        发布一个版本：校验、把引用的资产上架到公开区、落库产物、切换发布指针。
+
+         **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
+         没有意义。草稿内容不会被读取。
+
+         发布域与公开桶未配置时这一项不可用（见 GetCapabilities）。
+      operationId: aladdin.galaxy.v1.GalaxyService.Publish
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.PublishRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.PublishResponse'
+  /aladdin.galaxy.v1.GalaxyService/Unpublish:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.publish
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: Unpublish
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.publish`；作用域取自凭证的默认作用域。
+
+        撤回发布：把发布指针置空，地址立刻不可达。
+
+         发布记录保留，因此可以重新发布同一个版本；公开区的副本不因撤回而删除。
+         撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
+         收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
+      operationId: aladdin.galaxy.v1.GalaxyService.Unpublish
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.UnpublishRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.UnpublishResponse'
+components:
+  schemas:
+    aladdin.galaxy.v1.MediaKind:
+      type: string
+      title: MediaKind
+      enum:
+        - MEDIA_KIND_UNSPECIFIED
+        - MEDIA_KIND_IMAGE
+        - MEDIA_KIND_VIDEO
+        - MEDIA_KIND_AUDIO
+      description: |-
+        MediaKind 是资产按媒体分出的类别。
+
+         它决定的是**用哪一档大小上限**：一张图与一段视频的合理体积差两个数量级，
+         用同一个上限卡两者，要么放过一张过大的图，要么拒掉一段正常的视频。
+    aladdin.galaxy.v1.Asset:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        mediaType:
+          type: string
+          title: media_type
+          description: |-
+            媒体类型。**上传方声明的**，服务端只校验它在白名单内，并把它作为此后
+             下发时回给浏览器的内容类型。声明不等于验证（见 objectstore）。
+        sizeBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: size_bytes
+          description: 字节数。它取自提交时对对象的核对，不是声明值。
+        filename:
+          type: string
+          title: filename
+          description: 原始文件名。**仅供展示与排障**：它不进对象键，不参与任何判断。
+        uploadedAt:
+          type: string
+          title: uploaded_at
+        url:
+          type: string
+          title: url
+          description: |-
+            **短时有效**的预签名读取地址，客户端直接放进 <img src>。
+
+             这个地址在有效期内谁拿到都能用，它是一份短期凭证。这正是"未发布的资产
+             里不得承载秘密"这条约束的来源。过期后重新调用 ListAssets 即得到新地址。
+
+             未配置私有桶时为空。
+      title: Asset
+      additionalProperties: false
+      description: |-
+        Asset 是工程资产库里的一个媒体文件。
+
+         字节在对象存储，这里只有元数据与一个短时读取地址。
+    aladdin.galaxy.v1.AssetKindLimit:
+      type: object
+      properties:
+        kind:
+          allOf:
+            - title: kind
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.MediaKind'
+        maxBytes:
+          type: integer
+          title: max_bytes
+      title: AssetKindLimit
+      additionalProperties: false
+      description: |-
+        AssetKindLimit 是某一类资产的字节上限。
+
+         它随能力下发，让客户端在选文件时就早退，免得把一个几十 MB 的文件整个传
+         上来只为了被拒。**服务端仍然是权威**：客户端这一判断只是省一次往返，
+         不是一条安全边界。
+    aladdin.galaxy.v1.BeginAssetUploadRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        contentType:
+          type: string
+          title: content_type
+          description: '**声明**的内容类型。服务端只校验它在白名单内。'
+        sizeBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: size_bytes
+          description: |-
+            **声明**的字节数。服务端据此在签发前早退，避免让用户白传一遍；真正的
+             大小上限由存储侧按内容类型执行。
+      title: BeginAssetUploadRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.BeginAssetUploadResponse:
+      type: object
+      properties:
+        assetId:
+          type: string
+          title: asset_id
+          description: 本次上传的资产标识。提交时要把它带回来。
+        upload:
+          allOf:
+            - title: upload
+              description: 直传凭证。**只允许写、只对这一个键有效、短时有效。**
+            - $ref: '#/components/schemas/aladdin.objectstore.v1.DirectUploadCredential'
+      title: BeginAssetUploadResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.Capabilities:
+      type: object
+      properties:
+        assetUploadEnabled:
+          type: boolean
+          title: asset_upload_enabled
+          description: 是否配置了私有桶。为假时不渲染上传入口与资产区。
+        publishEnabled:
+          type: boolean
+          title: publish_enabled
+          description: 是否配置了公开桶与发布域。为假时不渲染发布入口。
+        maxDocumentBytes:
+          type: integer
+          title: max_document_bytes
+          description: 正文（草稿与版本）的字节上限。
+        maxArtifactBytes:
+          type: integer
+          title: max_artifact_bytes
+          description: 发布产物的字节上限。它比正文上限宽，因为改写会把占位符换成完整地址。
+        assetLimits:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.AssetKindLimit'
+          title: asset_limits
+          description: 各类资产的字节上限。
+      title: Capabilities
+      additionalProperties: false
+      description: |-
+        Capabilities 是当前部署下创作能力的边界。
+
+         两个布尔项是**部署形态**的公开事实，不因调用者而异：未配置对象存储时
+         素材传不了，未配置发布存储时页面发不出去，而工程与版本照常可用。
+    aladdin.galaxy.v1.CommitAssetUploadRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        assetId:
+          type: string
+          title: asset_id
+        contentType:
+          type: string
+          title: content_type
+          description: |-
+            **声明**的内容类型。**两次调用之间服务端不保留任何状态**（那正是"未提交
+             的上传不留痕迹"的实现方式），因此它在这里被再次声明并重新校验。
+        digest:
+          type: string
+          title: digest
+          description: |-
+            **声明**的内容摘要（SHA-256 的十六进制）。
+
+             它是公开区地址的键，而服务端没有字节可以算它。**它在被使用之前会被核对**：
+             上架到公开区时服务端读回对象算一遍，不一致即拒绝发布——因此一条假的摘要
+             不会把公开区的地址指向别人的内容。
+        filename:
+          type: string
+          title: filename
+          description: |-
+            展示用的原始文件名。**不进对象键，不参与任何判断**：它可能含路径分隔符、
+             控制字符以及别人的名字，把它拼进存储路径就是把一段不可信输入拼进路径。
+      title: CommitAssetUploadRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.CommitAssetUploadResponse:
+      type: object
+      properties:
+        asset:
+          allOf:
+            - title: asset
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Asset'
+      title: CommitAssetUploadResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.CreateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          title: name
+        description:
+          type: string
+          title: description
+      title: CreateProjectRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.CreateProjectResponse:
+      type: object
+      properties:
+        project:
+          allOf:
+            - title: project
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
+      title: CreateProjectResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.DeleteAssetRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        assetId:
+          type: string
+          title: asset_id
+      title: DeleteAssetRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.DeleteAssetResponse:
+      type: object
+      title: DeleteAssetResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.DeleteProjectRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+      title: DeleteProjectRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.DeleteProjectResponse:
+      type: object
+      title: DeleteProjectResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.DeleteVersionRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        versionId:
+          type: string
+          title: version_id
+      title: DeleteVersionRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.DeleteVersionResponse:
+      type: object
+      title: DeleteVersionResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.Draft:
+      type: object
+      properties:
+        content:
+          type: string
+          title: content
+          description: 一个完整的 HTML 文档（<!doctype html> 到 </html>），不包裹、不补全。
+        updatedAt:
+          type: string
+          title: updated_at
+          description: 最后一次保存的时间。从未保存过草稿时为空。
+      title: Draft
+      additionalProperties: false
+      description: |-
+        Draft 是工程当前正在编辑的正文。
+
+         它不是版本：随时可改，改它不产生版本，不参与发布，也不保证可退回。
+    aladdin.galaxy.v1.GetCapabilitiesRequest:
+      type: object
+      title: GetCapabilitiesRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.GetCapabilitiesResponse:
+      type: object
+      properties:
+        capabilities:
+          allOf:
+            - title: capabilities
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Capabilities'
+      title: GetCapabilitiesResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.GetDraftRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+      title: GetDraftRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.GetDraftResponse:
+      type: object
+      properties:
+        draft:
+          allOf:
+            - title: draft
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Draft'
+      title: GetDraftResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.GetProjectRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+      title: GetProjectRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.GetProjectResponse:
+      type: object
+      properties:
+        project:
+          allOf:
+            - title: project
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
+      title: GetProjectResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.GetVersionRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        versionId:
+          type: string
+          title: version_id
+      title: GetVersionRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.GetVersionResponse:
+      type: object
+      properties:
+        version:
+          allOf:
+            - title: version
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Version'
+      title: GetVersionResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.ListAssetsRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+      title: ListAssetsRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.ListAssetsResponse:
+      type: object
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.Asset'
+          title: assets
+      title: ListAssetsResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.ListProjectsRequest:
+      type: object
+      title: ListProjectsRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.ListProjectsResponse:
+      type: object
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
+          title: projects
+      title: ListProjectsResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.ListVersionsRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+      title: ListVersionsRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.ListVersionsResponse:
+      type: object
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.Version'
+          title: versions
+      title: ListVersionsResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.Project:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+          description: |-
+            工程标识。由服务端分配，不可猜、不可改、不复用。
+
+             它是**发布地址的一部分**，而发布态是公开匿名的：拿到地址的人能看，
+             猜不出地址的人看不到（见 docs/design/galaxy/README.md 的"发布即公开"）。
+        name:
+          type: string
+          title: name
+          description: 名称。可改。**仅用于本人识别**，不是查找键，不进发布地址。
+        description:
+          type: string
+          title: description
+          description: 简介。为空表示未填写。
+        createdAt:
+          type: string
+          title: created_at
+        updatedAt:
+          type: string
+          title: updated_at
+        published:
+          type: boolean
+          title: published
+          description: 当前是否处于发布态。
+        publishedVersionId:
+          type: string
+          title: published_version_id
+          description: 当前发布指向的版本标识。未发布时为空。
+        publishedUrl:
+          type: string
+          title: published_url
+          description: |-
+            发布地址，形如 <发布域>/g/<工程标识>。未发布时为空。
+
+             **地址由服务端算好**，客户端不拼：改写生成的地址与内容安全策略里的
+             允许来源都从同一个配置值派生，客户端再拼一份就是第三个来源。
+        publishedAt:
+          type: string
+          title: published_at
+          description: 当前发布的生效时间。未发布时为空。
+      title: Project
+      additionalProperties: false
+      description: |-
+        Project 是一个创作单元的元数据。
+
+         **不带草稿正文、版本正文与资产字节。** 列表接口会读这一行，把大字段挂上来
+         正是档案模块"头像字节不入库"要避免的同一件事。
+    aladdin.galaxy.v1.Publication:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        projectId:
+          type: string
+          title: project_id
+        versionId:
+          type: string
+          title: version_id
+        publishedAt:
+          type: string
+          title: published_at
+        url:
+          type: string
+          title: url
+          description: 发布地址，与 Project.published_url 同一处派生。
+      title: Publication
+      additionalProperties: false
+      description: |-
+        Publication 是一次发布的产物记录。
+
+         对外地址返回的是**产物正文**（改写好的 HTML），不是版本正文。
+    aladdin.galaxy.v1.PublishRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        versionId:
+          type: string
+          title: version_id
+          description: 要发布的版本。**必填**：没有"发布当前草稿"这种形状。
+      title: PublishRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.PublishResponse:
+      type: object
+      properties:
+        publication:
+          allOf:
+            - title: publication
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Publication'
+        project:
+          allOf:
+            - title: project
+              description: 生效之后的工程状态，含新的发布地址。前端据此刷新而不必再查一次。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
+      title: PublishResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.SaveDraftRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        content:
+          type: string
+          title: content
+      title: SaveDraftRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.SaveDraftResponse:
+      type: object
+      properties:
+        draft:
+          allOf:
+            - title: draft
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Draft'
+      title: SaveDraftResponse
+      additionalProperties: false
+      description: |-
+        返回保存之后的草稿，而不是一个成功标志：客户端刚做过一次会改变现状的
+         操作，让它在同一次往返里拿到新现状，比再发一次查询更省事。
+    aladdin.galaxy.v1.SaveVersionRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+      title: SaveVersionRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.SaveVersionResponse:
+      type: object
+      properties:
+        version:
+          allOf:
+            - title: version
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Version'
+      title: SaveVersionResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.UnpublishRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+      title: UnpublishRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.UnpublishResponse:
+      type: object
+      properties:
+        project:
+          allOf:
+            - title: project
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
+      title: UnpublishResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.UpdateProjectRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        name:
+          type: string
+          title: name
+          description: 期望的完整状态，空串表示清空。
+        description:
+          type: string
+          title: description
+      title: UpdateProjectRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.UpdateProjectResponse:
+      type: object
+      properties:
+        project:
+          allOf:
+            - title: project
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
+      title: UpdateProjectResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.ValidateContentRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        content:
+          type: string
+          title: content
+          description: 待校验的正文。它不必是已保存的草稿——编辑器要能校验"正在编辑的内容"。
+      title: ValidateContentRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.ValidateContentResponse:
+      type: object
+      properties:
+        problems:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.ValidationProblem'
+          title: problems
+      title: ValidateContentResponse
+      additionalProperties: false
+      description: |-
+        问题为空表示这段正文可以发布。**它是发布前置校验的同一份规则**，因此
+         "这里通过"与"发布能成功"是同一个结论，不会漂移。
+    aladdin.galaxy.v1.ValidationProblem:
+      type: object
+      properties:
+        message:
+          type: string
+          title: message
+      title: ValidationProblem
+      additionalProperties: false
+      description: |-
+        ValidationProblem 是正文里的一处问题。
+
+         message 里**带上位置**（行号）与出问题的取值：只说"有引用不合法"会让用户
+         在一份几百行的正文里自己找。
+    aladdin.galaxy.v1.Version:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        seq:
+          oneOf:
+            - type: integer
+              title: integer
+              format: int64
+            - type: string
+              title: string
+          title: seq
+          description: |-
+            在工程内递增的序号。**仅用于展示与排序，不是标识。**
+             删除一个版本会让后续序号出现空洞，这是可接受的。
+        savedAt:
+          type: string
+          title: saved_at
+        content:
+          type: string
+          title: content
+          description: |-
+            正文。**只有 GetVersion 会填充它**；列表接口留空，避免把每个版本的
+             正文一起读上来。
+      title: Version
+      additionalProperties: false
+      description: Version 是正文的一次不可变快照。
+    aladdin.objectstore.v1.DirectUploadCredential:
+      type: object
+      properties:
+        bucket:
+          type: string
+          title: bucket
+          description: 桶名（含 APPID），不是地址：客户端 SDK 要的是桶名与地域。
+        region:
+          type: string
+          title: region
+          description: 桶所在地域，形如 ap-guangzhou。
+        key:
+          type: string
+          title: key
+          description: 这次唯一允许写入的对象键。由服务端分配，客户端改不了。
+        secretId:
+          type: string
+          title: secret_id
+          description: 临时凭证三元组。
+        secretKey:
+          type: string
+          title: secret_key
+        sessionToken:
+          type: string
+          title: session_token
+        expiresAt:
+          type: string
+          title: expires_at
+          description: 凭证的失效时刻。它是**给客户端的提示值**，实际失效以对象存储的判断为准。
+      title: DirectUploadCredential
+      additionalProperties: false
+      description: |-
+        DirectUploadCredential 是一次直传所需的全部取值。
+
+         它是**一份短时凭证**：在有效期内，拿到它的人可以用它往 key 上写一次。因此
+         它只下发给发起上传的那个客户端。
+
+         **它只允许写。** 约束写在换取来的策略里，由对象存储执行：动作只有写入对象，
+         资源只有 key 这一个对象，条件限定声明的内容类型与请求体长度上限。
+
+         **它不得进日志。** 把它写进日志等于把一次写入的能力留在了日志文件里。
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      enum:
+        - 1
+      description: Define the version of the Connect protocol
+      const: 1
+    connect-timeout-header:
+      type: number
+      title: Connect-Timeout-Ms
+      description: Define the timeout, in ms
+    connect.error:
+      type: object
+      properties:
+        code:
+          type: string
+          examples:
+            - CodeNotFound
+          enum:
+            - CodeCanceled
+            - CodeUnknown
+            - CodeInvalidArgument
+            - CodeDeadlineExceeded
+            - CodeNotFound
+            - CodeAlreadyExists
+            - CodePermissionDenied
+            - CodeResourceExhausted
+            - CodeFailedPrecondition
+            - CodeAborted
+            - CodeOutOfRange
+            - CodeInternal
+            - CodeUnavailable
+            - CodeDataLoss
+            - CodeUnauthenticated
+          description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+        message:
+          type: string
+          description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+        detail:
+          $ref: '#/components/schemas/google.protobuf.Any'
+      title: Connect Error
+      additionalProperties: true
+      description: 'Error type returned by Connect: https://connectrpc.com/docs/go/errors/#http-representation'
+    google.protobuf.Any:
+      type: object
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+          format: binary
+        debug:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+security: []
+tags:
+  - name: aladdin.galaxy.v1.GalaxyService
+    description: |-
+      GalaxyService 是创作面：用户写一份 HTML、放素材，然后把它发布成一个
+       别人能打开的页面。
+
+       边界：它不回答"你是谁"（认证）也不回答"你能做什么"（RBAC）。**两把闸门
+       各管一件事**：`galaxy.*` 权限码决定这个主体有没有资格创作，工程的拥有者
+       决定他能不能碰这一个工程。后者不由 RBAC 表达，也不在本服务的请求里出现
+       ——**接口面上没有"指定拥有者"这个形状**，拥有者由凭证决定。
+
+       **"不是你的"与"不存在"返回同一个结论。** 区分它们等于提供一个工程枚举
+       接口：拿着别人的工程标识反复调用，"不存在"与"无权访问"的差集就能把一个
+       不可猜标识试出来。而工程标识是发布地址的一部分，猜出它就能看到别人的
+       页面（见 docs/design/galaxy/project-versioning.md）。
+
+       作用域从**凭证绑定的默认作用域**解析：请求里没有作用域字段，也不该有
+       ——工程是资源归属的载体，不是作用域的载体。

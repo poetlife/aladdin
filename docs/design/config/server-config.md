@@ -323,7 +323,7 @@
 | 数据库连接的建立 | [internal/database/database.go](../../../internal/database/database.go) |
 | 结构迁移的执行 | [internal/database/migrate/migrate.go](../../../internal/database/migrate/migrate.go) |
 | 开发用种子数据旁路 | [internal/server/devseed.go](../../../internal/server/devseed.go) |
-| 头像存储的装配 | [internal/profile/cosstore/](../../../internal/profile/cosstore/) |
+| 直传存储的装配 | [internal/objectstore/cosupload/](../../../internal/objectstore/cosupload/) |
 | 引导第一个管理员的生效 | [internal/server/bootstrap.go](../../../internal/server/bootstrap.go) |
 
 ---

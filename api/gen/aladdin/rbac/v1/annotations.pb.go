@@ -31,7 +31,9 @@ const (
 	ScopeSource_SCOPE_SOURCE_REQUEST_FIELD ScopeSource = 1
 	// 从请求元数据 aladdin-scope 读取（适用于调用方在当前会话作用域下操作，作用域不体现在消息体里）。
 	ScopeSource_SCOPE_SOURCE_METADATA ScopeSource = 2
-	// 使用凭证自身绑定的默认作用域。仅用于身份类方法。
+	// 使用凭证自身绑定的默认作用域。用于**自服务类方法**：操作对象只可能是
+	// 调用者自身，作用域不体现在消息体里，也不接受调用方指定（见 profile 与
+	// galaxy 两个服务）。
 	ScopeSource_SCOPE_SOURCE_CREDENTIAL ScopeSource = 3
 )
 

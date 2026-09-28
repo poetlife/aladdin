@@ -9,6 +9,8 @@ import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RolesPage } from './pages/RolesPage'
+import { ProjectEditorPage } from './pages/galaxy/ProjectEditorPage'
+import { ProjectListPage } from './pages/galaxy/ProjectListPage'
 import { PermissionCodes } from './gen/permission-codes'
 
 /**
@@ -51,6 +53,15 @@ export const router = createBrowserRouter([
           {
             element: <RequirePermission require={[PermissionCodes.RbacRoleRead]} />,
             children: [{ path: '/roles', element: <RolesPage /> }],
+          },
+          // galaxy 创作面。基础权限是 `galaxy.project.read`——列表与编辑器
+          // 同属一块能力；编辑器内部的写/发布/资产入口再按各自权限码裁剪。
+          {
+            element: <RequirePermission require={[PermissionCodes.GalaxyProjectRead]} />,
+            children: [
+              { path: '/galaxy', element: <ProjectListPage /> },
+              { path: '/galaxy/:projectId', element: <ProjectEditorPage /> },
+            ],
           },
         ],
       },

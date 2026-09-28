@@ -21,7 +21,41 @@ import (
 //
 // 期望值按 **sqlite** 记录。换后端时这里会整体变化——那时应当再留一份
 // 该后端的快照，而不是把这份改成两边都不像。
-const wantSchema = `table identities
+const wantSchema = `table galaxy_assets
+  digest text pk=false null=true
+  filename text pk=false null=true
+  id text pk=true null=true
+  media_kind text pk=false null=true
+  media_type text pk=false null=true
+  project_id text pk=false null=true
+  size_bytes integer pk=false null=true
+  uploaded_at datetime pk=false null=true
+table galaxy_drafts
+  content text pk=false null=true
+  project_id text pk=true null=true
+  updated_at datetime pk=false null=true
+table galaxy_projects
+  created_at datetime pk=false null=true
+  current_publication_id text pk=false null=true
+  description text pk=false null=true
+  id text pk=true null=true
+  name text pk=false null=true
+  owner_subject_id text pk=false null=true
+  updated_at datetime pk=false null=true
+table galaxy_publications
+  content text pk=false null=true
+  id text pk=true null=true
+  project_id text pk=false null=true
+  published_at datetime pk=false null=true
+  published_by_subject_id text pk=false null=true
+  version_id text pk=false null=true
+table galaxy_versions
+  content text pk=false null=true
+  id text pk=true null=true
+  project_id text pk=false null=true
+  saved_at datetime pk=false null=true
+  seq integer pk=false null=true
+table identities
   display text pk=false null=true
   external_id text pk=true null=true
   source text pk=true null=true

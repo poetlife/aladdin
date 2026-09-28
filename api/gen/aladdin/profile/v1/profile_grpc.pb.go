@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProfileService_GetProfile_FullMethodName    = "/aladdin.profile.v1.ProfileService/GetProfile"
-	ProfileService_UpdateProfile_FullMethodName = "/aladdin.profile.v1.ProfileService/UpdateProfile"
-	ProfileService_UpdateAvatar_FullMethodName  = "/aladdin.profile.v1.ProfileService/UpdateAvatar"
-	ProfileService_DeleteAvatar_FullMethodName  = "/aladdin.profile.v1.ProfileService/DeleteAvatar"
+	ProfileService_GetProfile_FullMethodName         = "/aladdin.profile.v1.ProfileService/GetProfile"
+	ProfileService_UpdateProfile_FullMethodName      = "/aladdin.profile.v1.ProfileService/UpdateProfile"
+	ProfileService_BeginAvatarUpload_FullMethodName  = "/aladdin.profile.v1.ProfileService/BeginAvatarUpload"
+	ProfileService_CommitAvatarUpload_FullMethodName = "/aladdin.profile.v1.ProfileService/CommitAvatarUpload"
+	ProfileService_DeleteAvatar_FullMethodName       = "/aladdin.profile.v1.ProfileService/DeleteAvatar"
 )
 
 // ProfileServiceClient is the client API for ProfileService service.
@@ -50,16 +51,20 @@ type ProfileServiceClient interface {
 	// 请求表达的是**期望的完整状态**，不是一次增量修改：空字符串表示清空
 	// 该项。因为没有"只改一个字段"的形状，也就不需要区分"没传"与"传空"。
 	UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*UpdateProfileResponse, error)
-	// 上传或替换当前主体的头像。
+	// 开始一次头像上传：签发一份直传凭证。
 	//
-	// **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
-	// 内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
-	// 一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
-	// 看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
-	// 时以谁为准"这个问题。
+	// **字节不经过服务端**（见 docs/design/objectstore/README.md）。服务端在这里
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写头像这一个
+	// 键、类型与大小受条件约束"的策略交给对象存储执行。
 	//
-	// 一个主体一个对象，替换即原地覆盖。
-	UpdateAvatar(ctx context.Context, in *UpdateAvatarRequest, opts ...grpc.CallOption) (*UpdateAvatarResponse, error)
+	// 一个主体一个键，替换即原地覆盖：**头像是这条链路上唯一允许覆盖的用途**，
+	// 因为它本来就是一个"覆盖写"的字段。
+	BeginAvatarUpload(ctx context.Context, in *BeginAvatarUploadRequest, opts ...grpc.CallOption) (*BeginAvatarUploadResponse, error)
+	// 提交一次头像上传：核对字节确实到了，把档案指向它。
+	//
+	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
+	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。
+	CommitAvatarUpload(ctx context.Context, in *CommitAvatarUploadRequest, opts ...grpc.CallOption) (*CommitAvatarUploadResponse, error)
 	// 删除当前主体的头像。没有头像时也成功（幂等）。
 	DeleteAvatar(ctx context.Context, in *DeleteAvatarRequest, opts ...grpc.CallOption) (*DeleteAvatarResponse, error)
 }
@@ -92,10 +97,20 @@ func (c *profileServiceClient) UpdateProfile(ctx context.Context, in *UpdateProf
 	return out, nil
 }
 
-func (c *profileServiceClient) UpdateAvatar(ctx context.Context, in *UpdateAvatarRequest, opts ...grpc.CallOption) (*UpdateAvatarResponse, error) {
+func (c *profileServiceClient) BeginAvatarUpload(ctx context.Context, in *BeginAvatarUploadRequest, opts ...grpc.CallOption) (*BeginAvatarUploadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateAvatarResponse)
-	err := c.cc.Invoke(ctx, ProfileService_UpdateAvatar_FullMethodName, in, out, cOpts...)
+	out := new(BeginAvatarUploadResponse)
+	err := c.cc.Invoke(ctx, ProfileService_BeginAvatarUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *profileServiceClient) CommitAvatarUpload(ctx context.Context, in *CommitAvatarUploadRequest, opts ...grpc.CallOption) (*CommitAvatarUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommitAvatarUploadResponse)
+	err := c.cc.Invoke(ctx, ProfileService_CommitAvatarUpload_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -137,16 +152,20 @@ type ProfileServiceServer interface {
 	// 请求表达的是**期望的完整状态**，不是一次增量修改：空字符串表示清空
 	// 该项。因为没有"只改一个字段"的形状，也就不需要区分"没传"与"传空"。
 	UpdateProfile(context.Context, *UpdateProfileRequest) (*UpdateProfileResponse, error)
-	// 上传或替换当前主体的头像。
+	// 开始一次头像上传：签发一份直传凭证。
 	//
-	// **请求里没有"内容类型"这个字段，这是有意的。** 服务端对收到的字节做
-	// 内容嗅探，只接受图片白名单，并以嗅探结果为准。让上传方声明类型等于把
-	// 一个安全属性交给它自证：一段脚本可以顶着 image/png 存进去，之后以一个
-	// 看起来合法的地址被分发。去掉这个字段，也就顺带消掉了"声明与实际不符
-	// 时以谁为准"这个问题。
+	// **字节不经过服务端**（见 docs/design/objectstore/README.md）。服务端在这里
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写头像这一个
+	// 键、类型与大小受条件约束"的策略交给对象存储执行。
 	//
-	// 一个主体一个对象，替换即原地覆盖。
-	UpdateAvatar(context.Context, *UpdateAvatarRequest) (*UpdateAvatarResponse, error)
+	// 一个主体一个键，替换即原地覆盖：**头像是这条链路上唯一允许覆盖的用途**，
+	// 因为它本来就是一个"覆盖写"的字段。
+	BeginAvatarUpload(context.Context, *BeginAvatarUploadRequest) (*BeginAvatarUploadResponse, error)
+	// 提交一次头像上传：核对字节确实到了，把档案指向它。
+	//
+	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
+	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。
+	CommitAvatarUpload(context.Context, *CommitAvatarUploadRequest) (*CommitAvatarUploadResponse, error)
 	// 删除当前主体的头像。没有头像时也成功（幂等）。
 	DeleteAvatar(context.Context, *DeleteAvatarRequest) (*DeleteAvatarResponse, error)
 	mustEmbedUnimplementedProfileServiceServer()
@@ -165,8 +184,11 @@ func (UnimplementedProfileServiceServer) GetProfile(context.Context, *GetProfile
 func (UnimplementedProfileServiceServer) UpdateProfile(context.Context, *UpdateProfileRequest) (*UpdateProfileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateProfile not implemented")
 }
-func (UnimplementedProfileServiceServer) UpdateAvatar(context.Context, *UpdateAvatarRequest) (*UpdateAvatarResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateAvatar not implemented")
+func (UnimplementedProfileServiceServer) BeginAvatarUpload(context.Context, *BeginAvatarUploadRequest) (*BeginAvatarUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginAvatarUpload not implemented")
+}
+func (UnimplementedProfileServiceServer) CommitAvatarUpload(context.Context, *CommitAvatarUploadRequest) (*CommitAvatarUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitAvatarUpload not implemented")
 }
 func (UnimplementedProfileServiceServer) DeleteAvatar(context.Context, *DeleteAvatarRequest) (*DeleteAvatarResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteAvatar not implemented")
@@ -228,20 +250,38 @@ func _ProfileService_UpdateProfile_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ProfileService_UpdateAvatar_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateAvatarRequest)
+func _ProfileService_BeginAvatarUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginAvatarUploadRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProfileServiceServer).UpdateAvatar(ctx, in)
+		return srv.(ProfileServiceServer).BeginAvatarUpload(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ProfileService_UpdateAvatar_FullMethodName,
+		FullMethod: ProfileService_BeginAvatarUpload_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProfileServiceServer).UpdateAvatar(ctx, req.(*UpdateAvatarRequest))
+		return srv.(ProfileServiceServer).BeginAvatarUpload(ctx, req.(*BeginAvatarUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProfileService_CommitAvatarUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitAvatarUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProfileServiceServer).CommitAvatarUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProfileService_CommitAvatarUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProfileServiceServer).CommitAvatarUpload(ctx, req.(*CommitAvatarUploadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -280,8 +320,12 @@ var ProfileService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ProfileService_UpdateProfile_Handler,
 		},
 		{
-			MethodName: "UpdateAvatar",
-			Handler:    _ProfileService_UpdateAvatar_Handler,
+			MethodName: "BeginAvatarUpload",
+			Handler:    _ProfileService_BeginAvatarUpload_Handler,
+		},
+		{
+			MethodName: "CommitAvatarUpload",
+			Handler:    _ProfileService_CommitAvatarUpload_Handler,
 		},
 		{
 			MethodName: "DeleteAvatar",

@@ -23,11 +23,20 @@ func clearEnv(t *testing.T) {
 		EnvAddress, EnvLogLevel, EnvLogFile, EnvTimeout, EnvConfig,
 		EnvDatabaseDriver, EnvDatabaseDSN,
 		EnvCOSBucketURL, EnvCOSSecretID, EnvCOSSecretKey,
+		EnvGalaxyPublicBucketURL, EnvGalaxyPublishBaseURL,
 		EnvGoogleClientID, EnvGithubClientID, EnvGithubClientSecret, EnvPublicBaseURL,
-		EnvBootstrapAdminSubject, EnvBootstrapAdminScope,
+		EnvBootstrapAdminSubject, EnvBootstrapAdminEmail, EnvBootstrapAdminScope,
 	} {
 		t.Setenv(k, "")
 	}
+}
+
+// testPublicBucket 是 galaxy 公开桶的样例地址：形状与配置文件里给的一致。
+const testPublicBucket = "https://aladdin-public-1250000000.cos.ap-guangzhou.myqcloud.com"
+
+// galaxyPair 是"发布两项齐全"的最小取值，只把发布域留出来给用例替换。
+func galaxyPair(publishBaseURL string) GalaxyConfig {
+	return GalaxyConfig{PublicBucketURL: testPublicBucket, PublishBaseURL: publishBaseURL}
 }
 
 // isolateHome 把用户配置目录指到临时目录，避免测试写到真实的家目录里。
@@ -466,6 +475,48 @@ func TestValidate(t *testing.T) {
 			c.Bootstrap = BootstrapConfig{Scope: "root"}
 		}, false},
 		{"客户端标识为空即未启用", func(c *ServerConfig) { c.GoogleClientID = "" }, true},
+		// galaxy 的发布存储：两项必须成对，且发布域不得与主应用同站。
+		{"发布未配置", func(c *ServerConfig) { c.Galaxy = GalaxyConfig{} }, true},
+		{"发布两项齐全", func(c *ServerConfig) { c.Galaxy = galaxyPair("https://pub.example.com") }, true},
+		{"发布只给公开桶", func(c *ServerConfig) {
+			c.Galaxy = GalaxyConfig{PublicBucketURL: testPublicBucket}
+		}, false},
+		{"发布只给发布域", func(c *ServerConfig) {
+			c.Galaxy = GalaxyConfig{PublishBaseURL: "https://pub.example.com"}
+		}, false},
+		{"公开桶不是 https", func(c *ServerConfig) {
+			c.Galaxy = galaxyPair("https://pub.example.com")
+			c.Galaxy.PublicBucketURL = "http://aladdin-public-1250000000.cos.ap-guangzhou.myqcloud.com"
+		}, false},
+		{"发布域不是绝对地址", func(c *ServerConfig) {
+			c.Galaxy = galaxyPair("pub.example.com")
+		}, false},
+		{"发布域带路径", func(c *ServerConfig) {
+			c.Galaxy = galaxyPair("https://pub.example.com/g")
+		}, false},
+		{"发布域与对外地址同源", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.com"
+			c.Galaxy = galaxyPair("https://app.example.com")
+		}, false},
+		{"发布域与对外地址同注册域", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.com"
+			c.Galaxy = galaxyPair("https://pub.example.com")
+		}, false},
+		{"发布域多段后缀同注册域", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.co.uk"
+			c.Galaxy = galaxyPair("https://pub.example.co.uk")
+		}, false},
+		{"发布域多段后缀不同注册域", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.co.uk"
+			c.Galaxy = galaxyPair("https://pub.other.co.uk")
+		}, true},
+		{"发布域不同注册域", func(c *ServerConfig) {
+			c.PublicBaseURL = "https://app.example.com"
+			c.Galaxy = galaxyPair("https://pages.example.net")
+		}, true},
+		{"主应用未配置对外地址时发布域合法", func(c *ServerConfig) {
+			c.Galaxy = galaxyPair("https://pub.example.com")
+		}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -637,6 +688,8 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyDatabaseDriver:        "mysql",
 			keyDatabaseDSN:           "aladdin@tcp(127.0.0.1:3306)/aladdin",
 			keyCOSBucketURL:          "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com",
+			keyGalaxyPublicBucketURL: "https://aladdin-public-1250000000.cos.ap-guangzhou.myqcloud.com",
+			keyGalaxyPublishBaseURL:  "https://pub.example.com",
 			keyGoogleClientID:        "1234567890.apps.googleusercontent.com",
 			keyGithubClientID:        "Iv1.0123456789abcdef",
 			keyPublicBaseURL:         "https://aladdin.example.com",
@@ -656,6 +709,10 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			// 重定向型登录渠道的三项也必须成对出现，理由同上。
 			keyGithubClientID: keyPublicBaseURL + ": https://aladdin.example.com\n",
 			keyPublicBaseURL:  keyGithubClientID + ": Iv1.0123456789abcdef\n",
+			// 发布的两项同理：只给其中之一会被校验拒绝，那样测的就成了
+			// "半套配置被拒吗"——那是另一回事，另有专门的用例守着。
+			keyGalaxyPublicBucketURL: keyGalaxyPublishBaseURL + ": https://pub.example.com\n",
+			keyGalaxyPublishBaseURL:  keyGalaxyPublicBucketURL + ": https://aladdin-public-1250000000.cos.ap-guangzhou.myqcloud.com\n",
 		}
 		// 生效前提来自环境变量的键。头像桶地址本身不是秘密、可以写进配置文件，
 		// 但它的两项密钥只有环境变量这一个来源（见 EnvCOSSecretID），因此这个

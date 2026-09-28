@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LogOut,
   ShieldCheck,
+  Sparkles,
   X,
 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -39,6 +40,7 @@ export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps):
   const navigate = useNavigate()
   const location = useLocation()
   const canReadRoles = useAnyPermission([PermissionCodes.RbacRoleRead])
+  const canReadGalaxy = useAnyPermission([PermissionCodes.GalaxyProjectRead])
 
   // 侧边栏内部的跳转一律走这里：导航项与账号区共用，"跳转之后要通知外壳"
   // （窄屏下就是收起抽屉）因此只有一份实现。分成两处就会漏——账号区那一条
@@ -50,6 +52,10 @@ export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps):
 
   const items = [
     { key: '/', label: '概览', icon: <LayoutDashboard size={ICON_SIZE} /> },
+    // galaxy 创作入口：无 `galaxy.project.read` 时不渲染，导航栏不被无权项占据。
+    ...(canReadGalaxy
+      ? [{ key: '/galaxy', label: '创作', icon: <Sparkles size={ICON_SIZE} /> }]
+      : []),
     // 个人资料不需要权限码：它只作用于自己（见 docs/design/profile/README.md）。
     { key: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
     ...(canReadRoles

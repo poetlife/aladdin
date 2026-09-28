@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	profilev1 "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1"
+	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/profile"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
@@ -68,27 +69,47 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, req *connect.Request
 	return connect.NewResponse(&profilev1.UpdateProfileResponse{Profile: s.toProtoProfile(view)}), nil
 }
 
-// UpdateAvatar 实现 ProfileService。
+// BeginAvatarUpload 实现 ProfileService：签发一份头像直传凭证。
 //
-// 类型由字节本身判定，请求里没有"声明类型"这个字段——上传方不自证安全属性
-// （见 profile.SniffAvatarType）。
-func (s *ProfileService) UpdateAvatar(ctx context.Context, req *connect.Request[profilev1.UpdateAvatarRequest]) (*connect.Response[profilev1.UpdateAvatarResponse], error) {
+// **字节不经过本服务端**（见 docs/design/objectstore/README.md）。请求里带的是
+// 声明的类型与大小，服务端只校验它们，真正的边界由存储侧执行。
+func (s *ProfileService) BeginAvatarUpload(ctx context.Context, req *connect.Request[profilev1.BeginAvatarUploadRequest]) (*connect.Response[profilev1.BeginAvatarUploadResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	image := req.Msg.GetImage()
-	view, err := s.profiles.SetAvatar(ctx, subject.ID, image)
+	declaredSize, err := declaredBytes(req.Msg.GetSizeBytes())
+	if err != nil {
+		return nil, err
+	}
+	credential, err := s.profiles.BeginAvatarUpload(ctx, subject.ID, req.Msg.GetContentType(), declaredSize)
 	if err != nil {
 		return nil, toProfileConnectError(err)
 	}
 
-	// 只记类型与字节数，**不记字节本身**。
-	s.logger.Info("已更新头像",
+	// 只记声明的类型与大小，**不记凭证本身**：把凭证写进日志等于把一次写入的
+	// 能力留在了日志文件里。
+	s.logger.Info("已签发头像直传凭证",
 		zap.String("subject_id", subject.ID),
-		zap.Int("bytes", len(image)),
+		zap.String("content_type", req.Msg.GetContentType()),
+		zap.Uint64("declared_bytes", req.Msg.GetSizeBytes()),
 	)
-	return connect.NewResponse(&profilev1.UpdateAvatarResponse{Profile: s.toProtoProfile(view)}), nil
+	return connect.NewResponse(&profilev1.BeginAvatarUploadResponse{Upload: toProtoUpload(credential)}), nil
+}
+
+// CommitAvatarUpload 实现 ProfileService：核对对象确实到了，把档案指向它。
+func (s *ProfileService) CommitAvatarUpload(ctx context.Context, _ *connect.Request[profilev1.CommitAvatarUploadRequest]) (*connect.Response[profilev1.CommitAvatarUploadResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.profiles.CommitAvatarUpload(ctx, subject.ID)
+	if err != nil {
+		return nil, toProfileConnectError(err)
+	}
+
+	s.logger.Info("已提交头像上传", zap.String("subject_id", subject.ID))
+	return connect.NewResponse(&profilev1.CommitAvatarUploadResponse{Profile: s.toProtoProfile(view)}), nil
 }
 
 // DeleteAvatar 实现 ProfileService。没有头像时也成功（幂等）。
@@ -159,6 +180,12 @@ func toProfileConnectError(err error) error {
 			fmt.Errorf("头像不能超过 %d MiB", profile.AvatarMaxBytes/(1024*1024)))
 	case errors.Is(err, profile.ErrAvatarTypeNotAllowed):
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("头像必须是 PNG、JPEG 或 GIF"))
+	case errors.Is(err, profile.ErrAvatarObjectMissing):
+		// 上传没完成不是调用方的错，也不是服务端的故障：客户端重传一次即可。
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("头像对象不存在，上传可能没有完成，请重试"))
+	case errors.Is(err, objectstore.ErrStoreUnavailable):
+		return connect.NewError(connect.CodeUnavailable, errors.New("对象存储暂时不可用，请稍后重试"))
 	case errors.Is(err, rbac.ErrSubjectNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("主体不存在或已停用"))
 	default:

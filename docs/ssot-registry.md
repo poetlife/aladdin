@@ -36,10 +36,11 @@
 | 一份会话凭证是否有效、代表谁 | 会话存储的查询入口 | [internal/identity/session.go](../internal/identity/session.go) |
 | 某个邮箱（展示值）对应哪些已登记身份 | 身份别名的按展示值查询 | [internal/identity/identity.go](../internal/identity/identity.go) |
 | 一个主体的展示名（昵称，未设则回退到渠道标识，再回退到主体标识） | 档案的展示名解析入口 | [internal/profile/profiles.go](../internal/profile/profiles.go) |
+| 字节数的展示文案（头像上限、资产上限、文件大小） | `describeBytes` | [web/src/format/bytes.ts](../web/src/format/bytes.ts) |
 | 发布产物里资产占位符到公开地址的改写 | 占位符的改写入口（逐字替换，不解析 HTML） | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) |
 | 发布产物交付时的内容安全策略 | CSP 响应头的构造入口 | [internal/galaxy/csp.go](../internal/galaxy/csp.go) |
-| 一段头像字节是不是一张可接受的图片 | 头像的类型嗅探与白名单（唯一入口，不接受上传方声明的类型） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
-| 一段 asset 字节是不是本工程资产库里可接受的媒体 | 资产的类型嗅探与分档上限（唯一入口，不接受上传方声明的类型） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
+| 上传方声明的类型能不能作为头像 | 头像的类型白名单（唯一入口；声明不等于验证，见直传） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
+| 上传方声明的类型能不能作为资产 | 资产的类型白名单与分档上限（唯一入口；声明不等于验证，见直传） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
 | 一段正文能不能发布（引用完整性 + 体积上限） | `galaxy` 的校验入口（**编辑器提示与发布前置校验共用**，不得在前端复写） | [internal/galaxy/validate.go](../internal/galaxy/validate.go) |
 | 一段正文里引用了哪些资产 | 资产占位符的识别入口 | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) |
 | 一个资产标识是否属于某个工程 | 资产的归属查询（唯一入口，发布校验与删除拦阻共用） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
@@ -118,9 +119,9 @@
 | 会话（谁、到什么时候为止、作用域）的持久化数据 | 会话存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/session.go](../internal/identity/session.go) / [internal/identity/gormstore/](../internal/identity/gormstore/store.go) |
 | 身份别名（（来源，身份标识）→ 主体）的持久化数据 | 身份别名的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/identity.go](../internal/identity/identity.go) / [internal/identity/gormstore/identity.go](../internal/identity/gormstore/identity.go) |
 | 档案（昵称、简介、头像对象键）的持久化数据 | 档案的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/profile/profile.go](../internal/profile/profile.go) / [internal/profile/gormstore/profile.go](../internal/profile/gormstore/profile.go) |
-| 头像字节与它的读取地址 | 头像存储接口（生产实现是 COS，测试注入假实现） | [internal/profile/avatar.go](../internal/profile/avatar.go) / [internal/profile/cosstore/avatar.go](../internal/profile/cosstore/avatar.go) |
+| 上传的字节怎么进对象存储（签发直传凭证、核对提交结果） | 直传的公共契约（生产实现是 COS，测试注入假实现） | [internal/objectstore/upload.go](../internal/objectstore/upload.go) / [internal/objectstore/cosupload/](../internal/objectstore/cosupload/) |
 | 工程、草稿、版本、资产与发布记录的持久化数据 | galaxy 的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/galaxy/project.go](../internal/galaxy/project.go) / [internal/galaxy/gormstore/](../internal/galaxy/gormstore/) |
-| 资产字节（私有区）与它的读取地址 | 资产的存储接口（生产实现是 COS，测试注入假实现） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) / [internal/galaxy/cosstore/asset.go](../internal/galaxy/cosstore/asset.go) |
+| 直传凭证里那条策略长什么样（动作、资源、类型与长度条件） | 策略的构造入口 | [internal/objectstore/cosupload/policy.go](../internal/objectstore/cosupload/policy.go) |
 | 公开区的对象与它的地址 | 上架入口（公开区唯一的写入口，按内容摘要幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
 | 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用） | [internal/galaxy/project.go](../internal/galaxy/project.go) |
 | 表结构与迁移清单（库里长什么样） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/schema.go](../internal/database/schema.go) / [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |

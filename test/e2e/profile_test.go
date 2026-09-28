@@ -4,8 +4,10 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 	profilev1 "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1"
 	"github.com/poetlife/aladdin/api/gen/aladdin/profile/v1/profilev1connect"
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
+	"github.com/poetlife/aladdin/internal/objectstore"
+	"github.com/poetlife/aladdin/internal/profile"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -30,8 +34,12 @@ import (
 // 用真的签名而不是"随便几个字节"：这一层要挡的正是"看起来像图片、其实不是"。
 var pngBytes = append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
 
-// htmlBytes 是"能顶着 image/png 存进去"的那类字节。
+// htmlBytes 是"能顶着 image/png 存进去"的那类字节：直传之后类型由上传方声明，
+// 因此"声明一个白名单外的类型"就是这条路径上能钻的那个空子。
 var htmlBytes = []byte("<html><body>这不是图片</body></html>")
+
+// svgBytes 是一段 SVG：它是 XML，可以内嵌脚本，因此不在白名单里。
+var svgBytes = []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>`)
 
 // connectProfile 构造一个走 Connect 协议的档案面客户端。
 func connectProfile(t *testing.T, h harness, token string) profilev1connect.ProfileServiceClient {
@@ -166,7 +174,7 @@ func TestProfileChangeDoesNotAffectPermissions(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("写入档案失败: %v", err)
 	}
-	if _, err := profile.UpdateAvatar(ctx, connect.NewRequest(&profilev1.UpdateAvatarRequest{Image: pngBytes})); err != nil {
+	if _, err := uploadAvatar(t, h, profile, "image/png", pngBytes); err != nil {
 		t.Fatalf("上传头像失败: %v", err)
 	}
 
@@ -219,14 +227,41 @@ func TestNicknameIsNotAnIdentityPath(t *testing.T) {
 	}
 }
 
-// 头像往返：上传之后拿到地址，删掉之后没有地址。非图片一律被拒。
-func TestAvatarRoundTripAndTypeRejection(t *testing.T) {
+// uploadAvatar 走一遍头像直传：签发 → 把字节写进假存储（这一步扮演浏览器）
+// → 提交。
+//
+// **服务端在整条路径上不接触字节**（见 docs/design/objectstore/README.md），
+// 因此这个夹具里的 Put 不是"帮服务端省一步"，而是替代了浏览器的那个角色。
+func uploadAvatar(t *testing.T, h harness, client profilev1connect.ProfileServiceClient, contentType string, data []byte) (*profilev1.Profile, error) {
+	t.Helper()
+	ctx := context.Background()
+	begin, err := client.BeginAvatarUpload(ctx, connect.NewRequest(&profilev1.BeginAvatarUploadRequest{
+		ContentType: contentType,
+		SizeBytes:   uint64(len(data)),
+	}))
+	if err != nil {
+		return nil, err
+	}
+	upload := begin.Msg.GetUpload()
+	h.objects.Put(upload.GetKey(), data)
+	commit, err := client.CommitAvatarUpload(ctx, connect.NewRequest(&profilev1.CommitAvatarUploadRequest{}))
+	if err != nil {
+		return nil, err
+	}
+	return commit.Msg.GetProfile(), nil
+}
+
+// 头像往返：签发 → 直传 → 提交之后拿到地址，删掉之后没有地址。
+//
+// 类型的判定也在这一条里：**不在白名单的声明被拒于签发那一步**，因为直传之后
+// 服务端根本看不到字节。
+func TestAvatarRoundTripAndDeclaredType(t *testing.T) {
 	h := startServer(t, rbac.RoleViewer, testScope)
-	profile := connectProfile(t, h, testToken)
+	client := connectProfile(t, h, testToken)
 	ctx := context.Background()
 
 	// 测试装配注入的是内存实现，因此这个部署**启用了**头像功能。
-	got, err := profile.GetProfile(ctx, connect.NewRequest(&profilev1.GetProfileRequest{}))
+	got, err := client.GetProfile(ctx, connect.NewRequest(&profilev1.GetProfileRequest{}))
 	if err != nil {
 		t.Fatalf("读取档案失败: %v", err)
 	}
@@ -240,30 +275,63 @@ func TestAvatarRoundTripAndTypeRejection(t *testing.T) {
 		t.Error("还没上传就已经有头像地址了")
 	}
 
-	// 非图片被拒。请求里没有"声明类型"这个字段，因此这里能钻的空子只有
-	// "字节本身不是图片"这一种。
-	if _, err := profile.UpdateAvatar(ctx, connect.NewRequest(&profilev1.UpdateAvatarRequest{Image: htmlBytes})); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("上传 HTML = %v，期望 InvalidArgument", err)
+	// 不在白名单的声明被拒，且**不签发任何凭证**。
+	if _, err := client.BeginAvatarUpload(ctx, connect.NewRequest(&profilev1.BeginAvatarUploadRequest{
+		ContentType: "text/html", SizeBytes: uint64(len(htmlBytes)),
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("声明 text/html = %v，期望 InvalidArgument", err)
 	}
+	// SVG 同样不在白名单里：它是 XML，可以内嵌脚本。
+	if _, err := client.BeginAvatarUpload(ctx, connect.NewRequest(&profilev1.BeginAvatarUploadRequest{
+		ContentType: "image/svg+xml", SizeBytes: uint64(len(svgBytes)),
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("声明 image/svg+xml = %v，期望 InvalidArgument", err)
+	}
+	// 声明超过上限即拒于签发，用户因此不必把几十 MB 整个传上来。
+	if _, err := client.BeginAvatarUpload(ctx, connect.NewRequest(&profilev1.BeginAvatarUploadRequest{
+		ContentType: "image/png", SizeBytes: profile.AvatarMaxBytes + 1,
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("声明超限 = %v，期望 InvalidArgument", err)
+	}
+
 	// 被拒之后不留痕迹。
-	afterReject, err := profile.GetProfile(ctx, connect.NewRequest(&profilev1.GetProfileRequest{}))
+	afterReject, err := client.GetProfile(ctx, connect.NewRequest(&profilev1.GetProfileRequest{}))
 	if err != nil {
 		t.Fatalf("读取档案失败: %v", err)
 	}
 	if afterReject.Msg.GetProfile().GetAvatarUrl() != "" {
-		t.Error("被拒的字节仍然产生了头像")
+		t.Error("被拒的声明仍然产生了头像")
 	}
 
-	// 真实图片往返。
-	uploaded, err := profile.UpdateAvatar(ctx, connect.NewRequest(&profilev1.UpdateAvatarRequest{Image: pngBytes}))
+	// 真实往返：签发拿到的凭证必须指向这个主体的头像键。
+	begin, err := client.BeginAvatarUpload(ctx, connect.NewRequest(&profilev1.BeginAvatarUploadRequest{
+		ContentType: "image/png", SizeBytes: uint64(len(pngBytes)),
+	}))
 	if err != nil {
-		t.Fatalf("上传 PNG 失败: %v", err)
+		t.Fatalf("签发失败: %v", err)
 	}
-	if uploaded.Msg.GetProfile().GetAvatarUrl() == "" {
-		t.Error("上传成功后没有拿到地址")
+	upload := begin.Msg.GetUpload()
+	if upload.GetKey() != profile.AvatarKey(testSubject) {
+		t.Errorf("凭证的键 = %q，期望 %q", upload.GetKey(), profile.AvatarKey(testSubject))
+	}
+	if upload.GetBucket() == "" || upload.GetRegion() == "" ||
+		upload.GetSecretId() == "" || upload.GetSecretKey() == "" || upload.GetSessionToken() == "" {
+		t.Errorf("凭证不完整: %+v", upload)
+	}
+	if upload.GetExpiresAt() == "" {
+		t.Error("凭证没有失效时刻")
 	}
 
-	deleted, err := profile.DeleteAvatar(ctx, connect.NewRequest(&profilev1.DeleteAvatarRequest{}))
+	h.objects.Put(upload.GetKey(), pngBytes)
+	committed, err := client.CommitAvatarUpload(ctx, connect.NewRequest(&profilev1.CommitAvatarUploadRequest{}))
+	if err != nil {
+		t.Fatalf("提交失败: %v", err)
+	}
+	if committed.Msg.GetProfile().GetAvatarUrl() == "" {
+		t.Error("提交成功后没有拿到地址")
+	}
+
+	deleted, err := client.DeleteAvatar(ctx, connect.NewRequest(&profilev1.DeleteAvatarRequest{}))
 	if err != nil {
 		t.Fatalf("删除头像失败: %v", err)
 	}
@@ -272,44 +340,82 @@ func TestAvatarRoundTripAndTypeRejection(t *testing.T) {
 	}
 }
 
-// 超过**请求体读上限**时给出一个明确的错误。
+// 提交时核对**真实**字节数：声明合法、实际超限的对象被拒，且被删掉。
 //
-// 头像上传是本服务端唯一一个由客户端决定请求体大小的入口，而 connect 的默认
-// 是**不限制大小**。没有这条上限，一个几百 MB 的请求会在被档案层拒绝之前
-// 就已经整份读进内存了（见 internal/server 的 profileReadMaxBytes）。
-//
-// 它与"超过头像字节上限"是两回事：后者由档案层判定（见上一条用例），
-// 这一条发生在更早的传输层。
-func TestAvatarUploadBeyondReadLimitIsRejected(t *testing.T) {
+// 存储侧会按声明的类型卡一次长度（那条策略由 internal/objectstore 构造），
+// 这里验的是服务端自己的那一次核对——它是写进元数据的那个数字的来源。
+func TestAvatarCommitRejectsOversizedObject(t *testing.T) {
 	h := startServer(t, rbac.RoleViewer, testScope)
-	profile := connectProfile(t, h, testToken)
+	client := connectProfile(t, h, testToken)
+	ctx := context.Background()
 
-	// 明显超过读上限（领域上限的两倍）的那一档。
-	huge := make([]byte, 8*1024*1024)
-	copy(huge, pngBytes)
+	begin, err := client.BeginAvatarUpload(ctx, connect.NewRequest(&profilev1.BeginAvatarUploadRequest{
+		ContentType: "image/png", SizeBytes: 1024,
+	}))
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	key := begin.Msg.GetUpload().GetKey()
+	h.objects.Put(key, make([]byte, profile.AvatarMaxBytes+1))
 
-	_, err := profile.UpdateAvatar(context.Background(), connect.NewRequest(&profilev1.UpdateAvatarRequest{Image: huge}))
-	if connect.CodeOf(err) != connect.CodeResourceExhausted {
-		t.Errorf("超大请求体 = %v，期望 ResourceExhausted", err)
+	if _, err := client.CommitAvatarUpload(ctx, connect.NewRequest(&profilev1.CommitAvatarUploadRequest{})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("提交超限对象 = %v，期望 InvalidArgument", err)
+	}
+	if _, err := h.objects.Head(ctx, key); !errors.Is(err, objectstore.ErrObjectNotFound) {
+		t.Error("超限的对象没有被删掉")
 	}
 }
 
-// 头像字节**不得进日志**。
-//
-// 它与令牌同级：日志会被采集、转发、长期保留。这条断言不看"日志里写了什么"，
-// 而是看"有没有任何一条字段承载了二进制内容"——那是更直接、也更难绕过的判据。
-func TestAvatarBytesNeverReachLogs(t *testing.T) {
+// 上传没完成时提交报"可以重来"，而不是把它当成一次成功。
+func TestAvatarCommitWithoutObjectIsRetryable(t *testing.T) {
 	h := startServer(t, rbac.RoleViewer, testScope)
-	profile := connectProfile(t, h, testToken)
+	client := connectProfile(t, h, testToken)
+	ctx := context.Background()
 
-	if _, err := profile.UpdateAvatar(context.Background(), connect.NewRequest(&profilev1.UpdateAvatarRequest{Image: pngBytes})); err != nil {
-		t.Fatalf("上传头像失败: %v", err)
+	if _, err := client.BeginAvatarUpload(ctx, connect.NewRequest(&profilev1.BeginAvatarUploadRequest{
+		ContentType: "image/png", SizeBytes: 1024,
+	})); err != nil {
+		t.Fatalf("签发失败: %v", err)
 	}
+	// 刻意不写对象：模拟上传中断。
+	if _, err := client.CommitAvatarUpload(ctx, connect.NewRequest(&profilev1.CommitAvatarUploadRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("提交一个不存在的对象 = %v，期望 FailedPrecondition", err)
+	}
+}
 
+// **直传凭证不得进日志。**
+//
+// 它与令牌同级：日志会被采集、转发、长期保留，而一份还在有效期内的写入凭证
+// 落在日志里，就等于把一次写入的能力留了下来。这条断言不看"日志里写了什么"，
+// 而是看"有没有任何一条字段承载了凭证"——那是更直接、也更难绕过的判据。
+func TestUploadCredentialNeverReachesLogs(t *testing.T) {
+	h := startServer(t, rbac.RoleViewer, testScope)
+	client := connectProfile(t, h, testToken)
+
+	begin, err := client.BeginAvatarUpload(context.Background(), connect.NewRequest(&profilev1.BeginAvatarUploadRequest{
+		ContentType: "image/png", SizeBytes: uint64(len(pngBytes)),
+	}))
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	upload := begin.Msg.GetUpload()
+
+	secrets := []string{upload.GetSecretKey(), upload.GetSessionToken()}
+	for _, secret := range secrets {
+		if secret == "" {
+			t.Fatal("凭证里没有密钥，这条用例证明不了任何事")
+		}
+	}
 	for _, entry := range h.logs.All() {
 		for key, value := range entry.ContextMap() {
-			if _, isBinary := value.([]byte); isBinary {
-				t.Errorf("日志字段 %q 承载了二进制内容", key)
+			text, ok := value.(string)
+			if !ok {
+				continue
+			}
+			for _, secret := range secrets {
+				if strings.Contains(text, secret) {
+					t.Errorf("日志字段 %q 承载了直传凭证", key)
+				}
 			}
 		}
 	}

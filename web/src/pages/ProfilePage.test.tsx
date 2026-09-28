@@ -24,7 +24,8 @@ vi.mock('../api/transport', () => ({
 vi.mock('../api/profile', () => ({
   getMyProfile: vi.fn(),
   updateMyProfile: vi.fn(),
-  updateMyAvatar: vi.fn(),
+  beginAvatarUpload: vi.fn(),
+  commitAvatarUpload: vi.fn(),
   deleteMyAvatar: vi.fn(),
 }))
 
