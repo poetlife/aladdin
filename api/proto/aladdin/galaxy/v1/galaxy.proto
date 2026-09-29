@@ -192,6 +192,10 @@ service GalaxyService {
   }
 
   // 列出工程资产库里的资产，含**短时有效**的读取地址。
+  //
+  // 可选按标签筛选（精确匹配、多值取**交集**）。响应里另给一份**整个工程**
+  // 已有的标签，供筛选界面做候选——它不随本次筛选收窄，否则筛一次之后候选
+  // 就只剩下筛出来的那几个，用户无法取回原来的面。
   rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.asset.read";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
@@ -218,6 +222,9 @@ service GalaxyService {
   // 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
   // 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
   // 上传不会进入任何清单**（元数据行不存在）。
+  //
+  // 可以顺带带上初始的标题 / 标签 / 备注（都可空）。一次带走省掉一次往返，
+  // 而结果与"提交之后再调 UpdateAsset"完全相同。
   rpc CommitAssetUpload(CommitAssetUploadRequest) returns (CommitAssetUploadResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.asset.write";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
@@ -230,6 +237,20 @@ service GalaxyService {
   // 除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
   // 从版本内容里知道该怎么做。把问题挡在它产生的地方。
   rpc DeleteAsset(DeleteAssetRequest) returns (DeleteAssetResponse) {
+    option (aladdin.rbac.v1.required_permission) = "galaxy.asset.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 改一个资产的展示标题、标签与备注。
+  //
+  // **它只改"说明层"。** 资产有不可变与可变两层（见
+  // docs/design/galaxy/asset-library.md）：字节、内容摘要、媒体类型、类别与
+  // 字节数在改动前后逐字不变，因此公开区地址不变、已发布页面拿到的还是同一
+  // 份字节。接口面上不存在"替换资产字节"的方法。
+  //
+  // 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
+  // 备注，标签以请求集合**整体替换**。
+  rpc UpdateAsset(UpdateAssetRequest) returns (UpdateAssetResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.asset.write";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
@@ -406,6 +427,10 @@ message Version {
 // Asset 是工程资产库里的一个媒体文件。
 //
 // 字节在对象存储，这里只有元数据与一个短时读取地址。
+//
+// 元数据分**两层**（见 docs/design/galaxy/asset-library.md）：字节层
+// （media_type、kind、size_bytes）**不可变**；说明层（title、tags、notes）
+// **可改**，改它们不动字节层的任何一项，也不进发布产物。
 message Asset {
   string id = 1;
   // 媒体类型。**上传方声明的**，服务端只校验它在白名单内，并把它作为此后
@@ -425,6 +450,17 @@ message Asset {
   //
   // 未配置私有桶时为空。
   string url = 7;
+  // 展示标题。**与 filename 分离**：文件名常是工具生成的乱码或不可信，
+  // 而标题是给人看的。空表示没有标题，此时界面回退到 filename 展示。
+  string title = 8;
+  // 标签。工程内的自由字符串，不是全局字典，也不是权限资源。
+  //
+  // **值已归一化**（trim、小写、去重并升序、长度与数量受限，见
+  // asset-library.md）：拿到的是唯一的那一份形式，调用方不必也不得自己再归一化
+  // 或再排序一次。
+  repeated string tags = 9;
+  // 备注。纯文本，不是 Markdown。**不进对象键、不进发布产物、不进日志原文**。
+  string notes = 10;
 }
 
 // ValidationProblem 是校验发现的一处问题。
@@ -608,10 +644,17 @@ message CommitContentUploadResponse {}
 
 message ListAssetsRequest {
   string project_id = 1;
+  // 按标签筛选：精确匹配、多值取**交集**（同时带上这些标签的资产才列出）。
+  //
+  // 取值会按同一套归一化规则处理（trim、小写），因此客户端给 "Cover" 与
+  // "cover" 是同一个筛选。空表示不筛。
+  repeated string tags = 2;
 }
 
 message ListAssetsResponse {
   repeated Asset assets = 1;
+  // **整个工程**已有的标签，升序。用于筛选界面的候选，**不随本次筛选收窄**。
+  repeated string project_tags = 2;
 }
 
 message BeginAssetUploadRequest {
@@ -645,6 +688,12 @@ message CommitAssetUploadRequest {
   // 展示用的原始文件名。**不进对象键，不参与任何判断**：它可能含路径分隔符、
   // 控制字符以及别人的名字，把它拼进存储路径就是把一段不可信输入拼进路径。
   string filename = 5;
+  // 初始的说明层元数据，都可空（见 Asset 的 title / tags / notes）。
+  //
+  // 与"提交之后再调 UpdateAsset"结果相同，区别只是少一次往返。
+  string title = 6;
+  repeated string tags = 7;
+  string notes = 8;
 }
 
 message CommitAssetUploadResponse {
@@ -657,6 +706,23 @@ message DeleteAssetRequest {
 }
 
 message DeleteAssetResponse {}
+
+// UpdateAssetRequest 表达的是说明层元数据的**期望完整状态**，不是增量。
+message UpdateAssetRequest {
+  string project_id = 1;
+  string asset_id = 2;
+  // 期望的展示标题。空串表示没有标题。
+  string title = 3;
+  // 期望的标签集合，**整体替换**（不在集合里的标签就是删掉）。空集表示清空。
+  repeated string tags = 4;
+  // 期望的备注。空串表示清空。
+  string notes = 5;
+}
+
+message UpdateAssetResponse {
+  // 改完之后的资产（含短时读取地址）。
+  Asset asset = 1;
+}
 
 message PublishRequest {
   string project_id = 1;

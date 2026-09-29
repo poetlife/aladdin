@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -15,6 +16,15 @@ import (
 	"github.com/poetlife/aladdin/internal/database/migrate"
 	"github.com/poetlife/aladdin/internal/galaxy"
 )
+
+// assetIDs 取出一组资产的标识，供顺序敏感的断言使用。
+func assetIDs(assets []galaxy.Asset) []string {
+	ids := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		ids = append(ids, asset.ID)
+	}
+	return ids
+}
 
 // 两个 galaxy 存储实现共用同一套用例。
 //
@@ -229,6 +239,7 @@ func TestStoreContract(t *testing.T) {
 				asset := galaxy.Asset{
 					ID: "ast_1", ProjectID: "prj_a", Digest: "aa", MediaKind: galaxy.MediaKindImage,
 					MediaType: "image/png", SizeBytes: 3, Filename: "a.png", UploadedAt: now,
+					Title: "封面", Notes: "给首页用的", Tags: []string{"banner", "封面"},
 				}
 				if err := store.CreateAsset(ctx, asset); err != nil {
 					t.Fatalf("写入资产失败: %v", err)
@@ -244,6 +255,13 @@ func TestStoreContract(t *testing.T) {
 				if first.Digest != second.Digest || first.MediaType != second.MediaType || first.MediaKind != second.MediaKind {
 					t.Error("两次读回的摘要、类型或类别不同")
 				}
+				// 说明层随第一次写入落库，且两个后端给出一致的顺序。
+				if first.Title != "封面" || first.Notes != "给首页用的" {
+					t.Errorf("说明层 = %q / %q，期望与写入的一致", first.Title, first.Notes)
+				}
+				if !slices.Equal(first.Tags, []string{"banner", "封面"}) {
+					t.Errorf("标签 = %v，期望升序的 [banner 封面]", first.Tags)
+				}
 				// 用另一个工程去读：不存在。
 				if _, err := store.GetAsset(ctx, "prj_b", "ast_1"); !errors.Is(err, galaxy.ErrAssetNotFound) {
 					t.Errorf("err = %v，期望 ErrAssetNotFound", err)
@@ -254,6 +272,105 @@ func TestStoreContract(t *testing.T) {
 				}
 				if _, err := store.GetAsset(ctx, "prj_a", "ast_1"); !errors.Is(err, galaxy.ErrAssetNotFound) {
 					t.Errorf("err = %v，期望 ErrAssetNotFound", err)
+				}
+			})
+
+			t.Run("说明层可改、标签可筛且随删除消失", func(t *testing.T) {
+				for _, spec := range []struct {
+					id   string
+					tags []string
+				}{
+					{"ast_s1", []string{"cover", "hero"}},
+					{"ast_s2", []string{"cover"}},
+					{"ast_s3", nil},
+				} {
+					asset := galaxy.Asset{
+						ID: spec.id, ProjectID: "prj_a", Digest: "aa", MediaKind: galaxy.MediaKindImage,
+						MediaType: "image/png", SizeBytes: 3, Filename: spec.id + ".png", UploadedAt: now,
+						Tags: spec.tags,
+					}
+					if err := store.CreateAsset(ctx, asset); err != nil {
+						t.Fatalf("写入资产 %s 失败: %v", spec.id, err)
+					}
+				}
+
+				// 改元数据：字节层逐字不变，说明层整体替换。
+				if err := store.UpdateAssetMeta(ctx, "prj_a", "ast_s2", "改过的标题", "改过的备注", []string{"hero", "cover"}); err != nil {
+					t.Fatalf("更新资产元数据失败: %v", err)
+				}
+				updated, err := store.GetAsset(ctx, "prj_a", "ast_s2")
+				if err != nil {
+					t.Fatalf("读取资产失败: %v", err)
+				}
+				if updated.Title != "改过的标题" || updated.Notes != "改过的备注" {
+					t.Errorf("说明层 = %q / %q，期望与写入的一致", updated.Title, updated.Notes)
+				}
+				if !slices.Equal(updated.Tags, []string{"cover", "hero"}) {
+					t.Errorf("标签 = %v，期望 [cover hero]", updated.Tags)
+				}
+				if updated.Digest != "aa" || updated.MediaKind != galaxy.MediaKindImage ||
+					updated.MediaType != "image/png" || updated.SizeBytes != 3 {
+					t.Error("改元数据动了字节层")
+				}
+
+				// 按标签筛：单值、交集、空。
+				only, err := store.ListAssets(ctx, "prj_a", []string{"hero"})
+				if err != nil {
+					t.Fatalf("按标签列资产失败: %v", err)
+				}
+				if ids := assetIDs(only); !slices.Equal(ids, []string{"ast_s1", "ast_s2"}) {
+					t.Errorf("带 hero 的资产 = %v，期望 [ast_s1 ast_s2]", ids)
+				}
+				both, err := store.ListAssets(ctx, "prj_a", []string{"cover", "hero"})
+				if err != nil {
+					t.Fatalf("按标签列资产失败: %v", err)
+				}
+				if ids := assetIDs(both); !slices.Equal(ids, []string{"ast_s1", "ast_s2"}) {
+					t.Errorf("同时带 cover 与 hero 的资产 = %v，期望 [ast_s1 ast_s2]", ids)
+				}
+				// 交集为空时没有任何资产命中。
+				none, err := store.ListAssets(ctx, "prj_a", []string{"cover", "不存在"})
+				if err != nil {
+					t.Fatalf("按标签列资产失败: %v", err)
+				}
+				if len(none) != 0 {
+					t.Errorf("资产数 = %d，期望空集", len(none))
+				}
+
+				// 候选不随筛选收窄：整个工程的标签都在。
+				projectTags, err := store.ListProjectTags(ctx, "prj_a")
+				if err != nil {
+					t.Fatalf("列工程标签失败: %v", err)
+				}
+				if !slices.Equal(projectTags, []string{"cover", "hero"}) {
+					t.Errorf("工程标签 = %v，期望 [cover hero]", projectTags)
+				}
+
+				// 跨工程改：不存在。
+				if err := store.UpdateAssetMeta(ctx, "prj_b", "ast_s1", "", "", nil); !errors.Is(err, galaxy.ErrAssetNotFound) {
+					t.Errorf("err = %v，期望 ErrAssetNotFound", err)
+				}
+
+				// 删除资产之后，它的标签不再出现在工程标签集合里。
+				if err := store.DeleteAsset(ctx, "prj_a", "ast_s1"); err != nil {
+					t.Fatalf("删除资产失败: %v", err)
+				}
+				after, err := store.ListProjectTags(ctx, "prj_a")
+				if err != nil {
+					t.Fatalf("列工程标签失败: %v", err)
+				}
+				if !slices.Equal(after, []string{"cover", "hero"}) {
+					t.Errorf("工程标签 = %v，期望 [cover hero]（ast_s2 仍带着两个）", after)
+				}
+				if err := store.DeleteAsset(ctx, "prj_a", "ast_s2"); err != nil {
+					t.Fatalf("删除资产失败: %v", err)
+				}
+				after, err = store.ListProjectTags(ctx, "prj_a")
+				if err != nil {
+					t.Fatalf("列工程标签失败: %v", err)
+				}
+				if len(after) != 0 {
+					t.Errorf("工程标签 = %v，期望空集", after)
 				}
 			})
 
@@ -312,8 +429,11 @@ func TestStoreContract(t *testing.T) {
 				if versions, err := store.ListVersions(ctx, "prj_a"); err != nil || len(versions) != 0 {
 					t.Errorf("版本仍在: %v / %d 条", err, len(versions))
 				}
-				if assets, err := store.ListAssets(ctx, "prj_a"); err != nil || len(assets) != 0 {
+				if assets, err := store.ListAssets(ctx, "prj_a", nil); err != nil || len(assets) != 0 {
 					t.Errorf("资产仍在: %v / %d 条", err, len(assets))
+				}
+				if tags, err := store.ListProjectTags(ctx, "prj_a"); err != nil || len(tags) != 0 {
+					t.Errorf("资产标签仍在: %v / %v", err, tags)
 				}
 				if _, err := store.GetPublication(ctx, "pub_1"); !errors.Is(err, galaxy.ErrPublicationNotFound) {
 					t.Errorf("发布记录仍在: %v", err)

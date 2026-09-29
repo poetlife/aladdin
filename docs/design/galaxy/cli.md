@@ -31,8 +31,9 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | `galaxy version save` / `delete` | 把草稿存成不可变版本、删除版本 | `galaxy.project.write` |
 | `galaxy version list` / `get` / `pull` | 列出、读取版本（单份文件用 `--path`）、把某个版本整组写到本地目录 | `galaxy.project.read` |
 | `galaxy validate` | 校验当前草稿能不能发布 | `galaxy.project.read` |
-| `galaxy asset list` | 列出工程资产库（含短时读取地址） | `galaxy.asset.read` |
+| `galaxy asset list` | 列出工程资产库（含短时读取地址、标题、标签与备注摘要），可按标签筛选 | `galaxy.asset.read` |
 | `galaxy asset upload` / `delete` | 上传、删除资产 | `galaxy.asset.write` |
+| `galaxy asset update` | 改资产的展示标题、标签与备注 | `galaxy.asset.write` |
 | `galaxy publish` / `unpublish` | 发布一个版本、撤回发布 | `galaxy.project.publish` |
 
 工程、版本与资产的标识一律**显式给出**，都是命令的位置参数。
@@ -95,6 +96,18 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 
 字节会**一次读进内存**：摘要是对整份字节算的，而资产上限是 100 MiB 量级。
 
+### 资产元数据：改的是说明层，不是字节
+
+`asset upload` 可以一次带上 `--title` / `--tag`（可重复）/ `--notes`，也可以之后用 `asset update` 改。两者写的是同一组字段，结果相同（见 [asset-library.md](asset-library.md) 的"可编辑元数据"）。
+
+**`asset update` 只改显式给出的那一项**：没给的标志保持原值，给出空串（标题与备注）或用 `--clear-tags`（标签）才是清空。与 `project update` 同一条取向——否则"只改标题"会顺手把标签抹掉。因此它先把当前值读回来，再用显式项覆盖，最后提交**期望的完整状态**。
+
+**字节不在其中。** 没有改类型、改摘要、改字节的命令——要换图就重新上传一个，再改引用它的地方。改元数据也不改已发布的页面。
+
+标签的归一化（trim、小写、去重、长度与数量上限）**在服务端做**：命令行不自己再判一份，与"扩展名表只是一份省事的缺省"同一条理由。
+
+备注**不进日志原文**（见 [../../observability.md](../../observability.md)），与文件名同级。
+
 ### 未配置时
 
 未配置桶时上传、内容与资产都由服务端拒绝（字节没有地方放）；未配置发布域时发布由服务端拒绝。两者都是"这个能力没开"，不是故障，命令行的提示要照此措辞。
@@ -121,6 +134,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 危险集合正确 | `project delete` / `version delete` / `asset delete` / `publish` 带危险标记；`unpublish` 不带（`cmd/aladdin` 测试） |
 | 位置参数是用法错误 | 参数个数不对时退出码与其它用法错误同类，而不是落进"未分类失败"（`cmd/aladdin` 测试） |
 | 扩展名表与白名单一致 | 表中每个取值都能通过服务端那一个类型入口（`cmd/aladdin` 测试） |
+| 元数据只改显式项 | `asset update` 只给 `--title` 时标签与备注保持原值，给出空串才清空（`cmd/aladdin` 测试） |
 | 文件组输入 | `draft push` 一个目录、目录不存在、目录里含非文本文件三种情形各自的行为（`cmd/aladdin` 测试） || 文本与资产的分界一致 | 判定文本的扩展名表与资产类型表分别与服务端那一个入口逐条一致（`cmd/aladdin` 测试） |
 | 整组往返一致 | `push` 一个目录再 `pull` 回来，路径集合与每个文件的内容逐字相同（`cmd/aladdin` 测试） |
 | 发布根不自己拼 | `project base` 的输出与服务端在发布地址里用的发布根一致（`cmd/aladdin` 测试 + 端到端测试） |

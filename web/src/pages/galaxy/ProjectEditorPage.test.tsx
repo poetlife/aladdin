@@ -13,6 +13,7 @@ import {
   WhoAmIResponseSchema,
 } from '../../gen/proto/aladdin/identity/v1/identity_pb'
 import {
+  AssetSchema,
   CapabilitiesSchema,
   DraftSchema,
   FileEntrySchema,
@@ -24,6 +25,7 @@ import {
   PreviewDraftResponseSchema,
   ProjectSchema,
   SiteForm,
+  UpdateAssetResponseSchema,
   ValidateDraftResponseSchema,
   ValidationProblemSchema,
   VersionSchema,
@@ -67,6 +69,7 @@ vi.mock('../../api/galaxy', () => ({
   listAssets: vi.fn(),
   beginAssetUpload: vi.fn(),
   commitAssetUpload: vi.fn(),
+  updateAsset: vi.fn(),
   deleteAsset: vi.fn(),
   publish: vi.fn(),
   unpublish: vi.fn(),
@@ -646,5 +649,114 @@ describe('网页端不改内容', () => {
     for (const name of ['saveDraft', 'pushDraft', 'beginContentUpload', 'commitContentUpload']) {
       expect(real[name], `前端不该有 ${name} 这个写入口`).toBeUndefined()
     }
+  })
+})
+
+describe('资产的说明层元数据', () => {
+  /** 两条资产：一条带标题 / 标签 / 备注，一条只有文件名。 */
+  function assetsResponse() {
+    return create(ListAssetsResponseSchema, {
+      assets: [
+        create(AssetSchema, {
+          id: 'ast_1',
+          mediaType: 'image/png',
+          sizeBytes: 3n,
+          filename: 'IMG_2031.png',
+          uploadedAt: '2026-03-01T12:00:00Z',
+          title: '首页封面',
+          tags: ['cover', 'hero'],
+          notes: '给首页用的图',
+        }),
+        create(AssetSchema, {
+          id: 'ast_2',
+          mediaType: 'image/gif',
+          sizeBytes: 3n,
+          filename: 'other.gif',
+          uploadedAt: '2026-03-01T12:00:00Z',
+        }),
+      ],
+      projectTags: ['cover', 'hero'],
+    })
+  }
+
+  /** 打开资产弹层。 */
+  async function openAssets(): Promise<HTMLElement> {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    vi.mocked(galaxyApi.listAssets).mockResolvedValue(assetsResponse())
+    const container = await renderEditor()
+    await settle()
+    await clickButton(findButtonExact(container, '资产'), '资产')
+    return container
+  }
+
+  it('卡片用标题作主标签、没有标题时回退文件名，并展示标签与备注', async () => {
+    await openAssets()
+
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('首页封面')
+    // 有标题时把文件名也留着：否则"这张图是从哪个文件来的"就查不到了。
+    expect(text).toContain('文件名：IMG_2031.png')
+    expect(text).toContain('cover')
+    expect(text).toContain('hero')
+    expect(text).toContain('给首页用的图')
+    expect(text).toContain('other.gif')
+  })
+
+  it('筛选候选是整个工程的标签，改筛选即按新标签重拉', async () => {
+    await openAssets()
+    // 首屏那一次不筛（不带筛选参数）。
+    expect(galaxyApi.listAssets).toHaveBeenCalledWith('p1')
+
+    const selector = document.querySelector('[aria-label="按标签筛选资产"]')
+    expect(selector, '没有渲染标签筛选').not.toBeNull()
+    await act(async () => {
+      selector?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    const option = Array.from(document.querySelectorAll('.ant-select-item-option')).find(
+      (candidate) => candidate.textContent === 'cover',
+    )
+    expect(option, '候选里没有 cover').not.toBeUndefined()
+    await act(async () => {
+      option?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // 筛选在**服务端**做：选中的标签要随下一次列资产请求带上去。
+    expect(galaxyApi.listAssets).toHaveBeenLastCalledWith('p1', ['cover'])
+  })
+
+  it('编辑弹层保存整组元数据，成功后重拉清单', async () => {
+    await openAssets()
+    vi.mocked(galaxyApi.updateAsset).mockResolvedValue(
+      create(UpdateAssetResponseSchema, { asset: create(AssetSchema, { id: 'ast_1' }) }),
+    )
+
+    await clickButton(findButton(document.body, '编辑'), '编辑')
+    const titleInput = document.querySelector('#title') as HTMLInputElement | null
+    expect(titleInput, '编辑弹层里没有标题输入框').not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value',
+      )?.set
+      setter?.call(titleInput, '改过的标题')
+      titleInput?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const before = vi.mocked(galaxyApi.listAssets).mock.calls.length
+    // antd 会在两个汉字的按钮里插一个空格（"保 存"），因此按去掉空白之后的文本找。
+    const saveButton = Array.from(document.body.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.replace(/\s/g, '') === '保存',
+    )
+    await clickButton(saveButton, '保存')
+
+    // 期望的是**完整状态**：没改的标签与备注原样带上，而不是只发改过的那一项。
+    expect(galaxyApi.updateAsset).toHaveBeenCalledWith(
+      'p1',
+      'ast_1',
+      '改过的标题',
+      ['cover', 'hero'],
+      '给首页用的图',
+    )
+    expect(vi.mocked(galaxyApi.listAssets).mock.calls.length).toBeGreaterThan(before)
   })
 })

@@ -39,6 +39,7 @@ const (
 	GalaxyService_BeginAssetUpload_FullMethodName    = "/aladdin.galaxy.v1.GalaxyService/BeginAssetUpload"
 	GalaxyService_CommitAssetUpload_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/CommitAssetUpload"
 	GalaxyService_DeleteAsset_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/DeleteAsset"
+	GalaxyService_UpdateAsset_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
 	GalaxyService_Publish_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/Publish"
 	GalaxyService_Unpublish_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
 )
@@ -162,6 +163,10 @@ type GalaxyServiceClient interface {
 	// 写入之后必须读回核对一遍，不一致即删除该对象并拒绝。
 	CommitContentUpload(ctx context.Context, in *CommitContentUploadRequest, opts ...grpc.CallOption) (*CommitContentUploadResponse, error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
+	//
+	// 可选按标签筛选（精确匹配、多值取**交集**）。响应里另给一份**整个工程**
+	// 已有的标签，供筛选界面做候选——它不随本次筛选收窄，否则筛一次之后候选
+	// 就只剩下筛出来的那几个，用户无法取回原来的面。
 	ListAssets(ctx context.Context, in *ListAssetsRequest, opts ...grpc.CallOption) (*ListAssetsResponse, error)
 	// 开始一次资产上传：分配资产标识并签发一份直传凭证。
 	//
@@ -179,6 +184,9 @@ type GalaxyServiceClient interface {
 	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
 	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
 	// 上传不会进入任何清单**（元数据行不存在）。
+	//
+	// 可以顺带带上初始的标题 / 标签 / 备注（都可空）。一次带走省掉一次往返，
+	// 而结果与"提交之后再调 UpdateAsset"完全相同。
 	CommitAssetUpload(ctx context.Context, in *CommitAssetUploadRequest, opts ...grpc.CallOption) (*CommitAssetUploadResponse, error)
 	// 删除一个资产。**被任一版本的文件清单引用时拒绝**，错误信息指出被哪些
 	// 版本引用。
@@ -187,6 +195,16 @@ type GalaxyServiceClient interface {
 	// 除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
 	// 从版本内容里知道该怎么做。把问题挡在它产生的地方。
 	DeleteAsset(ctx context.Context, in *DeleteAssetRequest, opts ...grpc.CallOption) (*DeleteAssetResponse, error)
+	// 改一个资产的展示标题、标签与备注。
+	//
+	// **它只改"说明层"。** 资产有不可变与可变两层（见
+	// docs/design/galaxy/asset-library.md）：字节、内容摘要、媒体类型、类别与
+	// 字节数在改动前后逐字不变，因此公开区地址不变、已发布页面拿到的还是同一
+	// 份字节。接口面上不存在"替换资产字节"的方法。
+	//
+	// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
+	// 备注，标签以请求集合**整体替换**。
+	UpdateAsset(ctx context.Context, in *UpdateAssetRequest, opts ...grpc.CallOption) (*UpdateAssetResponse, error)
 	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
@@ -410,6 +428,16 @@ func (c *galaxyServiceClient) DeleteAsset(ctx context.Context, in *DeleteAssetRe
 	return out, nil
 }
 
+func (c *galaxyServiceClient) UpdateAsset(ctx context.Context, in *UpdateAssetRequest, opts ...grpc.CallOption) (*UpdateAssetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateAssetResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_UpdateAsset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *galaxyServiceClient) Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*PublishResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PublishResponse)
@@ -549,6 +577,10 @@ type GalaxyServiceServer interface {
 	// 写入之后必须读回核对一遍，不一致即删除该对象并拒绝。
 	CommitContentUpload(context.Context, *CommitContentUploadRequest) (*CommitContentUploadResponse, error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
+	//
+	// 可选按标签筛选（精确匹配、多值取**交集**）。响应里另给一份**整个工程**
+	// 已有的标签，供筛选界面做候选——它不随本次筛选收窄，否则筛一次之后候选
+	// 就只剩下筛出来的那几个，用户无法取回原来的面。
 	ListAssets(context.Context, *ListAssetsRequest) (*ListAssetsResponse, error)
 	// 开始一次资产上传：分配资产标识并签发一份直传凭证。
 	//
@@ -566,6 +598,9 @@ type GalaxyServiceServer interface {
 	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
 	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
 	// 上传不会进入任何清单**（元数据行不存在）。
+	//
+	// 可以顺带带上初始的标题 / 标签 / 备注（都可空）。一次带走省掉一次往返，
+	// 而结果与"提交之后再调 UpdateAsset"完全相同。
 	CommitAssetUpload(context.Context, *CommitAssetUploadRequest) (*CommitAssetUploadResponse, error)
 	// 删除一个资产。**被任一版本的文件清单引用时拒绝**，错误信息指出被哪些
 	// 版本引用。
@@ -574,6 +609,16 @@ type GalaxyServiceServer interface {
 	// 除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
 	// 从版本内容里知道该怎么做。把问题挡在它产生的地方。
 	DeleteAsset(context.Context, *DeleteAssetRequest) (*DeleteAssetResponse, error)
+	// 改一个资产的展示标题、标签与备注。
+	//
+	// **它只改"说明层"。** 资产有不可变与可变两层（见
+	// docs/design/galaxy/asset-library.md）：字节、内容摘要、媒体类型、类别与
+	// 字节数在改动前后逐字不变，因此公开区地址不变、已发布页面拿到的还是同一
+	// 份字节。接口面上不存在"替换资产字节"的方法。
+	//
+	// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
+	// 备注，标签以请求集合**整体替换**。
+	UpdateAsset(context.Context, *UpdateAssetRequest) (*UpdateAssetResponse, error)
 	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
@@ -656,6 +701,9 @@ func (UnimplementedGalaxyServiceServer) CommitAssetUpload(context.Context, *Comm
 }
 func (UnimplementedGalaxyServiceServer) DeleteAsset(context.Context, *DeleteAssetRequest) (*DeleteAssetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteAsset not implemented")
+}
+func (UnimplementedGalaxyServiceServer) UpdateAsset(context.Context, *UpdateAssetRequest) (*UpdateAssetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateAsset not implemented")
 }
 func (UnimplementedGalaxyServiceServer) Publish(context.Context, *PublishRequest) (*PublishResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Publish not implemented")
@@ -1044,6 +1092,24 @@ func _GalaxyService_DeleteAsset_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GalaxyService_UpdateAsset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateAssetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).UpdateAsset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_UpdateAsset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).UpdateAsset(ctx, req.(*UpdateAssetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GalaxyService_Publish_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PublishRequest)
 	if err := dec(in); err != nil {
@@ -1166,6 +1232,10 @@ var GalaxyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteAsset",
 			Handler:    _GalaxyService_DeleteAsset_Handler,
+		},
+		{
+			MethodName: "UpdateAsset",
+			Handler:    _GalaxyService_UpdateAsset_Handler,
 		},
 		{
 			MethodName: "Publish",

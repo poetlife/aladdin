@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
+	"unicode"
 
 	"go.uber.org/zap"
 
@@ -47,6 +50,18 @@ const (
 	// 它只是一个标签，但标签也会进库与界面：不设上限等于让一个客户端决定的
 	// 长度进入每一行资产记录。
 	filenameMaxRunes = 255
+
+	// AssetTitleMaxRunes 是展示标题的长度上限。
+	AssetTitleMaxRunes = 128
+	// AssetTagMaxRunes 是单个标签的长度上限。
+	AssetTagMaxRunes = 32
+	// MaxTagsPerAsset 是一个资产的标签数量上限（按归一化去重之后的个数算）。
+	MaxTagsPerAsset = 16
+	// AssetNotesMaxRunes 是备注的长度上限。
+	//
+	// 与工程名称、简介同一条理由按**字符数**而不是字节数计：用户感知的长度是
+	// 字数，按字节算会让"一段中文写到十几个字就被拒"成为一条需要解释的规则。
+	AssetNotesMaxRunes = 2048
 )
 
 var (
@@ -76,6 +91,19 @@ var (
 
 	// ErrAssetReferenced 表示资产仍被某个版本引用，因此不能删。
 	ErrAssetReferenced = errors.New("资产仍被版本引用")
+
+	// ErrAssetTitleTooLong 表示展示标题超过长度上限。
+	ErrAssetTitleTooLong = errors.New("资产标题过长")
+
+	// ErrAssetNotesTooLong 表示备注超过长度上限。
+	ErrAssetNotesTooLong = errors.New("资产备注过长")
+
+	// ErrAssetTagInvalid 表示某个标签不合法（空串、含控制字符或路径分隔符、
+	// 超长）。
+	ErrAssetTagInvalid = errors.New("标签不合法")
+
+	// ErrAssetTooManyTags 表示标签数量超过上限。
+	ErrAssetTooManyTags = errors.New("标签数量超过上限")
 )
 
 // MediaKind 是资产按媒体分出的类别。它决定用哪一档大小上限，也是对象键里的一段。
@@ -94,6 +122,13 @@ const (
 )
 
 // Asset 是工程资产库里的一个媒体文件。字节在对象存储，这里只有元数据。
+//
+// 元数据分**两层**，它们的可变性不同（见 docs/design/galaxy/asset-library.md）：
+//
+//   - **字节层**（Digest / MediaKind / MediaType / SizeBytes）：上传之后不可变，
+//     没有替换字节的入口；
+//   - **说明层**（Title / Tags / Notes）：可改，改它们不动字节层任何一项，也
+//     不进发布产物。
 type Asset struct {
 	// ID 由 aladdin 分配。
 	ID string
@@ -121,6 +156,12 @@ type Asset struct {
 	// 把一段不可信输入拼进存储路径。
 	Filename   string
 	UploadedAt time.Time
+	// Title 是展示标题，与 Filename 分离。空表示没有标题，界面回退到文件名。
+	Title string
+	// Tags 是归一化之后的标签（小写、去重、有序）。见 NormalizeTags。
+	Tags []string
+	// Notes 是自由文本备注。**不进对象键、不进发布产物、不进日志原文。**
+	Notes string
 }
 
 // AssetView 是一个资产加一条短时读取地址。
@@ -235,6 +276,85 @@ func NormalizeAssetType(declared string) (string, MediaKind, error) {
 	return mediaType, kind, nil
 }
 
+// NormalizeAssetMeta 归一化说明层元数据并校验长度（唯一入口）。
+//
+// 标题与备注按**字符数**限长（理由见上限常量）；首尾空白一律去掉——"只由空白
+// 组成的标题"与"没有标题"是同一件事，而界面回退到文件名靠的就是"空"这一个判据。
+// 中间部分的空白与换行原样保留。
+//
+// 标签交给 NormalizeTags，它管的是另一套规则（小写、去重、数量上限）。
+func NormalizeAssetMeta(title, notes string, tags []string) (string, string, []string, error) {
+	title = strings.TrimSpace(title)
+	if len([]rune(title)) > AssetTitleMaxRunes {
+		return "", "", nil, fmt.Errorf("%w: 上限 %d 个字", ErrAssetTitleTooLong, AssetTitleMaxRunes)
+	}
+	notes = strings.TrimSpace(notes)
+	if len([]rune(notes)) > AssetNotesMaxRunes {
+		return "", "", nil, fmt.Errorf("%w: 上限 %d 个字", ErrAssetNotesTooLong, AssetNotesMaxRunes)
+	}
+	normalized, err := NormalizeTags(tags)
+	if err != nil {
+		return "", "", nil, err
+	}
+	return title, notes, normalized, nil
+}
+
+// NormalizeTags 归一化一个资产的标签集合（唯一入口）。
+//
+// 规则由 spec 钉死（见 docs/design/galaxy/asset-library.md 的"可编辑元数据"）：
+//
+//   - 去掉首尾空白；
+//   - **统一小写**。存储与展示都用它，因此不存在"库里存一份、比较时另算一份"
+//     这第二处规则；
+//   - 空串、含控制字符、含 `/` 或 `\` 的取值被拒。前两者是"看不见的取值"，
+//     后者是路径分隔符——标签会出现在查询串与界面里，收下它等于把转义问题
+//     往后推；
+//   - 归一化之后相同的只留一个，并按**字典序**排好。顺序在三端与两个存储实现
+//     之间逐字一致，因此不存在"内存实现读回来的顺序和 SQL 不一样"这条只在
+//     契约测试里才看得见的偏差；调用方也不必也不得再排一次。
+//
+// 它只归一化，不碰存储也不判权。
+func NormalizeTags(tags []string) ([]string, error) {
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	normalized := make([]string, 0, len(tags))
+	seen := make(map[string]struct{}, len(tags))
+	for _, raw := range tags {
+		tag := strings.ToLower(strings.TrimSpace(raw))
+		switch {
+		case tag == "":
+			return nil, fmt.Errorf("%w: 标签不能为空", ErrAssetTagInvalid)
+		case strings.ContainsAny(tag, `/\`):
+			return nil, fmt.Errorf("%w: %q 含路径分隔符", ErrAssetTagInvalid, tag)
+		case containsControlRune(tag):
+			return nil, fmt.Errorf("%w: %q 含控制字符", ErrAssetTagInvalid, tag)
+		case len([]rune(tag)) > AssetTagMaxRunes:
+			return nil, fmt.Errorf("%w: %q 超过 %d 个字", ErrAssetTagInvalid, tag, AssetTagMaxRunes)
+		}
+		if _, dup := seen[tag]; dup {
+			continue
+		}
+		seen[tag] = struct{}{}
+		normalized = append(normalized, tag)
+	}
+	if len(normalized) > MaxTagsPerAsset {
+		return nil, fmt.Errorf("%w: 上限 %d 个", ErrAssetTooManyTags, MaxTagsPerAsset)
+	}
+	slices.Sort(normalized)
+	return normalized, nil
+}
+
+// containsControlRune 判定一段文本里有没有控制字符。
+func containsControlRune(text string) bool {
+	for _, r := range text {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
+
 // AssetTypeRule 返回签发直传凭证用的**那一条**类型规则（唯一入口）。
 //
 // 规则**由声明的类型与它那一档的上限派生**，不另写一份：两处各写一份的表现是
@@ -323,11 +443,18 @@ func (s *Service) BeginAssetUpload(ctx context.Context, subjectID, projectID, de
 // 类型与摘要都是上传方**再次声明的**：两次调用之间服务端不保留任何状态，而
 // "不保留状态"正是"未提交的上传不留痕迹"这条的实现方式。类型在这里被重新校验
 // 并被用来取那一档的上限；摘要在这里**不核对**（见下）。
-func (s *Service) CommitAssetUpload(ctx context.Context, subjectID, projectID, assetID, declaredType, declaredDigest, filename string) (Asset, error) {
+//
+// 标题 / 标签 / 备注可空，随本次提交一并写入：一次带走省掉一次往返，结果与
+// "提交之后再调 UpdateAsset"完全相同。
+func (s *Service) CommitAssetUpload(ctx context.Context, subjectID, projectID, assetID, declaredType, declaredDigest, filename, title, notes string, tags []string) (Asset, error) {
 	if err := s.requireAssetStore(); err != nil {
 		return Asset{}, err
 	}
 	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+		return Asset{}, err
+	}
+	title, notes, tags, err := NormalizeAssetMeta(title, notes, tags)
+	if err != nil {
 		return Asset{}, err
 	}
 	mediaType, kind, err := NormalizeAssetType(declaredType)
@@ -364,6 +491,9 @@ func (s *Service) CommitAssetUpload(ctx context.Context, subjectID, projectID, a
 		SizeBytes:  stat.SizeBytes,
 		Filename:   truncateRunes(filename, filenameMaxRunes),
 		UploadedAt: s.now(),
+		Title:      title,
+		Tags:       tags,
+		Notes:      notes,
 	}
 	if err := s.store.CreateAsset(ctx, asset); err != nil {
 		// 元数据写不进去时把对象删掉：留着它就留下一个**无从被引用**的对象，
@@ -390,22 +520,73 @@ func (s *Service) CommitAssetUpload(ctx context.Context, subjectID, projectID, a
 }
 
 // ListAssets 列出工程的资产，并逐个签发短时读取地址。
-func (s *Service) ListAssets(ctx context.Context, subjectID, projectID string) ([]AssetView, error) {
+//
+// 可选的 tags 按**交集**筛选（只列出同时带这些标签的资产）。归一化在这次调用
+// 里做一次，因此客户端给 "Cover" 与 "cover" 是同一个筛选。
+//
+// 第二个返回值是这个工程**已有**的全部标签（升序），供筛选界面做候选：它
+// **不随本次筛选收窄**——否则筛一次之后候选就只剩下筛出来的那几个，用户没有
+// 办法把面取回来。
+func (s *Service) ListAssets(ctx context.Context, subjectID, projectID string, tags []string) ([]AssetView, []string, error) {
 	if err := s.requireAssetStore(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	assets, err := s.store.ListAssets(ctx, projectID)
+	normalized, err := NormalizeTags(tags)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	assets, err := s.store.ListAssets(ctx, projectID, normalized)
+	if err != nil {
+		return nil, nil, err
 	}
 	views := make([]AssetView, 0, len(assets))
 	for _, asset := range assets {
 		views = append(views, AssetView{Asset: asset, URL: s.listAssetURL(ctx, asset)})
 	}
-	return views, nil
+	projectTags, err := s.store.ListProjectTags(ctx, projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return views, projectTags, nil
+}
+
+// UpdateAsset 覆盖一个资产的说明层元数据（标题、标签、备注）。
+//
+// **它不碰字节层**：内容摘要、媒体类型、类别、字节数与对象键在调用前后逐字
+// 不变，因此公开区地址不变，已发布页面拿到的还是同一份字节。这正是"资产不可变"
+// 与"元数据可编辑"两条并存的方式（见 docs/design/galaxy/asset-library.md）。
+//
+// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或备注，
+// 标签整体替换。
+func (s *Service) UpdateAsset(ctx context.Context, subjectID, projectID, assetID, title, notes string, tags []string) (Asset, error) {
+	if err := s.requireAssetStore(); err != nil {
+		return Asset{}, err
+	}
+	title, notes, tags, err := NormalizeAssetMeta(title, notes, tags)
+	if err != nil {
+		return Asset{}, err
+	}
+	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+		return Asset{}, err
+	}
+	if err := s.store.UpdateAssetMeta(ctx, projectID, assetID, title, notes, tags); err != nil {
+		return Asset{}, err
+	}
+	// 写入已经成功，事件就发出去：后面那次读取失败不改变"元数据已变"这个事实。
+	s.publish(projectID)
+	if s.logger != nil {
+		// **备注原文不进日志**（见 docs/observability.md），与文件名同级：只记
+		// 标识与标签个数。
+		s.logger.Info("已更新资产元数据",
+			zap.String("project_id", projectID),
+			zap.String("asset_id", assetID),
+			zap.String("subject_id", subjectID),
+			zap.Int("tags", len(tags)))
+	}
+	return s.store.GetAsset(ctx, projectID, assetID)
 }
 
 // DeleteAsset 删除一个资产。

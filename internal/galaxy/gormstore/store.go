@@ -124,6 +124,10 @@ func toAsset(rec database.GalaxyAssetRecord) galaxy.Asset {
 		SizeBytes:  rec.SizeBytes,
 		Filename:   rec.Filename,
 		UploadedAt: rec.UploadedAt,
+		Title:      rec.Title,
+		Notes:      rec.Notes,
+		// Tags 不在这里取：它们在另一张表上，由调用方合并（见 asset.go 的
+		// assetTags）。
 	}
 }
 

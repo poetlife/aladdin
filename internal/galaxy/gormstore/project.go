@@ -106,6 +106,7 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, model := range []any{
 			&database.GalaxyVersionRecord{},
+			&database.GalaxyAssetTagRecord{},
 			&database.GalaxyAssetRecord{},
 			&database.GalaxyPublicationRecord{},
 			&database.GalaxyDraftRecord{},

@@ -91,9 +91,14 @@ export async function previewDraft(projectId: string, path = '') {
   return galaxyClient().previewDraft({ projectId, path })
 }
 
-/** 列出工程资产库里的资产，含短时有效的读取地址。 */
-export async function listAssets(projectId: string) {
-  return galaxyClient().listAssets({ projectId })
+/**
+ * 列出工程资产库里的资产，含短时有效的读取地址。
+ *
+ * tags 非空时按标签筛选（精确匹配、多值取交集）。响应里另带一份**整个工程**
+ * 已有的标签（`projectTags`），供筛选界面做候选——它不随本次筛选收窄。
+ */
+export async function listAssets(projectId: string, tags: string[] = []) {
+  return galaxyClient().listAssets({ projectId, tags })
 }
 
 /**
@@ -120,6 +125,9 @@ export async function beginAssetUpload(projectId: string, contentType: string, s
  * 提交时不校验它，但会在发布时读回对象核对，所以**必须算对**。
  *
  * filename 只是一个展示标签，不进对象键、不参与任何判断。
+ *
+ * title / notes / tags 是**可选的说明层元数据**，随这次提交一并写入：一次带走
+ * 省掉一次往返，结果与"提交之后再调 updateAsset"完全相同。标签由服务端归一化。
  */
 export async function commitAssetUpload(
   projectId: string,
@@ -127,8 +135,29 @@ export async function commitAssetUpload(
   contentType: string,
   digest: string,
   filename: string,
+  title = '',
+  notes = '',
+  tags: string[] = [],
 ) {
-  return galaxyClient().commitAssetUpload({ projectId, assetId, contentType, digest, filename })
+  return galaxyClient().commitAssetUpload({ projectId, assetId, contentType, digest, filename, title, notes, tags })
+}
+
+/**
+ * 改资产的展示标题、标签与备注。
+ *
+ * 表达的是**期望的完整状态**：空串清空标题或备注，标签整体替换。
+ *
+ * 它只动**说明层**（见 docs/design/galaxy/asset-library.md）：字节、内容摘要、
+ * 媒体类型与对象键都不变，已发布的页面也不会因此变化。
+ */
+export async function updateAsset(
+  projectId: string,
+  assetId: string,
+  title: string,
+  tags: string[],
+  notes: string,
+) {
+  return galaxyClient().updateAsset({ projectId, assetId, title, tags, notes })
 }
 
 /** 删除一个资产。被任一版本引用时会被服务端拒绝。 */

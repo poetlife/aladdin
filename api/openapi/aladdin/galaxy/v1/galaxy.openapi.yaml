@@ -781,6 +781,10 @@ paths:
         **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
         列出工程资产库里的资产，含**短时有效**的读取地址。
+
+         可选按标签筛选（精确匹配、多值取**交集**）。响应里另给一份**整个工程**
+         已有的标签，供筛选界面做候选——它不随本次筛选收窄，否则筛一次之后候选
+         就只剩下筛出来的那几个，用户无法取回原来的面。
       operationId: aladdin.galaxy.v1.GalaxyService.ListAssets
       parameters:
         - name: Connect-Protocol-Version
@@ -880,6 +884,9 @@ paths:
          签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
          一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
          上传不会进入任何清单**（元数据行不存在）。
+
+         可以顺带带上初始的标题 / 标签 / 备注（都可空）。一次带走省掉一次往返，
+         而结果与"提交之后再调 UpdateAsset"完全相同。
       operationId: aladdin.galaxy.v1.GalaxyService.CommitAssetUpload
       parameters:
         - name: Connect-Protocol-Version
@@ -958,6 +965,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteAssetResponse'
+  /aladdin.galaxy.v1.GalaxyService/UpdateAsset:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.asset.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: UpdateAsset
+      description: |-
+        **鉴权**：需要权限 `galaxy.asset.write`；作用域取自凭证的默认作用域。
+
+        改一个资产的展示标题、标签与备注。
+
+         **它只改"说明层"。** 资产有不可变与可变两层（见
+         docs/design/galaxy/asset-library.md）：字节、内容摘要、媒体类型、类别与
+         字节数在改动前后逐字不变，因此公开区地址不变、已发布页面拿到的还是同一
+         份字节。接口面上不存在"替换资产字节"的方法。
+
+         请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
+         备注，标签以请求集合**整体替换**。
+      operationId: aladdin.galaxy.v1.GalaxyService.UpdateAsset
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateAssetRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateAssetResponse'
   /aladdin.galaxy.v1.GalaxyService/Publish:
     post:
       x-aladdin-auth:
@@ -1125,12 +1183,37 @@ components:
              里不得承载秘密"这条约束的来源。过期后重新调用 ListAssets 即得到新地址。
 
              未配置私有桶时为空。
+        title:
+          type: string
+          title: title
+          description: |-
+            展示标题。**与 filename 分离**：文件名常是工具生成的乱码或不可信，
+             而标题是给人看的。空表示没有标题，此时界面回退到 filename 展示。
+        tags:
+          type: array
+          items:
+            type: string
+          title: tags
+          description: |-
+            标签。工程内的自由字符串，不是全局字典，也不是权限资源。
+
+             **值已归一化**（trim、小写、去重并升序、长度与数量受限，见
+             asset-library.md）：拿到的是唯一的那一份形式，调用方不必也不得自己再归一化
+             或再排序一次。
+        notes:
+          type: string
+          title: notes
+          description: 备注。纯文本，不是 Markdown。**不进对象键、不进发布产物、不进日志原文**。
       title: Asset
       additionalProperties: false
       description: |-
         Asset 是工程资产库里的一个媒体文件。
 
          字节在对象存储，这里只有元数据与一个短时读取地址。
+
+         元数据分**两层**（见 docs/design/galaxy/asset-library.md）：字节层
+         （media_type、kind、size_bytes）**不可变**；说明层（title、tags、notes）
+         **可改**，改它们不动字节层的任何一项，也不进发布产物。
     aladdin.galaxy.v1.AssetKindLimit:
       type: object
       properties:
@@ -1295,6 +1378,21 @@ components:
           description: |-
             展示用的原始文件名。**不进对象键，不参与任何判断**：它可能含路径分隔符、
              控制字符以及别人的名字，把它拼进存储路径就是把一段不可信输入拼进路径。
+        title:
+          type: string
+          title: title
+          description: |-
+            初始的说明层元数据，都可空（见 Asset 的 title / tags / notes）。
+
+             与"提交之后再调 UpdateAsset"结果相同，区别只是少一次往返。
+        tags:
+          type: array
+          items:
+            type: string
+          title: tags
+        notes:
+          type: string
+          title: notes
       title: CommitAssetUploadRequest
       additionalProperties: false
     aladdin.galaxy.v1.CommitAssetUploadResponse:
@@ -1542,6 +1640,16 @@ components:
         projectId:
           type: string
           title: project_id
+        tags:
+          type: array
+          items:
+            type: string
+          title: tags
+          description: |-
+            按标签筛选：精确匹配、多值取**交集**（同时带上这些标签的资产才列出）。
+
+             取值会按同一套归一化规则处理（trim、小写），因此客户端给 "Cover" 与
+             "cover" 是同一个筛选。空表示不筛。
       title: ListAssetsRequest
       additionalProperties: false
     aladdin.galaxy.v1.ListAssetsResponse:
@@ -1552,6 +1660,12 @@ components:
           items:
             $ref: '#/components/schemas/aladdin.galaxy.v1.Asset'
           title: assets
+        projectTags:
+          type: array
+          items:
+            type: string
+          title: project_tags
+          description: '**整个工程**已有的标签，升序。用于筛选界面的候选，**不随本次筛选收窄**。'
       title: ListAssetsResponse
       additionalProperties: false
     aladdin.galaxy.v1.ListProjectsRequest:
@@ -1788,6 +1902,42 @@ components:
             - title: project
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
       title: UnpublishResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.UpdateAssetRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        assetId:
+          type: string
+          title: asset_id
+        title:
+          type: string
+          title: title
+          description: 期望的展示标题。空串表示没有标题。
+        tags:
+          type: array
+          items:
+            type: string
+          title: tags
+          description: 期望的标签集合，**整体替换**（不在集合里的标签就是删掉）。空集表示清空。
+        notes:
+          type: string
+          title: notes
+          description: 期望的备注。空串表示清空。
+      title: UpdateAssetRequest
+      additionalProperties: false
+      description: UpdateAssetRequest 表达的是说明层元数据的**期望完整状态**，不是增量。
+    aladdin.galaxy.v1.UpdateAssetResponse:
+      type: object
+      properties:
+        asset:
+          allOf:
+            - title: asset
+              description: 改完之后的资产（含短时读取地址）。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Asset'
+      title: UpdateAssetResponse
       additionalProperties: false
     aladdin.galaxy.v1.UpdateProjectRequest:
       type: object

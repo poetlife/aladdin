@@ -383,7 +383,7 @@ func TestOwnershipCannotBeBypassed(t *testing.T) {
 			return f.service.DeleteVersion(ctx, testOther, project.ID, version.ID)
 		}},
 		{"列资产", func() error {
-			_, err := f.service.ListAssets(ctx, testOther, project.ID)
+			_, _, err := f.service.ListAssets(ctx, testOther, project.ID, nil)
 			return err
 		}},
 		{"取资产地址", func() error {
@@ -484,7 +484,7 @@ func TestDeleteProjectRemovesEverything(t *testing.T) {
 	if versions, err := f.store.ListVersions(ctx, project.ID); err != nil || len(versions) != 0 {
 		t.Errorf("版本仍在: %v / %d 条", err, len(versions))
 	}
-	if assets, err := f.store.ListAssets(ctx, project.ID); err != nil || len(assets) != 0 {
+	if assets, err := f.store.ListAssets(ctx, project.ID, nil); err != nil || len(assets) != 0 {
 		t.Errorf("资产仍在: %v / %d 条", err, len(assets))
 	}
 	// 私有区的资产对象被删掉（否则成为无从被引用的孤儿）。

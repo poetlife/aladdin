@@ -3,6 +3,7 @@ package galaxy
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -49,6 +50,42 @@ func cloneManifest(manifest Manifest) Manifest {
 	out := make(Manifest, len(manifest))
 	copy(out, manifest)
 	return out
+}
+
+// cloneTags 复制一份标签。
+//
+// 理由与 cloneManifest 相同：标签是切片，而读到的资产会离开这个存储。不复制
+// 的话，一次对返回值的 append 会写进已经落库的那一份里。
+func cloneTags(tags []string) []string {
+	if tags == nil {
+		return nil
+	}
+	out := make([]string, len(tags))
+	copy(out, tags)
+	return out
+}
+
+// sortedTags 复制一份标签并排好序。
+//
+// **两个存储实现必须给出同一个顺序**：SQL 那边是 `ORDER BY asset_id, tag`，
+// 因此这里也排成升序。不排的话，一次写入原样读回的顺序会随后端变化，而那是
+// 契约测试才能发现的那种偏差。
+func sortedTags(tags []string) []string {
+	out := cloneTags(tags)
+	slices.Sort(out)
+	return out
+}
+
+// hasAllTags 判定一个资产是不是带上了给定的全部标签（多值取交集）。
+//
+// 给定的标签是归一化之后的，而资产身上的也是，因此直接逐字比较即可。
+func hasAllTags(assetTags, want []string) bool {
+	for _, tag := range want {
+		if !slices.Contains(assetTags, tag) {
+			return false
+		}
+	}
+	return true
 }
 
 // GetProject 实现 Store。
@@ -139,19 +176,27 @@ func (s *MemoryStore) GetAsset(_ context.Context, projectID, assetID string) (As
 	if !ok || asset.ProjectID != projectID {
 		return Asset{}, ErrAssetNotFound
 	}
+	asset.Tags = sortedTags(asset.Tags)
 	return asset, nil
 }
 
 // ListAssets 实现 Store。
-func (s *MemoryStore) ListAssets(_ context.Context, projectID string) ([]Asset, error) {
+//
+// tags 非空时按交集筛选：只返回同时带这些标签的资产。
+func (s *MemoryStore) ListAssets(_ context.Context, projectID string, tags []string) ([]Asset, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var assets []Asset
 	for _, asset := range s.assets {
-		if asset.ProjectID == projectID {
-			assets = append(assets, asset)
+		if asset.ProjectID != projectID {
+			continue
 		}
+		if !hasAllTags(asset.Tags, tags) {
+			continue
+		}
+		asset.Tags = sortedTags(asset.Tags)
+		assets = append(assets, asset)
 	}
 	sort.Slice(assets, func(i, j int) bool {
 		if assets[i].UploadedAt.Equal(assets[j].UploadedAt) {
@@ -160,6 +205,28 @@ func (s *MemoryStore) ListAssets(_ context.Context, projectID string) ([]Asset, 
 		return assets[i].UploadedAt.After(assets[j].UploadedAt)
 	})
 	return assets, nil
+}
+
+// ListProjectTags 实现 Store。
+func (s *MemoryStore) ListProjectTags(_ context.Context, projectID string) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := map[string]struct{}{}
+	for _, asset := range s.assets {
+		if asset.ProjectID != projectID {
+			continue
+		}
+		for _, tag := range asset.Tags {
+			seen[tag] = struct{}{}
+		}
+	}
+	tags := make([]string, 0, len(seen))
+	for tag := range seen {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return tags, nil
 }
 
 // GetPublication 实现 Store。
@@ -296,7 +363,26 @@ func (s *MemoryStore) CreateAsset(_ context.Context, asset Asset) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	asset.Tags = cloneTags(asset.Tags)
 	s.assets[asset.ID] = asset
+	return nil
+}
+
+// UpdateAssetMeta 实现 MutableStore。
+//
+// **只改说明层**：摘要、媒体类型、类别与字节数逐字不变。
+func (s *MemoryStore) UpdateAssetMeta(_ context.Context, projectID, assetID, title, notes string, tags []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	asset, ok := s.assets[assetID]
+	if !ok || asset.ProjectID != projectID {
+		return ErrAssetNotFound
+	}
+	asset.Title = title
+	asset.Notes = notes
+	asset.Tags = cloneTags(tags)
+	s.assets[assetID] = asset
 	return nil
 }
 
