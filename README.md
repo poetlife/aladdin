@@ -140,7 +140,7 @@ aladdin/
 - **权限码只有一个来源**：`api/permissions/catalog.yaml`，经 `make gen` 派生两端常量。
 - **判定逻辑只有一处实现**：服务端 `internal/rbac`。前端与 CLI 的本地判断只做展示裁剪。
 - **配置不是权限的来源**：主体、角色、权限码、作用域不得由配置文件或环境变量提供；凭证不进配置文件。
-- 完整的开发约定见 [CLAUDE.md](CLAUDE.md)，代码位置索引见 [docs/ssot-registry.md](docs/ssot-registry.md)。
+- 完整的开发约定见 [AGENTS.md](AGENTS.md)，代码位置索引见 [docs/ssot-registry.md](docs/ssot-registry.md)。
 
 ## 许可证
 

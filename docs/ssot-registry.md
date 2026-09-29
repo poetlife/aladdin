@@ -1,6 +1,6 @@
 # SSOT 注册表（Single Source of Truth Registry）
 
-项目里**"同一件事的唯一入口"**的登记表。配合 [CLAUDE.md](../CLAUDE.md) 的 `Single Source of Truth 原则` 章节使用。
+项目里**"同一件事的唯一入口"**的登记表。配合 [AGENTS.md](../AGENTS.md) 的 `Single Source of Truth 原则` 章节使用。
 
 **改动前必查本表**：确认要做的判断 / 操作 / 数据读取是否已有登记。
 - 已有登记 → 直接复用，需求不满足时改那一个入口，不得在调用侧绕开。
@@ -61,7 +61,7 @@
 
 > **配置不得成为权限的来源**。主体、角色、权限码、作用域一律不得由配置提供；默认作用域只能来自主体的绑定关系。见 [docs/design/config/README.md](design/config/README.md)。
 
-> **唯一例外是引导**：系统里还没有任何角色绑定时，用引导配置建立第一个管理员。它是初始化的输入，不是判定的输入——判定路径只读存储、从不读配置。四条边界（物化 / 一次性 / 留痕 / 按不可变标识）见 [CLAUDE.md](../CLAUDE.md) 第 7 条，生效入口见 [internal/server/bootstrap.go](../internal/server/bootstrap.go)。
+> **唯一例外是引导**：系统里还没有任何角色绑定时，用引导配置建立第一个管理员。它是初始化的输入，不是判定的输入——判定路径只读存储、从不读配置。四条边界（物化 / 一次性 / 留痕 / 按不可变标识）见 [AGENTS.md](../AGENTS.md) 第 7 条，生效入口见 [internal/server/bootstrap.go](../internal/server/bootstrap.go)。
 
 > **前端权限判断不是安全边界**。前端 `usePermission` 只决定"要不要渲染"，服务端 `rbac.Engine.Check` 才是唯一有约束力的判定。两者判定逻辑必须一致，见 [docs/design/rbac/frontend-permissions.md](design/rbac/frontend-permissions.md)。
 

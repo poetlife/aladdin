@@ -240,7 +240,7 @@ type BootstrapConfig struct {
 	//
 	// 它**不意味着身份可以按邮箱确定**：解析只发生一次、绑定落在主体上，
 	// 此后的任何判定都不看邮箱。见 docs/design/identity/google-login.md 与
-	// CLAUDE.md 第 7 条。
+	// AGENTS.md 第 7 条。
 	Email string
 	// Scope 是这次授予的作用域，**文本形式**：写 "<global>" 表示全局作用域。
 	//
@@ -407,7 +407,7 @@ func DefaultCLI() CLIConfig {
 // **非回环地址一律要求 TLS**，只有回环（本机开发、SSH 隧道）允许明文。这个判断
 // 从**合并后的地址**推导，不是一个配置键：因此它不可能与地址不一致，也不会出现
 // "地址改了、协议没跟着改"。CLI 的凭证是 Authorization: Bearer，明文过境等于把
-// 凭证交出去——所以不提供关掉它的开关（见 CLAUDE.md 第 7 条）。
+// 凭证交出去——所以不提供关掉它的开关（见 AGENTS.md 第 7 条）。
 func (c CLIConfig) RequiresTLS() bool { return !loopback.IsAddress(c.Address) }
 
 // TLSConfig 返回该目标地址应当使用的传输层配置；回环地址返回 nil，表示明文。

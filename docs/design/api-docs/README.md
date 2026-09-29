@@ -10,7 +10,7 @@ proto 是接口契约的唯一信源，注释也够密。但它只对能读到 p
 
 **但不是所有生成方式都可以。** grpc-gateway 那类方案会为同一个方法再开一条 REST 路径（`POST /v1/login`），于是文档描述的东西与真实调用形状分叉——这正是 [buf.gen.yaml](../../../buf.gen.yaml) 一直拒绝它的理由。本模块选的生成器描述的是 **Connect 路径本身**（`POST /aladdin.identity.v1.IdentityService/Login`），与实际请求同形，因此不产生第二条路径，也就不违反那条理由。
 
-**每条路径只给一个动词（POST）。** 只读方法在服务端**另外也接受 GET**（标了 `idempotency_level = NO_SIDE_EFFECTS`，理由与限制见 [CLAUDE.md 的"传输方式的既定选择"](../../../CLAUDE.md)），但文档不为它在同一条路径下再列一条 `get` operation——两条同名条目只是把同一个方法说了两遍。这一事实写进方法的说明里，读者一样能拿到，侧栏却不重复。
+**每条路径只给一个动词（POST）。** 只读方法在服务端**另外也接受 GET**（标了 `idempotency_level = NO_SIDE_EFFECTS`，理由与限制见 [AGENTS.md 的"传输方式的既定选择"](../../../AGENTS.md)），但文档不为它在同一条路径下再列一条 `get` operation——两条同名条目只是把同一个方法说了两遍。这一事实写进方法的说明里，读者一样能拿到，侧栏却不重复。
 
 成功的衡量标准：
 

@@ -87,7 +87,7 @@ func NewIdentityService(store rbac.MutableStore, engine *rbac.Engine, deps Ident
 //
 // 判据只有一条：服务端知不知道自己的对外地址。这不是权限判定——它不决定
 // 谁能拿到什么，只决定这条路在不在，与渠道的启用同属一类（配置是初始化的
-// 输入，不是判定的输入，见 CLAUDE.md 第 7 条）。
+// 输入，不是判定的输入，见 AGENTS.md 第 7 条）。
 func (s *IdentityService) deviceLoginEnabled() bool {
 	return s.deviceApprovalURL != ""
 }

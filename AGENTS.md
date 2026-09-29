@@ -1,5 +1,12 @@
 # aladdin
 
+> **本文件是仓库级 agent 指令的唯一入口。** 仓库里不再有 `CLAUDE.md`：Claude Code 自 **v2.1.277** 起在找不到 `CLAUDE.md` / `.claude/CLAUDE.md` 时原生读取 `AGENTS.md`，跨 agent（Claude / Codex / Cursor 等）共用这一份。贡献者用的 Claude Code 需 **≥ 2.1.277**，更早的版本不会读它。
+>
+> 两个本地陷阱，都只影响你自己的机器，不要靠提交文件绕开：
+>
+> - 本地若存在 **`CLAUDE.local.md`**，Claude Code 默认**不再**读 `AGENTS.md`。把那个文件删掉，或把它设置的 Project instructions 改成包含 `agents-md` 的模式（如 `claude-md-and-agents-md`）。它已在 `.gitignore` 里，但那只防误提交，挡不住文件存在。
+> - **不要提交** `CLAUDE.md` 或 `.claude/CLAUDE.md`——哪怕只写一行 `@AGENTS.md` 的垫片。两份文件一旦并存就必然漂移，而漂移的表现是"指令看起来生效了，其实读的是旧的那份"。
+
 ## 项目概览
 
 阿拉丁神灯。前后端与命令行一体的仓库：
@@ -26,6 +33,7 @@
 | galaxy 创作与发布 | [docs/design/galaxy/](docs/design/galaxy/README.md) | 用户创作工程（多版本）、管理资产、发布成一个可公开访问的站点（`static` 内容原样服务、`docs` 渲染成多页）：引用完整性、公开匿名、渲染隔离 |
 | Web 界面 | [docs/design/web/](docs/design/web/README.md) | 呈现机制：主题（亮/暗/跟随系统）、图标与动效的来源、外壳结构、站内文档区，窄屏见 [responsive.md](docs/design/web/responsive.md) |
 | UI/UX 设计指导 | [docs/design/uiux/](docs/design/uiux/README.md) | 前端界面取舍：信息层级、间距节奏、空态与失败、文案、破坏性操作 |
+| 人读示意图约定 | [docs/design/diagram-conventions.md](docs/design/diagram-conventions.md) | design 文档里的人读图怎么画：默认 ASCII/Unicode 框图与表格，复杂沟通才上 Archify 件；图是说明视图，不是第二份事实来源 |
 | 命令行 | [docs/design/cli/](docs/design/cli/README.md) | 安装与升级形态：自更新的支持范围、校验与原子替换 |
 | API 文档 | [docs/design/api-docs/](docs/design/api-docs/README.md) | OpenAPI 文档的生成方式、鉴权扩展契约与产物管理 |
 | 全局配置与凭证 | [docs/design/config/](docs/design/config/README.md) | 配置来源分层与合并语义、服务端启动配置、CLI 配置与凭证保护 |

@@ -28,7 +28,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
  * 而不是反过来。因此本组件刻意不渲染任何 antd 组件——它只是 context，
  * 用到 antd 的切换控件在 ConfigProvider 内部（见 theme-switch.tsx）。
  *
- * 偏好只是呈现输入，不参与任何权限判定（见 CLAUDE.md 第 7 条）。
+ * 偏好只是呈现输入，不参与任何权限判定（见 AGENTS.md 第 7 条）。
  */
 export function ThemeProvider({ children }: { children: React.ReactNode }): React.ReactNode {
   // 初值同步读：放到副作用里读会让首帧按「跟随系统」渲染，选过固定主题的人

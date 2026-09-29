@@ -31,6 +31,9 @@ credentials.json
 *.db-wal
 *.db-shm
 
+# agent 指令只认 AGENTS.md：本机若放着 CLAUDE.local.md，Claude Code 会不再读 AGENTS（见 AGENTS.md 顶部）
+CLAUDE.local.md
+
 # 编辑器
 .idea/
 .vscode/
