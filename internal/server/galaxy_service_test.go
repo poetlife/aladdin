@@ -114,11 +114,12 @@ func TestGalaxyMethodsAreClassified(t *testing.T) {
 			t.Errorf("%s 需要的权限码 = %q，期望 %q", method, rule.Permission, rbac.PermissionGalaxyProjectPublish)
 		}
 	}
-	// 上传与删除资产共用 galaxy.asset.write；读取与发布各有自己的码。
+	// 上传、删除与改元数据资产共用 galaxy.asset.write；读取与发布各有自己的码。
 	cases := map[string]rbac.PermissionCode{
 		"BeginAssetUpload":    rbac.PermissionGalaxyAssetWrite,
 		"CommitAssetUpload":   rbac.PermissionGalaxyAssetWrite,
 		"DeleteAsset":         rbac.PermissionGalaxyAssetWrite,
+		"UpdateAsset":         rbac.PermissionGalaxyAssetWrite,
 		"ListAssets":          rbac.PermissionGalaxyAssetRead,
 		"ListProjects":        rbac.PermissionGalaxyProjectRead,
 		"PushDraft":           rbac.PermissionGalaxyProjectWrite,

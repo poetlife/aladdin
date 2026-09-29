@@ -205,7 +205,16 @@ type Store interface {
 	GetAsset(ctx context.Context, projectID, assetID string) (Asset, error)
 
 	// ListAssets 返回该工程的资产，按上传时间倒序。
-	ListAssets(ctx context.Context, projectID string) ([]Asset, error)
+	//
+	// tags 非空时按**交集**筛选：只返回同时带这些标签的资产。取值是归一化之后
+	// 的形式（见 NormalizeTags）。
+	ListAssets(ctx context.Context, projectID string, tags []string) ([]Asset, error)
+
+	// ListProjectTags 返回该工程已有的全部标签，升序。
+	//
+	// 它是筛选界面的候选来源，因此**不受任何筛选影响**：筛出来的那几个不该
+	// 把候选集缩小。
+	ListProjectTags(ctx context.Context, projectID string) ([]string, error)
 
 	// GetPublication 按发布标识读回发布记录（含产物清单）。
 	GetPublication(ctx context.Context, publicationID string) (Publication, error)
@@ -251,9 +260,19 @@ type MutableStore interface {
 	DeleteVersion(ctx context.Context, projectID, versionID string) error
 
 	// CreateAsset 写入一个资产（标识、摘要与媒体类型由调用方给定）。
+	//
+	// 它连同这个资产的标签一起落库（一个事务）：标签是资产的一部分，先写行
+	// 再补标签会留下一个"标签还没到"的中间状态。
 	CreateAsset(ctx context.Context, asset Asset) error
 
-	// DeleteAsset 删除一个资产的元数据行。
+	// UpdateAssetMeta 覆盖一个资产的说明层元数据（标题、备注与标签）。
+	//
+	// **它只动说明层**：内容摘要、媒体类型、类别与字节数逐字不变（见
+	// docs/design/galaxy/asset-library.md）。标签是**整体替换**——不在给定
+	// 集合里的就是删掉。资产不存在时返回 ErrAssetNotFound。
+	UpdateAssetMeta(ctx context.Context, projectID, assetID, title, notes string, tags []string) error
+
+	// DeleteAsset 删除一个资产的元数据行**连同它的标签**。
 	DeleteAsset(ctx context.Context, projectID, assetID string) error
 
 	// PutPublication 写入一条发布记录；同一条记录重复写入不产生第二条。
@@ -471,7 +490,7 @@ func (s *Service) DeleteProject(ctx context.Context, subjectID, projectID string
 	if err != nil {
 		return err
 	}
-	assets, err := s.store.ListAssets(ctx, projectID)
+	assets, err := s.store.ListAssets(ctx, projectID, nil)
 	if err != nil {
 		return err
 	}

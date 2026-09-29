@@ -3,7 +3,9 @@ package galaxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -206,10 +208,10 @@ func TestCommitAssetUploadRequiresObject(t *testing.T) {
 		t.Fatalf("签发失败: %v", err)
 	}
 	// 刻意不写对象：模拟上传中断。
-	if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", strings.Repeat("a", 64), "a.png"); !errors.Is(err, ErrAssetObjectMissing) {
+	if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", strings.Repeat("a", 64), "a.png", "", "", nil); !errors.Is(err, ErrAssetObjectMissing) {
 		t.Errorf("err = %v，期望 ErrAssetObjectMissing", err)
 	}
-	if assets, err := f.store.ListAssets(ctx, project.ID); err != nil || len(assets) != 0 {
+	if assets, err := f.store.ListAssets(ctx, project.ID, nil); err != nil || len(assets) != 0 {
 		t.Errorf("未提交的上传留下了元数据行: %v / %d 条", err, len(assets))
 	}
 }
@@ -227,7 +229,7 @@ func TestCommitAssetUploadRejectsOversizedObject(t *testing.T) {
 	f.objects.SimulateUpload(credential.Key, make([]byte, ImageMaxBytes+1))
 
 	digest := ContentDigest(make([]byte, ImageMaxBytes+1))
-	if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", digest, "big.png"); !errors.Is(err, ErrAssetTooLarge) {
+	if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", digest, "big.png", "", "", nil); !errors.Is(err, ErrAssetTooLarge) {
 		t.Fatalf("err = %v，期望 ErrAssetTooLarge", err)
 	}
 	if _, err := f.objects.Head(ctx, credential.Key); !errors.Is(err, objectstore.ErrObjectNotFound) {
@@ -256,7 +258,7 @@ func TestCommitAssetUploadChecksDigestShape(t *testing.T) {
 		}
 		f.objects.SimulateUpload(credential.Key, []byte("aaa"))
 
-		if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", digest, "a.png"); !errors.Is(err, ErrDigestInvalid) {
+		if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", digest, "a.png", "", "", nil); !errors.Is(err, ErrDigestInvalid) {
 			t.Errorf("摘要 %q err = %v，期望 ErrDigestInvalid", digest, err)
 		}
 	}
@@ -278,17 +280,21 @@ func TestSameBytesSameDigest(t *testing.T) {
 }
 
 // 资产**不可变**：读回两次的摘要与类型相同，而接口面上没有替换字节的方法。
+//
+// 注意"不可变"说的是**字节层**：说明层（标题、标签、备注）是可改的，那是另一
+// 个方法（UpdateAsset），它不改这里断言的任何一项——见 TestUpdateAssetChanges-
+// MetadataOnly。
 func TestAssetIsImmutable(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
 	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
 	ctx := context.Background()
 
-	first, err := f.service.ListAssets(ctx, testOwner, project.ID)
+	first, _, err := f.service.ListAssets(ctx, testOwner, project.ID, nil)
 	if err != nil {
 		t.Fatalf("列资产失败: %v", err)
 	}
-	second, err := f.service.ListAssets(ctx, testOwner, project.ID)
+	second, _, err := f.service.ListAssets(ctx, testOwner, project.ID, nil)
 	if err != nil {
 		t.Fatalf("列资产失败: %v", err)
 	}
@@ -302,13 +308,17 @@ func TestAssetIsImmutable(t *testing.T) {
 		t.Error("上传时间变了")
 	}
 
-	// 接口面上不存在"替换资产字节"的方法。这条靠反射钉住方法的集合：
-	// 一个 ReplaceAsset / UpdateAsset 的出现会让这条断言失败。
+	// 接口面上不存在"替换资产字节"的方法。这条靠反射钉住方法的集合：一个
+	// PutAsset / ReplaceAssetBytes 一类的出现会让它失败。
+	//
+	// **判据是"名字里有替换字节的意味"，不是"出现了 UpdateAsset"**：元数据
+	// 可编辑是显式的一层（见 TestUpdateAssetChangesMetadataOnly），把它一并
+	// 封掉等于用一条守卫否掉一个已定的功能。
 	serviceType := reflect.TypeOf(f.service)
 	for i := 0; i < serviceType.NumMethod(); i++ {
 		name := serviceType.Method(i).Name
-		if strings.Contains(name, "Replace") || name == "UpdateAsset" || name == "PutAsset" {
-			t.Errorf("服务上出现了替换资产的方法: %s", name)
+		if strings.Contains(name, "Replace") || strings.HasPrefix(name, "PutAsset") || strings.Contains(name, "AssetBytes") {
+			t.Errorf("服务上出现了替换资产字节的方法: %s", name)
 		}
 	}
 }
@@ -326,7 +336,7 @@ func TestAssetLookupsAreProjectScoped(t *testing.T) {
 		t.Errorf("用另一个工程的标识取地址 err = %v，期望 ErrAssetNotFound", err)
 	}
 	// 别人的工程里资产清单是空的。
-	views, err := f.service.ListAssets(ctx, testOwner, theirs.ID)
+	views, _, err := f.service.ListAssets(ctx, testOwner, theirs.ID, nil)
 	if err != nil {
 		t.Fatalf("列资产失败: %v", err)
 	}
@@ -371,7 +381,7 @@ func TestReferencedAssetCannotBeDeleted(t *testing.T) {
 	if _, err := f.objects.Head(ctx, AssetObjectKey(project.ID, asset.MediaKind, asset.ID)); !errors.Is(err, objectstore.ErrObjectNotFound) {
 		t.Error("私有区对象仍在")
 	}
-	if assets, err := f.store.ListAssets(ctx, project.ID); err != nil || len(assets) != 0 {
+	if assets, err := f.store.ListAssets(ctx, project.ID, nil); err != nil || len(assets) != 0 {
 		t.Errorf("元数据行仍在: %v / %d 条", err, len(assets))
 	}
 }
@@ -412,8 +422,11 @@ func TestAssetUnavailableWithoutStore(t *testing.T) {
 	if _, _, err := bare.BeginAssetUpload(ctx, testOwner, project.ID, "image/png", 3); !errors.Is(err, ErrAssetUnavailable) {
 		t.Errorf("签发 err = %v，期望 ErrAssetUnavailable", err)
 	}
-	if _, err := bare.ListAssets(ctx, testOwner, project.ID); !errors.Is(err, ErrAssetUnavailable) {
+	if _, _, err := bare.ListAssets(ctx, testOwner, project.ID, nil); !errors.Is(err, ErrAssetUnavailable) {
 		t.Errorf("列资产 err = %v，期望 ErrAssetUnavailable", err)
+	}
+	if _, err := bare.UpdateAsset(ctx, testOwner, project.ID, "ast_x", "", "", nil); !errors.Is(err, ErrAssetUnavailable) {
+		t.Errorf("改元数据 err = %v，期望 ErrAssetUnavailable", err)
 	}
 	// 工程与版本照常可用。
 	if _, _, err := bare.GetVersion(ctx, testOwner, project.ID, version.ID); err != nil {
@@ -429,5 +442,194 @@ func TestAssetUnavailableWithoutStore(t *testing.T) {
 	}
 	if !capabilities.PublishEnabled {
 		t.Error("发布了却报告发布不可用")
+	}
+}
+
+// 标签的归一化规则由 spec 钉死：trim、小写、去重、升序，拒绝空串 / 控制字符 /
+// 路径分隔符 / 超长，数量上限按**去重之后**算。
+func TestNormalizeTags(t *testing.T) {
+	ok := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"空集", nil, nil},
+		{"去空白并转小写", []string{"  Cover  ", "HERO"}, []string{"cover", "hero"}},
+		{"归一化之后去重", []string{"cover", "Cover", " cover "}, []string{"cover"}},
+		{"升序返回", []string{"hero", "cover"}, []string{"cover", "hero"}},
+		{"中文不受小写影响", []string{"封面"}, []string{"封面"}},
+		{"允许内部的空格与连字符", []string{"hero shot", "a-b"}, []string{"a-b", "hero shot"}},
+	}
+	for _, tc := range ok {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NormalizeTags(tc.in)
+			if err != nil {
+				t.Fatalf("归一化 %v 失败: %v", tc.in, err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("归一化 %v = %v，期望 %v", tc.in, got, tc.want)
+			}
+		})
+	}
+
+	bad := []struct {
+		name string
+		in   []string
+	}{
+		{"空串", []string{""}},
+		{"只由空白组成", []string{"   "}},
+		{"含路径分隔符", []string{"a/b"}},
+		{"含反斜杠", []string{`a\b`}},
+		{"含控制字符", []string{"a\x00b"}},
+		{"含换行", []string{"a\nb"}},
+		{"超过单项长度上限", []string{strings.Repeat("字", AssetTagMaxRunes+1)}},
+	}
+	for _, tc := range bad {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := NormalizeTags(tc.in); !errors.Is(err, ErrAssetTagInvalid) {
+				t.Errorf("归一化 %v err = %v，期望 ErrAssetTagInvalid", tc.in, err)
+			}
+		})
+	}
+
+	// 数量上限在去重之后算：恰好 MaxTagsPerAsset 个通过，多一个被拒。
+	many := make([]string, 0, MaxTagsPerAsset+1)
+	for i := 0; i <= MaxTagsPerAsset; i++ {
+		many = append(many, fmt.Sprintf("t%02d", i))
+	}
+	if _, err := NormalizeTags(many[:MaxTagsPerAsset]); err != nil {
+		t.Errorf("恰好 %d 个标签被拒: %v", MaxTagsPerAsset, err)
+	}
+	if _, err := NormalizeTags(many); !errors.Is(err, ErrAssetTooManyTags) {
+		t.Errorf("err = %v，期望 ErrAssetTooManyTags", err)
+	}
+	// 重复项在计数之前就被去掉，因此不占额度。
+	dup := append([]string{"cover", "Cover", "  COVER "}, many[:MaxTagsPerAsset-1]...)
+	if _, err := NormalizeTags(dup); err != nil {
+		t.Errorf("去重之后仍在额度内的集合被拒: %v", err)
+	}
+}
+
+// 提交时可以一次带上说明层元数据；标题与备注按字符数限长。
+func TestCommitAssetUploadStoresMetadata(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+
+	asset := f.uploadAssetWithMeta(t, project.ID, "image/png", "cover.png",
+		"  首页封面  ", "给首页用的图", []string{"Cover", "hero"}, []byte("aaa"))
+	if asset.Title != "首页封面" {
+		t.Errorf("标题 = %q，期望去掉首尾空白的 %q", asset.Title, "首页封面")
+	}
+	if asset.Notes != "给首页用的图" {
+		t.Errorf("备注 = %q", asset.Notes)
+	}
+	if !slices.Equal(asset.Tags, []string{"cover", "hero"}) {
+		t.Errorf("标签 = %v，期望归一化之后的 [cover hero]", asset.Tags)
+	}
+
+	// 超限的标题与备注在写入前就被拒。
+	ctx := context.Background()
+	if _, err := f.service.UpdateAsset(ctx, testOwner, project.ID, asset.ID,
+		strings.Repeat("字", AssetTitleMaxRunes+1), "", nil); !errors.Is(err, ErrAssetTitleTooLong) {
+		t.Errorf("标题超限 err = %v，期望 ErrAssetTitleTooLong", err)
+	}
+	if _, err := f.service.UpdateAsset(ctx, testOwner, project.ID, asset.ID,
+		"", strings.Repeat("字", AssetNotesMaxRunes+1), nil); !errors.Is(err, ErrAssetNotesTooLong) {
+		t.Errorf("备注超限 err = %v，期望 ErrAssetNotesTooLong", err)
+	}
+}
+
+// **改元数据只动说明层**：字节层（摘要、类别、类型、字节数、文件名、上传时间）
+// 在调用前后逐字不变，因此公开区地址不变、已发布页面拿到的还是同一份字节。
+func TestUpdateAssetChangesMetadataOnly(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	before := f.uploadAssetWithMeta(t, project.ID, "image/png", "cover.png",
+		"旧标题", "旧备注", []string{"old"}, []byte("aaa"))
+	ctx := context.Background()
+
+	after, err := f.service.UpdateAsset(ctx, testOwner, project.ID, before.ID,
+		"新标题", "新备注", []string{"New", "另一个"})
+	if err != nil {
+		t.Fatalf("更新元数据失败: %v", err)
+	}
+	if after.Title != "新标题" || after.Notes != "新备注" {
+		t.Errorf("说明层 = %q / %q，期望与传入的一致", after.Title, after.Notes)
+	}
+	if !slices.Equal(after.Tags, []string{"new", "另一个"}) {
+		t.Errorf("标签 = %v，期望归一化之后的 [new 另一个]", after.Tags)
+	}
+	if after.Digest != before.Digest || after.MediaKind != before.MediaKind ||
+		after.MediaType != before.MediaType || after.SizeBytes != before.SizeBytes ||
+		after.Filename != before.Filename || !after.UploadedAt.Equal(before.UploadedAt) {
+		t.Error("改元数据动了字节层")
+	}
+	// 对象键与摘要取自字节层的那几个字段，因此逐字相同。
+	if AssetObjectKey(after.ProjectID, after.MediaKind, after.ID) !=
+		AssetObjectKey(before.ProjectID, before.MediaKind, before.ID) {
+		t.Error("对象键变了")
+	}
+
+	// 空值表示清空（期望完整状态）。
+	cleared, err := f.service.UpdateAsset(ctx, testOwner, project.ID, before.ID, "", "", nil)
+	if err != nil {
+		t.Fatalf("清空元数据失败: %v", err)
+	}
+	if cleared.Title != "" || cleared.Notes != "" || len(cleared.Tags) != 0 {
+		t.Errorf("清空之后仍有元数据: %q / %q / %v", cleared.Title, cleared.Notes, cleared.Tags)
+	}
+
+	// 他工程的资产改不了：与"不存在"是同一个结论。
+	theirs := f.createProject(t, "别人的")
+	if _, err := f.service.UpdateAsset(ctx, testOwner, theirs.ID, before.ID, "x", "", nil); !errors.Is(err, ErrAssetNotFound) {
+		t.Errorf("err = %v，期望 ErrAssetNotFound", err)
+	}
+}
+
+// 按标签筛选是**精确匹配、多值取交集**；候选标签是整个工程的，不随筛选收窄。
+func TestListAssetsFiltersByTags(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	f.uploadAssetWithMeta(t, project.ID, "image/png", "a.png", "", "", []string{"cover", "hero"}, []byte("aaa"))
+	f.uploadAssetWithMeta(t, project.ID, "image/png", "b.png", "", "", []string{"cover"}, []byte("bbb"))
+	f.uploadAsset(t, project.ID, "image/png", "c.png", []byte("ccc"))
+	ctx := context.Background()
+
+	count := func(tags []string) int {
+		t.Helper()
+		views, _, err := f.service.ListAssets(ctx, testOwner, project.ID, tags)
+		if err != nil {
+			t.Fatalf("列资产失败: %v", err)
+		}
+		return len(views)
+	}
+	if got := count(nil); got != 3 {
+		t.Errorf("不筛时资产数 = %d，期望 3", got)
+	}
+	if got := count([]string{"cover"}); got != 2 {
+		t.Errorf("带 cover 的资产数 = %d，期望 2", got)
+	}
+	// 交集：同时带两个标签的只有一个。
+	if got := count([]string{"cover", "hero"}); got != 1 {
+		t.Errorf("同时带 cover 与 hero 的资产数 = %d，期望 1", got)
+	}
+	if got := count([]string{"不存在"}); got != 0 {
+		t.Errorf("带不存在标签的资产数 = %d，期望 0", got)
+	}
+	// 筛选取值也走同一套归一化：大小写与空白不影响结果。
+	if got := count([]string{"  COVER  "}); got != 2 {
+		t.Errorf("筛选取值未归一化：资产数 = %d，期望 2", got)
+	}
+	if _, _, err := f.service.ListAssets(ctx, testOwner, project.ID, []string{"a/b"}); !errors.Is(err, ErrAssetTagInvalid) {
+		t.Errorf("非法筛选取值 err = %v，期望 ErrAssetTagInvalid", err)
+	}
+
+	// 候选是**整个工程**的标签：把 cover 筛出来之后，hero 仍在候选里。
+	_, projectTags, err := f.service.ListAssets(ctx, testOwner, project.ID, []string{"cover"})
+	if err != nil {
+		t.Fatalf("列资产失败: %v", err)
+	}
+	if !slices.Equal(projectTags, []string{"cover", "hero"}) {
+		t.Errorf("工程标签 = %v，期望 [cover hero]", projectTags)
 	}
 }

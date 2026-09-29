@@ -145,7 +145,24 @@ func (f *fixture) tryUploadAsset(t *testing.T, subjectID, projectID, declaredTyp
 		return Asset{}, err
 	}
 	f.objects.SimulateUpload(credential.Key, data)
-	return f.service.CommitAssetUpload(ctx, subjectID, projectID, assetID, declaredType, ContentDigest(data), filename)
+	return f.service.CommitAssetUpload(ctx, subjectID, projectID, assetID, declaredType, ContentDigest(data), filename, "", "", nil)
+}
+
+// uploadAssetWithMeta 与 uploadAsset 相同，但顺带带上说明层元数据。
+func (f *fixture) uploadAssetWithMeta(t *testing.T, projectID, declaredType, filename, title, notes string, tags []string, data []byte) Asset {
+	t.Helper()
+	ctx := context.Background()
+	assetID, credential, err := f.service.BeginAssetUpload(ctx, testOwner, projectID, declaredType, int64(len(data)))
+	if err != nil {
+		t.Fatalf("签发资产失败: %v", err)
+	}
+	f.objects.SimulateUpload(credential.Key, data)
+	asset, err := f.service.CommitAssetUpload(ctx, testOwner, projectID, assetID, declaredType,
+		ContentDigest(data), filename, title, notes, tags)
+	if err != nil {
+		t.Fatalf("上传资产失败: %v", err)
+	}
+	return asset
 }
 
 // pushDraft 整组替换草稿，断言失败即终止用例。

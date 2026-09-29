@@ -325,12 +325,15 @@ func (s *GalaxyService) CommitContentUpload(ctx context.Context, req *connect.Re
 }
 
 // ListAssets 实现 GalaxyService。
+//
+// 可选按标签筛选；响应里另给一份**整个工程**已有的标签供筛选界面做候选，
+// 它不随本次筛选收窄（见领域层）。
 func (s *GalaxyService) ListAssets(ctx context.Context, req *connect.Request[galaxyv1.ListAssetsRequest]) (*connect.Response[galaxyv1.ListAssetsResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	assets, err := s.galaxy.ListAssets(ctx, subject.ID, req.Msg.GetProjectId())
+	assets, projectTags, err := s.galaxy.ListAssets(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetTags())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -338,6 +341,7 @@ func (s *GalaxyService) ListAssets(ctx context.Context, req *connect.Request[gal
 	for _, asset := range assets {
 		resp.Assets = append(resp.Assets, toProtoAsset(asset))
 	}
+	resp.ProjectTags = projectTags
 	return connect.NewResponse(resp), nil
 }
 
@@ -375,7 +379,8 @@ func (s *GalaxyService) CommitAssetUpload(ctx context.Context, req *connect.Requ
 		return nil, err
 	}
 	asset, err := s.galaxy.CommitAssetUpload(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetAssetId(),
-		req.Msg.GetContentType(), req.Msg.GetDigest(), req.Msg.GetFilename())
+		req.Msg.GetContentType(), req.Msg.GetDigest(), req.Msg.GetFilename(),
+		req.Msg.GetTitle(), req.Msg.GetNotes(), req.Msg.GetTags())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -384,6 +389,33 @@ func (s *GalaxyService) CommitAssetUpload(ctx context.Context, req *connect.Requ
 		return nil, toGalaxyConnectError(err)
 	}
 	return connect.NewResponse(&galaxyv1.CommitAssetUploadResponse{
+		Asset: toProtoAsset(galaxy.AssetView{Asset: asset, URL: url}),
+	}), nil
+}
+
+// UpdateAsset 实现 GalaxyService：改资产的展示标题、标签与备注。
+//
+// 它只动**说明层**：字节、摘要、类型与对象键都不变（见领域层）。日志只记标识，
+// **不记备注原文**——备注是用户内容，与文件名同级。
+func (s *GalaxyService) UpdateAsset(ctx context.Context, req *connect.Request[galaxyv1.UpdateAssetRequest]) (*connect.Response[galaxyv1.UpdateAssetResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	asset, err := s.galaxy.UpdateAsset(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetAssetId(),
+		req.Msg.GetTitle(), req.Msg.GetNotes(), req.Msg.GetTags())
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	url, err := s.galaxy.AssetURL(ctx, subject.ID, asset.ProjectID, asset.ID)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	s.logger.Info("已更新资产元数据",
+		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("asset_id", req.Msg.GetAssetId()),
+		zap.String("subject_id", subject.ID))
+	return connect.NewResponse(&galaxyv1.UpdateAssetResponse{
 		Asset: toProtoAsset(galaxy.AssetView{Asset: asset, URL: url}),
 	}), nil
 }
@@ -634,6 +666,9 @@ func toProtoAsset(view galaxy.AssetView) *galaxyv1.Asset {
 		Filename:   view.Asset.Filename,
 		UploadedAt: view.Asset.UploadedAt.UTC().Format(time.RFC3339),
 		Url:        view.URL,
+		Title:      view.Asset.Title,
+		Tags:       view.Asset.Tags,
+		Notes:      view.Asset.Notes,
 	}
 }
 
@@ -702,6 +737,18 @@ func toGalaxyConnectError(err error) error {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("这个类型不在允许的范围内"))
 	case errors.Is(err, galaxy.ErrAssetTooLarge):
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("文件超过该类别的上限"))
+	case errors.Is(err, galaxy.ErrAssetTitleTooLong):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("资产标题不能超过 %d 个字", galaxy.AssetTitleMaxRunes))
+	case errors.Is(err, galaxy.ErrAssetNotesTooLong):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("资产备注不能超过 %d 个字", galaxy.AssetNotesMaxRunes))
+	case errors.Is(err, galaxy.ErrAssetTagInvalid):
+		// 消息里带着是哪一个标签出了问题，因此原样透出。
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
+	case errors.Is(err, galaxy.ErrAssetTooManyTags):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("标签不能超过 %d 个", galaxy.MaxTagsPerAsset))
 	case errors.Is(err, galaxy.ErrInvalidContent):
 		// 消息里带具体位置（哪一份文件、哪一处），因此原样透出。
 		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))

@@ -1,6 +1,21 @@
 import { useState } from 'react'
-import { Alert, Button, Empty, Image, Popconfirm, Space, Typography, Upload, theme } from 'antd'
-import { Copy, ImageUp, Trash2 } from 'lucide-react'
+import {
+  Alert,
+  Button,
+  Empty,
+  Form,
+  Image,
+  Input,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Tag,
+  Typography,
+  Upload,
+  theme,
+} from 'antd'
+import { Copy, ImageUp, Pencil, Trash2 } from 'lucide-react'
 
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
@@ -24,10 +39,16 @@ interface AssetLibraryProps {
   capabilities: {
     assetLimits: readonly AssetKindLimit[]
   }
+  /** 当前筛选下要展示的资产。 */
   assets: readonly Asset[]
-  /** 是否持有上传/删除权限。无权限时不渲染这两个入口。 */
+  /** **整个工程**已有的标签，供筛选候选用；不随当前筛选收窄。 */
+  projectTags: readonly string[]
+  /** 当前选中的标签筛选（在服务端生效）。 */
+  filterTags: readonly string[]
+  onFilterChange: (tags: string[]) => void
+  /** 是否持有上传/删除/编辑权限。无权限时不渲染这几个入口。 */
   canWrite: boolean
-  /** 上传或删除成功之后重新拉取资产清单（含新的短时地址）。 */
+  /** 上传、删除或改元数据成功之后重新拉取资产清单（含新的短时地址）。 */
   onChanged: () => Promise<void>
 }
 
@@ -35,6 +56,19 @@ interface failure {
   message: string
   traceId: string | null
 }
+
+/** 元数据编辑弹层的表单字段。 */
+interface MetaFormValues {
+  title: string
+  tags: string[]
+  notes: string
+}
+
+// 与服务端的上限同值（见 docs/design/galaxy/asset-library.md）。它们只用来**省
+// 一次往返**：超限与否的权威判定在服务端，这里不复写那条判断。
+const TITLE_MAX_RUNES = 128
+const NOTES_MAX_RUNES = 2048
+const MAX_TAGS = 16
 
 /**
  * 工程资产面板（弹层内容）：上传、查看、复制引用、删除。
@@ -54,6 +88,9 @@ export function AssetLibrary({
   projectId,
   capabilities,
   assets,
+  projectTags,
+  filterTags,
+  onFilterChange,
   canWrite,
   onChanged,
 }: AssetLibraryProps): React.ReactNode {
@@ -64,6 +101,54 @@ export function AssetLibrary({
   // （网络中断、提交报"上传没有完成"）必须有一条可重试的提示，不许静默。
   const [retryFile, setRetryFile] = useState<File | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // 正在编辑元数据的资产。null 表示弹层关着。
+  const [editing, setEditing] = useState<Asset | null>(null)
+  const [savingMeta, setSavingMeta] = useState(false)
+  const [metaFailure, setMetaFailure] = useState<failure | null>(null)
+  const [metaForm] = Form.useForm<MetaFormValues>()
+
+  /**
+   * 打开元数据编辑弹层。
+   *
+   * 每次都用**当前值**重置表单：上一次编到一半又关掉的内容不该留到下一次。
+   */
+  function openMetaEditor(asset: Asset): void {
+    setMetaFailure(null)
+    setEditing(asset)
+    metaForm.setFieldsValue({ title: asset.title, tags: [...asset.tags], notes: asset.notes })
+  }
+
+  /**
+   * 保存元数据。
+   *
+   * 请求表达的是**期望的完整状态**（空串清空、标签整体替换），因此把表单里的
+   * 三个字段整组发出去。服务端才是长度的权威：这里的 maxLength 只是省一次
+   * 往返，超限时仍按服务端返回的话呈现（见 docs/design/galaxy/asset-library.md）。
+   */
+  async function handleSaveMeta(): Promise<void> {
+    if (editing === null) {
+      return
+    }
+    const values = await metaForm.validateFields()
+    setSavingMeta(true)
+    setMetaFailure(null)
+    try {
+      await galaxyApi.updateAsset(
+        projectId,
+        editing.id,
+        values.title ?? '',
+        values.tags ?? [],
+        values.notes ?? '',
+      )
+      setEditing(null)
+      await onChanged()
+    } catch (err) {
+      setMetaFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+    } finally {
+      setSavingMeta(false)
+    }
+  }
 
   /**
    * 按选中的文件声明的 MIME 主类型找该类别的上限。
@@ -167,6 +252,22 @@ export function AssetLibrary({
         />
       )}
 
+      {projectTags.length > 0 && (
+        <Space size={8} wrap>
+          <Typography.Text type="secondary">按标签筛选</Typography.Text>
+          <Select
+            mode="multiple"
+            allowClear
+            style={{ minWidth: 260 }}
+            placeholder="同时带这些标签的才列出"
+            value={[...filterTags]}
+            onChange={onFilterChange}
+            options={projectTags.map((tag) => ({ value: tag, label: tag }))}
+            aria-label="按标签筛选资产"
+          />
+        </Space>
+      )}
+
       {canWrite && (
         <Space orientation="vertical" size={4} style={{ width: '100%' }}>
           <Upload
@@ -193,7 +294,12 @@ export function AssetLibrary({
       )}
 
       {assets.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="资产库里还没有素材" />
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            filterTags.length === 0 ? '资产库里还没有素材' : '没有同时带这些标签的素材'
+          }
+        />
       ) : (
         <div
           style={{
@@ -212,11 +318,66 @@ export function AssetLibrary({
               borderColor={token.colorBorderSecondary}
               mediaBackground={token.colorFillQuaternary}
               onCopy={() => void handleCopy(asset)}
+              onEdit={() => openMetaEditor(asset)}
               onDelete={() => void handleDelete(asset.id)}
             />
           ))}
         </div>
       )}
+
+      <Modal
+        title="编辑资产信息"
+        open={editing !== null}
+        onCancel={() => setEditing(null)}
+        onOk={() => void handleSaveMeta()}
+        okText="保存"
+        confirmLoading={savingMeta}
+        destroyOnHidden
+      >
+        {metaFailure !== null && (
+          <Alert
+            type="error"
+            title={metaFailure.message}
+            description={
+              metaFailure.traceId !== null && (
+                <Typography.Text type="secondary" copyable>
+                  追踪 ID：{metaFailure.traceId}
+                </Typography.Text>
+              )
+            }
+            style={{ marginBottom: 12 }}
+          />
+        )}
+        <Form form={metaForm} layout="vertical">
+          <Form.Item
+            name="title"
+            label="展示标题"
+            extra="留空则列表里显示原始文件名"
+          >
+            <Input placeholder="不给素材起名也行" maxLength={TITLE_MAX_RUNES} />
+          </Form.Item>
+          <Form.Item
+            name="tags"
+            label="标签"
+            extra={`回车添加一个；服务端统一小写并去重，最多 ${MAX_TAGS} 个`}
+          >
+            <Select
+              mode="tags"
+              open={false}
+              suffixIcon={null}
+              tokenSeparators={[',', '，']}
+              placeholder="输入后回车"
+            />
+          </Form.Item>
+          <Form.Item
+            name="notes"
+            label="备注"
+            extra="只给你自己看：不进发布产物，也不出现在公开页面上"
+          >
+            <Input.TextArea rows={4} maxLength={NOTES_MAX_RUNES} showCount />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   )
 }
@@ -229,6 +390,7 @@ interface AssetCardProps {
   borderColor: string
   mediaBackground: string
   onCopy: () => void
+  onEdit: () => void
   onDelete: () => void
 }
 
@@ -237,6 +399,10 @@ interface AssetCardProps {
  *
  * 元数据（类型、大小、时间）与短时地址的说明都挤在卡片里，是因为这一批东西
  * 本来就该一起看：换个文件名要能立刻对上是哪一张图。
+ *
+ * **主标签是展示标题，没有才回退到文件名**（见 docs/design/galaxy/asset-library.md）：
+ * 文件名常是工具生成的乱码，而标题是给人认的。两者都有时把文件名放在下面一行，
+ * 免得"这张图是从哪个文件来的"变成一个查不到的问题。
  */
 function AssetCard({
   asset,
@@ -246,8 +412,11 @@ function AssetCard({
   borderColor,
   mediaBackground,
   onCopy,
+  onEdit,
   onDelete,
 }: AssetCardProps): React.ReactNode {
+  const named = asset.title !== ''
+  const label = named ? asset.title : asset.filename === '' ? '(未命名)' : asset.filename
   return (
     <div
       style={{
@@ -268,18 +437,44 @@ function AssetCard({
           overflow: 'hidden',
         }}
       >
-        <AssetMedia asset={asset} />
+        <AssetMedia asset={asset} label={label} />
       </div>
       <Space orientation="vertical" size={4} style={{ padding: 8, width: '100%' }}>
-        <Typography.Text ellipsis={{ tooltip: asset.filename }}>
-          {asset.filename === '' ? '(未命名)' : asset.filename}
-        </Typography.Text>
+        <Typography.Text ellipsis={{ tooltip: label }}>{label}</Typography.Text>
+        {named && (
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: 12 }}
+            ellipsis={{ tooltip: asset.filename }}
+          >
+            文件名：{asset.filename === '' ? '(未命名)' : asset.filename}
+          </Typography.Text>
+        )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {asset.mediaType} · {describeBytes(Number(asset.sizeBytes))}
         </Typography.Text>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {formatTime(asset.uploadedAt)}
         </Typography.Text>
+        {asset.tags.length > 0 && (
+          <Space size={4} wrap>
+            {asset.tags.map((tag) => (
+              <Tag key={tag} style={{ marginInlineEnd: 0 }}>
+                {tag}
+              </Tag>
+            ))}
+          </Space>
+        )}
+        {asset.notes !== '' && (
+          // 截断展示，鼠标停上去看全文：备注是给人看的说明，卡片里放不下。
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}
+            ellipsis={{ tooltip: asset.notes }}
+          >
+            {asset.notes}
+          </Typography.Text>
+        )}
         <Typography.Text code style={{ fontSize: 12, wordBreak: 'break-all' }}>
           {reference}
         </Typography.Text>
@@ -287,6 +482,11 @@ function AssetCard({
           <Button type="link" size="small" icon={<Copy size={14} />} onClick={onCopy}>
             复制引用
           </Button>
+          {canWrite && (
+            <Button type="link" size="small" icon={<Pencil size={14} />} onClick={onEdit}>
+              编辑
+            </Button>
+          )}
           {canWrite && (
             <Popconfirm
               title="删除这个资产？"
@@ -318,7 +518,7 @@ function AssetCard({
  * 不做转码，放大的就是原样的字节）。视频与音频用各自的控件播放。
  * 服务端记录的类型前缀决定用哪一种；取不到地址时原样说明，不装作有。
  */
-function AssetMedia({ asset }: { asset: Asset }): React.ReactNode {
+function AssetMedia({ asset, label }: { asset: Asset; label: string }): React.ReactNode {
   if (asset.url === '') {
     return <Typography.Text type="secondary">无预览</Typography.Text>
   }
@@ -326,7 +526,7 @@ function AssetMedia({ asset }: { asset: Asset }): React.ReactNode {
     return (
       <Image
         src={asset.url}
-        alt={asset.filename}
+        alt={label}
         style={{ maxWidth: '100%', maxHeight: MEDIA_HEIGHT - 16, objectFit: 'contain' }}
       />
     )

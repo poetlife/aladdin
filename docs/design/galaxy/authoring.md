@@ -162,7 +162,7 @@
 | galaxy 总览 | 复用 [README.md](README.md) 的引用完整性唯一入口 |
 | 站点形态与文件组 | 内容的形状、两种形态、地址与预览的边界见 [site-model.md](site-model.md) |
 | 工程与版本 | 文件组属于草稿或某个版本（见 [project-versioning.md](project-versioning.md)）；本文件只定义源侧写法 |
-| 资产库 | 记号指向的资产、编辑态的短时地址与"复制引用"（见 [asset-library.md](asset-library.md)） |
+| 资产库 | 记号指向的资产、编辑态的短时地址、"复制引用"，以及标题 / 标签 / 备注的编辑与按标签筛选（见 [asset-library.md](asset-library.md)） |
 | 发布 | 记号的解析、校验规则与预览之外的那套地址（见 [publication.md](publication.md)） |
 | 命令行 | 创作路径的落点：目录与素材由命令行送入，本页负责审阅与发布（见 [cli.md](cli.md)） |
 | RBAC | `galaxy.project.read` 决定这一页的入口是否渲染、`galaxy.project.write` 决定能否存版本（内容的写入在命令行，见 [cli.md](cli.md)；判定见 [../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)） |
@@ -191,7 +191,7 @@
 | 预览 iframe 的沙箱属性 | [web/src/pages/galaxy/PreviewFrame.tsx](../../../web/src/pages/galaxy/PreviewFrame.tsx) |
 | 状态条（草稿 → 版本 → 发布，含校验结论、已发布时的地址与撤回） | [web/src/pages/galaxy/LifecycleStrip.tsx](../../../web/src/pages/galaxy/LifecycleStrip.tsx) |
 | 顶栏（存版本、选择哪一版发布、打开资产与版本两个面板） | [web/src/pages/galaxy/WorkbenchTopBar.tsx](../../../web/src/pages/galaxy/WorkbenchTopBar.tsx) |
-| 资产面板（上传、查看、复制引用、删除） | [web/src/pages/galaxy/AssetLibrary.tsx](../../../web/src/pages/galaxy/AssetLibrary.tsx) |
+| 资产面板（上传、查看、复制引用、删除、改标题 / 标签 / 备注、按标签筛选） | [web/src/pages/galaxy/AssetLibrary.tsx](../../../web/src/pages/galaxy/AssetLibrary.tsx) |
 | 版本列表面板（读回、删除） | [web/src/pages/galaxy/VersionList.tsx](../../../web/src/pages/galaxy/VersionList.tsx) |
 | 工程元数据与形态的编辑入口 | [web/src/pages/galaxy/ProjectInfoPopover.tsx](../../../web/src/pages/galaxy/ProjectInfoPopover.tsx) |
 | 校验调用与提示呈现 | [web/src/api/galaxy.ts](../../../web/src/api/galaxy.ts) |

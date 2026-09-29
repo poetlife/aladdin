@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -631,4 +632,168 @@ func TestGalaxyRepublishAfterUnpublish(t *testing.T) {
 	if secondCSS != firstCSS {
 		t.Errorf("重新发布的产物不同：%q / %q", secondCSS, firstCSS)
 	}
+}
+
+// uploadAssetWithMetaOverRPC 走一遍资产直传，并在**提交时**带上说明层元数据。
+//
+// 与 uploadAssetOverRPC 分开，是因为"一次提交带齐"本身就是要验的一条：它与
+// "提交之后再调 UpdateAsset"必须给出同样的结果。
+func uploadAssetWithMetaOverRPC(t *testing.T, h harness, client galaxyv1connect.GalaxyServiceClient,
+	projectID, contentType, filename, title, notes string, tags []string, data []byte) *galaxyv1.Asset {
+	t.Helper()
+	ctx := context.Background()
+	begin, err := client.BeginAssetUpload(ctx, connect.NewRequest(&galaxyv1.BeginAssetUploadRequest{
+		ProjectId:   projectID,
+		ContentType: contentType,
+		SizeBytes:   uint64(len(data)),
+	}))
+	if err != nil {
+		t.Fatalf("签发资产直传失败: %v", err)
+	}
+	h.objects.SimulateUpload(begin.Msg.GetUpload().GetKey(), data)
+
+	commit, err := client.CommitAssetUpload(ctx, connect.NewRequest(&galaxyv1.CommitAssetUploadRequest{
+		ProjectId:   projectID,
+		AssetId:     begin.Msg.GetAssetId(),
+		ContentType: contentType,
+		Digest:      sha256Hex(data),
+		Filename:    filename,
+		Title:       title,
+		Tags:        tags,
+		Notes:       notes,
+	}))
+	if err != nil {
+		t.Fatalf("提交资产失败: %v", err)
+	}
+	return commit.Msg.GetAsset()
+}
+
+// **资产元数据可改，字节层与已发布的产物不受影响**（issue #24 的验收）。
+//
+// 一次验四件事：提交时可带初始元数据；标签由服务端归一化；UpdateAsset 只动说明
+// 层；改完之后公开区的键与已发布页面的字节逐字不变。
+func TestGalaxyAssetMetadataIsEditableWithoutTouchingBytes(t *testing.T) {
+	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
+	client := connectGalaxy(t, h, testToken)
+	ctx := context.Background()
+
+	projectID := createProject(t, client, "工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	// 标签故意写成大写并带空白：归一化是这条链路的一部分，不是调用方的事。
+	cover := uploadAssetWithMetaOverRPC(t, h, client, projectID, "image/png", "cover.png",
+		"首页封面", "给首页用", []string{" Cover ", "HERO"}, pngBytes)
+	uploadAssetWithMetaOverRPC(t, h, client, projectID, "image/gif", "other.gif",
+		"", "", []string{"cover"}, gifBytes)
+
+	if !slices.Equal(cover.GetTags(), []string{"cover", "hero"}) {
+		t.Fatalf("提交带上的标签 = %v，期望归一化之后的 [cover hero]", cover.GetTags())
+	}
+	if cover.GetTitle() != "首页封面" || cover.GetNotes() != "给首页用" {
+		t.Fatalf("提交带上的说明层 = %q / %q", cover.GetTitle(), cover.GetNotes())
+	}
+
+	// 引用它并发布：此后一切关于"产物不受影响"的断言都以这一刻为基线。
+	pushDraft(t, client, projectID,
+		pushContentOverRPC(t, h, client, projectID, "index.html", `<img src="asset://`+cover.GetId()+`">`),
+		&galaxyv1.FileEntry{Path: "cover.png", Source: &galaxyv1.FileEntry_AssetId{AssetId: cover.GetId()}},
+	)
+	address := publishDraft(t, client, projectID)
+	status, before, _ := fetchPublished(t, h, address, "index.html", nil)
+	if status != http.StatusOK {
+		t.Fatalf("发布后取页面 = %d，期望 200", status)
+	}
+	releaseKeys := h.public.Keys()
+	releaseKey := galaxy.ReleaseObjectKey(sha256Hex(pngBytes), "image/png")
+	if len(releaseKeys) != 1 || releaseKeys[0] != releaseKey {
+		t.Fatalf("公开区的键 = %v，期望只有 %s", releaseKeys, releaseKey)
+	}
+	// 上架的字节也留一份基线：改元数据之后它必须逐字不变。
+	promotedBefore, err := h.public.Object(releaseKey)
+	if err != nil {
+		t.Fatalf("读取公开区对象失败: %v", err)
+	}
+
+	// 改元数据。返回的那一份必须与提交时的那一份在**字节层**逐字相同。
+	updated, err := client.UpdateAsset(ctx, connect.NewRequest(&galaxyv1.UpdateAssetRequest{
+		ProjectId: projectID,
+		AssetId:   cover.GetId(),
+		Title:     "改过的封面",
+		Tags:      []string{"New"},
+		Notes:     "改过的备注",
+	}))
+	if err != nil {
+		t.Fatalf("改资产元数据失败: %v", err)
+	}
+	got := updated.Msg.GetAsset()
+	if got.GetTitle() != "改过的封面" || got.GetNotes() != "改过的备注" {
+		t.Errorf("说明层 = %q / %q，期望与传入的一致", got.GetTitle(), got.GetNotes())
+	}
+	if !slices.Equal(got.GetTags(), []string{"new"}) {
+		t.Errorf("标签 = %v，期望归一化之后的 [new]", got.GetTags())
+	}
+	// 内容摘要不在接口面上（它是库内的那一层），因此这里比的是接口面上字节层的
+	// 全部字段；摘要不变由下面"公开区键与字节不变"那两条钉住。
+	if got.GetMediaType() != cover.GetMediaType() ||
+		got.GetKind() != cover.GetKind() || got.GetSizeBytes() != cover.GetSizeBytes() ||
+		got.GetFilename() != cover.GetFilename() || got.GetUploadedAt() != cover.GetUploadedAt() {
+		t.Error("改元数据动了字节层")
+	}
+
+	// 已发布的页面与公开区**逐字不变**：说明层不进产物。
+	status, after, _ := fetchPublished(t, h, address, "index.html", nil)
+	if status != http.StatusOK || after != before {
+		t.Errorf("改元数据之后已发布页面变了：%d / %q（原 %q）", status, after, before)
+	}
+	if keys := h.public.Keys(); !slices.Equal(keys, releaseKeys) {
+		t.Errorf("公开区的键变了：%v", keys)
+	}
+	promotedAfter, err := h.public.Object(releaseKey)
+	if err != nil {
+		t.Fatalf("改元数据之后公开区对象没了: %v", err)
+	}
+	if string(promotedAfter) != string(promotedBefore) {
+		t.Error("公开区里的字节变了")
+	}
+
+	// 按标签筛选：精确匹配、多值取交集；候选是整个工程的标签。
+	list := func(tags ...string) *galaxyv1.ListAssetsResponse {
+		t.Helper()
+		resp, err := client.ListAssets(ctx, connect.NewRequest(&galaxyv1.ListAssetsRequest{
+			ProjectId: projectID,
+			Tags:      tags,
+		}))
+		if err != nil {
+			t.Fatalf("列资产失败: %v", err)
+		}
+		return resp.Msg
+	}
+	if names := assetIDsOf(list("new")); !slices.Equal(names, []string{cover.GetId()}) {
+		t.Errorf("带 new 的资产 = %v，期望只有改过的那一个", names)
+	}
+	if names := assetIDsOf(list("cover")); len(names) != 1 {
+		t.Errorf("带 cover 的资产 = %v，期望只有另一个", names)
+	}
+	if names := assetIDsOf(list("new", "cover")); len(names) != 0 {
+		t.Errorf("同时带 new 与 cover 的资产 = %v，期望空集", names)
+	}
+	if tags := list().GetProjectTags(); !slices.Equal(tags, []string{"cover", "new"}) {
+		t.Errorf("工程标签 = %v，期望 [cover new]", tags)
+	}
+
+	// 他工程 / 不存在的资产改不了：与"不存在"是同一个结论。
+	if _, err := client.UpdateAsset(ctx, connect.NewRequest(&galaxyv1.UpdateAssetRequest{
+		ProjectId: projectID,
+		AssetId:   "ast_nope",
+		Title:     "x",
+	})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("改不存在的资产 = %v，期望 NotFound", err)
+	}
+}
+
+// assetIDsOf 取出一组资产的标识。
+func assetIDsOf(resp *galaxyv1.ListAssetsResponse) []string {
+	ids := make([]string, 0, len(resp.GetAssets()))
+	for _, asset := range resp.GetAssets() {
+		ids = append(ids, asset.GetId())
+	}
+	return ids
 }

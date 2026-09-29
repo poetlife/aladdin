@@ -93,6 +93,12 @@ export function ProjectEditorPage(): React.ReactNode {
   const [draftUpdatedAt, setDraftUpdatedAt] = useState('')
   const [versions, setVersions] = useState<Version[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
+  // 资产的标签候选：**整个工程**已有的标签，由服务端下发。它不随当前筛选收窄，
+  // 否则筛一次之后候选就只剩下筛出来的那几个（见 ListAssets 的说明）。
+  const [assetTags, setAssetTags] = useState<string[]>([])
+  // 当前选中的标签筛选。筛选在**服务端**做，因此重拉时要把它带上——别处推来的
+  // 事件重拉、刷新预览都带着它，用户视角里的"我筛着的那一批"不该被静默换掉。
+  const [assetFilter, setAssetFilter] = useState<string[]>([])
 
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<failure | null>(null)
@@ -217,13 +223,23 @@ export function ProjectEditorPage(): React.ReactNode {
     }
   }, [])
 
-  const loadAssets = useCallback(async (): Promise<void> => {
+  // tagFilter 由调用方给出，而不是从状态里读：这个回调会被几个不同时机调用
+  // （事件推来的重拉、刷新预览、面板里的动作），而"当前筛的是哪一批"必须由
+  // 调用时机上那一个确定的值说了算。
+  const loadAssets = useCallback(async (tagFilter: string[]): Promise<void> => {
     if (projectId === undefined || !canReadAssets) {
       return
     }
-    const response = await galaxyApi.listAssets(projectId)
+    const response = await galaxyApi.listAssets(projectId, tagFilter)
     setAssets(response.assets)
+    setAssetTags(response.projectTags)
   }, [projectId, canReadAssets])
+
+  /** 改资产筛选：筛选在服务端做，因此改完立刻按新的标签重拉一次。 */
+  function handleAssetFilterChange(tags: string[]): void {
+    setAssetFilter(tags)
+    void loadAssets(tags)
+  }
 
   const reloadVersions = useCallback(async (): Promise<void> => {
     if (projectId === undefined) {
@@ -263,10 +279,14 @@ export function ProjectEditorPage(): React.ReactNode {
       // 资产区只在"能力启用且持有读权限"时才请求：未配置私有桶时服务端拿不到
       // 地址，没权限时请求本身就会被拒——两者都不该让整页失败。
       if (capabilityResponse.capabilities?.assetUploadEnabled === true && canReadAssets) {
+        // 整页加载从"不筛"开始：用户重开这一页时，看到的该是全部素材。
+        setAssetFilter([])
         const assetResponse = await galaxyApi.listAssets(projectId)
         setAssets(assetResponse.assets)
+        setAssetTags(assetResponse.projectTags)
       } else {
         setAssets([])
+        setAssetTags([])
       }
 
       // 打开页面就把"这份草稿能不能发布"问出来：用户到这一页本来就是来问这件事的。
@@ -412,7 +432,7 @@ export function ProjectEditorPage(): React.ReactNode {
     setPreviewBusy(true)
     setFailure(null)
     try {
-      await loadAssets()
+      await loadAssets(assetFilter)
       await renderPreview(previewPath)
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
@@ -584,8 +604,11 @@ export function ProjectEditorPage(): React.ReactNode {
           projectId={project.id}
           capabilities={{ assetLimits: capabilities?.assetLimits ?? [] }}
           assets={assets}
+          projectTags={assetTags}
+          filterTags={assetFilter}
+          onFilterChange={handleAssetFilterChange}
           canWrite={canWriteAssets}
-          onChanged={loadAssets}
+          onChanged={() => loadAssets(assetFilter)}
         />
       </Modal>
 

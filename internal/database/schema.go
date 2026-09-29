@@ -316,12 +316,38 @@ type GalaxyAssetRecord struct {
 	// Filename 是原始文件名。**仅供展示与排障**：它不作为对象键，也不参与
 	// 任何判断。它可能含路径分隔符、控制字符以及别人的名字。
 	Filename string
+	// Title 是展示标题，与 Filename 分离。空表示没有标题。
+	Title string
+	// Notes 是自由文本备注。**不进对象键、不进发布产物、不进日志原文。**
+	//
+	// 它不设列长：上限按**字符数**在领域层卡（见 galaxy.AssetNotesMaxRunes），
+	// 而一个字符占几个字节取决于内容，在这里写死一个字节数会与那一条对不上。
+	Notes string
 	// UploadedAt 是上传时间。
 	UploadedAt time.Time
 }
 
 // TableName 实现 gorm 的表名解析。
 func (GalaxyAssetRecord) TableName() string { return "galaxy_assets" }
+
+// GalaxyAssetTagRecord 是一个资产的一个标签在库里的一行。
+//
+// **标签独立成表，而不是资产行上的一列**：它要支持"按标签列出工程里的资产"，
+// 而那在资产行的一列里只能靠模糊匹配（见 docs/design/persistence/schema.md）。
+type GalaxyAssetTagRecord struct {
+	// ProjectID 与 AssetID 合起来指向资产。工程标识也带上，是为了让"这个工程
+	// 有哪些标签"能只查这张表，不必回连资产行。
+	ProjectID string `gorm:"primaryKey;size:191;index:idx_galaxy_asset_tags_tag,priority:1"`
+	AssetID   string `gorm:"primaryKey;size:191"`
+	// Tag 是**归一化之后**的标签串（小写）。原始写法不保留。
+	//
+	// (ProjectID, AssetID, Tag) 是复合主键，因此同一个资产上的同一个标签不会
+	// 产生第二行；另建的 (project_id, tag) 索引服务按标签筛选。
+	Tag string `gorm:"primaryKey;size:64;index:idx_galaxy_asset_tags_tag,priority:2"`
+}
+
+// TableName 实现 gorm 的表名解析。
+func (GalaxyAssetTagRecord) TableName() string { return "galaxy_asset_tags" }
 
 // GalaxyPublicationRecord 是每次发布产生的产物在库里的一行。
 //

@@ -91,6 +91,9 @@ const (
 	// GalaxyServiceDeleteAssetProcedure is the fully-qualified name of the GalaxyService's DeleteAsset
 	// RPC.
 	GalaxyServiceDeleteAssetProcedure = "/aladdin.galaxy.v1.GalaxyService/DeleteAsset"
+	// GalaxyServiceUpdateAssetProcedure is the fully-qualified name of the GalaxyService's UpdateAsset
+	// RPC.
+	GalaxyServiceUpdateAssetProcedure = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
 	// GalaxyServicePublishProcedure is the fully-qualified name of the GalaxyService's Publish RPC.
 	GalaxyServicePublishProcedure = "/aladdin.galaxy.v1.GalaxyService/Publish"
 	// GalaxyServiceUnpublishProcedure is the fully-qualified name of the GalaxyService's Unpublish RPC.
@@ -198,6 +201,10 @@ type GalaxyServiceClient interface {
 	// 写入之后必须读回核对一遍，不一致即删除该对象并拒绝。
 	CommitContentUpload(context.Context, *connect.Request[v1.CommitContentUploadRequest]) (*connect.Response[v1.CommitContentUploadResponse], error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
+	//
+	// 可选按标签筛选（精确匹配、多值取**交集**）。响应里另给一份**整个工程**
+	// 已有的标签，供筛选界面做候选——它不随本次筛选收窄，否则筛一次之后候选
+	// 就只剩下筛出来的那几个，用户无法取回原来的面。
 	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
 	// 开始一次资产上传：分配资产标识并签发一份直传凭证。
 	//
@@ -215,6 +222,9 @@ type GalaxyServiceClient interface {
 	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
 	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
 	// 上传不会进入任何清单**（元数据行不存在）。
+	//
+	// 可以顺带带上初始的标题 / 标签 / 备注（都可空）。一次带走省掉一次往返，
+	// 而结果与"提交之后再调 UpdateAsset"完全相同。
 	CommitAssetUpload(context.Context, *connect.Request[v1.CommitAssetUploadRequest]) (*connect.Response[v1.CommitAssetUploadResponse], error)
 	// 删除一个资产。**被任一版本的文件清单引用时拒绝**，错误信息指出被哪些
 	// 版本引用。
@@ -223,6 +233,16 @@ type GalaxyServiceClient interface {
 	// 除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
 	// 从版本内容里知道该怎么做。把问题挡在它产生的地方。
 	DeleteAsset(context.Context, *connect.Request[v1.DeleteAssetRequest]) (*connect.Response[v1.DeleteAssetResponse], error)
+	// 改一个资产的展示标题、标签与备注。
+	//
+	// **它只改"说明层"。** 资产有不可变与可变两层（见
+	// docs/design/galaxy/asset-library.md）：字节、内容摘要、媒体类型、类别与
+	// 字节数在改动前后逐字不变，因此公开区地址不变、已发布页面拿到的还是同一
+	// 份字节。接口面上不存在"替换资产字节"的方法。
+	//
+	// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
+	// 备注，标签以请求集合**整体替换**。
+	UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error)
 	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
@@ -376,6 +396,12 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(galaxyServiceMethods.ByName("DeleteAsset")),
 			connect.WithClientOptions(opts...),
 		),
+		updateAsset: connect.NewClient[v1.UpdateAssetRequest, v1.UpdateAssetResponse](
+			httpClient,
+			baseURL+GalaxyServiceUpdateAssetProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("UpdateAsset")),
+			connect.WithClientOptions(opts...),
+		),
 		publish: connect.NewClient[v1.PublishRequest, v1.PublishResponse](
 			httpClient,
 			baseURL+GalaxyServicePublishProcedure,
@@ -413,6 +439,7 @@ type galaxyServiceClient struct {
 	beginAssetUpload    *connect.Client[v1.BeginAssetUploadRequest, v1.BeginAssetUploadResponse]
 	commitAssetUpload   *connect.Client[v1.CommitAssetUploadRequest, v1.CommitAssetUploadResponse]
 	deleteAsset         *connect.Client[v1.DeleteAssetRequest, v1.DeleteAssetResponse]
+	updateAsset         *connect.Client[v1.UpdateAssetRequest, v1.UpdateAssetResponse]
 	publish             *connect.Client[v1.PublishRequest, v1.PublishResponse]
 	unpublish           *connect.Client[v1.UnpublishRequest, v1.UnpublishResponse]
 }
@@ -515,6 +542,11 @@ func (c *galaxyServiceClient) CommitAssetUpload(ctx context.Context, req *connec
 // DeleteAsset calls aladdin.galaxy.v1.GalaxyService.DeleteAsset.
 func (c *galaxyServiceClient) DeleteAsset(ctx context.Context, req *connect.Request[v1.DeleteAssetRequest]) (*connect.Response[v1.DeleteAssetResponse], error) {
 	return c.deleteAsset.CallUnary(ctx, req)
+}
+
+// UpdateAsset calls aladdin.galaxy.v1.GalaxyService.UpdateAsset.
+func (c *galaxyServiceClient) UpdateAsset(ctx context.Context, req *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error) {
+	return c.updateAsset.CallUnary(ctx, req)
 }
 
 // Publish calls aladdin.galaxy.v1.GalaxyService.Publish.
@@ -628,6 +660,10 @@ type GalaxyServiceHandler interface {
 	// 写入之后必须读回核对一遍，不一致即删除该对象并拒绝。
 	CommitContentUpload(context.Context, *connect.Request[v1.CommitContentUploadRequest]) (*connect.Response[v1.CommitContentUploadResponse], error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
+	//
+	// 可选按标签筛选（精确匹配、多值取**交集**）。响应里另给一份**整个工程**
+	// 已有的标签，供筛选界面做候选——它不随本次筛选收窄，否则筛一次之后候选
+	// 就只剩下筛出来的那几个，用户无法取回原来的面。
 	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
 	// 开始一次资产上传：分配资产标识并签发一份直传凭证。
 	//
@@ -645,6 +681,9 @@ type GalaxyServiceHandler interface {
 	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做
 	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
 	// 上传不会进入任何清单**（元数据行不存在）。
+	//
+	// 可以顺带带上初始的标题 / 标签 / 备注（都可空）。一次带走省掉一次往返，
+	// 而结果与"提交之后再调 UpdateAsset"完全相同。
 	CommitAssetUpload(context.Context, *connect.Request[v1.CommitAssetUploadRequest]) (*connect.Response[v1.CommitAssetUploadResponse], error)
 	// 删除一个资产。**被任一版本的文件清单引用时拒绝**，错误信息指出被哪些
 	// 版本引用。
@@ -653,6 +692,16 @@ type GalaxyServiceHandler interface {
 	// 除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
 	// 从版本内容里知道该怎么做。把问题挡在它产生的地方。
 	DeleteAsset(context.Context, *connect.Request[v1.DeleteAssetRequest]) (*connect.Response[v1.DeleteAssetResponse], error)
+	// 改一个资产的展示标题、标签与备注。
+	//
+	// **它只改"说明层"。** 资产有不可变与可变两层（见
+	// docs/design/galaxy/asset-library.md）：字节、内容摘要、媒体类型、类别与
+	// 字节数在改动前后逐字不变，因此公开区地址不变、已发布页面拿到的还是同一
+	// 份字节。接口面上不存在"替换资产字节"的方法。
+	//
+	// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
+	// 备注，标签以请求集合**整体替换**。
+	UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error)
 	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
@@ -802,6 +851,12 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(galaxyServiceMethods.ByName("DeleteAsset")),
 		connect.WithHandlerOptions(opts...),
 	)
+	galaxyServiceUpdateAssetHandler := connect.NewUnaryHandler(
+		GalaxyServiceUpdateAssetProcedure,
+		svc.UpdateAsset,
+		connect.WithSchema(galaxyServiceMethods.ByName("UpdateAsset")),
+		connect.WithHandlerOptions(opts...),
+	)
 	galaxyServicePublishHandler := connect.NewUnaryHandler(
 		GalaxyServicePublishProcedure,
 		svc.Publish,
@@ -856,6 +911,8 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 			galaxyServiceCommitAssetUploadHandler.ServeHTTP(w, r)
 		case GalaxyServiceDeleteAssetProcedure:
 			galaxyServiceDeleteAssetHandler.ServeHTTP(w, r)
+		case GalaxyServiceUpdateAssetProcedure:
+			galaxyServiceUpdateAssetHandler.ServeHTTP(w, r)
 		case GalaxyServicePublishProcedure:
 			galaxyServicePublishHandler.ServeHTTP(w, r)
 		case GalaxyServiceUnpublishProcedure:
@@ -947,6 +1004,10 @@ func (UnimplementedGalaxyServiceHandler) CommitAssetUpload(context.Context, *con
 
 func (UnimplementedGalaxyServiceHandler) DeleteAsset(context.Context, *connect.Request[v1.DeleteAssetRequest]) (*connect.Response[v1.DeleteAssetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.DeleteAsset is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.UpdateAsset is not implemented"))
 }
 
 func (UnimplementedGalaxyServiceHandler) Publish(context.Context, *connect.Request[v1.PublishRequest]) (*connect.Response[v1.PublishResponse], error) {
