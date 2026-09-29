@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card, Form, Input, Space, Typography } from 'antd'
-import { Eye, FileCode, Images, Layers, ListChecks, Pencil, Rocket, Save } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Alert, Button, Flex, Input, Modal, Segmented, Skeleton, Space, Typography } from 'antd'
+import { ExternalLink, Eye, FileCode, RefreshCw, Save } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
 import * as galaxyApi from '../../api/galaxy'
@@ -11,20 +11,42 @@ import type {
   Asset,
   Capabilities,
   Project,
-  ValidationProblem,
   Version,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { useNarrowViewport } from '../../layouts/use-narrow-viewport'
 import { MONOSPACE } from '../../theme'
 import { AssetLibrary } from './AssetLibrary'
-import { PreviewFrame } from './PreviewFrame'
-import { PublishPanel } from './PublishPanel'
-import { VersionList } from './VersionList'
+import { LifecycleStrip } from './LifecycleStrip'
 import { formatTime } from './format-time'
+import { PreviewFrame } from './PreviewFrame'
+import {
+  VALIDATION_PENDING,
+  VALIDATION_STALE,
+  type ValidationState,
+} from './validation-state'
+import { VersionList } from './VersionList'
+import { WorkbenchTopBar } from './WorkbenchTopBar'
 
-interface ProjectFormValues {
-  name?: string
-  description?: string
+/** 预览/源码那块面积的下限与窄屏定高。 */
+const STAGE_MIN_HEIGHT = 240
+const NARROW_STAGE_HEIGHT = 360
+
+/**
+ * 弹层内容自己滚动。
+ *
+ * 不给上限时，内容比视口高会把**父页面**撑长、由外面那层滚——弹层跟着整页跑，
+ * 标题栏与遮罩都跟着动。给内容区一个上限让它内部滚，弹层才是一个稳定的框。
+ */
+const PANEL_BODY_STYLE: React.CSSProperties = {
+  maxHeight: 'calc(100dvh - 220px)',
+  overflowY: 'auto',
 }
+
+/** 预览与源码是两个模式，共用这一块面积（见 authoring.md 的"编辑页的形态"）。 */
+type StageMode = 'preview' | 'source'
+
+/** 顶栏能打开的两个集合。它们是弹层，不是页面上的常驻分区。 */
+type Panel = 'assets' | 'versions'
 
 interface failure {
   message: string
@@ -32,18 +54,25 @@ interface failure {
 }
 
 /**
- * 工程编辑器。
+ * galaxy 工作台。
  *
- * 路由已由 RequirePermission 保证 `galaxy.project.read`；页面内部按更细的
- * 权限码裁剪写操作（保存草稿/版本用 write、发布用 publish、资产用 asset.*）。
+ * **它以预览与状态为主体，不是一个编辑器页面**：创作路径在命令行（正文由本地工具
+ * 或生成器写好送上来），这一页要回答的是"草稿现在渲染成什么样、能不能发布、
+ * 下一步做什么"。因此主区铺满：预览与源码**共用这一块面积、切换着看**（默认预览），
+ * 推进流程的动作在顶栏，资产与版本这一类"一批东西"从顶栏以弹层打开。
+ * 要看渲染结果又想同时做别的事时，用「单独打开」把预览开成一个独立页面（PreviewPage）。
+ * 见 docs/design/galaxy/authoring.md 的"编辑页的形态"。
  *
- * 编辑器**不自己判断正文对不对**：点「校验正文」调服务端的 ValidateContent，
- * 把 problems 逐条列出（见 docs/design/galaxy/authoring.md 的"即时提示走服务端
- * 同一个入口"）。预览与校验是两件事，预览通过不等于发布通过。
+ * 路由已由 RequirePermission 保证 `galaxy.project.read`；页面内部按更细的权限码
+ * 裁剪写操作（保存草稿/存版本用 write、发布用 publish、资产用 asset.*）。
+ *
+ * 校验**自动产生**：打开页面与每次保存草稿之后都调一次服务端的 ValidateContent，
+ * 结论呈现在状态条与概览里。前端不复写引用解析——"这段正文能不能发布"只有
+ * 服务端一个实现入口，两端各写一份的表现是"编辑器说没问题、发布说不行"。
  */
 export function ProjectEditorPage(): React.ReactNode {
   const { projectId } = useParams<{ projectId: string }>()
-  const [form] = Form.useForm<ProjectFormValues>()
+  const narrow = useNarrowViewport()
 
   const canWrite = usePermission(PermissionCodes.GalaxyProjectWrite)
   const canReadAssets = usePermission(PermissionCodes.GalaxyAssetRead)
@@ -60,13 +89,45 @@ export function ProjectEditorPage(): React.ReactNode {
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<failure | null>(null)
 
-  const [metaBusy, setMetaBusy] = useState(false)
-  const [metaSaved, setMetaSaved] = useState(false)
-  const [draftBusy, setDraftBusy] = useState(false)
-  const [draftSaved, setDraftSaved] = useState(false)
-  const [problems, setProblems] = useState<ValidationProblem[] | null>(null)
-  const [validatedOk, setValidatedOk] = useState(false)
+  const [contentBusy, setContentBusy] = useState(false)
+  const [publishBusy, setPublishBusy] = useState(false)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [validation, setValidation] = useState<ValidationState>(VALIDATION_PENDING)
   const [loadedSeq, setLoadedSeq] = useState<number | null>(null)
+  const [mode, setMode] = useState<StageMode>('preview')
+  const [panel, setPanel] = useState<Panel | null>(null)
+
+  // 校验的竞态闸门：保存草稿与首次加载都会触发校验，序号让先发后到的响应作废，
+  // 否则状态条上会停在一次过期的结论上。
+  const validateSeq = useRef(0)
+
+  const validate = useCallback(
+    async (content: string): Promise<void> => {
+      if (projectId === undefined) {
+        return
+      }
+      const seq = ++validateSeq.current
+      setValidation(VALIDATION_PENDING)
+      try {
+        const response = await galaxyApi.validateContent(projectId, content)
+        if (seq !== validateSeq.current) {
+          return
+        }
+        setValidation({
+          status: response.problems.length === 0 ? 'ok' : 'problems',
+          problems: response.problems,
+        })
+      } catch {
+        if (seq !== validateSeq.current) {
+          return
+        }
+        // 「校验没跑成」不等于「正文有问题」：只标成未完成，不冒充结论，
+        // 也不把整页打成失败（预览、版本、资产照常可用）。
+        setValidation({ status: 'failed', problems: [] })
+      }
+    },
+    [projectId],
+  )
 
   const loadAssets = useCallback(async (): Promise<void> => {
     if (projectId === undefined || !canReadAssets) {
@@ -75,6 +136,27 @@ export function ProjectEditorPage(): React.ReactNode {
     const response = await galaxyApi.listAssets(projectId)
     setAssets(response.assets)
   }, [projectId, canReadAssets])
+
+  /**
+   * 重新读取资产清单，即刷新预览里的短时地址。
+   *
+   * 编辑页长时间开着时，预览的图片会在地址过期后显示不出来——这正是这个按钮存在的
+   * 理由（见 docs/design/galaxy/authoring.md 的「预览」）。
+   *
+   * 它不把错误直接抛出去：`loadAssets` 同时是资产库的回调，那条路径要自己呈现失败，
+   * 这里的失败属于这一页。
+   */
+  async function refreshPreview(): Promise<void> {
+    setPreviewBusy(true)
+    setFailure(null)
+    try {
+      await loadAssets()
+    } catch (err) {
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
 
   const reloadVersions = useCallback(async (): Promise<void> => {
     if (projectId === undefined) {
@@ -102,7 +184,8 @@ export function ProjectEditorPage(): React.ReactNode {
         galaxyApi.getDraft(projectId),
         galaxyApi.listVersions(projectId),
       ])
-      setDraft(draftResponse.draft?.content ?? '')
+      const content = draftResponse.draft?.content ?? ''
+      setDraft(content)
       setDraftSavedAt(draftResponse.draft?.updatedAt ?? '')
       setVersions(versionResponse.versions)
 
@@ -114,59 +197,43 @@ export function ProjectEditorPage(): React.ReactNode {
       } else {
         setAssets([])
       }
+
+      // 打开页面就把"这份草稿能不能发布"问出来：用户到这一页本来就是来问这件事的。
+      await validate(content)
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
       setLoading(false)
     }
-  }, [projectId, canReadAssets])
+  }, [projectId, canReadAssets, validate])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  useEffect(() => {
-    if (project !== null) {
-      form.setFieldsValue({ name: project.name, description: project.description })
-    }
-  }, [project, form])
-
-  async function handleSaveMeta(values: ProjectFormValues): Promise<void> {
-    if (projectId === undefined) {
-      return
-    }
-    setMetaBusy(true)
-    setMetaSaved(false)
-    try {
-      const response = await galaxyApi.updateProject(
-        projectId,
-        values.name ?? '',
-        values.description ?? '',
-      )
-      setProject(response.project ?? null)
-      setMetaSaved(true)
-    } catch (err) {
-      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
-    } finally {
-      setMetaBusy(false)
-    }
+  function handleDraftChange(value: string): void {
+    setDraft(value)
+    setLoadedSeq(null)
+    // 上一次的结论描述的是改动之前的那份字节，继续显示它等于给出一个不成立的保证；
+    // 保存草稿时会重新问一次服务端。
+    setValidation(VALIDATION_STALE)
   }
 
   async function handleSaveDraft(): Promise<void> {
     if (projectId === undefined) {
       return
     }
-    setDraftBusy(true)
-    setDraftSaved(false)
+    setContentBusy(true)
+    setFailure(null)
     try {
       const response = await galaxyApi.saveDraft(projectId, draft)
       setDraftSavedAt(response.draft?.updatedAt ?? '')
-      setDraftSaved(true)
       setLoadedSeq(null)
+      await validate(draft)
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
-      setDraftBusy(false)
+      setContentBusy(false)
     }
   }
 
@@ -174,271 +241,294 @@ export function ProjectEditorPage(): React.ReactNode {
     if (projectId === undefined) {
       return
     }
-    setDraftBusy(true)
-    setDraftSaved(false)
+    setContentBusy(true)
+    setFailure(null)
     try {
       // 保存版本快照的是**服务端的草稿**，所以先把编辑器里的内容落成草稿，
       // 再保存版本——否则版本会停留在上一次保存的草稿上。
-      await galaxyApi.saveDraft(projectId, draft)
+      const draftResponse = await galaxyApi.saveDraft(projectId, draft)
+      setDraftSavedAt(draftResponse.draft?.updatedAt ?? '')
       await galaxyApi.saveVersion(projectId)
       await reloadVersions()
-      setDraftSaved(true)
       setLoadedSeq(null)
+      await validate(draft)
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
-      setDraftBusy(false)
+      setContentBusy(false)
     }
   }
 
-  async function handleValidate(): Promise<void> {
+  async function handlePublish(versionId: string): Promise<void> {
     if (projectId === undefined) {
       return
     }
-    setDraftBusy(true)
-    setProblems(null)
-    setValidatedOk(false)
+    setPublishBusy(true)
+    setFailure(null)
     try {
-      const response = await galaxyApi.validateContent(projectId, draft)
-      setProblems(response.problems)
-      setValidatedOk(response.problems.length === 0)
+      const response = await galaxyApi.publish(projectId, versionId)
+      if (response.project !== undefined) {
+        setProject(response.project)
+      }
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
-      setDraftBusy(false)
+      setPublishBusy(false)
+    }
+  }
+
+  async function handleUnpublish(): Promise<void> {
+    if (projectId === undefined) {
+      return
+    }
+    setPublishBusy(true)
+    setFailure(null)
+    try {
+      const response = await galaxyApi.unpublish(projectId)
+      if (response.project !== undefined) {
+        setProject(response.project)
+      }
+    } catch (err) {
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+    } finally {
+      setPublishBusy(false)
     }
   }
 
   if (loading && project === null) {
-    return (
-      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <Card title="工程" loading />
-        <Card title="正文" loading />
-        <Card title="预览" loading />
-      </Space>
-    )
+    return <Skeleton active paragraph={{ rows: 8 }} />
   }
 
   if (project === null) {
     return (
-      <Card title="工程">
-        <Alert
-          type="error"
-          title={failure?.message ?? '读取工程失败'}
-          description={
-            failure !== null &&
-            failure.traceId !== null && (
-              <Typography.Text type="secondary" copyable>
-                追踪 ID：{failure.traceId}
-              </Typography.Text>
-            )
-          }
-          action={<Button onClick={() => void load()}>重试</Button>}
-        />
-      </Card>
+      <Alert
+        type="error"
+        showIcon
+        title={failure?.message ?? '读取工程失败'}
+        description={
+          failure !== null &&
+          failure.traceId !== null && (
+            <Typography.Text type="secondary" copyable>
+              追踪 ID：{failure.traceId}
+            </Typography.Text>
+          )
+        }
+        action={<Button onClick={() => void load()}>重试</Button>}
+      />
     )
   }
 
-  return (
-    <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-      <Card
-        title={
-          <Space size={8}>
-            <Pencil size={16} />
-            工程
-          </Space>
-        }
-      >
-        {failure !== null && (
-          <Alert
-            type="error"
-            title={failure.message}
-            description={
-              failure.traceId !== null && (
-                <Typography.Text type="secondary" copyable>
-                  追踪 ID：{failure.traceId}
-                </Typography.Text>
-              )
-            }
-            style={{ marginBottom: 16 }}
-          />
-        )}
-        {metaSaved && <Alert type="success" title="已保存" style={{ marginBottom: 16 }} />}
-        <Form<ProjectFormValues>
-          form={form}
-          layout="vertical"
-          onFinish={(values) => void handleSaveMeta(values)}
-          onValuesChange={() => setMetaSaved(false)}
-        >
-          <Form.Item name="name" label="名称" extra="仅用于你自己识别，不是地址、不需要唯一">
-            <Input maxLength={64} disabled={!canWrite} autoComplete="off" />
-          </Form.Item>
-          <Form.Item name="description" label="简介" extra="可留空">
-            <Input.TextArea maxLength={280} rows={3} disabled={!canWrite} />
-          </Form.Item>
-          {canWrite && (
-            <Button type="primary" htmlType="submit" loading={metaBusy}>
-              保存
-            </Button>
-          )}
-        </Form>
-        <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          工程标识：<Typography.Text code>{project.id}</Typography.Text>
-        </Typography.Paragraph>
-      </Card>
+  const topBar = (
+    <WorkbenchTopBar
+      project={project}
+      versions={versions}
+      canWrite={canWrite}
+      canPublish={canPublish}
+      publishEnabled={capabilities?.publishEnabled === true}
+      assetPanelEnabled={capabilities?.assetUploadEnabled === true && canReadAssets}
+      versionBusy={contentBusy}
+      publishBusy={publishBusy}
+      onOpenAssets={() => setPanel('assets')}
+      onOpenVersions={() => setPanel('versions')}
+      onSaveVersion={() => void handleSaveVersion()}
+      onPublish={(versionId) => void handlePublish(versionId)}
+      onProjectChange={setProject}
+    />
+  )
 
-      <Card
-        title={
-          <Space size={8}>
-            <FileCode size={16} />
-            正文
-          </Space>
-        }
-        extra={
-          <Typography.Text type="secondary">
-            {draftSavedAt === '' ? '草稿尚未保存' : `草稿保存于 ${formatTime(draftSavedAt)}`}
-          </Typography.Text>
-        }
+  const strip = (
+    <LifecycleStrip
+      validation={validation}
+      versions={versions}
+      project={project}
+      publishEnabled={capabilities?.publishEnabled === true}
+      canPublish={canPublish}
+      publishBusy={publishBusy}
+      onRetryValidate={() => void validate(draft)}
+      onUnpublish={() => void handleUnpublish()}
+    />
+  )
+
+  /**
+   * 顶栏打开的两个集合：资产与版本。
+   *
+   * 它们是弹层而不是常驻分区——一批东西与主区并排，会让主区**长期**窄掉一截，
+   * 换来的却是一个多数时候不看的列表（见 docs/design/galaxy/authoring.md 的
+   * "主区铺满，集合进弹层"）。
+   *
+   * 关掉即卸载（`destroyOnHidden`）：否则上一次的失败提示与"已复制引用"会留到下次打开。
+   */
+  const panels = (
+    <>
+      <Modal
+        title="资产"
+        open={panel === 'assets'}
+        onCancel={() => setPanel(null)}
+        footer={null}
+        width={860}
+        destroyOnHidden
+        styles={{ body: PANEL_BODY_STYLE }}
       >
-        {loadedSeq !== null && (
-          <Alert
-            type="info"
-            showIcon
-            title={`已载入版本 #${loadedSeq} 的正文，尚未保存`}
-            style={{ marginBottom: 12 }}
-          />
-        )}
-        {draftSaved && <Alert type="success" title="草稿已保存" style={{ marginBottom: 12 }} />}
-        {problems !== null && problems.length > 0 && (
-          <Alert
-            type="warning"
-            showIcon
-            title="正文有以下问题，发布会被拒绝"
-            description={
-              <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-                {problems.map((problem, index) => (
-                  <li key={index}>{problem.message}</li>
-                ))}
-              </ul>
-            }
-            style={{ marginBottom: 12 }}
-          />
-        )}
-        {validatedOk && (
-          <Alert type="success" showIcon title="校验通过，这段正文可以发布" style={{ marginBottom: 12 }} />
-        )}
-        <Input.TextArea
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value)
-            setDraftSaved(false)
-            setValidatedOk(false)
-            setProblems(null)
-          }}
-          rows={20}
-          spellCheck={false}
-          placeholder="<!doctype html> 起手，写一份完整的 HTML 文档；素材用 asset://<资产标识> 引用"
-          style={{ fontFamily: MONOSPACE, fontSize: 13 }}
+        <AssetLibrary
+          projectId={project.id}
+          capabilities={{ assetLimits: capabilities?.assetLimits ?? [] }}
+          assets={assets}
+          canWrite={canWriteAssets}
+          onChanged={loadAssets}
         />
-        <Space wrap style={{ marginTop: 12 }}>
-          {canWrite && (
-            <>
-              <Button
-                icon={<Save size={16} />}
-                loading={draftBusy}
-                onClick={() => void handleSaveDraft()}
-              >
-                保存草稿
-              </Button>
-              <Button loading={draftBusy} onClick={() => void handleSaveVersion()}>
-                保存版本
-              </Button>
-            </>
-          )}
-          <Button
-            icon={<ListChecks size={16} />}
-            loading={draftBusy}
-            onClick={() => void handleValidate()}
-          >
-            校验正文
-          </Button>
-        </Space>
-      </Card>
+      </Modal>
 
-      <Card
-        title={
-          <Space size={8}>
-            <Eye size={16} />
-            预览
-          </Space>
-        }
-      >
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          预览是沙箱渲染，正文里的脚本读不到编辑器的任何数据；预览不做裁剪，
-          坏引用就显示坏的。预览通过不等于发布通过。
-        </Typography.Paragraph>
-        <PreviewFrame content={draft} assets={assets} />
-      </Card>
-
-      <Card
-        title={
-          <Space size={8}>
-            <Layers size={16} />
-            版本
-          </Space>
-        }
+      <Modal
+        title="版本"
+        open={panel === 'versions'}
+        onCancel={() => setPanel(null)}
+        footer={null}
+        width={640}
+        destroyOnHidden
+        styles={{ body: PANEL_BODY_STYLE }}
       >
         <VersionList
           projectId={project.id}
           versions={versions}
           canWrite={canWrite}
           onReadBack={(content, seq) => {
+            // 读回一个版本的正文就切到源码并收起面板：不切的话，用户点了「读回」
+            // 只看到预览没变，而正文其实已经换成了那一版。
             setDraft(content)
             setLoadedSeq(seq)
-            setValidatedOk(false)
-            setProblems(null)
+            setMode('source')
+            setPanel(null)
+            void validate(content)
           }}
           onChanged={reloadVersions}
         />
-      </Card>
+      </Modal>
+    </>
+  )
 
-      {capabilities?.publishEnabled === true && (
-        <Card
-          title={
-            <Space size={8}>
-              <Rocket size={16} />
-              发布
-            </Space>
-          }
-        >
-          <PublishPanel
-            projectId={project.id}
-            project={project}
-            versions={versions}
-            canPublish={canPublish}
-            onProjectChange={setProject}
-          />
-        </Card>
-      )}
+  const sourceState =
+    loadedSeq !== null
+      ? `已载入版本 #${loadedSeq}，尚未保存`
+      : draftSavedAt === ''
+        ? '草稿尚未保存'
+        : `草稿保存于 ${formatTime(draftSavedAt)}`
 
-      {capabilities?.assetUploadEnabled === true && canReadAssets && (
-        <Card
-          title={
-            <Space size={8}>
-              <Images size={16} />
-              资产库
-            </Space>
-          }
-        >
-          <AssetLibrary
-            projectId={project.id}
-            capabilities={{ assetLimits: capabilities.assetLimits }}
-            assets={assets}
-            canWrite={canWriteAssets}
-            onChanged={loadAssets}
+  /**
+   * 预览与源码共用的一块面积。
+   *
+   * 两个模式各自的动作跟着各自的模式走：预览侧是"再看一眼 / 拿去别处看"，
+   * 源码侧是"把改动落下去"。放在同一行里会让当前不成立的动作一直亮着。
+   */
+  const stage = (
+    <Flex
+      vertical
+      gap={8}
+      style={narrow ? undefined : { flex: 1, minWidth: 0, minHeight: STAGE_MIN_HEIGHT }}
+    >
+      <Flex align="center" justify="space-between" gap={12} wrap>
+        <Segmented<StageMode>
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'preview', label: '预览', icon: <Eye size={14} /> },
+            { value: 'source', label: '源码', icon: <FileCode size={14} /> },
+          ]}
+        />
+        {mode === 'preview' ? (
+          <Space wrap>
+            <Button
+              href={`/galaxy/${project.id}/preview`}
+              target="_blank"
+              rel="noopener"
+              icon={<ExternalLink size={16} />}
+            >
+              单独打开
+            </Button>
+            <Button
+              icon={<RefreshCw size={16} />}
+              loading={previewBusy}
+              disabled={!canReadAssets}
+              onClick={() => void refreshPreview()}
+            >
+              刷新
+            </Button>
+          </Space>
+        ) : (
+          <Space wrap>
+            {canWrite && (
+              <Button
+                type="primary"
+                icon={<Save size={16} />}
+                loading={contentBusy}
+                onClick={() => void handleSaveDraft()}
+              >
+                保存草稿
+              </Button>
+            )}
+            <Typography.Text type="secondary">{sourceState}</Typography.Text>
+          </Space>
+        )}
+      </Flex>
+      <div style={narrow ? { height: NARROW_STAGE_HEIGHT } : { flex: 1, minHeight: 0 }}>
+        {mode === 'preview' ? (
+          <PreviewFrame content={draft} assets={assets} height="100%" />
+        ) : (
+          <Input.TextArea
+            value={draft}
+            onChange={(event) => handleDraftChange(event.target.value)}
+            spellCheck={false}
+            disabled={!canWrite}
+            placeholder="<!doctype html> 起手，写一份完整的 HTML 文档；素材用 asset://<资产标识> 引用"
+            style={{
+              height: '100%',
+              resize: 'none',
+              fontFamily: MONOSPACE,
+              fontSize: 13,
+            }}
           />
-        </Card>
-      )}
-    </Space>
+        )}
+      </div>
+    </Flex>
+  )
+
+  const failureAlert = failure !== null && (
+    <Alert
+      type="error"
+      showIcon
+      closable
+      onClose={() => setFailure(null)}
+      title={failure.message}
+      description={
+        failure.traceId !== null && (
+          <Typography.Text type="secondary" copyable>
+            追踪 ID：{failure.traceId}
+          </Typography.Text>
+        )
+      }
+    />
+  )
+
+  if (narrow) {
+    // 窄屏不走分栏：并排的两栏在手机上各自只剩一条缝，而且并排要求两栏都撑满
+    // 可用高度，这是 `wrap` 做不到的（见 docs/design/web/responsive.md）。
+    return (
+      <Flex vertical gap={12}>
+        {failureAlert}
+        {topBar}
+        {strip}
+        {stage}
+        {panels}
+      </Flex>
+    )
+  }
+
+  return (
+    <Flex vertical gap={12} style={{ height: '100%', minHeight: 0 }}>
+      {failureAlert}
+      {topBar}
+      {strip}
+      {stage}
+      {panels}
+    </Flex>
   )
 }

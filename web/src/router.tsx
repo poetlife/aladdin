@@ -15,6 +15,7 @@ import { DocsIndexPage } from './pages/docs/DocsIndexPage'
 import { GalaxyPage } from './pages/docs/GalaxyPage'
 import { ProjectEditorPage } from './pages/galaxy/ProjectEditorPage'
 import { ProjectListPage } from './pages/galaxy/ProjectListPage'
+import { PreviewPage } from './pages/galaxy/PreviewPage'
 
 /**
  * 路由表。
@@ -73,6 +74,10 @@ export const router = createBrowserRouter([
             children: [
               { path: '/galaxy', element: <ProjectListPage /> },
               { path: '/galaxy/:projectId', element: <ProjectEditorPage /> },
+              // 单独打开的预览。工作台里预览与源码共用一块面积、切换着看，因此
+              // "改的时候看不见渲染结果"——这一页是那件事的出口，读的仍是草稿。
+              // 它只要读权限：看一眼草稿不该要求能改它。
+              { path: '/galaxy/:projectId/preview', element: <PreviewPage /> },
             ],
           },
         ],

@@ -8,8 +8,11 @@ interface PreviewFrameProps {
   content: string
   /** 本工程的资产，用于把占位符换成短时地址。 */
   assets: readonly Asset[]
-  /** 预览区高度。窄屏下高度不随宽度变，因此不按断点调整。 */
-  height?: number
+  /**
+   * 预览区高度。数字按像素，也可给 `'100%'` 让它撑满所在面板。
+   * 窄屏下高度不随宽度变，因此不按断点调整。
+   */
+  height?: number | string
 }
 
 /**
