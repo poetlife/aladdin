@@ -253,6 +253,18 @@ components:
           type: string
           title: expires_at
           description: 凭证的失效时刻。它是**给客户端的提示值**，实际失效以对象存储的判断为准。
+        forbidOverwrite:
+          type: boolean
+          title: forbid_overwrite
+          description: |-
+            写入是否**禁止覆盖已存在的对象**。
+
+             内容对象（galaxy 的文本条目）按**内容摘要**寻址，因此"仅当不存在时写入"
+             是它成立的前提：一个伪造的摘要若落到另一个版本已经在用的键上，会把那个
+             对象改写掉——而那是"版本不可变"的反面。为真时客户端在写入请求上带禁止
+             覆盖的条件，由对象存储执行。
+
+             头像与资产按标识寻址、一个标识一个对象，因此它是假。
       title: DirectUploadCredential
       additionalProperties: false
       description: |-

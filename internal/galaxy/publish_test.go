@@ -3,402 +3,354 @@ package galaxy
 import (
 	"context"
 	"errors"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
 )
 
-// 发布做四件事的结果都留在可读的地方：产物可读回、指针指向它、对外地址返回它、
-// 引用的资产在公开区。
-func TestPublishRewritesAndServes(t *testing.T) {
+// **`static` 产物与文件组逐字相同**：差异集合恰好是记号被解析过的那些字节。
+func TestStaticArtifactsAreByteIdentical(t *testing.T) {
+	const page = `<!doctype html><html><head><link rel="stylesheet" href="/g/%s/style.css"></head><body><script src="/g/%s/app.js"></script></body></html>`
 	f := newFixture(t)
-	project := f.createProject(t, "工程")
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	placeholder := PlaceholderScheme + asset.ID
-	f.saveDraft(t, project.ID, `<img src="`+placeholder+`">`)
-	version := f.saveVersion(t, project.ID)
-	ctx := context.Background()
+	project := f.createProject(t, "构建产物")
+	pageContent := strings.ReplaceAll(page, "%s", project.ID)
 
-	publication := f.publish(t, project.ID, version.ID)
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", pageContent),
+		f.textEntry(t, project.ID, "style.css", "body{margin:0}"),
+		f.textEntry(t, project.ID, "app.js", "console.log(1)"),
+	})
 
-	// 产物是改写好的正文：占位符换成了公开区地址。
-	want := strings.ReplaceAll(`<img src="`+placeholder+`">`, placeholder, f.service.Origin().AssetURL(asset.Digest))
-	if string(publication.Content) != want {
-		t.Errorf("产物 = %q，期望 %q", publication.Content, want)
+	artifacts := f.buildArtifacts(t, project.ID)
+	for _, entryPath := range []string{"index.html", "style.css", "app.js"} {
+		if _, ok := artifacts[entryPath]; !ok {
+			t.Fatalf("产物里缺 %s", entryPath)
+		}
 	}
-	// 留痕：发布人是他，时间是这次发布。
-	if publication.PublishedBySubjectID != testOwner || publication.PublishedAt.IsZero() {
-		t.Errorf("留痕 = %+v", publication)
+	if string(artifacts["index.html"]) != pageContent {
+		t.Errorf("构建产物被改写了：\n得到 %s\n期望 %s", artifacts["index.html"], pageContent)
 	}
-	// 指针指向这条记录，而对外地址返回的正是它。
-	stored, err := f.store.GetProject(ctx, project.ID)
-	if err != nil {
-		t.Fatalf("读取工程失败: %v", err)
-	}
-	if stored.CurrentPublicationID != publication.ID {
-		t.Errorf("发布指针 = %q，期望 %q", stored.CurrentPublicationID, publication.ID)
-	}
-	served, err := f.service.CurrentArtifact(ctx, project.ID)
-	if err != nil {
-		t.Fatalf("取产物失败: %v", err)
-	}
-	if served.Content != publication.Content {
-		t.Error("对外地址返回的不是这次发布产物")
-	}
-	// 引用的资产在公开区，且是按内容摘要放的。
-	exists, err := f.public.Exists(ctx, ReleaseObjectKey(asset.Digest))
-	if err != nil {
-		t.Fatalf("查询公开区失败: %v", err)
-	}
-	if !exists {
-		t.Error("被引用的资产没有上架")
+	if string(artifacts["style.css"]) != "body{margin:0}" {
+		t.Error("CSS 被改写了")
 	}
 }
 
-// **只上架该版本引用到的资产**，不搬整个资产库。
-//
-// 一个工程可能有几百个素材而某个页面只用了三个，整体搬运会让一次发布的时间与
-// 成本取决于一个与它无关的数字。
-func TestOnlyReferencedAssetsArePromoted(t *testing.T) {
+// 记号在产物里被换成**站点内路径**；公开区地址不进产物。
+func TestMarkersBecomeSitePaths(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	asset := f.uploadAsset(t, project.ID, "image/png", "logo.png", []byte("png"))
+
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<img src="asset://`+asset.ID+`">`),
+		{Path: "logo.png", Kind: EntryKindAsset, AssetID: asset.ID},
+	})
+
+	artifacts := f.buildArtifacts(t, project.ID)
+	want := `<img src="/g/` + project.ID + `/logo.png">`
+	if string(artifacts["index.html"]) != want {
+		t.Errorf("产物 = %q，期望 %q", artifacts["index.html"], want)
+	}
+	if strings.Contains(string(artifacts["index.html"]), testBucketOrigin) {
+		t.Error("产物里出现了公开区地址")
+	}
+}
+
+// **一组条目一次性生效**：每一个路径在切换之后立刻可达，入口与 index.html 同一页。
+func TestPublishedEntriesAreAllReachable(t *testing.T) {
+	f := newFixture(t)
+	project, _, _ := f.publishSite(t, map[string]string{
+		"index.html":     "<p>首页</p>",
+		"guide/one.html": "<p>一</p>",
+		"style.css":      "body{}",
+	})
+	ctx := context.Background()
+
+	for _, entryPath := range []string{"index.html", "guide/one.html", "style.css"} {
+		if _, _, err := f.service.PublishedEntry(ctx, project.ID, entryPath); err != nil {
+			t.Errorf("%s 不可达: %v", entryPath, err)
+		}
+	}
+	// 入口地址（空路径）与 `index.html` 是**同一页**。
+	_, entry, err := f.service.PublishedEntry(ctx, project.ID, "")
+	if err != nil {
+		t.Fatalf("入口不可达: %v", err)
+	}
+	if entry.Path != "index.html" {
+		t.Errorf("入口解析成 %q，期望 index.html", entry.Path)
+	}
+}
+
+// 资产条目在发布态**分派为重定向**：它的字节不从服务端出。
+func TestAssetEntryIsDispatchedAsRedirect(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", "<p>首页</p>"),
+		f.assetEntry(t, project.ID, "logo.png", "image/png", "logo.png", []byte("png")),
+	})
+	version := f.saveVersion(t, project.ID)
+	f.publish(t, project.ID, version.ID)
+
+	_, entry, err := f.service.PublishedEntry(context.Background(), project.ID, "logo.png")
+	if err != nil {
+		t.Fatalf("资产条目不可达: %v", err)
+	}
+	if entry.Kind != EntryKindAsset {
+		t.Fatalf("条目类别 = %q，期望 asset", entry.Kind)
+	}
+	url, err := f.service.PublishedAssetURL(context.Background(), project.ID, entry.AssetID)
+	if err != nil {
+		t.Fatalf("取公开区地址失败: %v", err)
+	}
+	// 公开区按（内容摘要，类型）寻址。
+	if !strings.HasPrefix(url, testBucketOrigin+"/"+releaseKeyPrefix) {
+		t.Errorf("公开区地址 = %q，期望落在 %s 下", url, releaseKeyPrefix)
+	}
+	if !strings.Contains(url, ContentDigest([]byte("png"))) {
+		t.Errorf("公开区地址 %q 里没有内容摘要", url)
+	}
+}
+
+// **只上架被引用的资产**，且上架按（内容摘要，类型）幂等。
+func TestPromoteOnlyReferencedAndIdempotent(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
 	used := f.uploadAsset(t, project.ID, "image/png", "used.png", []byte("used"))
-	f.uploadAsset(t, project.ID, "image/png", "unused1.png", []byte("unused1"))
-	f.uploadAsset(t, project.ID, "image/png", "unused2.png", []byte("unused2"))
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+used.ID+`">`)
-	version := f.saveVersion(t, project.ID)
+	unused := f.uploadAsset(t, project.ID, "image/png", "unused.png", []byte("unused"))
 
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<img src="asset://`+used.ID+`">`),
+		{Path: "used.png", Kind: EntryKindAsset, AssetID: used.ID},
+	})
+	version := f.saveVersion(t, project.ID)
 	f.publish(t, project.ID, version.ID)
 
 	if f.public.Count() != 1 {
-		t.Errorf("公开区对象数 = %d，期望 1", f.public.Count())
+		t.Fatalf("公开区对象数 = %d，期望 1（只上架被引用的）", f.public.Count())
 	}
-	// 键是公开区里的**完整**对象键（`galaxy/release/<摘要>`），不是裸摘要：
-	// 公开区与私有区在同一个桶里，区分它们的正是这段前缀。
-	if keys := f.public.Keys(); len(keys) != 1 || keys[0] != ReleaseObjectKey(used.Digest) {
-		t.Errorf("公开区的对象键 = %v，期望只含被引用的那一个", keys)
+	for _, key := range f.public.Keys() {
+		if strings.Contains(key, unused.ID) {
+			t.Error("未被引用的资产也被上架了")
+		}
+	}
+
+	// 再发布一次：不产生新对象。
+	objectsBefore := f.objects.Count()
+	f.publish(t, project.ID, version.ID)
+	if f.public.Count() != 1 {
+		t.Errorf("重复发布之后公开区对象数 = %d，期望仍是 1", f.public.Count())
+	}
+	if f.objects.Count() != objectsBefore {
+		t.Errorf("重复发布产生了新对象：%d → %d", objectsBefore, f.objects.Count())
 	}
 }
 
-// 撤回之后重新发布同一个版本：产物**逐字相同**，且不重复上架。
-func TestRepublishIsIdenticalAndIdempotent(t *testing.T) {
+// **文本不进公开区**：上架只为媒体而做。
+func TestTextNeverEntersPublicZone(t *testing.T) {
 	f := newFixture(t)
-	project := f.createProject(t, "工程")
-	// 再放一个不被引用的资产：它不该被上架。
-	f.uploadAsset(t, project.ID, "image/png", "unused.png", []byte("unused"))
-	asset := f.uploadAsset(t, project.ID, "image/png", "b.png", []byte("bbb"))
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+asset.ID+`">`)
-	version := f.saveVersion(t, project.ID)
-	ctx := context.Background()
+	project, _, _ := f.publishSite(t, map[string]string{"index.html": "<p>首页</p>"})
 
-	first := f.publish(t, project.ID, version.ID)
-	promotedAfterFirst := f.public.Count()
+	// 公开区一个对象都没有：这份内容里没有任何资产。
+	if f.public.Count() != 0 {
+		t.Errorf("公开区对象数 = %d，期望 0", f.public.Count())
+	}
+	// 而文本仍然可达——它由服务端从私有区读出。
+	data, err := f.service.ReadPublishedText(context.Background(), project.ID,
+		ContentDigest([]byte("<p>首页</p>")))
+	if err != nil {
+		t.Fatalf("读发布态文本失败: %v", err)
+	}
+	if string(data) != "<p>首页</p>" {
+		t.Errorf("文本 = %q", data)
+	}
+}
+
+// 撤回之后**每一条路径**都不可达，且可以重新发布同一个版本，产物逐字相同。
+func TestUnpublishThenRepublishIsIdentical(t *testing.T) {
+	f := newFixture(t)
+	project, version, first := f.publishSite(t, map[string]string{
+		"index.html": "<p>首页</p>",
+		"style.css":  "body{}",
+	})
+	ctx := context.Background()
 
 	if err := f.service.Unpublish(ctx, testOwner, project.ID); err != nil {
 		t.Fatalf("撤回失败: %v", err)
 	}
-	if _, err := f.service.CurrentArtifact(ctx, project.ID); !errors.Is(err, ErrPublicationNotFound) {
-		t.Fatalf("撤回之后仍能取到产物: %v", err)
+	// **每一条路径都是**，不只是入口。
+	for _, entryPath := range []string{"", "index.html", "style.css"} {
+		if _, _, err := f.service.PublishedEntry(ctx, project.ID, entryPath); !errors.Is(err, ErrPublicationNotFound) {
+			t.Errorf("撤回之后 %q 仍可达: %v", entryPath, err)
+		}
 	}
 
 	second := f.publish(t, project.ID, version.ID)
 	if second.ID != first.ID {
-		t.Errorf("重新发布的记录标识变了：%q → %q", first.ID, second.ID)
+		t.Errorf("重新发布的标识 = %q，期望与首次相同（%q）", second.ID, first.ID)
 	}
-	if second.Content != first.Content {
-		t.Error("同一个版本两次发布的产物不同")
+	if len(second.Manifest) != len(first.Manifest) {
+		t.Fatalf("产物清单长度不同：%d / %d", len(second.Manifest), len(first.Manifest))
 	}
-	if f.public.Count() != promotedAfterFirst {
-		t.Errorf("公开区对象数 %d → %d，重复发布不该产生新字节", promotedAfterFirst, f.public.Count())
-	}
-	// 上架是幂等的：第二次一个 Put 都没发出去（存在即跳过）。
-	if len(f.public.Calls) != 1 {
-		t.Errorf("上架调用 = %d 次，期望只有第一次那一次", len(f.public.Calls))
+	for i, entry := range first.Manifest {
+		if second.Manifest[i] != entry {
+			t.Errorf("产物清单第 %d 条不同：%+v / %+v", i, second.Manifest[i], entry)
+		}
 	}
 }
 
-// 被拒的发布**不留任何痕迹**：指针未动、公开区无新对象、发布表无新行。
-func TestRejectedPublishLeavesNoTrace(t *testing.T) {
+// **整套一次性生效**：上架中途失败时，指针没动，所有路径读到的仍是上一次的产物。
+func TestFailureBeforeRecordLeavesNothingVisible(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
 	good := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
 
-	// 先发布一个合法的版本，作为"上一次的产物"。
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+good.ID+`">`)
-	published := f.saveVersion(t, project.ID)
-	previous := f.publish(t, project.ID, published.ID)
-	publicAfterPublish := f.public.Count()
-
-	// 再准备一个引用了外部地址的版本：它必须发布失败。
-	f.saveDraft(t, project.ID, `<img src="https://evil.example.com/a.png">`)
-	broken := f.saveVersion(t, project.ID)
-
-	ctx := context.Background()
-	if _, err := f.service.Publish(ctx, testOwner, project.ID, broken.ID); !errors.Is(err, ErrInvalidContent) {
-		t.Fatalf("err = %v，期望 ErrInvalidContent", err)
-	}
-
-	stored, err := f.store.GetProject(ctx, project.ID)
-	if err != nil {
-		t.Fatalf("读取工程失败: %v", err)
-	}
-	if stored.CurrentPublicationID != previous.ID {
-		t.Error("被拒的发布动了指针")
-	}
-	if f.public.Count() != publicAfterPublish {
-		t.Error("被拒的发布在公开区留下了对象")
-	}
-	served, err := f.service.CurrentArtifact(ctx, project.ID)
-	if err != nil {
-		t.Fatalf("取产物失败: %v", err)
-	}
-	if served.Content != previous.Content {
-		t.Error("被拒的发布换掉了对外产物")
-	}
-	if stored.CurrentPublicationID == PublicationID(project.ID, broken.ID) {
-		t.Error("被拒的发布落了库")
-	}
-}
-
-// 落库**之前**中断（上架失败）：对外不留影响，指针没动。
-func TestPublishFailureBeforeRecordLeavesPreviousArtifact(t *testing.T) {
-	f := newFixture(t)
-	project := f.createProject(t, "工程")
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+asset.ID+`">`)
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<img src="asset://`+good.ID+`">`),
+		{Path: "a.png", Kind: EntryKindAsset, AssetID: good.ID},
+	})
 	version := f.saveVersion(t, project.ID)
-
-	f.public.PutErr = errors.New("上架失败")
-	ctx := context.Background()
-	if _, err := f.service.Publish(ctx, testOwner, project.ID, version.ID); err == nil {
-		t.Fatal("上架失败却没有让发布失败")
-	}
-
-	stored, err := f.store.GetProject(ctx, project.ID)
-	if err != nil {
-		t.Fatalf("读取工程失败: %v", err)
-	}
-	if stored.CurrentPublicationID != "" {
-		t.Error("上架失败却动了发布指针")
-	}
-	if _, err := f.store.GetPublication(ctx, PublicationID(project.ID, version.ID)); !errors.Is(err, ErrPublicationNotFound) {
-		t.Error("上架失败却落了库")
-	}
-}
-
-// **从检查点续跑**：产物已落库、指针还没切换时重试，不重复上架、不产生第二条记录。
-//
-// 这个状态由"撤回"构造出来（记录留着、指针为空），与"落库后崩溃重启"是同一个
-// 形状。续跑之所以成立，是因为发布标识只由工程与版本决定。
-func TestResumeFromCheckpointAfterRecordWritten(t *testing.T) {
-	f := newFixture(t)
-	project := f.createProject(t, "工程")
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+asset.ID+`">`)
-	version := f.saveVersion(t, project.ID)
-	ctx := context.Background()
-
-	first := f.publish(t, project.ID, version.ID)
-	if err := f.service.Unpublish(ctx, testOwner, project.ID); err != nil {
-		t.Fatalf("撤回失败: %v", err)
-	}
-	// 库里的记录还在：这正是"已落库未切换"的形状。
-	if _, err := f.store.GetPublication(ctx, first.ID); err != nil {
-		t.Fatalf("发布记录应当保留: %v", err)
-	}
-
-	resumed := f.publish(t, project.ID, version.ID)
-	if resumed.ID != first.ID {
-		t.Errorf("续跑产生了第二条记录：%q → %q", first.ID, resumed.ID)
-	}
-	// 上架一次都没重做。
-	if len(f.public.Calls) != 1 {
-		t.Errorf("上架调用 = %d 次，期望第一次那一次", len(f.public.Calls))
-	}
-	stored, err := f.store.GetProject(ctx, project.ID)
-	if err != nil {
-		t.Fatalf("读取工程失败: %v", err)
-	}
-	if stored.CurrentPublicationID != first.ID {
-		t.Error("续跑没有把指针切回去")
-	}
-}
-
-// 撤回**立刻**生效：不依赖缓存过期。未发布与不存在返回同一个否定结果。
-func TestUnpublishAndMissingAreIndistinguishable(t *testing.T) {
-	f := newFixture(t)
-	project := f.createProject(t, "工程")
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+asset.ID+`">`)
-	version := f.saveVersion(t, project.ID)
-	ctx := context.Background()
-
-	// 未发布。
-	_, errUnpublished := f.service.CurrentArtifact(ctx, project.ID)
-
 	f.publish(t, project.ID, version.ID)
-	if err := f.service.Unpublish(ctx, testOwner, project.ID); err != nil {
-		t.Fatalf("撤回失败: %v", err)
-	}
-	// 撤回之后的下一次请求即不可达。
-	_, errWithdrawn := f.service.CurrentArtifact(ctx, project.ID)
-	// 标识没被猜中。
-	_, errMissing := f.service.CurrentArtifact(ctx, "prj_不存在")
 
-	for name, err := range map[string]error{
-		"未发布": errUnpublished, "已撤回": errWithdrawn, "不存在": errMissing,
-	} {
-		if !errors.Is(err, ErrPublicationNotFound) {
-			t.Errorf("%s 的结论 = %v，期望 ErrPublicationNotFound", name, err)
+	// 改草稿、存新版本，然后让上架失败。
+	bad := f.uploadAsset(t, project.ID, "image/png", "b.png", []byte("bbb"))
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<img src="asset://`+bad.ID+`">`),
+		{Path: "b.png", Kind: EntryKindAsset, AssetID: bad.ID},
+	})
+	next := f.saveVersion(t, project.ID)
+
+	f.public.PutErr = errors.New("上架失败（注入）")
+	if _, err := f.service.Publish(context.Background(), testOwner, project.ID, next.ID); err == nil {
+		t.Fatal("上架失败却报告发布成功")
+	}
+	f.public.PutErr = nil
+
+	// 指针没动：读到的还是上一次的产物。
+	stored, err := f.store.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatalf("读工程失败: %v", err)
+	}
+	if stored.CurrentPublicationID != PublicationID(project.ID, version.ID) {
+		t.Error("失败的发布动了发布指针")
+	}
+	_, entry, err := f.service.PublishedEntry(context.Background(), project.ID, "index.html")
+	if err != nil {
+		t.Fatalf("上一次的产物不可达: %v", err)
+	}
+	data, err := f.service.ReadPublishedText(context.Background(), project.ID, entry.Digest)
+	if err != nil {
+		t.Fatalf("读文本失败: %v", err)
+	}
+	if !strings.Contains(string(data), "a.png") || strings.Contains(string(data), "b.png") {
+		t.Errorf("读到的是新内容：%s", data)
+	}
+}
+
+// **发布物不含主体信息**：产物与清单里都不出现拥有者的标识。
+func TestPublicationCarriesNoSubjectInformation(t *testing.T) {
+	f := newFixture(t)
+	project, version, publication := f.publishSite(t, map[string]string{"index.html": "<p>首页</p>"})
+
+	if strings.Contains(version.ID, testOwner) || strings.Contains(project.ID, testOwner) {
+		t.Fatal("标识里出现了主体标识")
+	}
+	for _, entry := range publication.Manifest {
+		if strings.Contains(entry.Path, testOwner) || strings.Contains(entry.Digest, testOwner) {
+			t.Error("产物清单里出现了主体标识")
 		}
 	}
-	if errUnpublished.Error() != errWithdrawn.Error() || errWithdrawn.Error() != errMissing.Error() {
-		t.Errorf("三种情形的信息不同：%q / %q / %q", errUnpublished, errWithdrawn, errMissing)
+	for _, data := range f.buildArtifacts(t, project.ID) {
+		if strings.Contains(string(data), testOwner) {
+			t.Error("产物里出现了主体标识")
+		}
 	}
 }
 
-// 未配置发布域时，发布整体不可用，而工程与资产照常可用。
+// **发布不可用是一个正常状态**，不是故障：没配置公开区或发布域时这条路整体缺席。
 func TestPublishUnavailableWithoutConfiguration(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+asset.ID+`">`)
+	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>x</p>")})
 	version := f.saveVersion(t, project.ID)
-	ctx := context.Background()
 
-	// 重装一个没有发布配置的部署。
-	bare := NewService(Deps{
+	// 一个没有公开区写入口的部署。
+	noPublic := NewService(Deps{
 		Store:  f.store,
 		Assets: f.objects,
+		Origin: mustOrigin(t),
 		Logger: f.service.logger,
 		Now:    func() time.Time { return f.now },
 	})
-
-	if _, err := bare.Publish(ctx, testOwner, project.ID, version.ID); !errors.Is(err, ErrPublishUnavailable) {
-		t.Errorf("发布 err = %v，期望 ErrPublishUnavailable", err)
+	if _, err := noPublic.Publish(context.Background(), testOwner, project.ID, version.ID); !errors.Is(err, ErrPublishUnavailable) {
+		t.Errorf("err = %v，期望 ErrPublishUnavailable", err)
 	}
-	if _, err := bare.CurrentArtifact(ctx, project.ID); !errors.Is(err, ErrPublicationNotFound) {
-		t.Errorf("取产物 err = %v，期望 ErrPublicationNotFound", err)
-	}
-	if bare.PageURL(project.ID) != "" {
-		t.Error("没有发布域却给出了页面地址")
-	}
-	if bare.Capabilities().PublishEnabled {
-		t.Error("没有发布配置却报告发布可用")
-	}
-	// 工程与资产照常可用。
-	if _, err := bare.ListAssets(ctx, testOwner, project.ID); err != nil {
-		t.Errorf("列资产失败: %v", err)
+	if noPublic.Capabilities().PublishEnabled {
+		t.Error("没有公开区却报告发布可用")
 	}
 }
 
-// **发布物不含任何主体信息**：产物里不出现拥有者的主体标识。
-//
-// 发布态是公开匿名的，把展示信息带上去会凭空引入一条身份暴露面。
-func TestProductCarriesNoSubjectInformation(t *testing.T) {
+// 未发布、已撤回、工程不存在、标识没被猜中、路径不在集合里——**五者同一个否定**。
+func TestNegativeConclusionsAreIndistinguishable(t *testing.T) {
 	f := newFixture(t)
-	project := f.createProject(t, "工程")
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+asset.ID+`">`)
-	version := f.saveVersion(t, project.ID)
+	project, _, _ := f.publishSite(t, map[string]string{"index.html": "<p>首页</p>"})
+	withdrawn, _, _ := f.publishSite(t, map[string]string{"index.html": "<p>另一个</p>"})
+	if err := f.service.Unpublish(context.Background(), testOwner, withdrawn.ID); err != nil {
+		t.Fatalf("撤回失败: %v", err)
+	}
 
-	publication := f.publish(t, project.ID, version.ID)
-
-	if strings.Contains(string(publication.Content), testOwner) {
-		t.Error("产物里出现了主体标识")
-	}
-	// 留痕在记录上（发布人是谁），但那是库里的事，不进产物。
-	if publication.PublishedBySubjectID != testOwner {
-		t.Error("发布的留痕丢了")
-	}
-}
-
-// 改写生成的地址与内容安全策略里的**允许来源**来自同一个配置值。
-//
-// 两处各写一份的表现是"地址指向 A、策略允许 B"，而它表现为"发布成功了但什么
-// 都显示不出来"。
-func TestAllowedSourceAndAssetAddressComeFromOneValue(t *testing.T) {
-	f := newFixture(t)
-	project := f.createProject(t, "工程")
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	f.saveDraft(t, project.ID, `<img src="`+PlaceholderScheme+asset.ID+`">`)
-	version := f.saveVersion(t, project.ID)
-	publication := f.publish(t, project.ID, version.ID)
-
-	// 从产物里取出改写后的地址，与策略里允许的来源比对。
-	address := f.service.Origin().AssetURL(asset.Digest)
-	parsed, err := url.Parse(address)
-	if err != nil {
-		t.Fatalf("改写出的地址不是合法 URL: %v", err)
-	}
-	policy := f.service.Origin().AllowedSource()
-	if parsed.Scheme+"://"+parsed.Host != policy {
-		t.Errorf("地址的来源 %s://%s 与策略允许的 %s 不同", parsed.Scheme, parsed.Host, policy)
-	}
-	// 公开区与私有区**共用同一个主机**，区分它们的是这段前缀：地址必须落在
-	// 公开区下面，否则同一个主机上的私有对象也会落进策略允许的范围。
-	if want := "/" + releaseKeyPrefix; !strings.HasPrefix(parsed.Path, want) {
-		t.Errorf("公开地址的路径 = %q，期望以 %q 开头", parsed.Path, want)
-	}
-	if !strings.Contains(string(publication.Content), address) {
-		t.Error("产物里的地址不是这一处派生的")
-	}
-	// 两个地址（页面与资源）都由同一个 origin 对象派生，因此页面的来源
-	// 与资源的来源不会互相串。
-	if want := testPageOrigin + PublicPathPrefix + project.ID; f.service.PageURL(project.ID) != want {
-		t.Errorf("页面地址 = %q，期望 %q", f.service.PageURL(project.ID), want)
-	}
-}
-
-// 内容安全策略逐条固定：**扫描漏掉的写法仍然取不到东西**。
-func TestContentSecurityPolicy(t *testing.T) {
-	policy := ContentSecurityPolicy(mustOrigin(t))
-	allowed := mustOrigin(t).AllowedSource()
-
-	required := []string{
-		"default-src 'none'",
-		"img-src " + allowed,
-		"media-src " + allowed,
-		"script-src 'unsafe-inline'",
-		"style-src 'unsafe-inline'",
-		"connect-src 'none'",
-		"frame-src 'none'",
-		"object-src 'none'",
-		"form-action 'none'",
-		"base-uri 'none'",
-	}
-	for _, directive := range required {
-		if !strings.Contains(policy, directive) {
-			t.Errorf("策略里缺少 %q：\n%s", directive, policy)
-		}
-	}
-	// 脚本可以跑，但发不出请求：这是"用户可以写交互，但不能把访问者的数据送出去"
-	// 的落点，因此 connect-src 必须是 'none'。
-	if strings.Contains(policy, "connect-src 'self'") || strings.Contains(policy, "connect-src *") {
-		t.Error("connect-src 被放开了")
-	}
-}
-
-// 桶地址与发布域的取值必须干净：https、有主机名、不带用户信息与路径。
-func TestPublicOriginRejectsUnusableValues(t *testing.T) {
 	cases := []struct {
-		name   string
-		bucket string
-		page   string
+		name      string
+		projectID string
+		entryPath string
 	}{
-		{"桶地址不是 https", "http://assets.example.com", testPageOrigin},
-		{"桶地址没有主机名", "https://", testPageOrigin},
-		{"桶地址带路径", "https://assets.example.com/bucket", testPageOrigin},
-		{"发布域带路径", testBucketOrigin, "https://pages.example.com/g"},
-		{"发布域带用户信息", testBucketOrigin, "https://user:pass@pages.example.com"},
-		{"发布域带查询串", testBucketOrigin, "https://pages.example.com?a=1"},
+		{"路径不在集合里", project.ID, "nope.html"},
+		{"已撤回", withdrawn.ID, ""},
+		{"工程不存在", "prj_不存在", ""},
+		{"路径不是一条合法条目", project.ID, "../index.html"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := NewPublicOrigin(tc.bucket, tc.page); err == nil {
-				t.Error("期望拒绝，实际通过了")
+			if _, _, err := f.service.PublishedEntry(context.Background(), tc.projectID, tc.entryPath); !errors.Is(err, ErrPublicationNotFound) {
+				t.Errorf("err = %v，期望 ErrPublicationNotFound", err)
 			}
 		})
+	}
+}
+
+// **渲染规则按版本钉住**：重新发布用的是版本记录里的那一版规则。
+func TestRenderRulesVersionIsFrozenWithTheVersion(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProjectForm(t, "文档站", SiteFormDocs)
+	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.md", "# 首页\n")})
+	version := f.saveVersion(t, project.ID)
+
+	if version.RenderRulesVersion != RenderRulesVersion {
+		t.Fatalf("版本记录的渲染规则版本 = %d，期望 %d", version.RenderRulesVersion, RenderRulesVersion)
+	}
+	got, _, err := f.service.GetVersion(context.Background(), testOwner, project.ID, version.ID)
+	if err != nil {
+		t.Fatalf("读取版本失败: %v", err)
+	}
+	if got.RenderRulesVersion != version.RenderRulesVersion {
+		t.Error("读回的渲染规则版本变了")
+	}
+}
+
+// **库只存清单，不存字节**：发布记录里只有路径与摘要。
+func TestPublicationManifestHoldsNoBytes(t *testing.T) {
+	f := newFixture(t)
+	_, _, publication := f.publishSite(t, map[string]string{"index.html": "<p>首页</p>"})
+
+	for _, entry := range publication.Manifest {
+		if entry.Kind != EntryKindText {
+			continue
+		}
+		if strings.Contains(entry.Digest, "<p>") || strings.Contains(entry.Path, "<p>") {
+			t.Error("清单里出现了内容本身")
+		}
+		if len(entry.Digest) != contentDigestLength {
+			t.Errorf("清单里的摘要 = %q，期望是一个内容摘要", entry.Digest)
+		}
 	}
 }

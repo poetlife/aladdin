@@ -37,6 +37,21 @@ const (
 	condContentType = "cos:content-type"
 )
 
+// deniedActions 是策略里**显式拒绝**的动作，落在同一个资源上。
+//
+// 它是 spec 那条硬性约束的落点：**签发出去的临时凭证不得能声明权限**（不能设
+// ACL、不能让渡所有权）。否则"公开权限只由上架路径设置"这句话不成立，而它正是
+// 逐对象公开读赖以成立的前提——同时它也是绕过发布校验的一条口子：一个能自己把
+// 对象设成公开读的上传方，完全可以不走引用完整性这道关。
+//
+// **它是一条尽力而为的兜底，不是完整的证明。** 对象存储的策略条件能约束的东西
+// 有限（比如"禁止覆盖"没有对应的条件键，只能由客户端在请求上带条件、由服务端
+// 在提交时读回核对）。这条边界与"桶真的照做了策略只能在部署后冒烟里验"是同一处。
+var deniedActions = []string{
+	"name/cos:PutObjectACL",
+	"name/cos:PutObjectTagging",
+}
+
 // bucketParts 是一个桶地址解析出来的三样东西。
 //
 // 资源表达式需要 region、APPID 与桶名三者，而配置里给的是一个完整主机名，
@@ -111,7 +126,7 @@ func buildPolicy(parts bucketParts, key string, rules []objectstore.TypeRule) (*
 	}
 
 	resource := putObjectResource(parts, key)
-	statements := make([]cos.CredentialPolicyStatement, 0, len(rules))
+	statements := make([]cos.CredentialPolicyStatement, 0, len(rules)+1)
 	for _, rule := range rules {
 		if rule.ContentType == "" {
 			return nil, fmt.Errorf("类型规则的内容类型不能为空")
@@ -129,5 +144,11 @@ func buildPolicy(parts bucketParts, key string, rules []objectstore.TypeRule) (*
 			},
 		})
 	}
+	// 显式拒绝"能声明权限"的动作，落在同一个资源上（见 deniedActions）。
+	statements = append(statements, cos.CredentialPolicyStatement{
+		Action:   append([]string(nil), deniedActions...),
+		Effect:   "deny",
+		Resource: []string{resource},
+	})
 	return &cos.CredentialPolicy{Version: "2.0", Statement: statements}, nil
 }

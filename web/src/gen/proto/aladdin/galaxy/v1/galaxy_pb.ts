@@ -13,7 +13,67 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/galaxy/v1/galaxy.proto.
  */
 export const file_aladdin_galaxy_v1_galaxy: GenFile = /*@__PURE__*/
-  fileDesc("Ch5hbGFkZGluL2dhbGF4eS92MS9nYWxheHkucHJvdG8SEWFsYWRkaW4uZ2FsYXh5LnYxIk8KDkFzc2V0S2luZExpbWl0EioKBGtpbmQYASABKA4yHC5hbGFkZGluLmdhbGF4eS52MS5NZWRpYUtpbmQSEQoJbWF4X2J5dGVzGAIgASgNIrYBCgxDYXBhYmlsaXRpZXMSHAoUYXNzZXRfdXBsb2FkX2VuYWJsZWQYASABKAgSFwoPcHVibGlzaF9lbmFibGVkGAIgASgIEhoKEm1heF9kb2N1bWVudF9ieXRlcxgDIAEoDRIaChJtYXhfYXJ0aWZhY3RfYnl0ZXMYBCABKA0SNwoMYXNzZXRfbGltaXRzGAUgAygLMiEuYWxhZGRpbi5nYWxheHkudjEuQXNzZXRLaW5kTGltaXQivgEKB1Byb2plY3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRISCgpjcmVhdGVkX2F0GAQgASgJEhIKCnVwZGF0ZWRfYXQYBSABKAkSEQoJcHVibGlzaGVkGAYgASgIEhwKFHB1Ymxpc2hlZF92ZXJzaW9uX2lkGAcgASgJEhUKDXB1Ymxpc2hlZF91cmwYCCABKAkSFAoMcHVibGlzaGVkX2F0GAkgASgJIiwKBURyYWZ0Eg8KB2NvbnRlbnQYASABKAkSEgoKdXBkYXRlZF9hdBgCIAEoCSJFCgdWZXJzaW9uEgoKAmlkGAEgASgJEgsKA3NlcRgCIAEoAxIQCghzYXZlZF9hdBgDIAEoCRIPCgdjb250ZW50GAQgASgJIm8KBUFzc2V0EgoKAmlkGAEgASgJEhIKCm1lZGlhX3R5cGUYAiABKAkSEgoKc2l6ZV9ieXRlcxgDIAEoBBIQCghmaWxlbmFtZRgEIAEoCRITCgt1cGxvYWRlZF9hdBgFIAEoCRILCgN1cmwYBiABKAkiJAoRVmFsaWRhdGlvblByb2JsZW0SDwoHbWVzc2FnZRgBIAEoCSJkCgtQdWJsaWNhdGlvbhIKCgJpZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEhIKCnZlcnNpb25faWQYAyABKAkSFAoMcHVibGlzaGVkX2F0GAQgASgJEgsKA3VybBgFIAEoCSIYChZHZXRDYXBhYmlsaXRpZXNSZXF1ZXN0IlAKF0dldENhcGFiaWxpdGllc1Jlc3BvbnNlEjUKDGNhcGFiaWxpdGllcxgBIAEoCzIfLmFsYWRkaW4uZ2FsYXh5LnYxLkNhcGFiaWxpdGllcyIVChNMaXN0UHJvamVjdHNSZXF1ZXN0IkQKFExpc3RQcm9qZWN0c1Jlc3BvbnNlEiwKCHByb2plY3RzGAEgAygLMhouYWxhZGRpbi5nYWxheHkudjEuUHJvamVjdCI5ChRDcmVhdGVQcm9qZWN0UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIkQKFUNyZWF0ZVByb2plY3RSZXNwb25zZRIrCgdwcm9qZWN0GAEgASgLMhouYWxhZGRpbi5nYWxheHkudjEuUHJvamVjdCInChFHZXRQcm9qZWN0UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIkEKEkdldFByb2plY3RSZXNwb25zZRIrCgdwcm9qZWN0GAEgASgLMhouYWxhZGRpbi5nYWxheHkudjEuUHJvamVjdCJNChRVcGRhdGVQcm9qZWN0UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkiRAoVVXBkYXRlUHJvamVjdFJlc3BvbnNlEisKB3Byb2plY3QYASABKAsyGi5hbGFkZGluLmdhbGF4eS52MS5Qcm9qZWN0IioKFERlbGV0ZVByb2plY3RSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiFwoVRGVsZXRlUHJvamVjdFJlc3BvbnNlIiUKD0dldERyYWZ0UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIjsKEEdldERyYWZ0UmVzcG9uc2USJwoFZHJhZnQYASABKAsyGC5hbGFkZGluLmdhbGF4eS52MS5EcmFmdCI3ChBTYXZlRHJhZnRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSDwoHY29udGVudBgCIAEoCSI8ChFTYXZlRHJhZnRSZXNwb25zZRInCgVkcmFmdBgBIAEoCzIYLmFsYWRkaW4uZ2FsYXh5LnYxLkRyYWZ0IigKElNhdmVWZXJzaW9uUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIkIKE1NhdmVWZXJzaW9uUmVzcG9uc2USKwoHdmVyc2lvbhgBIAEoCzIaLmFsYWRkaW4uZ2FsYXh5LnYxLlZlcnNpb24iKQoTTGlzdFZlcnNpb25zUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIkQKFExpc3RWZXJzaW9uc1Jlc3BvbnNlEiwKCHZlcnNpb25zGAEgAygLMhouYWxhZGRpbi5nYWxheHkudjEuVmVyc2lvbiI7ChFHZXRWZXJzaW9uUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhIKCnZlcnNpb25faWQYAiABKAkiQQoSR2V0VmVyc2lvblJlc3BvbnNlEisKB3ZlcnNpb24YASABKAsyGi5hbGFkZGluLmdhbGF4eS52MS5WZXJzaW9uIj4KFERlbGV0ZVZlcnNpb25SZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEgoKdmVyc2lvbl9pZBgCIAEoCSIXChVEZWxldGVWZXJzaW9uUmVzcG9uc2UiPQoWVmFsaWRhdGVDb250ZW50UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg8KB2NvbnRlbnQYAiABKAkiUQoXVmFsaWRhdGVDb250ZW50UmVzcG9uc2USNgoIcHJvYmxlbXMYASADKAsyJC5hbGFkZGluLmdhbGF4eS52MS5WYWxpZGF0aW9uUHJvYmxlbSInChFMaXN0QXNzZXRzUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIj4KEkxpc3RBc3NldHNSZXNwb25zZRIoCgZhc3NldHMYASADKAsyGC5hbGFkZGluLmdhbGF4eS52MS5Bc3NldCJXChdCZWdpbkFzc2V0VXBsb2FkUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhQKDGNvbnRlbnRfdHlwZRgCIAEoCRISCgpzaXplX2J5dGVzGAMgASgEImwKGEJlZ2luQXNzZXRVcGxvYWRSZXNwb25zZRIQCghhc3NldF9pZBgBIAEoCRI+CgZ1cGxvYWQYAiABKAsyLi5hbGFkZGluLm9iamVjdHN0b3JlLnYxLkRpcmVjdFVwbG9hZENyZWRlbnRpYWwieAoYQ29tbWl0QXNzZXRVcGxvYWRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIYXNzZXRfaWQYAiABKAkSFAoMY29udGVudF90eXBlGAMgASgJEg4KBmRpZ2VzdBgEIAEoCRIQCghmaWxlbmFtZRgFIAEoCSJEChlDb21taXRBc3NldFVwbG9hZFJlc3BvbnNlEicKBWFzc2V0GAEgASgLMhguYWxhZGRpbi5nYWxheHkudjEuQXNzZXQiOgoSRGVsZXRlQXNzZXRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIYXNzZXRfaWQYAiABKAkiFQoTRGVsZXRlQXNzZXRSZXNwb25zZSI4Cg5QdWJsaXNoUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhIKCnZlcnNpb25faWQYAiABKAkicwoPUHVibGlzaFJlc3BvbnNlEjMKC3B1YmxpY2F0aW9uGAEgASgLMh4uYWxhZGRpbi5nYWxheHkudjEuUHVibGljYXRpb24SKwoHcHJvamVjdBgCIAEoCzIaLmFsYWRkaW4uZ2FsYXh5LnYxLlByb2plY3QiJgoQVW5wdWJsaXNoUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIkAKEVVucHVibGlzaFJlc3BvbnNlEisKB3Byb2plY3QYASABKAsyGi5hbGFkZGluLmdhbGF4eS52MS5Qcm9qZWN0KmkKCU1lZGlhS2luZBIaChZNRURJQV9LSU5EX1VOU1BFQ0lGSUVEEAASFAoQTUVESUFfS0lORF9JTUFHRRABEhQKEE1FRElBX0tJTkRfVklERU8QAhIUChBNRURJQV9LSU5EX0FVRElPEAMy7RIKDUdhbGF4eVNlcnZpY2USdQoPR2V0Q2FwYWJpbGl0aWVzEikuYWxhZGRpbi5nYWxheHkudjEuR2V0Q2FwYWJpbGl0aWVzUmVxdWVzdBoqLmFsYWRkaW4uZ2FsYXh5LnYxLkdldENhcGFiaWxpdGllc1Jlc3BvbnNlIguQAgGQiCcDoIgnARJ/CgxMaXN0UHJvamVjdHMSJi5hbGFkZGluLmdhbGF4eS52MS5MaXN0UHJvamVjdHNSZXF1ZXN0GicuYWxhZGRpbi5nYWxheHkudjEuTGlzdFByb2plY3RzUmVzcG9uc2UiHpACAYqIJxNnYWxheHkucHJvamVjdC5yZWFkkIgnAxKAAQoNQ3JlYXRlUHJvamVjdBInLmFsYWRkaW4uZ2FsYXh5LnYxLkNyZWF0ZVByb2plY3RSZXF1ZXN0GiguYWxhZGRpbi5nYWxheHkudjEuQ3JlYXRlUHJvamVjdFJlc3BvbnNlIhyKiCcUZ2FsYXh5LnByb2plY3Qud3JpdGWQiCcDEnkKCkdldFByb2plY3QSJC5hbGFkZGluLmdhbGF4eS52MS5HZXRQcm9qZWN0UmVxdWVzdBolLmFsYWRkaW4uZ2FsYXh5LnYxLkdldFByb2plY3RSZXNwb25zZSIekAIBiognE2dhbGF4eS5wcm9qZWN0LnJlYWSQiCcDEoABCg1VcGRhdGVQcm9qZWN0EicuYWxhZGRpbi5nYWxheHkudjEuVXBkYXRlUHJvamVjdFJlcXVlc3QaKC5hbGFkZGluLmdhbGF4eS52MS5VcGRhdGVQcm9qZWN0UmVzcG9uc2UiHIqIJxRnYWxheHkucHJvamVjdC53cml0ZZCIJwMSgAEKDURlbGV0ZVByb2plY3QSJy5hbGFkZGluLmdhbGF4eS52MS5EZWxldGVQcm9qZWN0UmVxdWVzdBooLmFsYWRkaW4uZ2FsYXh5LnYxLkRlbGV0ZVByb2plY3RSZXNwb25zZSIciognFGdhbGF4eS5wcm9qZWN0LndyaXRlkIgnAxJzCghHZXREcmFmdBIiLmFsYWRkaW4uZ2FsYXh5LnYxLkdldERyYWZ0UmVxdWVzdBojLmFsYWRkaW4uZ2FsYXh5LnYxLkdldERyYWZ0UmVzcG9uc2UiHpACAYqIJxNnYWxheHkucHJvamVjdC5yZWFkkIgnAxJ0CglTYXZlRHJhZnQSIy5hbGFkZGluLmdhbGF4eS52MS5TYXZlRHJhZnRSZXF1ZXN0GiQuYWxhZGRpbi5nYWxheHkudjEuU2F2ZURyYWZ0UmVzcG9uc2UiHIqIJxRnYWxheHkucHJvamVjdC53cml0ZZCIJwMSegoLU2F2ZVZlcnNpb24SJS5hbGFkZGluLmdhbGF4eS52MS5TYXZlVmVyc2lvblJlcXVlc3QaJi5hbGFkZGluLmdhbGF4eS52MS5TYXZlVmVyc2lvblJlc3BvbnNlIhyKiCcUZ2FsYXh5LnByb2plY3Qud3JpdGWQiCcDEn8KDExpc3RWZXJzaW9ucxImLmFsYWRkaW4uZ2FsYXh5LnYxLkxpc3RWZXJzaW9uc1JlcXVlc3QaJy5hbGFkZGluLmdhbGF4eS52MS5MaXN0VmVyc2lvbnNSZXNwb25zZSIekAIBiognE2dhbGF4eS5wcm9qZWN0LnJlYWSQiCcDEnkKCkdldFZlcnNpb24SJC5hbGFkZGluLmdhbGF4eS52MS5HZXRWZXJzaW9uUmVxdWVzdBolLmFsYWRkaW4uZ2FsYXh5LnYxLkdldFZlcnNpb25SZXNwb25zZSIekAIBiognE2dhbGF4eS5wcm9qZWN0LnJlYWSQiCcDEoABCg1EZWxldGVWZXJzaW9uEicuYWxhZGRpbi5nYWxheHkudjEuRGVsZXRlVmVyc2lvblJlcXVlc3QaKC5hbGFkZGluLmdhbGF4eS52MS5EZWxldGVWZXJzaW9uUmVzcG9uc2UiHIqIJxRnYWxheHkucHJvamVjdC53cml0ZZCIJwMShQEKD1ZhbGlkYXRlQ29udGVudBIpLmFsYWRkaW4uZ2FsYXh5LnYxLlZhbGlkYXRlQ29udGVudFJlcXVlc3QaKi5hbGFkZGluLmdhbGF4eS52MS5WYWxpZGF0ZUNvbnRlbnRSZXNwb25zZSIbiognE2dhbGF4eS5wcm9qZWN0LnJlYWSQiCcDEncKCkxpc3RBc3NldHMSJC5hbGFkZGluLmdhbGF4eS52MS5MaXN0QXNzZXRzUmVxdWVzdBolLmFsYWRkaW4uZ2FsYXh5LnYxLkxpc3RBc3NldHNSZXNwb25zZSIckAIBiognEWdhbGF4eS5hc3NldC5yZWFkkIgnAxKHAQoQQmVnaW5Bc3NldFVwbG9hZBIqLmFsYWRkaW4uZ2FsYXh5LnYxLkJlZ2luQXNzZXRVcGxvYWRSZXF1ZXN0GisuYWxhZGRpbi5nYWxheHkudjEuQmVnaW5Bc3NldFVwbG9hZFJlc3BvbnNlIhqKiCcSZ2FsYXh5LmFzc2V0LndyaXRlkIgnAxKKAQoRQ29tbWl0QXNzZXRVcGxvYWQSKy5hbGFkZGluLmdhbGF4eS52MS5Db21taXRBc3NldFVwbG9hZFJlcXVlc3QaLC5hbGFkZGluLmdhbGF4eS52MS5Db21taXRBc3NldFVwbG9hZFJlc3BvbnNlIhqKiCcSZ2FsYXh5LmFzc2V0LndyaXRlkIgnAxJ4CgtEZWxldGVBc3NldBIlLmFsYWRkaW4uZ2FsYXh5LnYxLkRlbGV0ZUFzc2V0UmVxdWVzdBomLmFsYWRkaW4uZ2FsYXh5LnYxLkRlbGV0ZUFzc2V0UmVzcG9uc2UiGoqIJxJnYWxheHkuYXNzZXQud3JpdGWQiCcDEnAKB1B1Ymxpc2gSIS5hbGFkZGluLmdhbGF4eS52MS5QdWJsaXNoUmVxdWVzdBoiLmFsYWRkaW4uZ2FsYXh5LnYxLlB1Ymxpc2hSZXNwb25zZSIeiognFmdhbGF4eS5wcm9qZWN0LnB1Ymxpc2iQiCcDEnYKCVVucHVibGlzaBIjLmFsYWRkaW4uZ2FsYXh5LnYxLlVucHVibGlzaFJlcXVlc3QaJC5hbGFkZGluLmdhbGF4eS52MS5VbnB1Ymxpc2hSZXNwb25zZSIeiognFmdhbGF4eS5wcm9qZWN0LnB1Ymxpc2iQiCcDQkBaPmdpdGh1Yi5jb20vcG9ldGxpZmUvYWxhZGRpbi9hcGkvZ2VuL2FsYWRkaW4vZ2FsYXh5L3YxO2dhbGF4eXYxYgZwcm90bzM", [file_aladdin_objectstore_v1_upload, file_aladdin_rbac_v1_annotations]);
+  fileDesc("Ch5hbGFkZGluL2dhbGF4eS92MS9nYWxheHkucHJvdG8SEWFsYWRkaW4uZ2FsYXh5LnYxIlYKCUZpbGVFbnRyeRIMCgRwYXRoGAEgASgJEhAKBmRpZ2VzdBgCIAEoCUgAEhIKCGFzc2V0X2lkGAMgASgJSAASCwoDdXJsGAQgASgJQggKBnNvdXJjZSJPCg5Bc3NldEtpbmRMaW1pdBIqCgRraW5kGAEgASgOMhwuYWxhZGRpbi5nYWxheHkudjEuTWVkaWFLaW5kEhEKCW1heF9ieXRlcxgCIAEoDSLFAQoMQ2FwYWJpbGl0aWVzEhwKFGFzc2V0X3VwbG9hZF9lbmFibGVkGAEgASgIEhcKD3B1Ymxpc2hfZW5hYmxlZBgCIAEoCBIWCg5tYXhfdGV4dF9ieXRlcxgDIAEoDRIaChJtYXhfZmlsZV9zZXRfYnl0ZXMYBCABKA0SEQoJbWF4X2ZpbGVzGAUgASgNEjcKDGFzc2V0X2xpbWl0cxgGIAMoCzIhLmFsYWRkaW4uZ2FsYXh5LnYxLkFzc2V0S2luZExpbWl0IvsBCgdQcm9qZWN0EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEgoKY3JlYXRlZF9hdBgEIAEoCRISCgp1cGRhdGVkX2F0GAUgASgJEhEKCXB1Ymxpc2hlZBgGIAEoCBIcChRwdWJsaXNoZWRfdmVyc2lvbl9pZBgHIAEoCRIVCg1wdWJsaXNoZWRfdXJsGAggASgJEhQKDHB1Ymxpc2hlZF9hdBgJIAEoCRIpCgRmb3JtGAogASgOMhsuYWxhZGRpbi5nYWxheHkudjEuU2l0ZUZvcm0SEAoIYmFzZV91cmwYCyABKAkiSgoFRHJhZnQSLQoHZW50cmllcxgBIAMoCzIcLmFsYWRkaW4uZ2FsYXh5LnYxLkZpbGVFbnRyeRISCgp1cGRhdGVkX2F0GAIgASgJIoEBCgdWZXJzaW9uEgoKAmlkGAEgASgJEgsKA3NlcRgCIAEoAxIQCghzYXZlZF9hdBgDIAEoCRItCgdlbnRyaWVzGAQgAygLMhwuYWxhZGRpbi5nYWxheHkudjEuRmlsZUVudHJ5EhwKFHJlbmRlcl9ydWxlc192ZXJzaW9uGAUgASgFIpsBCgVBc3NldBIKCgJpZBgBIAEoCRISCgptZWRpYV90eXBlGAIgASgJEioKBGtpbmQYAyABKA4yHC5hbGFkZGluLmdhbGF4eS52MS5NZWRpYUtpbmQSEgoKc2l6ZV9ieXRlcxgEIAEoBBIQCghmaWxlbmFtZRgFIAEoCRITCgt1cGxvYWRlZF9hdBgGIAEoCRILCgN1cmwYByABKAkiQAoRVmFsaWRhdGlvblByb2JsZW0SDwoHbWVzc2FnZRgBIAEoCRIMCgRwYXRoGAIgASgJEgwKBGxpbmUYAyABKAUiZAoLUHVibGljYXRpb24SCgoCaWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRISCgp2ZXJzaW9uX2lkGAMgASgJEhQKDHB1Ymxpc2hlZF9hdBgEIAEoCRILCgN1cmwYBSABKAkiGAoWR2V0Q2FwYWJpbGl0aWVzUmVxdWVzdCJQChdHZXRDYXBhYmlsaXRpZXNSZXNwb25zZRI1CgxjYXBhYmlsaXRpZXMYASABKAsyHy5hbGFkZGluLmdhbGF4eS52MS5DYXBhYmlsaXRpZXMiFQoTTGlzdFByb2plY3RzUmVxdWVzdCJEChRMaXN0UHJvamVjdHNSZXNwb25zZRIsCghwcm9qZWN0cxgBIAMoCzIaLmFsYWRkaW4uZ2FsYXh5LnYxLlByb2plY3QiZAoUQ3JlYXRlUHJvamVjdFJlcXVlc3QSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIpCgRmb3JtGAMgASgOMhsuYWxhZGRpbi5nYWxheHkudjEuU2l0ZUZvcm0iRAoVQ3JlYXRlUHJvamVjdFJlc3BvbnNlEisKB3Byb2plY3QYASABKAsyGi5hbGFkZGluLmdhbGF4eS52MS5Qcm9qZWN0IicKEUdldFByb2plY3RSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiQQoSR2V0UHJvamVjdFJlc3BvbnNlEisKB3Byb2plY3QYASABKAsyGi5hbGFkZGluLmdhbGF4eS52MS5Qcm9qZWN0Ik0KFFVwZGF0ZVByb2plY3RSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCSJEChVVcGRhdGVQcm9qZWN0UmVzcG9uc2USKwoHcHJvamVjdBgBIAEoCzIaLmFsYWRkaW4uZ2FsYXh5LnYxLlByb2plY3QiKgoURGVsZXRlUHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCSIXChVEZWxldGVQcm9qZWN0UmVzcG9uc2UiJQoPR2V0RHJhZnRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiOwoQR2V0RHJhZnRSZXNwb25zZRInCgVkcmFmdBgBIAEoCzIYLmFsYWRkaW4uZ2FsYXh5LnYxLkRyYWZ0IlUKEFB1c2hEcmFmdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRItCgdlbnRyaWVzGAIgAygLMhwuYWxhZGRpbi5nYWxheHkudjEuRmlsZUVudHJ5IjwKEVB1c2hEcmFmdFJlc3BvbnNlEicKBWRyYWZ0GAEgASgLMhguYWxhZGRpbi5nYWxheHkudjEuRHJhZnQiKAoSU2F2ZVZlcnNpb25SZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiQgoTU2F2ZVZlcnNpb25SZXNwb25zZRIrCgd2ZXJzaW9uGAEgASgLMhouYWxhZGRpbi5nYWxheHkudjEuVmVyc2lvbiIpChNMaXN0VmVyc2lvbnNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiRAoUTGlzdFZlcnNpb25zUmVzcG9uc2USLAoIdmVyc2lvbnMYASADKAsyGi5hbGFkZGluLmdhbGF4eS52MS5WZXJzaW9uIjsKEUdldFZlcnNpb25SZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEgoKdmVyc2lvbl9pZBgCIAEoCSJBChJHZXRWZXJzaW9uUmVzcG9uc2USKwoHdmVyc2lvbhgBIAEoCzIaLmFsYWRkaW4uZ2FsYXh5LnYxLlZlcnNpb24iPgoURGVsZXRlVmVyc2lvblJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRISCgp2ZXJzaW9uX2lkGAIgASgJIhcKFURlbGV0ZVZlcnNpb25SZXNwb25zZSIqChRWYWxpZGF0ZURyYWZ0UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJIk8KFVZhbGlkYXRlRHJhZnRSZXNwb25zZRI2Cghwcm9ibGVtcxgBIAMoCzIkLmFsYWRkaW4uZ2FsYXh5LnYxLlZhbGlkYXRpb25Qcm9ibGVtIjcKE1ByZXZpZXdEcmFmdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIMCgRwYXRoGAIgASgJIiQKFFByZXZpZXdEcmFmdFJlc3BvbnNlEgwKBGh0bWwYASABKAkiUwoZQmVnaW5Db250ZW50VXBsb2FkUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBmRpZ2VzdBgCIAEoCRISCgpzaXplX2J5dGVzGAMgASgEInQKGkJlZ2luQ29udGVudFVwbG9hZFJlc3BvbnNlEhYKDmFscmVhZHlfZXhpc3RzGAEgASgIEj4KBnVwbG9hZBgCIAEoCzIuLmFsYWRkaW4ub2JqZWN0c3RvcmUudjEuRGlyZWN0VXBsb2FkQ3JlZGVudGlhbCJAChpDb21taXRDb250ZW50VXBsb2FkUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBmRpZ2VzdBgCIAEoCSIdChtDb21taXRDb250ZW50VXBsb2FkUmVzcG9uc2UiJwoRTGlzdEFzc2V0c1JlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCSI+ChJMaXN0QXNzZXRzUmVzcG9uc2USKAoGYXNzZXRzGAEgAygLMhguYWxhZGRpbi5nYWxheHkudjEuQXNzZXQiVwoXQmVnaW5Bc3NldFVwbG9hZFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIUCgxjb250ZW50X3R5cGUYAiABKAkSEgoKc2l6ZV9ieXRlcxgDIAEoBCJsChhCZWdpbkFzc2V0VXBsb2FkUmVzcG9uc2USEAoIYXNzZXRfaWQYASABKAkSPgoGdXBsb2FkGAIgASgLMi4uYWxhZGRpbi5vYmplY3RzdG9yZS52MS5EaXJlY3RVcGxvYWRDcmVkZW50aWFsIngKGENvbW1pdEFzc2V0VXBsb2FkUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCGFzc2V0X2lkGAIgASgJEhQKDGNvbnRlbnRfdHlwZRgDIAEoCRIOCgZkaWdlc3QYBCABKAkSEAoIZmlsZW5hbWUYBSABKAkiRAoZQ29tbWl0QXNzZXRVcGxvYWRSZXNwb25zZRInCgVhc3NldBgBIAEoCzIYLmFsYWRkaW4uZ2FsYXh5LnYxLkFzc2V0IjoKEkRlbGV0ZUFzc2V0UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCGFzc2V0X2lkGAIgASgJIhUKE0RlbGV0ZUFzc2V0UmVzcG9uc2UiOAoOUHVibGlzaFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRISCgp2ZXJzaW9uX2lkGAIgASgJInMKD1B1Ymxpc2hSZXNwb25zZRIzCgtwdWJsaWNhdGlvbhgBIAEoCzIeLmFsYWRkaW4uZ2FsYXh5LnYxLlB1YmxpY2F0aW9uEisKB3Byb2plY3QYAiABKAsyGi5hbGFkZGluLmdhbGF4eS52MS5Qcm9qZWN0IiYKEFVucHVibGlzaFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCSJAChFVbnB1Ymxpc2hSZXNwb25zZRIrCgdwcm9qZWN0GAEgASgLMhouYWxhZGRpbi5nYWxheHkudjEuUHJvamVjdCpPCghTaXRlRm9ybRIZChVTSVRFX0ZPUk1fVU5TUEVDSUZJRUQQABIUChBTSVRFX0ZPUk1fU1RBVElDEAESEgoOU0lURV9GT1JNX0RPQ1MQAip+CglNZWRpYUtpbmQSGgoWTUVESUFfS0lORF9VTlNQRUNJRklFRBAAEhQKEE1FRElBX0tJTkRfSU1BR0UQARIUChBNRURJQV9LSU5EX1ZJREVPEAISFAoQTUVESUFfS0lORF9BVURJTxADEhMKD01FRElBX0tJTkRfRk9OVBAEMosWCg1HYWxheHlTZXJ2aWNlEnUKD0dldENhcGFiaWxpdGllcxIpLmFsYWRkaW4uZ2FsYXh5LnYxLkdldENhcGFiaWxpdGllc1JlcXVlc3QaKi5hbGFkZGluLmdhbGF4eS52MS5HZXRDYXBhYmlsaXRpZXNSZXNwb25zZSILkAIBkIgnA6CIJwESfwoMTGlzdFByb2plY3RzEiYuYWxhZGRpbi5nYWxheHkudjEuTGlzdFByb2plY3RzUmVxdWVzdBonLmFsYWRkaW4uZ2FsYXh5LnYxLkxpc3RQcm9qZWN0c1Jlc3BvbnNlIh6QAgGKiCcTZ2FsYXh5LnByb2plY3QucmVhZJCIJwMSgAEKDUNyZWF0ZVByb2plY3QSJy5hbGFkZGluLmdhbGF4eS52MS5DcmVhdGVQcm9qZWN0UmVxdWVzdBooLmFsYWRkaW4uZ2FsYXh5LnYxLkNyZWF0ZVByb2plY3RSZXNwb25zZSIciognFGdhbGF4eS5wcm9qZWN0LndyaXRlkIgnAxJ5CgpHZXRQcm9qZWN0EiQuYWxhZGRpbi5nYWxheHkudjEuR2V0UHJvamVjdFJlcXVlc3QaJS5hbGFkZGluLmdhbGF4eS52MS5HZXRQcm9qZWN0UmVzcG9uc2UiHpACAYqIJxNnYWxheHkucHJvamVjdC5yZWFkkIgnAxKAAQoNVXBkYXRlUHJvamVjdBInLmFsYWRkaW4uZ2FsYXh5LnYxLlVwZGF0ZVByb2plY3RSZXF1ZXN0GiguYWxhZGRpbi5nYWxheHkudjEuVXBkYXRlUHJvamVjdFJlc3BvbnNlIhyKiCcUZ2FsYXh5LnByb2plY3Qud3JpdGWQiCcDEoABCg1EZWxldGVQcm9qZWN0EicuYWxhZGRpbi5nYWxheHkudjEuRGVsZXRlUHJvamVjdFJlcXVlc3QaKC5hbGFkZGluLmdhbGF4eS52MS5EZWxldGVQcm9qZWN0UmVzcG9uc2UiHIqIJxRnYWxheHkucHJvamVjdC53cml0ZZCIJwMScwoIR2V0RHJhZnQSIi5hbGFkZGluLmdhbGF4eS52MS5HZXREcmFmdFJlcXVlc3QaIy5hbGFkZGluLmdhbGF4eS52MS5HZXREcmFmdFJlc3BvbnNlIh6QAgGKiCcTZ2FsYXh5LnByb2plY3QucmVhZJCIJwMSdAoJUHVzaERyYWZ0EiMuYWxhZGRpbi5nYWxheHkudjEuUHVzaERyYWZ0UmVxdWVzdBokLmFsYWRkaW4uZ2FsYXh5LnYxLlB1c2hEcmFmdFJlc3BvbnNlIhyKiCcUZ2FsYXh5LnByb2plY3Qud3JpdGWQiCcDEnoKC1NhdmVWZXJzaW9uEiUuYWxhZGRpbi5nYWxheHkudjEuU2F2ZVZlcnNpb25SZXF1ZXN0GiYuYWxhZGRpbi5nYWxheHkudjEuU2F2ZVZlcnNpb25SZXNwb25zZSIciognFGdhbGF4eS5wcm9qZWN0LndyaXRlkIgnAxJ/CgxMaXN0VmVyc2lvbnMSJi5hbGFkZGluLmdhbGF4eS52MS5MaXN0VmVyc2lvbnNSZXF1ZXN0GicuYWxhZGRpbi5nYWxheHkudjEuTGlzdFZlcnNpb25zUmVzcG9uc2UiHpACAYqIJxNnYWxheHkucHJvamVjdC5yZWFkkIgnAxJ5CgpHZXRWZXJzaW9uEiQuYWxhZGRpbi5nYWxheHkudjEuR2V0VmVyc2lvblJlcXVlc3QaJS5hbGFkZGluLmdhbGF4eS52MS5HZXRWZXJzaW9uUmVzcG9uc2UiHpACAYqIJxNnYWxheHkucHJvamVjdC5yZWFkkIgnAxKAAQoNRGVsZXRlVmVyc2lvbhInLmFsYWRkaW4uZ2FsYXh5LnYxLkRlbGV0ZVZlcnNpb25SZXF1ZXN0GiguYWxhZGRpbi5nYWxheHkudjEuRGVsZXRlVmVyc2lvblJlc3BvbnNlIhyKiCcUZ2FsYXh5LnByb2plY3Qud3JpdGWQiCcDEn8KDVZhbGlkYXRlRHJhZnQSJy5hbGFkZGluLmdhbGF4eS52MS5WYWxpZGF0ZURyYWZ0UmVxdWVzdBooLmFsYWRkaW4uZ2FsYXh5LnYxLlZhbGlkYXRlRHJhZnRSZXNwb25zZSIbiognE2dhbGF4eS5wcm9qZWN0LnJlYWSQiCcDEnwKDFByZXZpZXdEcmFmdBImLmFsYWRkaW4uZ2FsYXh5LnYxLlByZXZpZXdEcmFmdFJlcXVlc3QaJy5hbGFkZGluLmdhbGF4eS52MS5QcmV2aWV3RHJhZnRSZXNwb25zZSIbiognE2dhbGF4eS5wcm9qZWN0LnJlYWSQiCcDEo8BChJCZWdpbkNvbnRlbnRVcGxvYWQSLC5hbGFkZGluLmdhbGF4eS52MS5CZWdpbkNvbnRlbnRVcGxvYWRSZXF1ZXN0Gi0uYWxhZGRpbi5nYWxheHkudjEuQmVnaW5Db250ZW50VXBsb2FkUmVzcG9uc2UiHIqIJxRnYWxheHkucHJvamVjdC53cml0ZZCIJwMSkgEKE0NvbW1pdENvbnRlbnRVcGxvYWQSLS5hbGFkZGluLmdhbGF4eS52MS5Db21taXRDb250ZW50VXBsb2FkUmVxdWVzdBouLmFsYWRkaW4uZ2FsYXh5LnYxLkNvbW1pdENvbnRlbnRVcGxvYWRSZXNwb25zZSIciognFGdhbGF4eS5wcm9qZWN0LndyaXRlkIgnAxJ3CgpMaXN0QXNzZXRzEiQuYWxhZGRpbi5nYWxheHkudjEuTGlzdEFzc2V0c1JlcXVlc3QaJS5hbGFkZGluLmdhbGF4eS52MS5MaXN0QXNzZXRzUmVzcG9uc2UiHJACAYqIJxFnYWxheHkuYXNzZXQucmVhZJCIJwMShwEKEEJlZ2luQXNzZXRVcGxvYWQSKi5hbGFkZGluLmdhbGF4eS52MS5CZWdpbkFzc2V0VXBsb2FkUmVxdWVzdBorLmFsYWRkaW4uZ2FsYXh5LnYxLkJlZ2luQXNzZXRVcGxvYWRSZXNwb25zZSIaiognEmdhbGF4eS5hc3NldC53cml0ZZCIJwMSigEKEUNvbW1pdEFzc2V0VXBsb2FkEisuYWxhZGRpbi5nYWxheHkudjEuQ29tbWl0QXNzZXRVcGxvYWRSZXF1ZXN0GiwuYWxhZGRpbi5nYWxheHkudjEuQ29tbWl0QXNzZXRVcGxvYWRSZXNwb25zZSIaiognEmdhbGF4eS5hc3NldC53cml0ZZCIJwMSeAoLRGVsZXRlQXNzZXQSJS5hbGFkZGluLmdhbGF4eS52MS5EZWxldGVBc3NldFJlcXVlc3QaJi5hbGFkZGluLmdhbGF4eS52MS5EZWxldGVBc3NldFJlc3BvbnNlIhqKiCcSZ2FsYXh5LmFzc2V0LndyaXRlkIgnAxJwCgdQdWJsaXNoEiEuYWxhZGRpbi5nYWxheHkudjEuUHVibGlzaFJlcXVlc3QaIi5hbGFkZGluLmdhbGF4eS52MS5QdWJsaXNoUmVzcG9uc2UiHoqIJxZnYWxheHkucHJvamVjdC5wdWJsaXNokIgnAxJ2CglVbnB1Ymxpc2gSIy5hbGFkZGluLmdhbGF4eS52MS5VbnB1Ymxpc2hSZXF1ZXN0GiQuYWxhZGRpbi5nYWxheHkudjEuVW5wdWJsaXNoUmVzcG9uc2UiHoqIJxZnYWxheHkucHJvamVjdC5wdWJsaXNokIgnA0JAWj5naXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL2dhbGF4eS92MTtnYWxheHl2MWIGcHJvdG8z", [file_aladdin_objectstore_v1_upload, file_aladdin_rbac_v1_annotations]);
+
+/**
+ * FileEntry 是文件组里的一条条目：一个路径，加上它的字节从哪来。
+ *
+ * 两类条目恰好对应"字节在哪"的两种答案（见 docs/design/galaxy/site-model.md）：
+ * 文本条目的字节是按**内容摘要**寻址的内容对象；资产条目的字节是资产库里的
+ * 一个媒体文件。**清单里没有字节本身**，因此同一个工程内、同一份未改动文件在
+ * 多个版本、多次发布之间共享同一个对象。不跨工程共享。
+ *
+ * @generated from message aladdin.galaxy.v1.FileEntry
+ */
+export type FileEntry = Message<"aladdin.galaxy.v1.FileEntry"> & {
+  /**
+   * 相对路径。它是**公开地址的一部分**，因此字符集受 URL 安全字符集约束，
+   * 不含 `..`、不以 `/` 开头或结尾、不含空段。
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from oneof aladdin.galaxy.v1.FileEntry.source
+   */
+  source: {
+    /**
+     * 文本条目：字节的内容摘要（SHA-256 十六进制）。私有区对象键由工程标识与
+     * 它共同构成（`galaxy/<工程标识>/text/<摘要>`），不跨工程共享。
+     *
+     * @generated from field: string digest = 2;
+     */
+    value: string;
+    case: "digest";
+  } | {
+    /**
+     * 资产条目：资产库里的一个资产标识。
+     *
+     * @generated from field: string asset_id = 3;
+     */
+    value: string;
+    case: "assetId";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * **短时有效**的读取地址，客户端直接取字节。只有列出清单的方法（GetDraft、
+   * GetVersion）会填充它；写入路径（PushDraft）忽略它。
+   *
+   * 它是一份短期凭证，因此**未发布的资产里不得承载秘密**。过期后重新读取
+   * 清单即得到新地址。
+   *
+   * @generated from field: string url = 4;
+   */
+  url: string;
+};
+
+/**
+ * Describes the message aladdin.galaxy.v1.FileEntry.
+ * Use `create(FileEntrySchema)` to create a new message.
+ */
+export const FileEntrySchema: GenMessage<FileEntry> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 0);
 
 /**
  * AssetKindLimit 是某一类资产的字节上限。
@@ -41,7 +101,7 @@ export type AssetKindLimit = Message<"aladdin.galaxy.v1.AssetKindLimit"> & {
  * Use `create(AssetKindLimitSchema)` to create a new message.
  */
 export const AssetKindLimitSchema: GenMessage<AssetKindLimit> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 0);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 1);
 
 /**
  * Capabilities 是当前部署下创作能力的边界。
@@ -67,23 +127,30 @@ export type Capabilities = Message<"aladdin.galaxy.v1.Capabilities"> & {
   publishEnabled: boolean;
 
   /**
-   * 正文（草稿与版本）的字节上限。
+   * 单份文本条目的字节上限。
    *
-   * @generated from field: uint32 max_document_bytes = 3;
+   * @generated from field: uint32 max_text_bytes = 3;
    */
-  maxDocumentBytes: number;
+  maxTextBytes: number;
 
   /**
-   * 发布产物的字节上限。它比正文上限宽，因为改写会把占位符换成完整地址。
+   * 整组文件（清单里所有文本条目之和）的字节上限。
    *
-   * @generated from field: uint32 max_artifact_bytes = 4;
+   * @generated from field: uint32 max_file_set_bytes = 4;
    */
-  maxArtifactBytes: number;
+  maxFileSetBytes: number;
+
+  /**
+   * 整组的文件数上限。
+   *
+   * @generated from field: uint32 max_files = 5;
+   */
+  maxFiles: number;
 
   /**
    * 各类资产的字节上限。
    *
-   * @generated from field: repeated aladdin.galaxy.v1.AssetKindLimit asset_limits = 5;
+   * @generated from field: repeated aladdin.galaxy.v1.AssetKindLimit asset_limits = 6;
    */
   assetLimits: AssetKindLimit[];
 };
@@ -93,13 +160,13 @@ export type Capabilities = Message<"aladdin.galaxy.v1.Capabilities"> & {
  * Use `create(CapabilitiesSchema)` to create a new message.
  */
 export const CapabilitiesSchema: GenMessage<Capabilities> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 1);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 2);
 
 /**
  * Project 是一个创作单元的元数据。
  *
- * **不带草稿正文、版本正文与资产字节。** 列表接口会读这一行，把大字段挂上来
- * 正是档案模块"头像字节不入库"要避免的同一件事。
+ * **不带草稿清单、版本清单与资产字节。** 列表接口会读这一行，把清单挂上来
+ * 是一笔与列表无关的代价；整张表也不含任何字节。
  *
  * @generated from message aladdin.galaxy.v1.Project
  */
@@ -155,8 +222,8 @@ export type Project = Message<"aladdin.galaxy.v1.Project"> & {
   /**
    * 发布地址，形如 <发布域>/g/<工程标识>。未发布时为空。
    *
-   * **地址由服务端算好**，客户端不拼：改写生成的地址与内容安全策略里的
-   * 允许来源都从同一个配置值派生，客户端再拼一份就是第三个来源。
+   * **地址由服务端算好**，客户端不拼：记号解析生成的地址、内容安全策略里的
+   * 允许来源与这个地址都从同一批配置值派生，客户端再拼一份就是又一个来源。
    *
    * @generated from field: string published_url = 8;
    */
@@ -168,6 +235,23 @@ export type Project = Message<"aladdin.galaxy.v1.Project"> & {
    * @generated from field: string published_at = 9;
    */
   publishedAt: string;
+
+  /**
+   * 形态。创建时定下，此后不可改。
+   *
+   * @generated from field: aladdin.galaxy.v1.SiteForm form = 10;
+   */
+  form: SiteForm;
+
+  /**
+   * **发布根**，形如 <发布域>/g/<工程标识>/，供构建命令使用（vite 的 --base）。
+   *
+   * 配置了发布域时始终有值，与是否已发布无关：构建产物里的绝对路径要成立，
+   * 靠的是它，而不是"页面已经发出去"。未配置发布域时为空。
+   *
+   * @generated from field: string base_url = 11;
+   */
+  baseUrl: string;
 };
 
 /**
@@ -175,10 +259,10 @@ export type Project = Message<"aladdin.galaxy.v1.Project"> & {
  * Use `create(ProjectSchema)` to create a new message.
  */
 export const ProjectSchema: GenMessage<Project> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 2);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 3);
 
 /**
- * Draft 是工程当前正在编辑的正文。
+ * Draft 是工程当前正在编辑的文件清单。
  *
  * 它不是版本：随时可改，改它不产生版本，不参与发布，也不保证可退回。
  *
@@ -186,14 +270,12 @@ export const ProjectSchema: GenMessage<Project> = /*@__PURE__*/
  */
 export type Draft = Message<"aladdin.galaxy.v1.Draft"> & {
   /**
-   * 一个完整的 HTML 文档（<!doctype html> 到 </html>），不包裹、不补全。
-   *
-   * @generated from field: string content = 1;
+   * @generated from field: repeated aladdin.galaxy.v1.FileEntry entries = 1;
    */
-  content: string;
+  entries: FileEntry[];
 
   /**
-   * 最后一次保存的时间。从未保存过草稿时为空。
+   * 最后一次推送的时间。从未推送过草稿时为空。
    *
    * @generated from field: string updated_at = 2;
    */
@@ -205,10 +287,10 @@ export type Draft = Message<"aladdin.galaxy.v1.Draft"> & {
  * Use `create(DraftSchema)` to create a new message.
  */
 export const DraftSchema: GenMessage<Draft> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 3);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 4);
 
 /**
- * Version 是正文的一次不可变快照。
+ * Version 是文件清单的一次不可变快照。
  *
  * @generated from message aladdin.galaxy.v1.Version
  */
@@ -232,12 +314,20 @@ export type Version = Message<"aladdin.galaxy.v1.Version"> & {
   savedAt: string;
 
   /**
-   * 正文。**只有 GetVersion 会填充它**；列表接口留空，避免把每个版本的
-   * 正文一起读上来。
+   * 保存那一刻草稿的清单。**写入后不再修改。** 地址只有 GetVersion 填充。
    *
-   * @generated from field: string content = 4;
+   * @generated from field: repeated aladdin.galaxy.v1.FileEntry entries = 4;
    */
-  content: string;
+  entries: FileEntry[];
+
+  /**
+   * 保存时所处的渲染规则版本。只有 `docs` 形态使用它，重新发布时按它渲染
+   * 而不是按当前最新的——否则"撤回后重新发布同一版本，产物逐字相同"会在
+   * 渲染器升级的那天悄悄失效。
+   *
+   * @generated from field: int32 render_rules_version = 5;
+   */
+  renderRulesVersion: number;
 };
 
 /**
@@ -245,7 +335,7 @@ export type Version = Message<"aladdin.galaxy.v1.Version"> & {
  * Use `create(VersionSchema)` to create a new message.
  */
 export const VersionSchema: GenMessage<Version> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 4);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 5);
 
 /**
  * Asset 是工程资产库里的一个媒体文件。
@@ -269,21 +359,28 @@ export type Asset = Message<"aladdin.galaxy.v1.Asset"> & {
   mediaType: string;
 
   /**
+   * 类别。它决定大小上限，也是对象键里的一段。
+   *
+   * @generated from field: aladdin.galaxy.v1.MediaKind kind = 3;
+   */
+  kind: MediaKind;
+
+  /**
    * 字节数。它取自提交时对对象的核对，不是声明值。
    *
-   * @generated from field: uint64 size_bytes = 3;
+   * @generated from field: uint64 size_bytes = 4;
    */
   sizeBytes: bigint;
 
   /**
    * 原始文件名。**仅供展示与排障**：它不进对象键，不参与任何判断。
    *
-   * @generated from field: string filename = 4;
+   * @generated from field: string filename = 5;
    */
   filename: string;
 
   /**
-   * @generated from field: string uploaded_at = 5;
+   * @generated from field: string uploaded_at = 6;
    */
   uploadedAt: string;
 
@@ -295,7 +392,7 @@ export type Asset = Message<"aladdin.galaxy.v1.Asset"> & {
    *
    * 未配置私有桶时为空。
    *
-   * @generated from field: string url = 6;
+   * @generated from field: string url = 7;
    */
   url: string;
 };
@@ -305,13 +402,13 @@ export type Asset = Message<"aladdin.galaxy.v1.Asset"> & {
  * Use `create(AssetSchema)` to create a new message.
  */
 export const AssetSchema: GenMessage<Asset> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 5);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 6);
 
 /**
- * ValidationProblem 是正文里的一处问题。
+ * ValidationProblem 是校验发现的一处问题。
  *
- * message 里**带上位置**（行号）与出问题的取值：只说"有引用不合法"会让用户
- * 在一份几百行的正文里自己找。
+ * message 里**带上出问题的文件与位置**：只说"有引用不合法"会让用户在一组
+ * 文件里自己找。
  *
  * @generated from message aladdin.galaxy.v1.ValidationProblem
  */
@@ -320,6 +417,20 @@ export type ValidationProblem = Message<"aladdin.galaxy.v1.ValidationProblem"> &
    * @generated from field: string message = 1;
    */
   message: string;
+
+  /**
+   * 出问题的文件路径。与行无关的问题（如整组超限）为空。
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * 出问题的行号（从 1 开始）。0 表示与行无关。
+   *
+   * @generated from field: int32 line = 3;
+   */
+  line: number;
 };
 
 /**
@@ -327,12 +438,13 @@ export type ValidationProblem = Message<"aladdin.galaxy.v1.ValidationProblem"> &
  * Use `create(ValidationProblemSchema)` to create a new message.
  */
 export const ValidationProblemSchema: GenMessage<ValidationProblem> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 6);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 7);
 
 /**
  * Publication 是一次发布的产物记录。
  *
- * 对外地址返回的是**产物正文**（改写好的 HTML），不是版本正文。
+ * 对外地址按**产物清单**分派：文本条目由服务端在它自己的路径上给出，资产
+ * 条目重定向到公开区。
  *
  * @generated from message aladdin.galaxy.v1.Publication
  */
@@ -370,7 +482,7 @@ export type Publication = Message<"aladdin.galaxy.v1.Publication"> & {
  * Use `create(PublicationSchema)` to create a new message.
  */
 export const PublicationSchema: GenMessage<Publication> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 7);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 8);
 
 /**
  * @generated from message aladdin.galaxy.v1.GetCapabilitiesRequest
@@ -383,7 +495,7 @@ export type GetCapabilitiesRequest = Message<"aladdin.galaxy.v1.GetCapabilitiesR
  * Use `create(GetCapabilitiesRequestSchema)` to create a new message.
  */
 export const GetCapabilitiesRequestSchema: GenMessage<GetCapabilitiesRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 8);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 9);
 
 /**
  * @generated from message aladdin.galaxy.v1.GetCapabilitiesResponse
@@ -400,7 +512,7 @@ export type GetCapabilitiesResponse = Message<"aladdin.galaxy.v1.GetCapabilities
  * Use `create(GetCapabilitiesResponseSchema)` to create a new message.
  */
 export const GetCapabilitiesResponseSchema: GenMessage<GetCapabilitiesResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 9);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 10);
 
 /**
  * @generated from message aladdin.galaxy.v1.ListProjectsRequest
@@ -413,7 +525,7 @@ export type ListProjectsRequest = Message<"aladdin.galaxy.v1.ListProjectsRequest
  * Use `create(ListProjectsRequestSchema)` to create a new message.
  */
 export const ListProjectsRequestSchema: GenMessage<ListProjectsRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 10);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 11);
 
 /**
  * @generated from message aladdin.galaxy.v1.ListProjectsResponse
@@ -430,7 +542,7 @@ export type ListProjectsResponse = Message<"aladdin.galaxy.v1.ListProjectsRespon
  * Use `create(ListProjectsResponseSchema)` to create a new message.
  */
 export const ListProjectsResponseSchema: GenMessage<ListProjectsResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 11);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 12);
 
 /**
  * @generated from message aladdin.galaxy.v1.CreateProjectRequest
@@ -445,6 +557,13 @@ export type CreateProjectRequest = Message<"aladdin.galaxy.v1.CreateProjectReque
    * @generated from field: string description = 2;
    */
   description: string;
+
+  /**
+   * 形态。**必填**：它创建时定下、此后不可改，因此没有"以后再定"这个形状。
+   *
+   * @generated from field: aladdin.galaxy.v1.SiteForm form = 3;
+   */
+  form: SiteForm;
 };
 
 /**
@@ -452,7 +571,7 @@ export type CreateProjectRequest = Message<"aladdin.galaxy.v1.CreateProjectReque
  * Use `create(CreateProjectRequestSchema)` to create a new message.
  */
 export const CreateProjectRequestSchema: GenMessage<CreateProjectRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 12);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 13);
 
 /**
  * @generated from message aladdin.galaxy.v1.CreateProjectResponse
@@ -469,7 +588,7 @@ export type CreateProjectResponse = Message<"aladdin.galaxy.v1.CreateProjectResp
  * Use `create(CreateProjectResponseSchema)` to create a new message.
  */
 export const CreateProjectResponseSchema: GenMessage<CreateProjectResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 13);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 14);
 
 /**
  * @generated from message aladdin.galaxy.v1.GetProjectRequest
@@ -486,7 +605,7 @@ export type GetProjectRequest = Message<"aladdin.galaxy.v1.GetProjectRequest"> &
  * Use `create(GetProjectRequestSchema)` to create a new message.
  */
 export const GetProjectRequestSchema: GenMessage<GetProjectRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 14);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 15);
 
 /**
  * @generated from message aladdin.galaxy.v1.GetProjectResponse
@@ -503,7 +622,7 @@ export type GetProjectResponse = Message<"aladdin.galaxy.v1.GetProjectResponse">
  * Use `create(GetProjectResponseSchema)` to create a new message.
  */
 export const GetProjectResponseSchema: GenMessage<GetProjectResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 15);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 16);
 
 /**
  * @generated from message aladdin.galaxy.v1.UpdateProjectRequest
@@ -532,7 +651,7 @@ export type UpdateProjectRequest = Message<"aladdin.galaxy.v1.UpdateProjectReque
  * Use `create(UpdateProjectRequestSchema)` to create a new message.
  */
 export const UpdateProjectRequestSchema: GenMessage<UpdateProjectRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 16);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 17);
 
 /**
  * @generated from message aladdin.galaxy.v1.UpdateProjectResponse
@@ -549,7 +668,7 @@ export type UpdateProjectResponse = Message<"aladdin.galaxy.v1.UpdateProjectResp
  * Use `create(UpdateProjectResponseSchema)` to create a new message.
  */
 export const UpdateProjectResponseSchema: GenMessage<UpdateProjectResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 17);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 18);
 
 /**
  * @generated from message aladdin.galaxy.v1.DeleteProjectRequest
@@ -566,7 +685,7 @@ export type DeleteProjectRequest = Message<"aladdin.galaxy.v1.DeleteProjectReque
  * Use `create(DeleteProjectRequestSchema)` to create a new message.
  */
 export const DeleteProjectRequestSchema: GenMessage<DeleteProjectRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 18);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 19);
 
 /**
  * @generated from message aladdin.galaxy.v1.DeleteProjectResponse
@@ -579,7 +698,7 @@ export type DeleteProjectResponse = Message<"aladdin.galaxy.v1.DeleteProjectResp
  * Use `create(DeleteProjectResponseSchema)` to create a new message.
  */
 export const DeleteProjectResponseSchema: GenMessage<DeleteProjectResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 19);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 20);
 
 /**
  * @generated from message aladdin.galaxy.v1.GetDraftRequest
@@ -596,7 +715,7 @@ export type GetDraftRequest = Message<"aladdin.galaxy.v1.GetDraftRequest"> & {
  * Use `create(GetDraftRequestSchema)` to create a new message.
  */
 export const GetDraftRequestSchema: GenMessage<GetDraftRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 20);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 21);
 
 /**
  * @generated from message aladdin.galaxy.v1.GetDraftResponse
@@ -613,37 +732,41 @@ export type GetDraftResponse = Message<"aladdin.galaxy.v1.GetDraftResponse"> & {
  * Use `create(GetDraftResponseSchema)` to create a new message.
  */
 export const GetDraftResponseSchema: GenMessage<GetDraftResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 21);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 22);
 
 /**
- * @generated from message aladdin.galaxy.v1.SaveDraftRequest
+ * PushDraftRequest 表达的是草稿的**期望完整状态**，不是增量。
+ *
+ * @generated from message aladdin.galaxy.v1.PushDraftRequest
  */
-export type SaveDraftRequest = Message<"aladdin.galaxy.v1.SaveDraftRequest"> & {
+export type PushDraftRequest = Message<"aladdin.galaxy.v1.PushDraftRequest"> & {
   /**
    * @generated from field: string project_id = 1;
    */
   projectId: string;
 
   /**
-   * @generated from field: string content = 2;
+   * 期望的完整清单。条目只引用已经上传好的对象，因此这里的 url 被忽略。
+   *
+   * @generated from field: repeated aladdin.galaxy.v1.FileEntry entries = 2;
    */
-  content: string;
+  entries: FileEntry[];
 };
 
 /**
- * Describes the message aladdin.galaxy.v1.SaveDraftRequest.
- * Use `create(SaveDraftRequestSchema)` to create a new message.
+ * Describes the message aladdin.galaxy.v1.PushDraftRequest.
+ * Use `create(PushDraftRequestSchema)` to create a new message.
  */
-export const SaveDraftRequestSchema: GenMessage<SaveDraftRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 22);
+export const PushDraftRequestSchema: GenMessage<PushDraftRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 23);
 
 /**
- * 返回保存之后的草稿，而不是一个成功标志：客户端刚做过一次会改变现状的
+ * 返回推送之后的草稿，而不是一个成功标志：客户端刚做过一次会改变现状的
  * 操作，让它在同一次往返里拿到新现状，比再发一次查询更省事。
  *
- * @generated from message aladdin.galaxy.v1.SaveDraftResponse
+ * @generated from message aladdin.galaxy.v1.PushDraftResponse
  */
-export type SaveDraftResponse = Message<"aladdin.galaxy.v1.SaveDraftResponse"> & {
+export type PushDraftResponse = Message<"aladdin.galaxy.v1.PushDraftResponse"> & {
   /**
    * @generated from field: aladdin.galaxy.v1.Draft draft = 1;
    */
@@ -651,11 +774,11 @@ export type SaveDraftResponse = Message<"aladdin.galaxy.v1.SaveDraftResponse"> &
 };
 
 /**
- * Describes the message aladdin.galaxy.v1.SaveDraftResponse.
- * Use `create(SaveDraftResponseSchema)` to create a new message.
+ * Describes the message aladdin.galaxy.v1.PushDraftResponse.
+ * Use `create(PushDraftResponseSchema)` to create a new message.
  */
-export const SaveDraftResponseSchema: GenMessage<SaveDraftResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 23);
+export const PushDraftResponseSchema: GenMessage<PushDraftResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 24);
 
 /**
  * @generated from message aladdin.galaxy.v1.SaveVersionRequest
@@ -672,7 +795,7 @@ export type SaveVersionRequest = Message<"aladdin.galaxy.v1.SaveVersionRequest">
  * Use `create(SaveVersionRequestSchema)` to create a new message.
  */
 export const SaveVersionRequestSchema: GenMessage<SaveVersionRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 24);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 25);
 
 /**
  * @generated from message aladdin.galaxy.v1.SaveVersionResponse
@@ -689,7 +812,7 @@ export type SaveVersionResponse = Message<"aladdin.galaxy.v1.SaveVersionResponse
  * Use `create(SaveVersionResponseSchema)` to create a new message.
  */
 export const SaveVersionResponseSchema: GenMessage<SaveVersionResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 25);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 26);
 
 /**
  * @generated from message aladdin.galaxy.v1.ListVersionsRequest
@@ -706,7 +829,7 @@ export type ListVersionsRequest = Message<"aladdin.galaxy.v1.ListVersionsRequest
  * Use `create(ListVersionsRequestSchema)` to create a new message.
  */
 export const ListVersionsRequestSchema: GenMessage<ListVersionsRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 26);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 27);
 
 /**
  * @generated from message aladdin.galaxy.v1.ListVersionsResponse
@@ -723,7 +846,7 @@ export type ListVersionsResponse = Message<"aladdin.galaxy.v1.ListVersionsRespon
  * Use `create(ListVersionsResponseSchema)` to create a new message.
  */
 export const ListVersionsResponseSchema: GenMessage<ListVersionsResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 27);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 28);
 
 /**
  * @generated from message aladdin.galaxy.v1.GetVersionRequest
@@ -745,7 +868,7 @@ export type GetVersionRequest = Message<"aladdin.galaxy.v1.GetVersionRequest"> &
  * Use `create(GetVersionRequestSchema)` to create a new message.
  */
 export const GetVersionRequestSchema: GenMessage<GetVersionRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 28);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 29);
 
 /**
  * @generated from message aladdin.galaxy.v1.GetVersionResponse
@@ -762,7 +885,7 @@ export type GetVersionResponse = Message<"aladdin.galaxy.v1.GetVersionResponse">
  * Use `create(GetVersionResponseSchema)` to create a new message.
  */
 export const GetVersionResponseSchema: GenMessage<GetVersionResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 29);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 30);
 
 /**
  * @generated from message aladdin.galaxy.v1.DeleteVersionRequest
@@ -784,7 +907,7 @@ export type DeleteVersionRequest = Message<"aladdin.galaxy.v1.DeleteVersionReque
  * Use `create(DeleteVersionRequestSchema)` to create a new message.
  */
 export const DeleteVersionRequestSchema: GenMessage<DeleteVersionRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 30);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 31);
 
 /**
  * @generated from message aladdin.galaxy.v1.DeleteVersionResponse
@@ -797,39 +920,32 @@ export type DeleteVersionResponse = Message<"aladdin.galaxy.v1.DeleteVersionResp
  * Use `create(DeleteVersionResponseSchema)` to create a new message.
  */
 export const DeleteVersionResponseSchema: GenMessage<DeleteVersionResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 31);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 32);
 
 /**
- * @generated from message aladdin.galaxy.v1.ValidateContentRequest
+ * @generated from message aladdin.galaxy.v1.ValidateDraftRequest
  */
-export type ValidateContentRequest = Message<"aladdin.galaxy.v1.ValidateContentRequest"> & {
+export type ValidateDraftRequest = Message<"aladdin.galaxy.v1.ValidateDraftRequest"> & {
   /**
    * @generated from field: string project_id = 1;
    */
   projectId: string;
-
-  /**
-   * 待校验的正文。它不必是已保存的草稿——编辑器要能校验"正在编辑的内容"。
-   *
-   * @generated from field: string content = 2;
-   */
-  content: string;
 };
 
 /**
- * Describes the message aladdin.galaxy.v1.ValidateContentRequest.
- * Use `create(ValidateContentRequestSchema)` to create a new message.
+ * Describes the message aladdin.galaxy.v1.ValidateDraftRequest.
+ * Use `create(ValidateDraftRequestSchema)` to create a new message.
  */
-export const ValidateContentRequestSchema: GenMessage<ValidateContentRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 32);
+export const ValidateDraftRequestSchema: GenMessage<ValidateDraftRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 33);
 
 /**
- * 问题为空表示这段正文可以发布。**它是发布前置校验的同一份规则**，因此
+ * 问题为空表示这份草稿可以发布。**它是发布前置校验的同一份规则**，因此
  * "这里通过"与"发布能成功"是同一个结论，不会漂移。
  *
- * @generated from message aladdin.galaxy.v1.ValidateContentResponse
+ * @generated from message aladdin.galaxy.v1.ValidateDraftResponse
  */
-export type ValidateContentResponse = Message<"aladdin.galaxy.v1.ValidateContentResponse"> & {
+export type ValidateDraftResponse = Message<"aladdin.galaxy.v1.ValidateDraftResponse"> & {
   /**
    * @generated from field: repeated aladdin.galaxy.v1.ValidationProblem problems = 1;
    */
@@ -837,11 +953,157 @@ export type ValidateContentResponse = Message<"aladdin.galaxy.v1.ValidateContent
 };
 
 /**
- * Describes the message aladdin.galaxy.v1.ValidateContentResponse.
- * Use `create(ValidateContentResponseSchema)` to create a new message.
+ * Describes the message aladdin.galaxy.v1.ValidateDraftResponse.
+ * Use `create(ValidateDraftResponseSchema)` to create a new message.
  */
-export const ValidateContentResponseSchema: GenMessage<ValidateContentResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 33);
+export const ValidateDraftResponseSchema: GenMessage<ValidateDraftResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 34);
+
+/**
+ * @generated from message aladdin.galaxy.v1.PreviewDraftRequest
+ */
+export type PreviewDraftRequest = Message<"aladdin.galaxy.v1.PreviewDraftRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * `static` 形态下要预览的那一页；为空表示入口页。`docs` 形态忽略它
+   * ——整站被拼成一份，页间跳转靠文内锚点。
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+};
+
+/**
+ * Describes the message aladdin.galaxy.v1.PreviewDraftRequest.
+ * Use `create(PreviewDraftRequestSchema)` to create a new message.
+ */
+export const PreviewDraftRequestSchema: GenMessage<PreviewDraftRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 35);
+
+/**
+ * @generated from message aladdin.galaxy.v1.PreviewDraftResponse
+ */
+export type PreviewDraftResponse = Message<"aladdin.galaxy.v1.PreviewDraftResponse"> & {
+  /**
+   * 一份可以直接放进沙箱 iframe 的 HTML。**它不改用户内容**，只把 `asset://`
+   * 记号换成短时预签名地址，并按形态渲染 markdown。
+   *
+   * @generated from field: string html = 1;
+   */
+  html: string;
+};
+
+/**
+ * Describes the message aladdin.galaxy.v1.PreviewDraftResponse.
+ * Use `create(PreviewDraftResponseSchema)` to create a new message.
+ */
+export const PreviewDraftResponseSchema: GenMessage<PreviewDraftResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 36);
+
+/**
+ * @generated from message aladdin.galaxy.v1.BeginContentUploadRequest
+ */
+export type BeginContentUploadRequest = Message<"aladdin.galaxy.v1.BeginContentUploadRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * **声明的**内容摘要（SHA-256 十六进制）。服务端用它和工程标识组成私有区
+   * 对象键（不跨工程共享）。已存在则不必再传。
+   *
+   * @generated from field: string digest = 2;
+   */
+  digest: string;
+
+  /**
+   * **声明的**字节数。服务端据此在签发前早退，避免让用户白传一遍；真正的
+   * 大小上限由存储侧按策略执行。
+   *
+   * @generated from field: uint64 size_bytes = 3;
+   */
+  sizeBytes: bigint;
+};
+
+/**
+ * Describes the message aladdin.galaxy.v1.BeginContentUploadRequest.
+ * Use `create(BeginContentUploadRequestSchema)` to create a new message.
+ */
+export const BeginContentUploadRequestSchema: GenMessage<BeginContentUploadRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 37);
+
+/**
+ * @generated from message aladdin.galaxy.v1.BeginContentUploadResponse
+ */
+export type BeginContentUploadResponse = Message<"aladdin.galaxy.v1.BeginContentUploadResponse"> & {
+  /**
+   * 为真表示这个内容对象已经存在，客户端无需上传（也无需提交）。
+   *
+   * 这正是"同一份未改动的文件在多个版本之间共享一个对象"在接口上的样子：
+   * 改一个字只产生一个新对象，没改的文件一次上传都不用做。
+   *
+   * @generated from field: bool already_exists = 1;
+   */
+  alreadyExists: boolean;
+
+  /**
+   * 直传凭证。**只允许写、只对这一个键有效、短时有效、且不允许覆盖已有
+   * 对象。** already_exists 为真时为空。
+   *
+   * @generated from field: aladdin.objectstore.v1.DirectUploadCredential upload = 2;
+   */
+  upload?: DirectUploadCredential | undefined;
+};
+
+/**
+ * Describes the message aladdin.galaxy.v1.BeginContentUploadResponse.
+ * Use `create(BeginContentUploadResponseSchema)` to create a new message.
+ */
+export const BeginContentUploadResponseSchema: GenMessage<BeginContentUploadResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 38);
+
+/**
+ * @generated from message aladdin.galaxy.v1.CommitContentUploadRequest
+ */
+export type CommitContentUploadRequest = Message<"aladdin.galaxy.v1.CommitContentUploadRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * 与服务端核对的那个摘要。**两次调用之间服务端不保留任何状态**（那正是
+   * "未提交的上传不留痕迹"的实现方式），因此它在这里被再次声明。
+   *
+   * @generated from field: string digest = 2;
+   */
+  digest: string;
+};
+
+/**
+ * Describes the message aladdin.galaxy.v1.CommitContentUploadRequest.
+ * Use `create(CommitContentUploadRequestSchema)` to create a new message.
+ */
+export const CommitContentUploadRequestSchema: GenMessage<CommitContentUploadRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 39);
+
+/**
+ * @generated from message aladdin.galaxy.v1.CommitContentUploadResponse
+ */
+export type CommitContentUploadResponse = Message<"aladdin.galaxy.v1.CommitContentUploadResponse"> & {
+};
+
+/**
+ * Describes the message aladdin.galaxy.v1.CommitContentUploadResponse.
+ * Use `create(CommitContentUploadResponseSchema)` to create a new message.
+ */
+export const CommitContentUploadResponseSchema: GenMessage<CommitContentUploadResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 40);
 
 /**
  * @generated from message aladdin.galaxy.v1.ListAssetsRequest
@@ -858,7 +1120,7 @@ export type ListAssetsRequest = Message<"aladdin.galaxy.v1.ListAssetsRequest"> &
  * Use `create(ListAssetsRequestSchema)` to create a new message.
  */
 export const ListAssetsRequestSchema: GenMessage<ListAssetsRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 34);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 41);
 
 /**
  * @generated from message aladdin.galaxy.v1.ListAssetsResponse
@@ -875,7 +1137,7 @@ export type ListAssetsResponse = Message<"aladdin.galaxy.v1.ListAssetsResponse">
  * Use `create(ListAssetsResponseSchema)` to create a new message.
  */
 export const ListAssetsResponseSchema: GenMessage<ListAssetsResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 35);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 42);
 
 /**
  * @generated from message aladdin.galaxy.v1.BeginAssetUploadRequest
@@ -907,7 +1169,7 @@ export type BeginAssetUploadRequest = Message<"aladdin.galaxy.v1.BeginAssetUploa
  * Use `create(BeginAssetUploadRequestSchema)` to create a new message.
  */
 export const BeginAssetUploadRequestSchema: GenMessage<BeginAssetUploadRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 36);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 43);
 
 /**
  * @generated from message aladdin.galaxy.v1.BeginAssetUploadResponse
@@ -933,7 +1195,7 @@ export type BeginAssetUploadResponse = Message<"aladdin.galaxy.v1.BeginAssetUplo
  * Use `create(BeginAssetUploadResponseSchema)` to create a new message.
  */
 export const BeginAssetUploadResponseSchema: GenMessage<BeginAssetUploadResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 37);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 44);
 
 /**
  * @generated from message aladdin.galaxy.v1.CommitAssetUploadRequest
@@ -982,7 +1244,7 @@ export type CommitAssetUploadRequest = Message<"aladdin.galaxy.v1.CommitAssetUpl
  * Use `create(CommitAssetUploadRequestSchema)` to create a new message.
  */
 export const CommitAssetUploadRequestSchema: GenMessage<CommitAssetUploadRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 38);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 45);
 
 /**
  * @generated from message aladdin.galaxy.v1.CommitAssetUploadResponse
@@ -999,7 +1261,7 @@ export type CommitAssetUploadResponse = Message<"aladdin.galaxy.v1.CommitAssetUp
  * Use `create(CommitAssetUploadResponseSchema)` to create a new message.
  */
 export const CommitAssetUploadResponseSchema: GenMessage<CommitAssetUploadResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 39);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 46);
 
 /**
  * @generated from message aladdin.galaxy.v1.DeleteAssetRequest
@@ -1021,7 +1283,7 @@ export type DeleteAssetRequest = Message<"aladdin.galaxy.v1.DeleteAssetRequest">
  * Use `create(DeleteAssetRequestSchema)` to create a new message.
  */
 export const DeleteAssetRequestSchema: GenMessage<DeleteAssetRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 40);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 47);
 
 /**
  * @generated from message aladdin.galaxy.v1.DeleteAssetResponse
@@ -1034,7 +1296,7 @@ export type DeleteAssetResponse = Message<"aladdin.galaxy.v1.DeleteAssetResponse
  * Use `create(DeleteAssetResponseSchema)` to create a new message.
  */
 export const DeleteAssetResponseSchema: GenMessage<DeleteAssetResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 41);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 48);
 
 /**
  * @generated from message aladdin.galaxy.v1.PublishRequest
@@ -1058,7 +1320,7 @@ export type PublishRequest = Message<"aladdin.galaxy.v1.PublishRequest"> & {
  * Use `create(PublishRequestSchema)` to create a new message.
  */
 export const PublishRequestSchema: GenMessage<PublishRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 42);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 49);
 
 /**
  * @generated from message aladdin.galaxy.v1.PublishResponse
@@ -1082,7 +1344,7 @@ export type PublishResponse = Message<"aladdin.galaxy.v1.PublishResponse"> & {
  * Use `create(PublishResponseSchema)` to create a new message.
  */
 export const PublishResponseSchema: GenMessage<PublishResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 43);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 50);
 
 /**
  * @generated from message aladdin.galaxy.v1.UnpublishRequest
@@ -1099,7 +1361,7 @@ export type UnpublishRequest = Message<"aladdin.galaxy.v1.UnpublishRequest"> & {
  * Use `create(UnpublishRequestSchema)` to create a new message.
  */
 export const UnpublishRequestSchema: GenMessage<UnpublishRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 44);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 51);
 
 /**
  * @generated from message aladdin.galaxy.v1.UnpublishResponse
@@ -1116,13 +1378,50 @@ export type UnpublishResponse = Message<"aladdin.galaxy.v1.UnpublishResponse"> &
  * Use `create(UnpublishResponseSchema)` to create a new message.
  */
 export const UnpublishResponseSchema: GenMessage<UnpublishResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_galaxy_v1_galaxy, 45);
+  messageDesc(file_aladdin_galaxy_v1_galaxy, 52);
+
+/**
+ * SiteForm 是工程的站点形态。
+ *
+ * 它在**创建时**定下，此后不可改：形态决定已保存版本的发布语义，允许改形态
+ * 等于让历史版本的产物无法复现。两种形态的差别落在入口、渲染与扩展名白名单
+ * 三处（见 docs/design/galaxy/site-model.md），**没有一处在对象存储的键上**。
+ *
+ * @generated from enum aladdin.galaxy.v1.SiteForm
+ */
+export enum SiteForm {
+  /**
+   * @generated from enum value: SITE_FORM_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * 整站文件原样服务。覆盖手写单页与构建产物，入口是 index.html。
+   *
+   * @generated from enum value: SITE_FORM_STATIC = 1;
+   */
+  STATIC = 1,
+
+  /**
+   * 一组 markdown 渲染成多页，站点文件原样带上。入口是 index.md。
+   *
+   * @generated from enum value: SITE_FORM_DOCS = 2;
+   */
+  DOCS = 2,
+}
+
+/**
+ * Describes the enum aladdin.galaxy.v1.SiteForm.
+ */
+export const SiteFormSchema: GenEnum<SiteForm> = /*@__PURE__*/
+  enumDesc(file_aladdin_galaxy_v1_galaxy, 0);
 
 /**
  * MediaKind 是资产按媒体分出的类别。
  *
  * 它决定的是**用哪一档大小上限**：一张图与一段视频的合理体积差两个数量级，
- * 用同一个上限卡两者，要么放过一张过大的图，要么拒掉一段正常的视频。
+ * 用同一个上限卡两者，要么放过一张过大的图，要么拒掉一段正常的视频。它同时
+ * 是对象键里的一段（见 docs/design/galaxy/asset-library.md）。
  *
  * @generated from enum aladdin.galaxy.v1.MediaKind
  */
@@ -1146,17 +1445,25 @@ export enum MediaKind {
    * @generated from enum value: MEDIA_KIND_AUDIO = 3;
    */
   AUDIO = 3,
+
+  /**
+   * 字体是随构建产物进来的那一类：任何工具产出的整站几乎都会带一份 webfont，
+   * 而在文件组里它必然是二进制，因此只能作为资产。
+   *
+   * @generated from enum value: MEDIA_KIND_FONT = 4;
+   */
+  FONT = 4,
 }
 
 /**
  * Describes the enum aladdin.galaxy.v1.MediaKind.
  */
 export const MediaKindSchema: GenEnum<MediaKind> = /*@__PURE__*/
-  enumDesc(file_aladdin_galaxy_v1_galaxy, 0);
+  enumDesc(file_aladdin_galaxy_v1_galaxy, 1);
 
 /**
- * GalaxyService 是创作面：用户写一份 HTML、放素材，然后把它发布成一个
- * 别人能打开的页面。
+ * GalaxyService 是创作面：用户放下一组具名文件与素材，然后把它发布成一个
+ * 别人能打开的站点。
  *
  * 边界：它不回答"你是谁"（认证）也不回答"你能做什么"（RBAC）。**两把闸门
  * 各管一件事**：`galaxy.*` 权限码决定这个主体有没有资格创作，工程的拥有者
@@ -1204,6 +1511,9 @@ export const GalaxyService: GenService<{
   /**
    * 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
    *
+   * **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
+   * 历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+   *
    * 名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
    * 一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
    *
@@ -1215,7 +1525,7 @@ export const GalaxyService: GenService<{
     output: typeof CreateProjectResponseSchema;
   },
   /**
-   * 读取一个工程的元数据。不含草稿正文、版本正文与资产字节。
+   * 读取一个工程的元数据。不含草稿清单、版本清单与资产字节。
    *
    * @generated from rpc aladdin.galaxy.v1.GalaxyService.GetProject
    */
@@ -1226,6 +1536,8 @@ export const GalaxyService: GenService<{
   },
   /**
    * 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
+   *
+   * **不含形态**：形态改不了，因此它不在这个请求的形状里。
    *
    * @generated from rpc aladdin.galaxy.v1.GalaxyService.UpdateProject
    */
@@ -1246,7 +1558,10 @@ export const GalaxyService: GenService<{
     output: typeof DeleteProjectResponseSchema;
   },
   /**
-   * 读取工程的当前草稿。草稿行是惰性创建的：从未保存过草稿时正文为空。
+   * 读取工程的当前草稿清单，每一项带一条短时读取地址。
+   *
+   * 草稿行是惰性创建的：从未推送过草稿时清单为空。地址由客户端直连取字节，
+   * 服务端不代理（见 docs/design/galaxy/asset-library.md）。
    *
    * @generated from rpc aladdin.galaxy.v1.GalaxyService.GetDraft
    */
@@ -1256,21 +1571,31 @@ export const GalaxyService: GenService<{
     output: typeof GetDraftResponseSchema;
   },
   /**
-   * 保存工程的当前草稿。**改草稿不产生版本**——它是工作区，不是历史。
+   * 以给定的清单**整组替换**草稿（它不产生版本）。
    *
-   * @generated from rpc aladdin.galaxy.v1.GalaxyService.SaveDraft
+   * 它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
+   * 否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
+   *
+   * **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
+   * "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+   * 收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+   *
+   * 请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
+   * 资产标识），因此本方法不带字节，也不触发任何上传。
+   *
+   * @generated from rpc aladdin.galaxy.v1.GalaxyService.PushDraft
    */
-  saveDraft: {
+  pushDraft: {
     methodKind: "unary";
-    input: typeof SaveDraftRequestSchema;
-    output: typeof SaveDraftResponseSchema;
+    input: typeof PushDraftRequestSchema;
+    output: typeof PushDraftResponseSchema;
   },
   /**
-   * 把草稿的当前内容保存成一个**不可变**版本。
+   * 把草稿的当前清单保存成一个**不可变**版本。
    *
    * 保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
-   * 连续保存两次相同正文产生两个版本，而不是"检测到重复就不新增"——两份
-   * 看起来一样的正文对用户是两次不同的保存动作。
+   * 连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
+   * 看起来一样的清单对用户是两次不同的保存动作。
    *
    * @generated from rpc aladdin.galaxy.v1.GalaxyService.SaveVersion
    */
@@ -1280,7 +1605,7 @@ export const GalaxyService: GenService<{
     output: typeof SaveVersionResponseSchema;
   },
   /**
-   * 列出工程的版本。按序号排序。**列表不带正文**（正文由 GetVersion 取）。
+   * 列出工程的版本，按序号排序。清单很小，因此**列表也带清单**（不带地址）。
    *
    * @generated from rpc aladdin.galaxy.v1.GalaxyService.ListVersions
    */
@@ -1290,7 +1615,7 @@ export const GalaxyService: GenService<{
     output: typeof ListVersionsResponseSchema;
   },
   /**
-   * 读取一个版本，含正文。保存时的内容此后逐字不变。
+   * 读取一个版本，含清单与每一项的短时读取地址。保存时的内容此后逐字不变。
    *
    * @generated from rpc aladdin.galaxy.v1.GalaxyService.GetVersion
    */
@@ -1311,22 +1636,76 @@ export const GalaxyService: GenService<{
     output: typeof DeleteVersionResponseSchema;
   },
   /**
-   * 校验一段正文能不能发布。**编辑器提示与发布前置校验共用这一个入口。**
+   * 校验**当前草稿的清单**能不能发布。**编辑器提示与发布前置校验共用这一个
+   * 入口。**
    *
-   * 前端**不得**复写一套引用解析：两端各写一份的表现是"编辑器说没问题、
-   * 发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
-   * 它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
-   * 存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+   * 前端**不得**复写一套引用解析：两端各写一份的表现是"提示说没问题、发布
+   * 说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。它返回的
+   * 是一个**问题清单**而不是单个错误——界面要的是"哪几处有问题"。
+   * 存储不可用这类故障仍然以 RPC 错误返回，与"内容有问题"分开。
    *
-   * 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
-   * 带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
+   * 它校验的是**已保存的草稿**，请求里不带内容：写入只有一条路径（命令行
+   * push 整组），因此"校验一份还没保存的内容"这个形状不存在。
    *
-   * @generated from rpc aladdin.galaxy.v1.GalaxyService.ValidateContent
+   * 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而这条
+   * 路径要读对象存储、可能较慢，不适合被当作可缓存的安全方法。
+   *
+   * @generated from rpc aladdin.galaxy.v1.GalaxyService.ValidateDraft
    */
-  validateContent: {
+  validateDraft: {
     methodKind: "unary";
-    input: typeof ValidateContentRequestSchema;
-    output: typeof ValidateContentResponseSchema;
+    input: typeof ValidateDraftRequestSchema;
+    output: typeof ValidateDraftResponseSchema;
+  },
+  /**
+   * 把当前草稿渲染成一份可以放进沙箱 iframe 的 HTML，供**只有本人能看**的
+   * 预览使用。
+   *
+   * **渲染在服务端，与发布共用同一段实现**：`docs` 形态的 markdown → HTML
+   * 只有一处实现，网页端不再引第二个渲染器——两份实现迟早漂移，而用户看到
+   * 的是"预览好好的、发布出来不一样"。
+   *
+   * 它复用**编辑态**的那套地址：`asset://` 记号被换成短时预签名地址，因此
+   * 预览里的图会随地址过期而显示不出来，刷新即得到新地址。预览不承诺与发布
+   * 态逐像素一致（见 docs/design/galaxy/authoring.md）。
+   *
+   * @generated from rpc aladdin.galaxy.v1.GalaxyService.PreviewDraft
+   */
+  previewDraft: {
+    methodKind: "unary";
+    input: typeof PreviewDraftRequestSchema;
+    output: typeof PreviewDraftResponseSchema;
+  },
+  /**
+   * 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
+   *
+   * 内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
+   * 路径与形态派生（不存在"声明"这一层）、不进公开区。
+   *
+   * **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
+   * 否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
+   * 而那是"版本不可变"的反面。凭证带"禁止覆盖"的写入条件，提交时服务端再
+   * 读回核对一次摘要。
+   *
+   * @generated from rpc aladdin.galaxy.v1.GalaxyService.BeginContentUpload
+   */
+  beginContentUpload: {
+    methodKind: "unary";
+    input: typeof BeginContentUploadRequestSchema;
+    output: typeof BeginContentUploadResponseSchema;
+  },
+  /**
+   * 提交一次内容对象上传：读回对象、核对摘要。
+   *
+   * **摘要是寻址键，而服务端没有字节可以自己算它**——它由上传方声明。因此
+   * 写入之后必须读回核对一遍，不一致即删除该对象并拒绝。
+   *
+   * @generated from rpc aladdin.galaxy.v1.GalaxyService.CommitContentUpload
+   */
+  commitContentUpload: {
+    methodKind: "unary";
+    input: typeof CommitContentUploadRequestSchema;
+    output: typeof CommitContentUploadResponseSchema;
   },
   /**
    * 列出工程资产库里的资产，含**短时有效**的读取地址。
@@ -1372,7 +1751,8 @@ export const GalaxyService: GenService<{
     output: typeof CommitAssetUploadResponseSchema;
   },
   /**
-   * 删除一个资产。**被任一版本引用时拒绝**，错误信息指出被哪些版本引用。
+   * 删除一个资产。**被任一版本的文件清单引用时拒绝**，错误信息指出被哪些
+   * 版本引用。
    *
    * 拒绝的理由是版本不可变的含义包括"它此后永远可以发布"：一个引用了已删
    * 除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
@@ -1386,10 +1766,10 @@ export const GalaxyService: GenService<{
     output: typeof DeleteAssetResponseSchema;
   },
   /**
-   * 发布一个版本：校验、把引用的资产上架到公开区、落库产物、切换发布指针。
+   * 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
    *
    * **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
-   * 没有意义。草稿内容不会被读取。
+   * 没有意义。草稿清单不会被读取。
    *
    * 发布域未配置时这一项不可用（见 GetCapabilities）。
    *

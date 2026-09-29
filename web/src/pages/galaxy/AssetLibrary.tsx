@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Button, Empty, List, Popconfirm, Space, Typography, Upload } from 'antd'
+import { Alert, Button, Empty, Image, Popconfirm, Space, Typography, Upload, theme } from 'antd'
 import { Copy, ImageUp, Trash2 } from 'lucide-react'
 
 import * as galaxyApi from '../../api/galaxy'
@@ -15,6 +15,9 @@ import { mediaKindOfDeclaredType } from './media-kind'
 // 选择框里能看到什么，**不是校验**：真正的类型由上传方声明、由服务端与存储侧判定。
 const ACCEPTED_TYPES =
   'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,audio/mpeg,audio/ogg,audio/wav'
+
+/** 预览区（也是"查看"的落点）的高度。 */
+const MEDIA_HEIGHT = 132
 
 interface AssetLibraryProps {
   projectId: string
@@ -34,7 +37,10 @@ interface failure {
 }
 
 /**
- * 工程资产库：上传、列出、复制引用、删除。
+ * 工程资产面板（弹层内容）：上传、查看、复制引用、删除。
+ *
+ * **查看**由 antd 的 `Image` 自带：点一下放大到原图。不做转码、不做缩略图
+ * （见 docs/design/galaxy/asset-library.md），因此放大的就是原样的字节。
  *
  * 这里的每一次判断都只是**省一次往返**或**决定要不要渲染**，不是安全边界：
  * 类型与大小由上传方声明、由服务端与存储侧判定，删除是否被拒也由服务端说了算
@@ -51,6 +57,7 @@ export function AssetLibrary({
   canWrite,
   onChanged,
 }: AssetLibraryProps): React.ReactNode {
+  const { token } = theme.useToken()
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<failure | null>(null)
   // 最近一次失败的文件：留着它，用户点「重试」时能原样再来一次。上传失败
@@ -161,7 +168,7 @@ export function AssetLibrary({
       )}
 
       {canWrite && (
-        <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={4} style={{ width: '100%' }}>
           <Upload
             accept={ACCEPTED_TYPES}
             showUploadList={false}
@@ -175,8 +182,9 @@ export function AssetLibrary({
             </Button>
           </Upload>
           <Typography.Text type="secondary">
-            图片 / 视频 / 音频，上传时声明类型。正文里用 <Typography.Text code>asset://&lt;资产标识&gt;</Typography.Text>
-            {' '}引用，点下面的「复制引用」直接拿到这段文本。
+            图片 / 视频 / 音频，上传时声明类型。正文里用{' '}
+            <Typography.Text code>asset://&lt;资产标识&gt;</Typography.Text> 引用，点资产上的
+            「复制引用」直接拿到这段文本。
           </Typography.Text>
           <Typography.Text type="secondary">
             编辑态用的是短时地址，未发布的资产<b>不得承载秘密</b>；它们在被发布前不对公开可见。
@@ -187,88 +195,147 @@ export function AssetLibrary({
       {assets.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="资产库里还没有素材" />
       ) : (
-        <List<Asset>
-          dataSource={[...assets]}
-          rowKey="id"
-          renderItem={(asset) => (
-            <List.Item
-              style={{ display: 'block' }}
-              actions={[
-                <Button
-                  key="copy"
-                  type="link"
-                  icon={<Copy size={14} />}
-                  onClick={() => void handleCopy(asset)}
-                >
-                  复制引用
-                </Button>,
-                ...(canWrite
-                  ? [
-                      <Popconfirm
-                        key="delete"
-                        title="删除这个资产？"
-                        description="被任一版本引用时会被拒绝，需先删掉引用它的版本。"
-                        okText="删除"
-                        okButtonProps={{ danger: true }}
-                        onConfirm={() => void handleDelete(asset.id)}
-                      >
-                        <Button type="link" danger icon={<Trash2 size={14} />}>
-                          删除
-                        </Button>
-                      </Popconfirm>,
-                    ]
-                  : []),
-              ]}
-            >
-              <Space size={16} align="start" wrap>
-                <AssetPreview asset={asset} />
-                <Space orientation="vertical" size={4}>
-                  <Typography.Text style={{ wordBreak: 'break-all' }}>
-                    {asset.filename === '' ? '(未命名)' : asset.filename}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    {asset.mediaType} · {describeBytes(Number(asset.sizeBytes))} ·{' '}
-                    {formatTime(asset.uploadedAt)}
-                  </Typography.Text>
-                  <Typography.Text type="secondary" code style={{ wordBreak: 'break-all' }}>
-                    {referenceOf(asset)}
-                  </Typography.Text>
-                  {copiedId === asset.id && (
-                    <Typography.Text type="success">已复制引用</Typography.Text>
-                  )}
-                </Space>
-              </Space>
-            </List.Item>
-          )}
-        />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: 12,
+          }}
+        >
+          {assets.map((asset) => (
+            <AssetCard
+              key={asset.id}
+              asset={asset}
+              reference={referenceOf(asset)}
+              copied={copiedId === asset.id}
+              canWrite={canWrite}
+              borderColor={token.colorBorderSecondary}
+              mediaBackground={token.colorFillQuaternary}
+              onCopy={() => void handleCopy(asset)}
+              onDelete={() => void handleDelete(asset.id)}
+            />
+          ))}
+        </div>
       )}
     </Space>
   )
 }
 
+interface AssetCardProps {
+  asset: Asset
+  reference: string
+  copied: boolean
+  canWrite: boolean
+  borderColor: string
+  mediaBackground: string
+  onCopy: () => void
+  onDelete: () => void
+}
+
 /**
- * 资产的缩略/预览。
+ * 一个资产。上面是媒体（点一下放大查看），下面是它的元数据与两个动作。
  *
- * 按服务端记录的 mediaType 前缀选择展示方式——**不做转码、不做缩略图**
- * （见 docs/design/galaxy/asset-library.md），原样取用字节。地址是短时地址，
- * 过期后重新读取资产清单即得到新的。
+ * 元数据（类型、大小、时间）与短时地址的说明都挤在卡片里，是因为这一批东西
+ * 本来就该一起看：换个文件名要能立刻对上是哪一张图。
  */
-function AssetPreview({ asset }: { asset: Asset }): React.ReactNode {
+function AssetCard({
+  asset,
+  reference,
+  copied,
+  canWrite,
+  borderColor,
+  mediaBackground,
+  onCopy,
+  onDelete,
+}: AssetCardProps): React.ReactNode {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        border: `1px solid ${borderColor}`,
+        borderRadius: 6,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          height: MEDIA_HEIGHT,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: mediaBackground,
+          overflow: 'hidden',
+        }}
+      >
+        <AssetMedia asset={asset} />
+      </div>
+      <Space orientation="vertical" size={4} style={{ padding: 8, width: '100%' }}>
+        <Typography.Text ellipsis={{ tooltip: asset.filename }}>
+          {asset.filename === '' ? '(未命名)' : asset.filename}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {asset.mediaType} · {describeBytes(Number(asset.sizeBytes))}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {formatTime(asset.uploadedAt)}
+        </Typography.Text>
+        <Typography.Text code style={{ fontSize: 12, wordBreak: 'break-all' }}>
+          {reference}
+        </Typography.Text>
+        <Space size={4} wrap>
+          <Button type="link" size="small" icon={<Copy size={14} />} onClick={onCopy}>
+            复制引用
+          </Button>
+          {canWrite && (
+            <Popconfirm
+              title="删除这个资产？"
+              description="被任一版本引用时会被拒绝，需先删掉引用它的版本。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              onConfirm={onDelete}
+            >
+              <Button type="link" size="small" danger icon={<Trash2 size={14} />}>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
+        </Space>
+        {copied && (
+          <Typography.Text type="success" style={{ fontSize: 12 }}>
+            已复制引用
+          </Typography.Text>
+        )}
+      </Space>
+    </div>
+  )
+}
+
+/**
+ * 资产的查看。
+ *
+ * 图片走 antd 的 `Image`：点一下放大到原图（这是"查看"，不是缩略图——本模块
+ * 不做转码，放大的就是原样的字节）。视频与音频用各自的控件播放。
+ * 服务端记录的类型前缀决定用哪一种；取不到地址时原样说明，不装作有。
+ */
+function AssetMedia({ asset }: { asset: Asset }): React.ReactNode {
   if (asset.url === '') {
-    return (
-      <Typography.Text type="secondary" style={{ width: 96, textAlign: 'center' }}>
-        无预览
-      </Typography.Text>
-    )
+    return <Typography.Text type="secondary">无预览</Typography.Text>
   }
   if (asset.mediaType.startsWith('image/')) {
-    return <img src={asset.url} alt={asset.filename} style={{ maxWidth: 160, maxHeight: 96 }} />
+    return (
+      <Image
+        src={asset.url}
+        alt={asset.filename}
+        style={{ maxWidth: '100%', maxHeight: MEDIA_HEIGHT - 16, objectFit: 'contain' }}
+      />
+    )
   }
   if (asset.mediaType.startsWith('video/')) {
-    return <video src={asset.url} controls style={{ maxWidth: 240, maxHeight: 96 }} />
+    return <video src={asset.url} controls style={{ maxWidth: '100%', maxHeight: MEDIA_HEIGHT }} />
   }
   if (asset.mediaType.startsWith('audio/')) {
-    return <audio src={asset.url} controls style={{ maxWidth: 240 }} />
+    return <audio src={asset.url} controls style={{ width: '100%' }} />
   }
   return null
 }

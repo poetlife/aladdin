@@ -88,7 +88,20 @@ type Credential struct {
 	SessionToken string
 	// ExpiresAt 是凭证的失效时刻。
 	ExpiresAt time.Time
+	// ForbidOverwrite 要求写入时**禁止覆盖已存在的对象**。
+	//
+	// 内容对象（galaxy 的文本条目）按内容摘要寻址，因此"仅当不存在时写入"是
+	// 版本不可变的前提。客户端据此在写入请求上带禁止覆盖的条件，由对象存储
+	// 执行；服务端在提交时再读回核对一次摘要。
+	ForbidOverwrite bool
 }
+
+// NeutralContentType 是**内容对象**（galaxy 的文本条目）写入时声明的类型。
+//
+// 文本条目的下发类型由**路径**决定（扩展名 → 按形态给出的白名单），对象本身
+// 不承担类型语义——因此同一个内容对象以两种扩展名出现时是同一个对象，这正是
+// 想要的。中性类型顺带消掉"预签名地址被直接打开时按 HTML 渲染"这条隐患。
+const NeutralContentType = "application/octet-stream"
 
 // TypeRule 是"某一种内容类型 + 它的大小上限"。
 //
@@ -121,7 +134,9 @@ type Store interface {
 	//
 	// key 的分配权在调用方（它是各模块的键规则），但一次上传一个**新键**是
 	// 消费方必须守住的约定：复用键会让"替换已有对象"重新变成可能。
-	IssueUpload(ctx context.Context, key string, rules []TypeRule) (Credential, error)
+	// forbidOverwrite 进一步把这条约定交给存储执行，供**按内容摘要寻址**的
+	// 内容对象使用（见 Credential.ForbidOverwrite）。
+	IssueUpload(ctx context.Context, key string, rules []TypeRule, forbidOverwrite bool) (Credential, error)
 
 	// Head 返回该键上对象的事实，不存在时返回 ErrObjectNotFound。
 	//
@@ -137,6 +152,17 @@ type Store interface {
 
 	// Delete 删除该键上的对象。对象不存在时也成功（幂等）。
 	Delete(ctx context.Context, key string) error
+
+	// Put 把一个对象写进**私有区**，内容类型随对象一起写入。
+	//
+	// **它只为 galaxy 的内容对象而存在**：那些字节在发布时由服务端生成
+	// （渲染与记号替换的结果），因此没法像资产那样让客户端直传。头像与资产
+	// 都不走它——它们一律直传。
+	//
+	// 调用方必须自己保证"仅当不存在时写入"（先 Head 再 Put）：对象存储的条件
+	// 写只对客户端签名请求可用，而这是服务端自己的请求。这条约定由
+	// galaxy.writeContentObject 守着。
+	Put(ctx context.Context, key, contentType string, data []byte) error
 
 	// PresignGet 签发一个短时有效的读取地址，ttl 由调用方给定。
 	//
@@ -190,8 +216,12 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{objects: map[string][]byte{}}
 }
 
-// Put 模拟客户端完成一次直传（只存在于内存实现上）。
-func (s *MemoryStore) Put(key string, data []byte) {
+// SimulateUpload 模拟客户端完成一次直传（只存在于内存实现上）。
+//
+// 它刻意不叫 Put：Put 是 Store 接口上"服务端自己写对象"的那个方法，而这是
+// 测试里替客户端把字节放上去的动作。两者混名会让"服务端有没有绕过直传"这个
+// 问题变得难以回答。
+func (s *MemoryStore) SimulateUpload(key string, data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -208,8 +238,19 @@ func (s *MemoryStore) Issued() []IssuedUpload {
 	return out
 }
 
+// Count 返回私有区里的对象个数（只存在于内存实现上）。
+//
+// 它让"重复发布不产生新对象"这类断言可以离线验证：内容对象按摘要共享，因此
+// 这个数字在第二次发布之后不该变。
+func (s *MemoryStore) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.objects)
+}
+
 // IssueUpload 实现 Store。
-func (s *MemoryStore) IssueUpload(_ context.Context, key string, rules []TypeRule) (Credential, error) {
+func (s *MemoryStore) IssueUpload(_ context.Context, key string, rules []TypeRule, forbidOverwrite bool) (Credential, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -218,13 +259,14 @@ func (s *MemoryStore) IssueUpload(_ context.Context, key string, rules []TypeRul
 	}
 	s.issued = append(s.issued, IssuedUpload{Key: key, Rules: append([]TypeRule(nil), rules...)})
 	return Credential{
-		Bucket:       "memory-bucket-1250000000",
-		Region:       "ap-guangzhou",
-		Key:          key,
-		SecretID:     "memory-secret-id",
-		SecretKey:    "memory-secret-key",
-		SessionToken: "memory-session-token",
-		ExpiresAt:    time.Now().Add(memoryCredentialTTL),
+		Bucket:          "memory-bucket-1250000000",
+		Region:          "ap-guangzhou",
+		Key:             key,
+		SecretID:        "memory-secret-id",
+		SecretKey:       "memory-secret-key",
+		SessionToken:    "memory-session-token",
+		ExpiresAt:       time.Now().Add(memoryCredentialTTL),
+		ForbidOverwrite: forbidOverwrite,
 	}, nil
 }
 
@@ -264,6 +306,17 @@ func (s *MemoryStore) Delete(_ context.Context, key string) error {
 	defer s.mu.Unlock()
 
 	delete(s.objects, key)
+	return nil
+}
+
+// Put 实现 Store。
+func (s *MemoryStore) Put(_ context.Context, key, _ string, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	stored := make([]byte, len(data))
+	copy(stored, data)
+	s.objects[key] = stored
 	return nil
 }
 

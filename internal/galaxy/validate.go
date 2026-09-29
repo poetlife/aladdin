@@ -6,185 +6,336 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/poetlife/aladdin/internal/objectstore"
 )
 
-// Problem 是正文里的一处问题。
+// Problem 是校验发现的一处问题。
 //
-// 消息里**带上位置（行号）与出问题的取值**：只说"有引用不合法"会让用户在一份
-// 几百行的正文里自己找。
+// 消息里**带上出问题的文件与位置**：只说"有引用不合法"会让用户在一组文件里
+// 自己找。
 type Problem struct {
 	Message string
+	// Path 是出问题的文件在文件组里的路径。与具体文件无关时为空。
+	Path string
+	// Line 是行号（从 1 开始）。0 表示与行无关。
+	Line int
 }
 
-// Report 是一段正文的校验结论。问题为空表示它可以发布。
+// Report 是一份内容能不能发布的结论。问题为空表示它可以发布。
 type Report struct {
 	Problems []Problem
 }
 
-// OK 表示这段正文可以发布。
+// OK 表示这份内容可以发布。
 func (r Report) OK() bool { return len(r.Problems) == 0 }
 
 // Messages 返回全部问题消息，供把结论转成一句话的调用方使用。
 func (r Report) Messages() []string {
 	messages := make([]string, 0, len(r.Problems))
 	for _, problem := range r.Problems {
-		messages = append(messages, problem.Message)
+		messages = append(messages, problem.Describe())
 	}
 	return messages
 }
 
-// ValidateContent 校验一段正文能不能发布（唯一入口）。
+// Describe 把一处问题写成一句可读的话。
+func (p Problem) Describe() string {
+	switch {
+	case p.Path != "" && p.Line > 0:
+		return fmt.Sprintf("%s:%d %s", p.Path, p.Line, p.Message)
+	case p.Path != "":
+		return fmt.Sprintf("%s %s", p.Path, p.Message)
+	default:
+		return p.Message
+	}
+}
+
+// ValidateDraft 校验当前草稿能不能发布（唯一入口）。
 //
-// 编辑器需要即时提示时调用的是它，发布的前置阶段调用的也是它——**同一段代码、
-// 同一份规则集合**。两端各写一份的表现有两种，都很难排查：编辑器说没问题而
-// 发布说不行，用户被卡住，且没有任何提示告诉他哪一句是真的；或者反过来，用户
-// 放弃一个其实能用的功能。
+// 界面需要即时提示时调用的是它，发布的前置阶段调用的也是它——**同一段代码、
+// 同一份规则集合**。两端各写一份的表现有两种，都很难排查：提示说没问题而发布
+// 说不行，用户被卡住，且没有任何提示告诉他哪一句是真的；或者反过来，用户放弃
+// 一个其实能用的功能。
 //
-// 返回的是一个**问题清单**而不是单个错误：编辑器要的是"哪几处有问题"。存储
-// 不可用这类故障仍然以 error 返回，与"正文有问题"分开——混在一起会让一次
-// 数据库抖动表现成"你的正文写错了"。
-func (s *Service) ValidateContent(ctx context.Context, subjectID, projectID string, content Document) (Report, error) {
-	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+// 返回的是一个**问题清单**而不是单个错误：界面要的是"哪几处有问题"。存储
+// 不可用这类故障仍然以 error 返回，与"内容有问题"分开——混在一起会让一次
+// 数据库抖动表现成"你的内容写错了"。
+func (s *Service) ValidateDraft(ctx context.Context, subjectID, projectID string) (Report, error) {
+	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+	if err != nil {
 		return Report{}, err
 	}
-	_, report, err := s.validateDocument(ctx, projectID, content)
+	draft, err := s.store.GetDraft(ctx, projectID)
+	if errors.Is(err, ErrDraftNotFound) {
+		draft = Draft{ProjectID: projectID}
+	} else if err != nil {
+		return Report{}, err
+	}
+	_, report, err := s.buildArtifacts(ctx, project, draft.Manifest)
 	return report, err
 }
 
-// locatedProblem 是一处带位置的问题，用于把两趟扫描的结果按正文顺序合并。
-type locatedProblem struct {
-	offset  int
-	message string
-}
-
-// validateDocument 是校验规则集合的实现，并在通过时给出改写好的产物。
+// buildArtifacts 是校验规则集合的实现，并在通过时给出**改写好的产物**。
 //
 // 规则全集（见 docs/design/galaxy/publication.md）：
 //
-//  1. 正文不超过体积上限；
-//  2. 每一个 `asset://<资产标识>` 都指向本工程现存的一个资产；
-//  3. 取资源的位置不得指向本工程资产库之外（用户写的导航链接不受此限）；
-//  4. 改写后的产物不超过体积上限。
+//  1. 入口文件存在；
+//  2. 每一条资产条目都指向本工程现存的一个资产；
+//  3. 每一处取字节的引用都落在本文件组的**某一条条目**上（文本或资产），且
+//     不接受任何指向文件组之外的资源引用（导航链接不受此限）；
+//  4. `docs` 形态下每一处文档间链接都落在文件组里；
+//  5. 单份文本、整组文本与文件数都不超上限。
 //
-// 产物在这里算出来而不是在发布阶段另算一次：改写是纯计算，而"产物会不会超限"
-// 是校验的一部分——把它留到落库前才发现，会让一次被拒的发布先产生上架副作用。
-func (s *Service) validateDocument(ctx context.Context, projectID string, content Document) (Document, Report, error) {
-	if err := CheckDocumentSize(content); err != nil {
-		return "", Report{Problems: []Problem{{Message: err.Error()}}}, nil
-	}
+// 产物在这里算出来而不是在发布阶段另算一次：改写与渲染是纯计算，而"产物会不会
+// 超限"是校验的一部分——把它留到落库前才发现，会让一次被拒的发布先产生上架
+// 副作用。
+//
+// 返回的产物是「产物路径 → 字节」。**它就是发布要写进内容对象的东西**，因此
+// 校验通过之后发布不必再算一遍。
+func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest Manifest) (map[string][]byte, Report, error) {
+	var problems []Problem
 
-	var problems []locatedProblem
-
-	// 占位符：每个都必须指向本工程的现存资产。顺带把资产取回来，改写时不再查第二遍。
-	resolved := make(map[string]Asset)
-	var lookupErr error
-	eachPlaceholder(string(content), func(at int, assetID string) {
-		if lookupErr != nil {
-			return
-		}
-		if _, ok := resolved[assetID]; ok {
-			return
-		}
-		asset, err := s.store.GetAsset(ctx, projectID, assetID)
-		switch {
-		case err == nil:
-			resolved[assetID] = asset
-		case errors.Is(err, ErrAssetNotFound):
-			// 指向不存在的、别的工程的、或已删除的资产，落到同一条结论上。
-			problems = append(problems, locatedProblem{
-				offset:  at,
-				message: fmt.Sprintf("第 %d 行引用的资产 %q 不在本工程的资产库里", lineOf(content, at), PlaceholderScheme+assetID),
-			})
-		default:
-			// 存储故障不是"正文有问题"，照原样上抛。
-			lookupErr = err
-		}
-	})
-	if lookupErr != nil {
-		return "", Report{}, lookupErr
-	}
-
-	// 取资源的位置：只允许本工程的占位符。
-	for _, ref := range scanResourceReferences(string(content)) {
-		if _, ok := placeholderID(ref.value); ok {
-			continue
-		}
-		problems = append(problems, locatedProblem{
-			offset: ref.offset,
-			message: fmt.Sprintf("第 %d 行 %s 的资源引用 %q 必须指向本工程的资产（写成 %s<资产标识>）",
-				lineOf(content, ref.offset), ref.where, ref.value, PlaceholderScheme),
+	if _, ok := manifest.Find(project.Form.EntryPath()); !ok {
+		problems = append(problems, Problem{
+			Message: fmt.Sprintf("缺少入口文件 %s", project.Form.EntryPath()),
 		})
 	}
 
-	if len(problems) > 0 {
-		return "", Report{Problems: sortedProblems(problems)}, nil
-	}
-
-	artifact, err := s.rewrite(content, resolved)
-	if err != nil {
-		return "", Report{}, err
-	}
-	if err := CheckArtifactSize(artifact); err != nil {
-		return "", Report{Problems: []Problem{{Message: err.Error()}}}, nil
-	}
-	return artifact, Report{}, nil
-}
-
-// rewrite 把正文里的占位符换成公开区地址。
-//
-// 地址从 PublicOrigin 派生——与内容安全策略里的允许来源是同一个配置值的两处
-// 用法（见 public_origin.go）。
-func (s *Service) rewrite(content Document, resolved map[string]Asset) (Document, error) {
-	return RewritePlaceholders(content, func(assetID string) (string, error) {
-		asset, ok := resolved[assetID]
-		if !ok {
-			// 校验已经保证每个占位符都解析得到；走到这里说明有代码绕过校验
-			// 直接调用了改写。
-			return "", fmt.Errorf("%w: %s", ErrAssetNotFound, assetID)
+	// 资产条目：每一条都要指向本工程现存的一个资产。"不属于本工程"与"不存在"
+	// 落到同一条结论上（见 asset.go 的 assetOfProject）。
+	for _, entry := range manifest.Assets() {
+		if _, err := s.assetOfProject(ctx, project.ID, entry.AssetID); err != nil {
+			if errors.Is(err, ErrAssetNotFound) {
+				problems = append(problems, Problem{
+					Path:    entry.Path,
+					Message: fmt.Sprintf("引用的资产 %s 不在本工程的资产库里", entry.AssetID),
+				})
+				continue
+			}
+			return nil, Report{}, err
 		}
-		return s.origin.AssetURL(asset.Digest), nil
-	})
+	}
+
+	textBytes, sizeProblems, err := s.loadTextEntries(ctx, project.ID, manifest)
+	if err != nil {
+		return nil, Report{}, err
+	}
+	problems = append(problems, sizeProblems...)
+
+	siteRoot := s.origin.SiteRoot(project.ID)
+	artifacts := make(map[string][]byte, len(manifest))
+
+	// markdown 需要先把整组渲染出来才能谈导航与文档间链接，因此分两趟：
+	// 第一趟只渲染 markdown（逐份，好把问题定位到具体文件），第二趟拼产物。
+	var docs []Doc
+	if project.Form == SiteFormDocs {
+		for _, entry := range manifest {
+			if !IsMarkdownPath(entry.Path) {
+				continue
+			}
+			source, ok := textBytes[entry.Path]
+			if !ok {
+				continue // 读不到字节已由 loadTextEntries 报过
+			}
+			doc, err := RenderDoc(
+				DocSource{Path: entry.Path, Body: source},
+				SiteLinker{Form: project.Form, Manifest: manifest, SiteRoot: siteRoot},
+			)
+			if err != nil {
+				problems = append(problems, Problem{Path: entry.Path, Message: err.Error()})
+				continue
+			}
+			docs = append(docs, doc)
+		}
+	}
+
+	if len(problems) > 0 {
+		return nil, Report{Problems: sortedProblems(problems)}, nil
+	}
+
+	// 第二趟：拼产物。
+	if project.Form == SiteFormDocs && len(docs) > 0 {
+		for artifactPath, data := range RenderDocsArtifacts(docs, siteRoot) {
+			artifacts[artifactPath] = data
+		}
+	}
+	for _, entry := range manifest {
+		if project.Form == SiteFormDocs && IsMarkdownPath(entry.Path) {
+			continue // 已由渲染产出
+		}
+		source, ok := textBytes[entry.Path]
+		if !ok {
+			continue
+		}
+		artifactPath := ArtifactPath(project.Form, entry.Path)
+
+		// 记号替换对**每一份文本**生效（HTML、CSS、站点文件一视同仁）。
+		substituted, err := SubstituteAssetMarkers(source, func(assetID string) (string, error) {
+			asset, found := assetEntryByID(manifest, assetID)
+			if !found {
+				return "", fmt.Errorf("引用的资产 %q 不在本文件组里", PlaceholderScheme+assetID)
+			}
+			return siteRoot + asset.Path, nil
+		})
+		if err != nil {
+			problems = append(problems, Problem{Path: entry.Path, Message: err.Error()})
+			continue
+		}
+
+		// 取资源的引用：每一处都必须落在本文件组的一条条目上。
+		problems = append(problems, checkResourceReferences(project.Form, siteRoot, manifest, artifactPath, substituted)...)
+		artifacts[artifactPath] = substituted
+	}
+
+	if len(problems) > 0 {
+		return nil, Report{Problems: sortedProblems(problems)}, nil
+	}
+
+	// 产物的总量与文件数上限。
+	var total int
+	for _, data := range artifacts {
+		total += len(data)
+	}
+	if total > MaxFileSetBytes {
+		return nil, Report{Problems: []Problem{{
+			Message: fmt.Sprintf("产物共 %d 字节，超过上限 %d 字节", total, MaxFileSetBytes),
+		}}}, nil
+	}
+	if len(artifacts) > MaxFiles {
+		return nil, Report{Problems: []Problem{{
+			Message: fmt.Sprintf("产物共 %d 个文件，超过上限 %d 个", len(artifacts), MaxFiles),
+		}}}, nil
+	}
+	return artifacts, Report{}, nil
 }
 
-// sortedProblems 把问题按在正文里出现的先后排序，并去掉位置。
-func sortedProblems(problems []locatedProblem) []Problem {
-	sort.SliceStable(problems, func(i, j int) bool { return problems[i].offset < problems[j].offset })
-	out := make([]Problem, 0, len(problems))
-	for _, problem := range problems {
-		out = append(out, Problem{Message: problem.message})
+// loadTextEntries 读出清单里每一条文本条目的字节，并核对体积上限。
+//
+// **它是"这份内容的文本字节"的唯一读取入口**：校验与发布都从它拿字节，因此
+// "读不到对象"这件事在两处的表现一致——它是一处内容问题（对象不存在），不是
+// 一次存储故障，因此以问题清单返回而不是 error。
+func (s *Service) loadTextEntries(ctx context.Context, projectID string, manifest Manifest) (map[string][]byte, []Problem, error) {
+	if s.assets == nil {
+		return nil, nil, ErrAssetUnavailable
 	}
-	return out
+	bytesByPath := make(map[string][]byte, len(manifest))
+	var problems []Problem
+	var total int
+	for _, entry := range manifest {
+		if entry.Kind != EntryKindText {
+			continue
+		}
+		data, err := s.assets.Read(ctx, ContentObjectKey(projectID, entry.Digest))
+		if err != nil {
+			if errors.Is(err, objectstore.ErrObjectNotFound) {
+				problems = append(problems, Problem{
+					Path:    entry.Path,
+					Message: "这一条的内容对象不存在，内容可能没有推送完整",
+				})
+				continue
+			}
+			return nil, nil, err
+		}
+		if len(data) > MaxTextBytes {
+			problems = append(problems, Problem{
+				Path:    entry.Path,
+				Message: fmt.Sprintf("%d 字节，超过单份上限 %d 字节", len(data), MaxTextBytes),
+			})
+			continue
+		}
+		total += len(data)
+		bytesByPath[entry.Path] = data
+	}
+	if total > MaxFileSetBytes {
+		problems = append(problems, Problem{
+			Message: fmt.Sprintf("整组内容共 %d 字节，超过上限 %d 字节", total, MaxFileSetBytes),
+		})
+	}
+	return bytesByPath, problems, nil
+}
+
+// checkResourceReferences 扫一遍一段非 markdown 文本里的取资源引用，并把不落在
+// 本文件组里的那些报成问题。
+//
+// **这是尽力而为的扫描，不是安全边界。** 枚举"取资源"的写法不可能穷尽——属性
+// 会新增、特性会演进，任何一份枚举清单都在它写完的那天开始过期。把边界建在枚举
+// 上，等于承诺一件做不到的事。它存在的目的是**给用户一条可操作的错误**；真正的
+// 边界是交付时附加的内容安全策略响应头（见 csp.go）：扫描漏掉的写法仍然取不到
+// 东西。
+//
+// 两类写法必须分开（这是设计里最容易搞混的一处）：取资源的引用不得指向本文件
+// 组之外；`<a href>` 一类导航链接可以是任意地址。
+func checkResourceReferences(form SiteForm, siteRoot string, manifest Manifest, entryPath string, content []byte) []Problem {
+	refs := scanResourceReferences(string(content))
+	if strings.EqualFold(pathExt(entryPath), ".css") {
+		refs = append(refs, scanCSS(string(content), 0)...)
+	}
+	var problems []Problem
+	for _, ref := range refs {
+		if assetID, ok := placeholderID(ref.value); ok {
+			// 记号必须落在一条资产条目上（SubstituteAssetMarkers 已经替它
+			// 报过一次错，这里是为了让引用完整性的判断自成一体）。
+			if _, found := assetEntryByID(manifest, assetID); !found {
+				problems = append(problems, Problem{
+					Path:    entryPath,
+					Line:    lineOf(content, ref.offset),
+					Message: fmt.Sprintf("%s 引用的资产 %s 不在本文件组里", ref.where, PlaceholderScheme+assetID),
+				})
+			}
+			continue
+		}
+		if isExternalDestination(ref.value) {
+			problems = append(problems, Problem{
+				Path:    entryPath,
+				Line:    lineOf(content, ref.offset),
+				Message: fmt.Sprintf("%s 的资源引用 %q 指向了本文件组之外；发布物不得从别处取任何字节", ref.where, ref.value),
+			})
+			continue
+		}
+		resolved, ok := resolveEntryPath(siteRoot, entryPath, ref.value)
+		if !ok || !manifest.HasPath(resolved) {
+			problems = append(problems, Problem{
+				Path:    entryPath,
+				Line:    lineOf(content, ref.offset),
+				Message: fmt.Sprintf("%s 的资源引用 %q 不在本文件组里", ref.where, ref.value),
+			})
+		}
+	}
+	return problems
+}
+
+// sortedProblems 按（路径，行号，消息）排序，让同样的输入得到同样的结论。
+func sortedProblems(problems []Problem) []Problem {
+	sort.SliceStable(problems, func(i, j int) bool {
+		if problems[i].Path != problems[j].Path {
+			return problems[i].Path < problems[j].Path
+		}
+		if problems[i].Line != problems[j].Line {
+			return problems[i].Line < problems[j].Line
+		}
+		return problems[i].Message < problems[j].Message
+	})
+	return problems
 }
 
 // lineOf 返回一个偏移量所在的行号（从 1 开始）。
-func lineOf(content Document, offset int) int {
+func lineOf(content []byte, offset int) int {
 	if offset > len(content) {
 		offset = len(content)
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	return 1 + strings.Count(string(content[:offset]), "\n")
 }
 
-// placeholderID 判定一个取值是不是**恰好一个**占位符，是则返回资产标识。
-//
-// 前后空白容忍：`src=" asset://abc "` 与 `src="asset://abc"` 是同一个引用。
-// 除此之外多一个字符都不算——这正是"未改写的 asset:// 必须显式失败"那条的
-// 实现：`asset://abc/extra` 不是一个占位符，因此它会被当成一处外部资源引用报
-// 出来，而不是被静默改写掉前半截。
-func placeholderID(value string) (string, bool) {
-	trimmed := strings.TrimSpace(value)
-	if !strings.HasPrefix(trimmed, PlaceholderScheme) {
-		return "", false
+// pathExt 返回路径的扩展名（小写）。
+func pathExt(entryPath string) string {
+	if dot := strings.LastIndexByte(entryPath, '.'); dot >= 0 && dot > strings.LastIndexByte(entryPath, '/') {
+		return strings.ToLower(entryPath[dot:])
 	}
-	rest := trimmed[len(PlaceholderScheme):]
-	if rest == "" {
-		return "", false
-	}
-	for i := 0; i < len(rest); i++ {
-		if !isAssetIDByte(rest[i]) {
-			return "", false
-		}
-	}
-	return rest, true
+	return ""
 }
 
 // resourceReference 是正文里一处"取资源"的位置。
@@ -197,18 +348,7 @@ type resourceReference struct {
 
 // scanResourceReferences 找出正文里所有取资源的位置。
 //
-// **这是尽力而为的扫描，不是安全边界。** 枚举 HTML 里"取资源"的写法不可能
-// 穷尽——属性会新增、特性会演进，任何一份枚举清单都在它写完的那天开始过期。
-// 把边界建在枚举上，等于承诺一件做不到的事。它存在的目的是**给用户一条可
-// 操作的错误**："第 N 处引用指向了外部地址"。真正的边界是交付时附加的内容
-// 安全策略响应头（见 csp.go）：扫描漏掉的写法仍然取不到东西。
-//
-// 两类写法必须分开（这是设计里最容易搞混的一处）：
-//
-//   - **取资源的引用**（`<img src>`、CSS `url()`、`srcset` …）：只能是本工程
-//     资产的占位符（发布物不得从本工程资产库之外取任何一个字节）。
-//   - **导航链接**（`<a href="https://example.com">`）：可以是任意地址。用户
-//     链到外部网站是他的意图，不是资源引用。
+// **这是尽力而为的扫描，不是安全边界**（理由见 checkResourceReferences）。
 func scanResourceReferences(content string) []resourceReference {
 	var refs []resourceReference
 	for i := 0; i < len(content); {

@@ -23,7 +23,7 @@
 | 身份认证 | [docs/design/identity/](docs/design/identity/README.md) | 登录方式、主体标识的确定、会话凭证的签发与失效 |
 | 个人档案 | [docs/design/profile/](docs/design/profile/README.md) | 主体的展示信息（昵称、头像、简介）：存放、下发与边界 |
 | 对象存储直传 | [docs/design/objectstore/](docs/design/objectstore/README.md) | 上传的公共链路：签发临时凭证、客户端直传、提交核对；类型与大小由存储侧策略强制 |
-| galaxy 创作与发布 | [docs/design/galaxy/](docs/design/galaxy/README.md) | 用户创作工程（多版本）、管理资产、发布成一个可公开访问的 HTML：引用完整性、公开匿名、渲染隔离 |
+| galaxy 创作与发布 | [docs/design/galaxy/](docs/design/galaxy/README.md) | 用户创作工程（多版本）、管理资产、发布成一个可公开访问的站点（`static` 内容原样服务、`docs` 渲染成多页）：引用完整性、公开匿名、渲染隔离 |
 | Web 界面 | [docs/design/web/](docs/design/web/README.md) | 呈现机制：主题（亮/暗/跟随系统）、图标与动效的来源、外壳结构、站内文档区，窄屏见 [responsive.md](docs/design/web/responsive.md) |
 | UI/UX 设计指导 | [docs/design/uiux/](docs/design/uiux/README.md) | 前端界面取舍：信息层级、间距节奏、空态与失败、文案、破坏性操作 |
 | 命令行 | [docs/design/cli/](docs/design/cli/README.md) | 安装与升级形态：自更新的支持范围、校验与原子替换 |
@@ -90,7 +90,7 @@ make web-dev    # 只起前端开发服务器
 - **只有一份业务实现**：判定发生在协议无关的鉴权拦截器里，三种协议共用。改了判定逻辑不会出现"gRPC 生效、Connect 没生效"。
 - **改判定必须三种协议都对**：端到端测试同时用 grpc-go 客户端与 Connect 客户端打同一个端口，断言结论一致（`test/e2e/`）。只测一种协议等于没测。
 - **命令行不走原生 gRPC**：命令行经反向代理出网，而 **nginx 转发 gRPC 时会丢掉空正文响应的 trailers——也就是所有错误响应**，现象是客户端只拿到一个空的 Unknown。Connect 把错误放在 HTTP 状态与响应体里，不依赖 trailers，走的正是浏览器每天在用的那条路径。依据见 [docs/debugging/records/2026-09-29-grpc-trailers-dropped-by-nginx.md](docs/debugging/records/2026-09-29-grpc-trailers-dropped-by-nginx.md)。
-- **只读方法另接受 GET**：标了 `idempotency_level = NO_SIDE_EFFECTS` 的方法，**同一条路径**同时接受 GET 与 POST——不是第二条路径，因此不违反"不做 REST 转码"。这是语义等价而非附加开关：RFC 9110 的 safe method 就是"无副作用 ⇒ 可安全用 GET"，connect-go 也只由这一个注解决定是否注册 GET。两条限制：请求必须小到能放进查询串，带正文的方法不标（如 `ValidateContent`）；没有"未声明即接受 GET"的缺省。文档**不为它多列一条 operation**（每条路径只给一种形状），该事实写在方法说明里，见 [docs/design/api-docs](docs/design/api-docs/README.md)。
+- **只读方法另接受 GET**：标了 `idempotency_level = NO_SIDE_EFFECTS` 的方法，**同一条路径**同时接受 GET 与 POST——不是第二条路径，因此不违反"不做 REST 转码"。这是语义等价而非附加开关：RFC 9110 的 safe method 就是"无副作用 ⇒ 可安全用 GET"，connect-go 也只由这一个注解决定是否注册 GET。两条限制：请求必须小到能放进查询串（带正文的方法不标）；没有"未声明即接受 GET"的缺省。标与不标都由这一个注解决定，因此"只读"不等于"标了"——`ValidateDraft` 与 `PollDeviceLogin` 都只读，前者要读对象存储（可能较慢）、后者会把设备码带进访问日志，两条都刻意不标。文档**不为它多列一条 operation**（每条路径只给一种形状），该事实写在方法说明里，见 [docs/design/api-docs](docs/design/api-docs/README.md)。
 
 ## 模块化设计原则
 

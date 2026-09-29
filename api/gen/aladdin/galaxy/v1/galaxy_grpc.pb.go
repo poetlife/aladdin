@@ -19,33 +19,36 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GalaxyService_GetCapabilities_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/GetCapabilities"
-	GalaxyService_ListProjects_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/ListProjects"
-	GalaxyService_CreateProject_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/CreateProject"
-	GalaxyService_GetProject_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/GetProject"
-	GalaxyService_UpdateProject_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/UpdateProject"
-	GalaxyService_DeleteProject_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/DeleteProject"
-	GalaxyService_GetDraft_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/GetDraft"
-	GalaxyService_SaveDraft_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/SaveDraft"
-	GalaxyService_SaveVersion_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/SaveVersion"
-	GalaxyService_ListVersions_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/ListVersions"
-	GalaxyService_GetVersion_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/GetVersion"
-	GalaxyService_DeleteVersion_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/DeleteVersion"
-	GalaxyService_ValidateContent_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/ValidateContent"
-	GalaxyService_ListAssets_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ListAssets"
-	GalaxyService_BeginAssetUpload_FullMethodName  = "/aladdin.galaxy.v1.GalaxyService/BeginAssetUpload"
-	GalaxyService_CommitAssetUpload_FullMethodName = "/aladdin.galaxy.v1.GalaxyService/CommitAssetUpload"
-	GalaxyService_DeleteAsset_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/DeleteAsset"
-	GalaxyService_Publish_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/Publish"
-	GalaxyService_Unpublish_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
+	GalaxyService_GetCapabilities_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/GetCapabilities"
+	GalaxyService_ListProjects_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ListProjects"
+	GalaxyService_CreateProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/CreateProject"
+	GalaxyService_GetProject_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/GetProject"
+	GalaxyService_UpdateProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/UpdateProject"
+	GalaxyService_DeleteProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/DeleteProject"
+	GalaxyService_GetDraft_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/GetDraft"
+	GalaxyService_PushDraft_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/PushDraft"
+	GalaxyService_SaveVersion_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/SaveVersion"
+	GalaxyService_ListVersions_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ListVersions"
+	GalaxyService_GetVersion_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/GetVersion"
+	GalaxyService_DeleteVersion_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/DeleteVersion"
+	GalaxyService_ValidateDraft_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/ValidateDraft"
+	GalaxyService_PreviewDraft_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/PreviewDraft"
+	GalaxyService_BeginContentUpload_FullMethodName  = "/aladdin.galaxy.v1.GalaxyService/BeginContentUpload"
+	GalaxyService_CommitContentUpload_FullMethodName = "/aladdin.galaxy.v1.GalaxyService/CommitContentUpload"
+	GalaxyService_ListAssets_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/ListAssets"
+	GalaxyService_BeginAssetUpload_FullMethodName    = "/aladdin.galaxy.v1.GalaxyService/BeginAssetUpload"
+	GalaxyService_CommitAssetUpload_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/CommitAssetUpload"
+	GalaxyService_DeleteAsset_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/DeleteAsset"
+	GalaxyService_Publish_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/Publish"
+	GalaxyService_Unpublish_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
 )
 
 // GalaxyServiceClient is the client API for GalaxyService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// GalaxyService 是创作面：用户写一份 HTML、放素材，然后把它发布成一个
-// 别人能打开的页面。
+// GalaxyService 是创作面：用户放下一组具名文件与素材，然后把它发布成一个
+// 别人能打开的站点。
 //
 // 边界：它不回答"你是谁"（认证）也不回答"你能做什么"（RBAC）。**两把闸门
 // 各管一件事**：`galaxy.*` 权限码决定这个主体有没有资格创作，工程的拥有者
@@ -73,43 +76,91 @@ type GalaxyServiceClient interface {
 	ListProjects(ctx context.Context, in *ListProjectsRequest, opts ...grpc.CallOption) (*ListProjectsResponse, error)
 	// 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
 	//
+	// **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
+	// 历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+	//
 	// 名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
 	// 一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
-	// 读取一个工程的元数据。不含草稿正文、版本正文与资产字节。
+	// 读取一个工程的元数据。不含草稿清单、版本清单与资产字节。
 	GetProject(ctx context.Context, in *GetProjectRequest, opts ...grpc.CallOption) (*GetProjectResponse, error)
 	// 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
+	//
+	// **不含形态**：形态改不了，因此它不在这个请求的形状里。
 	UpdateProject(ctx context.Context, in *UpdateProjectRequest, opts ...grpc.CallOption) (*UpdateProjectResponse, error)
 	// 删除一个工程。**连带删除它的全部版本、资产与发布记录**，因此已发布的
 	// 地址立刻变成"不存在"。公开区上已上架的字节不回收（见发布一节）。
 	DeleteProject(ctx context.Context, in *DeleteProjectRequest, opts ...grpc.CallOption) (*DeleteProjectResponse, error)
-	// 读取工程的当前草稿。草稿行是惰性创建的：从未保存过草稿时正文为空。
+	// 读取工程的当前草稿清单，每一项带一条短时读取地址。
+	//
+	// 草稿行是惰性创建的：从未推送过草稿时清单为空。地址由客户端直连取字节，
+	// 服务端不代理（见 docs/design/galaxy/asset-library.md）。
 	GetDraft(ctx context.Context, in *GetDraftRequest, opts ...grpc.CallOption) (*GetDraftResponse, error)
-	// 保存工程的当前草稿。**改草稿不产生版本**——它是工作区，不是历史。
-	SaveDraft(ctx context.Context, in *SaveDraftRequest, opts ...grpc.CallOption) (*SaveDraftResponse, error)
-	// 把草稿的当前内容保存成一个**不可变**版本。
+	// 以给定的清单**整组替换**草稿（它不产生版本）。
+	//
+	// 它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
+	// 否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
+	//
+	// **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
+	// "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+	//
+	// 请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
+	// 资产标识），因此本方法不带字节，也不触发任何上传。
+	PushDraft(ctx context.Context, in *PushDraftRequest, opts ...grpc.CallOption) (*PushDraftResponse, error)
+	// 把草稿的当前清单保存成一个**不可变**版本。
 	//
 	// 保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
-	// 连续保存两次相同正文产生两个版本，而不是"检测到重复就不新增"——两份
-	// 看起来一样的正文对用户是两次不同的保存动作。
+	// 连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
+	// 看起来一样的清单对用户是两次不同的保存动作。
 	SaveVersion(ctx context.Context, in *SaveVersionRequest, opts ...grpc.CallOption) (*SaveVersionResponse, error)
-	// 列出工程的版本。按序号排序。**列表不带正文**（正文由 GetVersion 取）。
+	// 列出工程的版本，按序号排序。清单很小，因此**列表也带清单**（不带地址）。
 	ListVersions(ctx context.Context, in *ListVersionsRequest, opts ...grpc.CallOption) (*ListVersionsResponse, error)
-	// 读取一个版本，含正文。保存时的内容此后逐字不变。
+	// 读取一个版本，含清单与每一项的短时读取地址。保存时的内容此后逐字不变。
 	GetVersion(ctx context.Context, in *GetVersionRequest, opts ...grpc.CallOption) (*GetVersionResponse, error)
 	// 删除一个版本。**被当前发布指向的版本不可删**——那会让发布地址指向一个
 	// 不存在的版本。序号不因删除而重排，因此删中间一个会留下空洞。
 	DeleteVersion(ctx context.Context, in *DeleteVersionRequest, opts ...grpc.CallOption) (*DeleteVersionResponse, error)
-	// 校验一段正文能不能发布。**编辑器提示与发布前置校验共用这一个入口。**
+	// 校验**当前草稿的清单**能不能发布。**编辑器提示与发布前置校验共用这一个
+	// 入口。**
 	//
-	// 前端**不得**复写一套引用解析：两端各写一份的表现是"编辑器说没问题、
-	// 发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
-	// 它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
-	// 存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+	// 前端**不得**复写一套引用解析：两端各写一份的表现是"提示说没问题、发布
+	// 说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。它返回的
+	// 是一个**问题清单**而不是单个错误——界面要的是"哪几处有问题"。
+	// 存储不可用这类故障仍然以 RPC 错误返回，与"内容有问题"分开。
 	//
-	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
-	// 带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
-	ValidateContent(ctx context.Context, in *ValidateContentRequest, opts ...grpc.CallOption) (*ValidateContentResponse, error)
+	// 它校验的是**已保存的草稿**，请求里不带内容：写入只有一条路径（命令行
+	// push 整组），因此"校验一份还没保存的内容"这个形状不存在。
+	//
+	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而这条
+	// 路径要读对象存储、可能较慢，不适合被当作可缓存的安全方法。
+	ValidateDraft(ctx context.Context, in *ValidateDraftRequest, opts ...grpc.CallOption) (*ValidateDraftResponse, error)
+	// 把当前草稿渲染成一份可以放进沙箱 iframe 的 HTML，供**只有本人能看**的
+	// 预览使用。
+	//
+	// **渲染在服务端，与发布共用同一段实现**：`docs` 形态的 markdown → HTML
+	// 只有一处实现，网页端不再引第二个渲染器——两份实现迟早漂移，而用户看到
+	// 的是"预览好好的、发布出来不一样"。
+	//
+	// 它复用**编辑态**的那套地址：`asset://` 记号被换成短时预签名地址，因此
+	// 预览里的图会随地址过期而显示不出来，刷新即得到新地址。预览不承诺与发布
+	// 态逐像素一致（见 docs/design/galaxy/authoring.md）。
+	PreviewDraft(ctx context.Context, in *PreviewDraftRequest, opts ...grpc.CallOption) (*PreviewDraftResponse, error)
+	// 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
+	//
+	// 内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
+	// 路径与形态派生（不存在"声明"这一层）、不进公开区。
+	//
+	// **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
+	// 否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
+	// 而那是"版本不可变"的反面。凭证带"禁止覆盖"的写入条件，提交时服务端再
+	// 读回核对一次摘要。
+	BeginContentUpload(ctx context.Context, in *BeginContentUploadRequest, opts ...grpc.CallOption) (*BeginContentUploadResponse, error)
+	// 提交一次内容对象上传：读回对象、核对摘要。
+	//
+	// **摘要是寻址键，而服务端没有字节可以自己算它**——它由上传方声明。因此
+	// 写入之后必须读回核对一遍，不一致即删除该对象并拒绝。
+	CommitContentUpload(ctx context.Context, in *CommitContentUploadRequest, opts ...grpc.CallOption) (*CommitContentUploadResponse, error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
 	ListAssets(ctx context.Context, in *ListAssetsRequest, opts ...grpc.CallOption) (*ListAssetsResponse, error)
 	// 开始一次资产上传：分配资产标识并签发一份直传凭证。
@@ -129,16 +180,17 @@ type GalaxyServiceClient interface {
 	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
 	// 上传不会进入任何清单**（元数据行不存在）。
 	CommitAssetUpload(ctx context.Context, in *CommitAssetUploadRequest, opts ...grpc.CallOption) (*CommitAssetUploadResponse, error)
-	// 删除一个资产。**被任一版本引用时拒绝**，错误信息指出被哪些版本引用。
+	// 删除一个资产。**被任一版本的文件清单引用时拒绝**，错误信息指出被哪些
+	// 版本引用。
 	//
 	// 拒绝的理由是版本不可变的含义包括"它此后永远可以发布"：一个引用了已删
 	// 除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
 	// 从版本内容里知道该怎么做。把问题挡在它产生的地方。
 	DeleteAsset(ctx context.Context, in *DeleteAssetRequest, opts ...grpc.CallOption) (*DeleteAssetResponse, error)
-	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物、切换发布指针。
+	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
-	// 没有意义。草稿内容不会被读取。
+	// 没有意义。草稿清单不会被读取。
 	//
 	// 发布域未配置时这一项不可用（见 GetCapabilities）。
 	Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*PublishResponse, error)
@@ -228,10 +280,10 @@ func (c *galaxyServiceClient) GetDraft(ctx context.Context, in *GetDraftRequest,
 	return out, nil
 }
 
-func (c *galaxyServiceClient) SaveDraft(ctx context.Context, in *SaveDraftRequest, opts ...grpc.CallOption) (*SaveDraftResponse, error) {
+func (c *galaxyServiceClient) PushDraft(ctx context.Context, in *PushDraftRequest, opts ...grpc.CallOption) (*PushDraftResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SaveDraftResponse)
-	err := c.cc.Invoke(ctx, GalaxyService_SaveDraft_FullMethodName, in, out, cOpts...)
+	out := new(PushDraftResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_PushDraft_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -278,10 +330,40 @@ func (c *galaxyServiceClient) DeleteVersion(ctx context.Context, in *DeleteVersi
 	return out, nil
 }
 
-func (c *galaxyServiceClient) ValidateContent(ctx context.Context, in *ValidateContentRequest, opts ...grpc.CallOption) (*ValidateContentResponse, error) {
+func (c *galaxyServiceClient) ValidateDraft(ctx context.Context, in *ValidateDraftRequest, opts ...grpc.CallOption) (*ValidateDraftResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ValidateContentResponse)
-	err := c.cc.Invoke(ctx, GalaxyService_ValidateContent_FullMethodName, in, out, cOpts...)
+	out := new(ValidateDraftResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_ValidateDraft_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) PreviewDraft(ctx context.Context, in *PreviewDraftRequest, opts ...grpc.CallOption) (*PreviewDraftResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewDraftResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_PreviewDraft_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) BeginContentUpload(ctx context.Context, in *BeginContentUploadRequest, opts ...grpc.CallOption) (*BeginContentUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginContentUploadResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_BeginContentUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) CommitContentUpload(ctx context.Context, in *CommitContentUploadRequest, opts ...grpc.CallOption) (*CommitContentUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommitContentUploadResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_CommitContentUpload_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -352,8 +434,8 @@ func (c *galaxyServiceClient) Unpublish(ctx context.Context, in *UnpublishReques
 // All implementations must embed UnimplementedGalaxyServiceServer
 // for forward compatibility.
 //
-// GalaxyService 是创作面：用户写一份 HTML、放素材，然后把它发布成一个
-// 别人能打开的页面。
+// GalaxyService 是创作面：用户放下一组具名文件与素材，然后把它发布成一个
+// 别人能打开的站点。
 //
 // 边界：它不回答"你是谁"（认证）也不回答"你能做什么"（RBAC）。**两把闸门
 // 各管一件事**：`galaxy.*` 权限码决定这个主体有没有资格创作，工程的拥有者
@@ -381,43 +463,91 @@ type GalaxyServiceServer interface {
 	ListProjects(context.Context, *ListProjectsRequest) (*ListProjectsResponse, error)
 	// 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
 	//
+	// **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
+	// 历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+	//
 	// 名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
 	// 一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
 	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
-	// 读取一个工程的元数据。不含草稿正文、版本正文与资产字节。
+	// 读取一个工程的元数据。不含草稿清单、版本清单与资产字节。
 	GetProject(context.Context, *GetProjectRequest) (*GetProjectResponse, error)
 	// 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
+	//
+	// **不含形态**：形态改不了，因此它不在这个请求的形状里。
 	UpdateProject(context.Context, *UpdateProjectRequest) (*UpdateProjectResponse, error)
 	// 删除一个工程。**连带删除它的全部版本、资产与发布记录**，因此已发布的
 	// 地址立刻变成"不存在"。公开区上已上架的字节不回收（见发布一节）。
 	DeleteProject(context.Context, *DeleteProjectRequest) (*DeleteProjectResponse, error)
-	// 读取工程的当前草稿。草稿行是惰性创建的：从未保存过草稿时正文为空。
+	// 读取工程的当前草稿清单，每一项带一条短时读取地址。
+	//
+	// 草稿行是惰性创建的：从未推送过草稿时清单为空。地址由客户端直连取字节，
+	// 服务端不代理（见 docs/design/galaxy/asset-library.md）。
 	GetDraft(context.Context, *GetDraftRequest) (*GetDraftResponse, error)
-	// 保存工程的当前草稿。**改草稿不产生版本**——它是工作区，不是历史。
-	SaveDraft(context.Context, *SaveDraftRequest) (*SaveDraftResponse, error)
-	// 把草稿的当前内容保存成一个**不可变**版本。
+	// 以给定的清单**整组替换**草稿（它不产生版本）。
+	//
+	// 它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
+	// 否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
+	//
+	// **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
+	// "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+	//
+	// 请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
+	// 资产标识），因此本方法不带字节，也不触发任何上传。
+	PushDraft(context.Context, *PushDraftRequest) (*PushDraftResponse, error)
+	// 把草稿的当前清单保存成一个**不可变**版本。
 	//
 	// 保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
-	// 连续保存两次相同正文产生两个版本，而不是"检测到重复就不新增"——两份
-	// 看起来一样的正文对用户是两次不同的保存动作。
+	// 连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
+	// 看起来一样的清单对用户是两次不同的保存动作。
 	SaveVersion(context.Context, *SaveVersionRequest) (*SaveVersionResponse, error)
-	// 列出工程的版本。按序号排序。**列表不带正文**（正文由 GetVersion 取）。
+	// 列出工程的版本，按序号排序。清单很小，因此**列表也带清单**（不带地址）。
 	ListVersions(context.Context, *ListVersionsRequest) (*ListVersionsResponse, error)
-	// 读取一个版本，含正文。保存时的内容此后逐字不变。
+	// 读取一个版本，含清单与每一项的短时读取地址。保存时的内容此后逐字不变。
 	GetVersion(context.Context, *GetVersionRequest) (*GetVersionResponse, error)
 	// 删除一个版本。**被当前发布指向的版本不可删**——那会让发布地址指向一个
 	// 不存在的版本。序号不因删除而重排，因此删中间一个会留下空洞。
 	DeleteVersion(context.Context, *DeleteVersionRequest) (*DeleteVersionResponse, error)
-	// 校验一段正文能不能发布。**编辑器提示与发布前置校验共用这一个入口。**
+	// 校验**当前草稿的清单**能不能发布。**编辑器提示与发布前置校验共用这一个
+	// 入口。**
 	//
-	// 前端**不得**复写一套引用解析：两端各写一份的表现是"编辑器说没问题、
-	// 发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
-	// 它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
-	// 存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+	// 前端**不得**复写一套引用解析：两端各写一份的表现是"提示说没问题、发布
+	// 说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。它返回的
+	// 是一个**问题清单**而不是单个错误——界面要的是"哪几处有问题"。
+	// 存储不可用这类故障仍然以 RPC 错误返回，与"内容有问题"分开。
 	//
-	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
-	// 带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
-	ValidateContent(context.Context, *ValidateContentRequest) (*ValidateContentResponse, error)
+	// 它校验的是**已保存的草稿**，请求里不带内容：写入只有一条路径（命令行
+	// push 整组），因此"校验一份还没保存的内容"这个形状不存在。
+	//
+	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而这条
+	// 路径要读对象存储、可能较慢，不适合被当作可缓存的安全方法。
+	ValidateDraft(context.Context, *ValidateDraftRequest) (*ValidateDraftResponse, error)
+	// 把当前草稿渲染成一份可以放进沙箱 iframe 的 HTML，供**只有本人能看**的
+	// 预览使用。
+	//
+	// **渲染在服务端，与发布共用同一段实现**：`docs` 形态的 markdown → HTML
+	// 只有一处实现，网页端不再引第二个渲染器——两份实现迟早漂移，而用户看到
+	// 的是"预览好好的、发布出来不一样"。
+	//
+	// 它复用**编辑态**的那套地址：`asset://` 记号被换成短时预签名地址，因此
+	// 预览里的图会随地址过期而显示不出来，刷新即得到新地址。预览不承诺与发布
+	// 态逐像素一致（见 docs/design/galaxy/authoring.md）。
+	PreviewDraft(context.Context, *PreviewDraftRequest) (*PreviewDraftResponse, error)
+	// 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
+	//
+	// 内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
+	// 路径与形态派生（不存在"声明"这一层）、不进公开区。
+	//
+	// **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
+	// 否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
+	// 而那是"版本不可变"的反面。凭证带"禁止覆盖"的写入条件，提交时服务端再
+	// 读回核对一次摘要。
+	BeginContentUpload(context.Context, *BeginContentUploadRequest) (*BeginContentUploadResponse, error)
+	// 提交一次内容对象上传：读回对象、核对摘要。
+	//
+	// **摘要是寻址键，而服务端没有字节可以自己算它**——它由上传方声明。因此
+	// 写入之后必须读回核对一遍，不一致即删除该对象并拒绝。
+	CommitContentUpload(context.Context, *CommitContentUploadRequest) (*CommitContentUploadResponse, error)
 	// 列出工程资产库里的资产，含**短时有效**的读取地址。
 	ListAssets(context.Context, *ListAssetsRequest) (*ListAssetsResponse, error)
 	// 开始一次资产上传：分配资产标识并签发一份直传凭证。
@@ -437,16 +567,17 @@ type GalaxyServiceServer interface {
 	// 一次 Head：不存在即失败，字节数超过上限即失败并删除对象。**没有提交的
 	// 上传不会进入任何清单**（元数据行不存在）。
 	CommitAssetUpload(context.Context, *CommitAssetUploadRequest) (*CommitAssetUploadResponse, error)
-	// 删除一个资产。**被任一版本引用时拒绝**，错误信息指出被哪些版本引用。
+	// 删除一个资产。**被任一版本的文件清单引用时拒绝**，错误信息指出被哪些
+	// 版本引用。
 	//
 	// 拒绝的理由是版本不可变的含义包括"它此后永远可以发布"：一个引用了已删
 	// 除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
 	// 从版本内容里知道该怎么做。把问题挡在它产生的地方。
 	DeleteAsset(context.Context, *DeleteAssetRequest) (*DeleteAssetResponse, error)
-	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物、切换发布指针。
+	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
-	// 没有意义。草稿内容不会被读取。
+	// 没有意义。草稿清单不会被读取。
 	//
 	// 发布域未配置时这一项不可用（见 GetCapabilities）。
 	Publish(context.Context, *PublishRequest) (*PublishResponse, error)
@@ -487,8 +618,8 @@ func (UnimplementedGalaxyServiceServer) DeleteProject(context.Context, *DeletePr
 func (UnimplementedGalaxyServiceServer) GetDraft(context.Context, *GetDraftRequest) (*GetDraftResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetDraft not implemented")
 }
-func (UnimplementedGalaxyServiceServer) SaveDraft(context.Context, *SaveDraftRequest) (*SaveDraftResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SaveDraft not implemented")
+func (UnimplementedGalaxyServiceServer) PushDraft(context.Context, *PushDraftRequest) (*PushDraftResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PushDraft not implemented")
 }
 func (UnimplementedGalaxyServiceServer) SaveVersion(context.Context, *SaveVersionRequest) (*SaveVersionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SaveVersion not implemented")
@@ -502,8 +633,17 @@ func (UnimplementedGalaxyServiceServer) GetVersion(context.Context, *GetVersionR
 func (UnimplementedGalaxyServiceServer) DeleteVersion(context.Context, *DeleteVersionRequest) (*DeleteVersionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteVersion not implemented")
 }
-func (UnimplementedGalaxyServiceServer) ValidateContent(context.Context, *ValidateContentRequest) (*ValidateContentResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ValidateContent not implemented")
+func (UnimplementedGalaxyServiceServer) ValidateDraft(context.Context, *ValidateDraftRequest) (*ValidateDraftResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ValidateDraft not implemented")
+}
+func (UnimplementedGalaxyServiceServer) PreviewDraft(context.Context, *PreviewDraftRequest) (*PreviewDraftResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewDraft not implemented")
+}
+func (UnimplementedGalaxyServiceServer) BeginContentUpload(context.Context, *BeginContentUploadRequest) (*BeginContentUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginContentUpload not implemented")
+}
+func (UnimplementedGalaxyServiceServer) CommitContentUpload(context.Context, *CommitContentUploadRequest) (*CommitContentUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitContentUpload not implemented")
 }
 func (UnimplementedGalaxyServiceServer) ListAssets(context.Context, *ListAssetsRequest) (*ListAssetsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAssets not implemented")
@@ -670,20 +810,20 @@ func _GalaxyService_GetDraft_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _GalaxyService_SaveDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SaveDraftRequest)
+func _GalaxyService_PushDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PushDraftRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(GalaxyServiceServer).SaveDraft(ctx, in)
+		return srv.(GalaxyServiceServer).PushDraft(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: GalaxyService_SaveDraft_FullMethodName,
+		FullMethod: GalaxyService_PushDraft_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GalaxyServiceServer).SaveDraft(ctx, req.(*SaveDraftRequest))
+		return srv.(GalaxyServiceServer).PushDraft(ctx, req.(*PushDraftRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -760,20 +900,74 @@ func _GalaxyService_DeleteVersion_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _GalaxyService_ValidateContent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ValidateContentRequest)
+func _GalaxyService_ValidateDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ValidateDraftRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(GalaxyServiceServer).ValidateContent(ctx, in)
+		return srv.(GalaxyServiceServer).ValidateDraft(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: GalaxyService_ValidateContent_FullMethodName,
+		FullMethod: GalaxyService_ValidateDraft_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GalaxyServiceServer).ValidateContent(ctx, req.(*ValidateContentRequest))
+		return srv.(GalaxyServiceServer).ValidateDraft(ctx, req.(*ValidateDraftRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_PreviewDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewDraftRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).PreviewDraft(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_PreviewDraft_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).PreviewDraft(ctx, req.(*PreviewDraftRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_BeginContentUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginContentUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).BeginContentUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_BeginContentUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).BeginContentUpload(ctx, req.(*BeginContentUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_CommitContentUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitContentUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).CommitContentUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_CommitContentUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).CommitContentUpload(ctx, req.(*CommitContentUploadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -922,8 +1116,8 @@ var GalaxyService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _GalaxyService_GetDraft_Handler,
 		},
 		{
-			MethodName: "SaveDraft",
-			Handler:    _GalaxyService_SaveDraft_Handler,
+			MethodName: "PushDraft",
+			Handler:    _GalaxyService_PushDraft_Handler,
 		},
 		{
 			MethodName: "SaveVersion",
@@ -942,8 +1136,20 @@ var GalaxyService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _GalaxyService_DeleteVersion_Handler,
 		},
 		{
-			MethodName: "ValidateContent",
-			Handler:    _GalaxyService_ValidateContent_Handler,
+			MethodName: "ValidateDraft",
+			Handler:    _GalaxyService_ValidateDraft_Handler,
+		},
+		{
+			MethodName: "PreviewDraft",
+			Handler:    _GalaxyService_PreviewDraft_Handler,
+		},
+		{
+			MethodName: "BeginContentUpload",
+			Handler:    _GalaxyService_BeginContentUpload_Handler,
+		},
+		{
+			MethodName: "CommitContentUpload",
+			Handler:    _GalaxyService_CommitContentUpload_Handler,
 		},
 		{
 			MethodName: "ListAssets",

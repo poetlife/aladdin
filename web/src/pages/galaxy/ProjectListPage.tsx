@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -8,6 +8,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Radio,
   Space,
   Table,
   Tag,
@@ -21,12 +22,13 @@ import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
 import { PermissionGate } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
-import type { Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { SiteForm, type Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { formatTime } from './format-time'
 
 interface ProjectFormValues {
   name?: string
   description?: string
+  form: SiteForm
 }
 
 interface failure {
@@ -52,6 +54,11 @@ export function ProjectListPage(): React.ReactNode {
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  // 删工程会连带清版本与资产，请求往往不短。确认框上的 loading 与按钮禁用
+  // 都看这一个标识；ref 挡住同一次点击里的第二次提交（state 还没提交上去）。
+  const deletingRef = useRef<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -75,11 +82,15 @@ export function ProjectListPage(): React.ReactNode {
     setCreating(true)
     setCreateError(null)
     try {
-      const response = await galaxyApi.createProject(values.name ?? '', values.description ?? '')
+      const response = await galaxyApi.createProject(
+        values.name ?? '',
+        values.description ?? '',
+        values.form,
+      )
       setCreateOpen(false)
       form.resetFields()
       if (response.project !== undefined) {
-        // 新建之后直接进编辑器：刚建好的工程是空的，下一步必然是去写正文。
+        // 新建之后直接进工作台：刚建好的工程是空的，下一步是去把内容推上来。
         void navigate(`/galaxy/${response.project.id}`)
       } else {
         await load()
@@ -92,12 +103,23 @@ export function ProjectListPage(): React.ReactNode {
   }
 
   async function handleDelete(projectId: string): Promise<void> {
+    if (deletingRef.current !== null) {
+      return
+    }
+    deletingRef.current = projectId
+    setDeletingId(projectId)
+    setConfirmingId(projectId)
     try {
       await galaxyApi.deleteProject(projectId)
-      await load()
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+      return
+    } finally {
+      deletingRef.current = null
+      setDeletingId(null)
+      setConfirmingId(null)
     }
+    await load()
   }
 
   const columns: NonNullable<TableProps<Project>['columns']> = [
@@ -121,6 +143,14 @@ export function ProjectListPage(): React.ReactNode {
       render: (value: string) => formatTime(value),
     },
     {
+      title: '形态',
+      key: 'form',
+      // 形态创建时定下、此后不可改，因此这里只是展示，没有切换入口。
+      render: (_: unknown, project) => (
+        <Tag>{project.form === SiteForm.DOCS ? 'docs' : 'static'}</Tag>
+      ),
+    },
+    {
       title: '状态',
       key: 'published',
       render: (_: unknown, project) =>
@@ -141,17 +171,24 @@ export function ProjectListPage(): React.ReactNode {
       render: (_: unknown, project) => (
         <Space>
           <Button type="link" onClick={() => void navigate(`/galaxy/${project.id}`)}>
-            编辑
+            打开
           </Button>
           <PermissionGate require={PermissionCodes.GalaxyProjectWrite}>
             <Popconfirm
               title="删除这个工程？"
               description="会连带删掉它的全部版本与资产，已发布的地址立刻失效。此操作不可撤销。"
               okText="删除"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => void handleDelete(project.id)}
+              okButtonProps={{ danger: true, loading: deletingId === project.id }}
+              open={confirmingId === project.id}
+              onOpenChange={(nextOpen) => {
+                if (deletingRef.current !== null) {
+                  return
+                }
+                setConfirmingId(nextOpen ? project.id : null)
+              }}
+              onConfirm={() => handleDelete(project.id)}
             >
-              <Button type="link" danger icon={<Trash2 size={14} />}>
+              <Button type="link" danger disabled={deletingId !== null} icon={<Trash2 size={14} />}>
                 删除
               </Button>
             </Popconfirm>
@@ -230,7 +267,22 @@ export function ProjectListPage(): React.ReactNode {
         {createError !== null && (
           <Alert type="error" title={createError} style={{ marginBottom: 16 }} />
         )}
-        <Form<ProjectFormValues> form={form} layout="vertical" onFinish={(v) => void handleCreate(v)}>
+        <Form<ProjectFormValues>
+          form={form}
+          layout="vertical"
+          initialValues={{ form: SiteForm.STATIC }}
+          onFinish={(v) => void handleCreate(v)}
+        >
+          <Form.Item
+            name="form"
+            label="形态"
+            extra="创建时定下，此后不可改：它决定已保存版本的发布语义"
+          >
+            <Radio.Group>
+              <Radio.Button value={SiteForm.STATIC}>static · 整站文件原样服务</Radio.Button>
+              <Radio.Button value={SiteForm.DOCS}>docs · markdown 渲染成多页</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
           <Form.Item name="name" label="名称" extra="仅用于你自己识别，不是地址、不需要唯一">
             <Input maxLength={64} placeholder="比如：我的首页" autoComplete="off" />
           </Form.Item>

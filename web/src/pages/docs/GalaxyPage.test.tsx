@@ -49,17 +49,44 @@ describe('创作与发布介绍页', () => {
     expect(text).toContain('公开地址')
   })
 
+  // 内容是一组具名文件，因此命令行上的输入输出单位是**目录**：写成 --file 那一套
+  // 会让人复制到一条不存在的命令。
+  it('教的是"目录即整组"，不是一份文件', async () => {
+    const container = await renderPage()
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('一组具名文件')
+    expect(text).toContain('draft push <工程标识> ./dist')
+    expect(text).toContain('draft pull')
+    expect(text).toContain('version pull')
+    // 网页端只读：写入只有命令行一条路。
+    expect(text).toContain('网页端只读')
+  })
+
+  // 形态创建时定下、此后不可改，这一章必须把两个取值与它们的差别讲清楚。
+  it('讲清两种形态的差别', async () => {
+    const container = await renderPage()
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('static')
+    expect(text).toContain('docs')
+    expect(text).toContain('index.html')
+    expect(text).toContain('index.md')
+    expect(text).toContain('不收 HTML')
+  })
+
   // 命令名与位置参数与 cmd/aladdin 一致；写成别的形状会让人复制到一条不存在的命令。
   it('覆盖从建工程到发布的每一步命令', async () => {
     const container = await renderPage()
     const text = container.textContent ?? ''
 
     for (const command of [
-      'aladdin galaxy project create --name',
+      'aladdin galaxy project create --form',
+      'aladdin galaxy project base <工程标识>',
       'aladdin galaxy asset upload <工程标识>',
       'aladdin galaxy asset list <工程标识>',
-      'aladdin galaxy draft save <工程标识> --file',
-      'aladdin galaxy validate <工程标识> --file',
+      'aladdin galaxy draft push <工程标识>',
+      'aladdin galaxy validate <工程标识>',
       'aladdin galaxy version save <工程标识>',
       'aladdin galaxy publish <工程标识> <版本标识> --yes',
     ]) {

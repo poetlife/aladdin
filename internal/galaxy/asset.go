@@ -30,6 +30,11 @@ const (
 	AudioMaxBytes = 20 << 20
 	// VideoMaxBytes 是视频的字节上限。
 	VideoMaxBytes = 100 << 20
+	// FontMaxBytes 是字体的字节上限。
+	//
+	// 字体很小，但它是**随构建产物进来的那一类**：任何工具产出的整站几乎都会
+	// 带一份 webfont，而在文件组里它必然是二进制，因此只能作为资产。
+	FontMaxBytes = 5 << 20
 
 	// AssetURLTTL 是编辑态下发地址的有效期。
 	//
@@ -70,20 +75,14 @@ var (
 	// 而是一次可以重来的上传。
 	ErrAssetObjectMissing = errors.New("资产对象不存在，上传可能没有完成")
 
-	// ErrAssetDigestInvalid 表示声明的内容摘要形状不合法。
-	//
-	// 摘要是**公开区的对象键**，因此它的形状要被校验：一个含分隔符的取值会把
-	// "按内容寻址"变成"按调用方给的路径写"。
-	ErrAssetDigestInvalid = errors.New("内容摘要的形状不合法")
-
 	// ErrAssetReferenced 表示资产仍被某个版本引用，因此不能删。
 	ErrAssetReferenced = errors.New("资产仍被版本引用")
 )
 
-// MediaKind 是资产按媒体分出的类别。它决定用哪一档大小上限。
+// MediaKind 是资产按媒体分出的类别。它决定用哪一档大小上限，也是对象键里的一段。
 type MediaKind string
 
-// 三个类别。它们决定用哪一档上限，因此在策略里与上限绑在同一条允许项上。
+// 四个类别。它们决定用哪一档上限，因此在策略里与上限绑在同一条允许项上。
 const (
 	// MediaKindImage 是图片。
 	MediaKindImage MediaKind = "image"
@@ -91,6 +90,8 @@ const (
 	MediaKindVideo MediaKind = "video"
 	// MediaKindAudio 是音频。
 	MediaKindAudio MediaKind = "audio"
+	// MediaKindFont 是字体。
+	MediaKindFont MediaKind = "font"
 )
 
 // Asset 是工程资产库里的一个媒体文件。字节在对象存储，这里只有元数据。
@@ -104,7 +105,10 @@ type Asset struct {
 	ProjectID string
 	// Digest 是字节的密码学摘要，**是"同一份字节"的标识**，公开区按它寻址。
 	Digest string
-	// MediaKind 是摘要所属的类别，决定大小上限。
+	// MediaKind 是摘要所属的类别，决定大小上限，也是私有区对象键里的一段。
+	//
+	// 它在**声明类型被校验的那一刻**就定下来，此后不随任何变化：键只按声明
+	// 类型派生一次。
 	MediaKind MediaKind
 	// MediaType 是**上传方声明的**类型，服务端只校验它在白名单内。
 	//
@@ -138,9 +142,10 @@ type AssetView struct {
 // 两处需要说明：
 //
 //   - **SVG 不在白名单里。** 它是唯一一种"看起来是图片、实际是带脚本能力的
-//     XML"的格式，而资产会被发布到公开区、被引用进用户的 HTML。更关键的是：
-//     存下来的类型就来自这次声明，因此白名单决定了公开区对象**以待什么类型
-//     下发**——白名单里没有可执行类型，浏览器就不会把字节当脚本执行。
+//     XML"的格式，而资产会被发布到公开区。白名单决定了公开区对象**以待什么类型
+//     下发**——白名单里没有可执行类型，浏览器就不会把字节当脚本执行。作为
+//     **文件组里的文本条目**它已被服务：那里 `img` 不执行脚本，`object` 与
+//     `frame` 被内容安全策略禁掉（见 csp.go）。
 //   - **OGG 容器在标准库嗅探下是 application/ogg**，历史上无法区分音频与
 //     视频。白名单按 spec 把 OGG 归在音频，因此这里映射为音频类别。
 var assetAllowedTypes = map[string]MediaKind{
@@ -153,6 +158,10 @@ var assetAllowedTypes = map[string]MediaKind{
 	"audio/mpeg":      MediaKindAudio,
 	"audio/wave":      MediaKindAudio,
 	"application/ogg": MediaKindAudio,
+	"font/woff2":      MediaKindFont,
+	"font/woff":       MediaKindFont,
+	"font/ttf":        MediaKindFont,
+	"font/otf":        MediaKindFont,
 }
 
 // AssetKindLimit 是一类资产的字节上限。
@@ -161,7 +170,7 @@ type AssetKindLimit struct {
 	MaxBytes int64
 }
 
-// AssetKindLimits 返回各类资产的字节上限，顺序固定（图片、视频、音频）。
+// AssetKindLimits 返回各类资产的字节上限，顺序固定（图片、视频、音频、字体）。
 //
 // 顺序固定是为了让"能力下发"这件事的取值可比较：同一份能力在两台部署上
 // 应当逐字相同。
@@ -170,6 +179,7 @@ func AssetKindLimits() []AssetKindLimit {
 		{Kind: MediaKindImage, MaxBytes: ImageMaxBytes},
 		{Kind: MediaKindVideo, MaxBytes: VideoMaxBytes},
 		{Kind: MediaKindAudio, MaxBytes: AudioMaxBytes},
+		{Kind: MediaKindFont, MaxBytes: FontMaxBytes},
 	}
 }
 
@@ -185,6 +195,8 @@ func MaxBytesFor(kind MediaKind) int64 {
 		return VideoMaxBytes
 	case MediaKindAudio:
 		return AudioMaxBytes
+	case MediaKindFont:
+		return FontMaxBytes
 	default:
 		return 0
 	}
@@ -192,12 +204,17 @@ func MaxBytesFor(kind MediaKind) int64 {
 
 // AssetObjectKey 返回一个资产在**私有区**的对象键（唯一入口）。
 //
-// 键由工程标识与资产标识构成，与文件名无关：文件名是客户端可控的输入，把它
-// 拼进存储路径等于把一段不可信输入拼进路径。
+// 键由工程标识、**类别**与资产标识构成，与文件名无关：文件名是客户端可控的
+// 输入，把它拼进存储路径等于把一段不可信输入拼进路径。
 //
-// 公开区不在这里：那一区按内容摘要寻址（见 promote.go）。
-func AssetObjectKey(projectID, assetID string) string {
-	return assetKeyPrefix + projectID + "/" + assetID
+// 类别段换来的是：让**生命周期与配额策略能按类挂**（视频那一档的存储与清理
+// 策略与图片不同），也让"这一份是媒体"在键上就看得出来。代价是同一事实的
+// 第二种表达——声明类型已经是一条元数据；一致性由"键只按声明类型派生一次、
+// 不随后续更改"这一条固定。
+//
+// 公开区不在这里：那一区按（内容摘要，类型）寻址（见 promote.go）。
+func AssetObjectKey(projectID string, kind MediaKind, assetID string) string {
+	return assetKeyPrefix + projectID + "/assets/" + string(kind) + "/" + assetID
 }
 
 // NormalizeAssetType 判定一个**声明的**类型能不能作为资产，并给出它的类别。
@@ -292,7 +309,9 @@ func (s *Service) BeginAssetUpload(ctx context.Context, subjectID, projectID, de
 	if err != nil {
 		return "", objectstore.Credential{}, err
 	}
-	credential, err := s.assets.IssueUpload(ctx, AssetObjectKey(projectID, assetID), AssetTypeRules())
+	// 资产按标识寻址、一个标识一个对象，覆盖写不是它的语义——但仍然不允许：
+	// 一次上传就是这个键的第一次也是唯一一次写入。
+	credential, err := s.assets.IssueUpload(ctx, AssetObjectKey(projectID, kind, assetID), AssetTypeRules(), false)
 	if err != nil {
 		return "", objectstore.Credential{}, err
 	}
@@ -322,9 +341,9 @@ func (s *Service) CommitAssetUpload(ctx context.Context, subjectID, projectID, a
 	// 摘要会成为**公开区的对象键**，因此先校验它的形状：一个含分隔符或
 	// 控制字符的取值会把"按内容寻址"变成"按调用方给的路径写"。
 	if !IsContentDigest(declaredDigest) {
-		return Asset{}, ErrAssetDigestInvalid
+		return Asset{}, ErrDigestInvalid
 	}
-	key := AssetObjectKey(projectID, assetID)
+	key := AssetObjectKey(projectID, kind, assetID)
 	stat, err := objectstore.VerifyUploaded(ctx, s.assets, key, MaxBytesFor(kind))
 	if err != nil {
 		switch {
@@ -450,7 +469,7 @@ func (s *Service) presignAsset(ctx context.Context, asset Asset) (string, error)
 	if s.assets == nil {
 		return "", ErrAssetUnavailable
 	}
-	return s.assets.PresignGet(ctx, AssetObjectKey(asset.ProjectID, asset.ID), AssetURLTTL)
+	return s.assets.PresignGet(ctx, AssetObjectKey(asset.ProjectID, asset.MediaKind, asset.ID), AssetURLTTL)
 }
 
 // listAssetURL 为清单签发读取地址。

@@ -149,7 +149,8 @@ func (p *Profiles) BeginAvatarUpload(ctx context.Context, subjectID, declaredTyp
 	if err := p.requireSubject(ctx, subjectID); err != nil {
 		return objectstore.Credential{}, err
 	}
-	return p.avatars.IssueUpload(ctx, AvatarKey(subjectID), AvatarTypeRules())
+	// 头像按主体标识寻址、一个主体一个对象，覆盖写是它的语义，因此不禁止覆盖。
+	return p.avatars.IssueUpload(ctx, AvatarKey(subjectID), AvatarTypeRules(), false)
 }
 
 // CommitAvatarUpload 提交一次头像上传：核对对象确实到了，把档案指向它。

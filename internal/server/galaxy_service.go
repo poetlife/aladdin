@@ -15,7 +15,8 @@ import (
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
-// GalaxyService 是创作面（"用户写一份 HTML 并把它发布出去"）的 RPC 实现。
+// GalaxyService 是创作面（"用户放下一组具名文件，再把它发布成一个站点"）的
+// RPC 实现。
 //
 // **两把闸门各管一件事**：准入（`galaxy.*` 权限码）由 proto 上的方法注解声明、
 // 由鉴权拦截器执行；归属（这个工程是不是他的）由本层调用的领域入口校验。它们
@@ -71,7 +72,8 @@ func (s *GalaxyService) CreateProject(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	project, err := s.galaxy.CreateProject(ctx, subject.ID, req.Msg.GetName(), req.Msg.GetDescription())
+	form := fromProtoSiteForm(req.Msg.GetForm())
+	project, err := s.galaxy.CreateProject(ctx, subject.ID, req.Msg.GetName(), req.Msg.GetDescription(), form)
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -82,7 +84,8 @@ func (s *GalaxyService) CreateProject(ctx context.Context, req *connect.Request[
 	// 名称与简介是自由文本，**不进日志**：需要关键入参时记的是标识。
 	s.logger.Info("已创建工程",
 		zap.String("project_id", project.ID),
-		zap.String("subject_id", subject.ID))
+		zap.String("subject_id", subject.ID),
+		zap.String("form", string(form)))
 	return connect.NewResponse(&galaxyv1.CreateProjectResponse{Project: toProtoProject(view)}), nil
 }
 
@@ -138,38 +141,48 @@ func (s *GalaxyService) DeleteProject(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&galaxyv1.DeleteProjectResponse{}), nil
 }
 
-// GetDraft 实现 GalaxyService。没有草稿行时返回一份空草稿，而不是错误。
+// GetDraft 实现 GalaxyService。没有草稿行时返回一份空清单，而不是错误。
 func (s *GalaxyService) GetDraft(ctx context.Context, req *connect.Request[galaxyv1.GetDraftRequest]) (*connect.Response[galaxyv1.GetDraftResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	draft, err := s.galaxy.GetDraft(ctx, subject.ID, req.Msg.GetProjectId())
+	draft, entries, err := s.galaxy.GetDraft(ctx, subject.ID, req.Msg.GetProjectId())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
-	return connect.NewResponse(&galaxyv1.GetDraftResponse{Draft: toProtoDraft(draft)}), nil
+	return connect.NewResponse(&galaxyv1.GetDraftResponse{Draft: toProtoDraft(draft, entries)}), nil
 }
 
-// SaveDraft 实现 GalaxyService。
-func (s *GalaxyService) SaveDraft(ctx context.Context, req *connect.Request[galaxyv1.SaveDraftRequest]) (*connect.Response[galaxyv1.SaveDraftResponse], error) {
+// PushDraft 实现 GalaxyService：以给定的清单整组替换草稿。
+//
+// 请求里只有引用（内容摘要与资产标识），**不带字节**：字节由客户端在调用本方法
+// 之前直传进对象存储。因此本方法没有大请求体，也不做任何上传。
+func (s *GalaxyService) PushDraft(ctx context.Context, req *connect.Request[galaxyv1.PushDraftRequest]) (*connect.Response[galaxyv1.PushDraftResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	draft, err := s.galaxy.SaveDraft(ctx, subject.ID, req.Msg.GetProjectId(), galaxy.Document(req.Msg.GetContent()))
+	entries, err := fromProtoEntries(req.Msg.GetEntries())
+	if err != nil {
+		return nil, err
+	}
+	draft, err := s.galaxy.PushDraft(ctx, subject.ID, req.Msg.GetProjectId(), entries)
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
-	// 只记字节数，**不记正文**：正文是用户内容，全文进日志既无必要也可能含隐私。
-	s.logger.Info("已保存草稿",
+	// 只记文件数，**不记路径清单**：清单是用户内容的一部分，全文进日志既无
+	// 必要也可能含隐私。
+	s.logger.Info("已整组替换草稿",
 		zap.String("project_id", req.Msg.GetProjectId()),
 		zap.String("subject_id", subject.ID),
-		zap.Int("bytes", len(req.Msg.GetContent())))
-	return connect.NewResponse(&galaxyv1.SaveDraftResponse{Draft: toProtoDraft(draft)}), nil
+		zap.Int("files", len(draft.Manifest)))
+	// 返回的清单不再附地址：客户端刚给的就是它，再签一遍地址只是多一批会过期
+	// 的字符串。
+	return connect.NewResponse(&galaxyv1.PushDraftResponse{Draft: toProtoDraft(draft, nil)}), nil
 }
 
-// SaveVersion 实现 GalaxyService：把草稿的当前内容冻结成一个版本。
+// SaveVersion 实现 GalaxyService：把草稿的当前清单冻结成一个版本。
 func (s *GalaxyService) SaveVersion(ctx context.Context, req *connect.Request[galaxyv1.SaveVersionRequest]) (*connect.Response[galaxyv1.SaveVersionResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
@@ -179,10 +192,10 @@ func (s *GalaxyService) SaveVersion(ctx context.Context, req *connect.Request[ga
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
-	return connect.NewResponse(&galaxyv1.SaveVersionResponse{Version: toProtoVersion(version, false)}), nil
+	return connect.NewResponse(&galaxyv1.SaveVersionResponse{Version: toProtoVersion(version, nil)}), nil
 }
 
-// ListVersions 实现 GalaxyService（列表不带正文）。
+// ListVersions 实现 GalaxyService（清单随行，不带读取地址）。
 func (s *GalaxyService) ListVersions(ctx context.Context, req *connect.Request[galaxyv1.ListVersionsRequest]) (*connect.Response[galaxyv1.ListVersionsResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
@@ -194,22 +207,22 @@ func (s *GalaxyService) ListVersions(ctx context.Context, req *connect.Request[g
 	}
 	resp := &galaxyv1.ListVersionsResponse{Versions: make([]*galaxyv1.Version, 0, len(versions))}
 	for _, version := range versions {
-		resp.Versions = append(resp.Versions, toProtoVersion(version, false))
+		resp.Versions = append(resp.Versions, toProtoVersion(version, nil))
 	}
 	return connect.NewResponse(resp), nil
 }
 
-// GetVersion 实现 GalaxyService（它带正文）。
+// GetVersion 实现 GalaxyService（它带每一项的短时读取地址）。
 func (s *GalaxyService) GetVersion(ctx context.Context, req *connect.Request[galaxyv1.GetVersionRequest]) (*connect.Response[galaxyv1.GetVersionResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	version, err := s.galaxy.GetVersion(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetVersionId())
+	version, entries, err := s.galaxy.GetVersion(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetVersionId())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
-	return connect.NewResponse(&galaxyv1.GetVersionResponse{Version: toProtoVersion(version, true)}), nil
+	return connect.NewResponse(&galaxyv1.GetVersionResponse{Version: toProtoVersion(version, entries)}), nil
 }
 
 // DeleteVersion 实现 GalaxyService。被当前发布指向的版本不可删。
@@ -229,25 +242,86 @@ func (s *GalaxyService) DeleteVersion(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&galaxyv1.DeleteVersionResponse{}), nil
 }
 
-// ValidateContent 实现 GalaxyService。
+// ValidateDraft 实现 GalaxyService。
 //
-// 它是**编辑器提示与发布前置校验共用的那一个入口**（见 docs/ssot-registry.md）：
-// 返回的是问题清单而不是单个错误，因为编辑器要的是"哪几处有问题"。存储故障
-// 仍以 RPC 错误返回，与"正文有问题"分开。
-func (s *GalaxyService) ValidateContent(ctx context.Context, req *connect.Request[galaxyv1.ValidateContentRequest]) (*connect.Response[galaxyv1.ValidateContentResponse], error) {
+// 它是**界面提示与发布前置校验共用的那一个入口**（见 docs/ssot-registry.md）：
+// 返回的是问题清单而不是单个错误，因为界面要的是"哪几处有问题"。存储故障仍以
+// RPC 错误返回，与"内容有问题"分开。
+//
+// 它校验的是**已保存的草稿**：写入只有一条路径（命令行整组推送），因此"校验
+// 一份还没保存的内容"这个形状不存在。
+func (s *GalaxyService) ValidateDraft(ctx context.Context, req *connect.Request[galaxyv1.ValidateDraftRequest]) (*connect.Response[galaxyv1.ValidateDraftResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	report, err := s.galaxy.ValidateContent(ctx, subject.ID, req.Msg.GetProjectId(), galaxy.Document(req.Msg.GetContent()))
+	report, err := s.galaxy.ValidateDraft(ctx, subject.ID, req.Msg.GetProjectId())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
-	resp := &galaxyv1.ValidateContentResponse{Problems: make([]*galaxyv1.ValidationProblem, 0, len(report.Problems))}
+	resp := &galaxyv1.ValidateDraftResponse{Problems: make([]*galaxyv1.ValidationProblem, 0, len(report.Problems))}
 	for _, problem := range report.Problems {
-		resp.Problems = append(resp.Problems, &galaxyv1.ValidationProblem{Message: problem.Message})
+		resp.Problems = append(resp.Problems, &galaxyv1.ValidationProblem{
+			Message: problem.Message,
+			Path:    problem.Path,
+			Line:    fitInt32(problem.Line),
+		})
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// PreviewDraft 实现 GalaxyService：把草稿渲染成一份能给沙箱 iframe 的 HTML。
+func (s *GalaxyService) PreviewDraft(ctx context.Context, req *connect.Request[galaxyv1.PreviewDraftRequest]) (*connect.Response[galaxyv1.PreviewDraftResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	html, err := s.galaxy.PreviewDraft(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetPath())
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	return connect.NewResponse(&galaxyv1.PreviewDraftResponse{Html: string(html)}), nil
+}
+
+// BeginContentUpload 实现 GalaxyService：签发一份内容对象的直传凭证。
+//
+// **字节不经过本服务端**（见 docs/design/objectstore/README.md）。凭证**不进
+// 日志**：把它写下来等于把一次写入的能力留在了日志文件里。
+func (s *GalaxyService) BeginContentUpload(ctx context.Context, req *connect.Request[galaxyv1.BeginContentUploadRequest]) (*connect.Response[galaxyv1.BeginContentUploadResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	declaredSize, err := declaredBytes(req.Msg.GetSizeBytes())
+	if err != nil {
+		return nil, err
+	}
+	exists, credential, err := s.galaxy.BeginContentUpload(ctx, subject.ID, req.Msg.GetProjectId(),
+		req.Msg.GetDigest(), declaredSize)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	if exists {
+		return connect.NewResponse(&galaxyv1.BeginContentUploadResponse{AlreadyExists: true}), nil
+	}
+	s.logger.Info("已签发内容对象直传凭证",
+		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("subject_id", subject.ID),
+		zap.String("digest", req.Msg.GetDigest()),
+		zap.Uint64("declared_bytes", req.Msg.GetSizeBytes()))
+	return connect.NewResponse(&galaxyv1.BeginContentUploadResponse{Upload: toProtoUpload(credential)}), nil
+}
+
+// CommitContentUpload 实现 GalaxyService：读回对象、核对摘要。
+func (s *GalaxyService) CommitContentUpload(ctx context.Context, req *connect.Request[galaxyv1.CommitContentUploadRequest]) (*connect.Response[galaxyv1.CommitContentUploadResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.galaxy.CommitContentUpload(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetDigest()); err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	return connect.NewResponse(&galaxyv1.CommitContentUploadResponse{}), nil
 }
 
 // ListAssets 实现 GalaxyService。
@@ -268,9 +342,6 @@ func (s *GalaxyService) ListAssets(ctx context.Context, req *connect.Request[gal
 }
 
 // BeginAssetUpload 实现 GalaxyService：分配资产标识并签发直传凭证。
-//
-// **字节不经过本服务端**（见 docs/design/objectstore/README.md）。凭证**不进日志**：
-// 把它写下来等于把一次写入的能力留在了日志文件里。
 func (s *GalaxyService) BeginAssetUpload(ctx context.Context, req *connect.Request[galaxyv1.BeginAssetUploadRequest]) (*connect.Response[galaxyv1.BeginAssetUploadResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
@@ -317,7 +388,7 @@ func (s *GalaxyService) CommitAssetUpload(ctx context.Context, req *connect.Requ
 	}), nil
 }
 
-// DeleteAsset 实现 GalaxyService。被任一版本引用时拒绝。
+// DeleteAsset 实现 GalaxyService。被任一版本的文件清单引用时拒绝。
 func (s *GalaxyService) DeleteAsset(ctx context.Context, req *connect.Request[galaxyv1.DeleteAssetRequest]) (*connect.Response[galaxyv1.DeleteAssetResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
@@ -333,7 +404,7 @@ func (s *GalaxyService) DeleteAsset(ctx context.Context, req *connect.Request[ga
 	return connect.NewResponse(&galaxyv1.DeleteAssetResponse{}), nil
 }
 
-// Publish 实现 GalaxyService：受理与校验、资产上架、产物落库、切换与生效。
+// Publish 实现 GalaxyService：受理与校验、媒体上架、产物落库、切换与生效。
 func (s *GalaxyService) Publish(ctx context.Context, req *connect.Request[galaxyv1.PublishRequest]) (*connect.Response[galaxyv1.PublishResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
@@ -392,9 +463,37 @@ func toProtoCapabilities(capabilities galaxy.Capabilities) *galaxyv1.Capabilitie
 	return &galaxyv1.Capabilities{
 		AssetUploadEnabled: capabilities.AssetUploadEnabled,
 		PublishEnabled:     capabilities.PublishEnabled,
-		MaxDocumentBytes:   fitUint32(capabilities.MaxDocumentBytes),
-		MaxArtifactBytes:   fitUint32(capabilities.MaxArtifactBytes),
+		MaxTextBytes:       fitUint32(capabilities.MaxTextBytes),
+		MaxFileSetBytes:    fitUint32(capabilities.MaxFileSetBytes),
+		MaxFiles:           fitUint32(capabilities.MaxFiles),
 		AssetLimits:        limits,
+	}
+}
+
+// fromProtoSiteForm 把接口枚举翻译成领域取值。
+//
+// **UNSPECIFIED 落到零值**，而零值不是一种合法形态——创建工程时因此会收到
+// "形态不合法"，而不是被静默地当成 static。
+func fromProtoSiteForm(form galaxyv1.SiteForm) galaxy.SiteForm {
+	switch form {
+	case galaxyv1.SiteForm_SITE_FORM_STATIC:
+		return galaxy.SiteFormStatic
+	case galaxyv1.SiteForm_SITE_FORM_DOCS:
+		return galaxy.SiteFormDocs
+	default:
+		return ""
+	}
+}
+
+// toProtoSiteForm 把领域取值翻译成接口枚举。
+func toProtoSiteForm(form galaxy.SiteForm) galaxyv1.SiteForm {
+	switch form {
+	case galaxy.SiteFormStatic:
+		return galaxyv1.SiteForm_SITE_FORM_STATIC
+	case galaxy.SiteFormDocs:
+		return galaxyv1.SiteForm_SITE_FORM_DOCS
+	default:
+		return galaxyv1.SiteForm_SITE_FORM_UNSPECIFIED
 	}
 }
 
@@ -410,6 +509,8 @@ func toProtoMediaKind(kind galaxy.MediaKind) galaxyv1.MediaKind {
 		return galaxyv1.MediaKind_MEDIA_KIND_VIDEO
 	case galaxy.MediaKindAudio:
 		return galaxyv1.MediaKind_MEDIA_KIND_AUDIO
+	case galaxy.MediaKindFont:
+		return galaxyv1.MediaKind_MEDIA_KIND_FONT
 	default:
 		return galaxyv1.MediaKind_MEDIA_KIND_UNSPECIFIED
 	}
@@ -418,15 +519,18 @@ func toProtoMediaKind(kind galaxy.MediaKind) galaxyv1.MediaKind {
 // toProtoProject 把工程视图翻译成接口类型。
 //
 // published_url 只在发布态给出：未发布时它是空串，而**不是**一个"以后会可用"
-// 的地址——把地址提前显示出来会让人以为页面已经能打开了。
+// 的地址——把地址提前显示出来会让人以为站点已经能打开了。base_url 相反：它是
+// 构建要用的，与"有没有发出去"无关。
 func toProtoProject(view galaxy.ProjectView) *galaxyv1.Project {
 	project := &galaxyv1.Project{
 		Id:          view.Project.ID,
 		Name:        view.Project.Name,
 		Description: view.Project.Description,
+		Form:        toProtoSiteForm(view.Project.Form),
 		CreatedAt:   view.Project.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:   view.Project.UpdatedAt.UTC().Format(time.RFC3339),
 		Published:   view.Published,
+		BaseUrl:     view.BaseURL,
 	}
 	if view.Published {
 		project.PublishedVersionId = view.Publication.VersionID
@@ -436,9 +540,9 @@ func toProtoProject(view galaxy.ProjectView) *galaxyv1.Project {
 	return project
 }
 
-// toProtoDraft 把草稿翻译成接口类型。更新时间只在保存过之后才有值。
-func toProtoDraft(draft galaxy.Draft) *galaxyv1.Draft {
-	out := &galaxyv1.Draft{Content: string(draft.Content)}
+// toProtoDraft 把草稿翻译成接口类型。
+func toProtoDraft(draft galaxy.Draft, entries []galaxy.EntryView) *galaxyv1.Draft {
+	out := &galaxyv1.Draft{Entries: toProtoEntries(entries, draft.Manifest)}
 	if !draft.UpdatedAt.IsZero() {
 		out.UpdatedAt = draft.UpdatedAt.UTC().Format(time.RFC3339)
 	}
@@ -447,18 +551,77 @@ func toProtoDraft(draft galaxy.Draft) *galaxyv1.Draft {
 
 // toProtoVersion 把版本翻译成接口类型。
 //
-// withContent 为假时**不带正文**：版本列表会把每个版本的正文一起读上来，而列表
-// 根本不显示它们（见 ListVersions 的 proto 说明）。
-func toProtoVersion(version galaxy.Version, withContent bool) *galaxyv1.Version {
-	out := &galaxyv1.Version{
-		Id:      version.ID,
-		Seq:     version.Seq,
-		SavedAt: version.SavedAt.UTC().Format(time.RFC3339),
+// entries 为空时按清单原样给出（不带地址）：版本列表要的是"这一版有哪些文件"，
+// 而地址是一份会过期的凭证，列表不该下发一批。
+func toProtoVersion(version galaxy.Version, entries []galaxy.EntryView) *galaxyv1.Version {
+	return &galaxyv1.Version{
+		Id:                 version.ID,
+		Seq:                version.Seq,
+		SavedAt:            version.SavedAt.UTC().Format(time.RFC3339),
+		Entries:            toProtoEntries(entries, version.Manifest),
+		RenderRulesVersion: fitInt32(version.RenderRulesVersion),
 	}
-	if withContent {
-		out.Content = string(version.Content)
+}
+
+// toProtoEntries 把清单（可带地址）翻译成接口类型（唯一入口）。
+//
+// entries 为 nil 时按 manifest 原样给出，url 留空。
+func toProtoEntries(entries []galaxy.EntryView, manifest galaxy.Manifest) []*galaxyv1.FileEntry {
+	if entries == nil {
+		entries = make([]galaxy.EntryView, 0, len(manifest))
+		for _, entry := range manifest {
+			entries = append(entries, galaxy.EntryView{Entry: entry})
+		}
+	}
+	out := make([]*galaxyv1.FileEntry, 0, len(entries))
+	for _, view := range entries {
+		out = append(out, toProtoEntry(view))
 	}
 	return out
+}
+
+// toProtoEntry 把一条条目翻译成接口类型。
+func toProtoEntry(view galaxy.EntryView) *galaxyv1.FileEntry {
+	entry := &galaxyv1.FileEntry{Path: view.Entry.Path, Url: view.URL}
+	switch view.Entry.Kind {
+	case galaxy.EntryKindAsset:
+		entry.Source = &galaxyv1.FileEntry_AssetId{AssetId: view.Entry.AssetID}
+	default:
+		entry.Source = &galaxyv1.FileEntry_Digest{Digest: view.Entry.Digest}
+	}
+	return entry
+}
+
+// fromProtoEntries 把接口类型翻译成清单条目（唯一入口）。
+//
+// 类别由 oneof 里**实际填了哪一个**决定：两者都空或都填是用法错误，而不是
+// 一个可以猜的缺省——猜错的后果是一份内容被当成另一种字节来取。
+func fromProtoEntries(entries []*galaxyv1.FileEntry) ([]galaxy.Entry, error) {
+	out := make([]galaxy.Entry, 0, len(entries))
+	for _, entry := range entries {
+		converted := galaxy.Entry{Path: entry.GetPath()}
+		switch source := entry.GetSource().(type) {
+		case *galaxyv1.FileEntry_Digest:
+			if source.Digest == "" {
+				return nil, connect.NewError(connect.CodeInvalidArgument,
+					fmt.Errorf("条目 %q 的内容摘要为空", entry.GetPath()))
+			}
+			converted.Kind = galaxy.EntryKindText
+			converted.Digest = source.Digest
+		case *galaxyv1.FileEntry_AssetId:
+			if source.AssetId == "" {
+				return nil, connect.NewError(connect.CodeInvalidArgument,
+					fmt.Errorf("条目 %q 的资产标识为空", entry.GetPath()))
+			}
+			converted.Kind = galaxy.EntryKindAsset
+			converted.AssetID = source.AssetId
+		default:
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("条目 %q 既没有内容摘要也没有资产标识", entry.GetPath()))
+		}
+		out = append(out, converted)
+	}
+	return out, nil
 }
 
 // toProtoAsset 把资产视图翻译成接口类型。
@@ -466,6 +629,7 @@ func toProtoAsset(view galaxy.AssetView) *galaxyv1.Asset {
 	return &galaxyv1.Asset{
 		Id:         view.Asset.ID,
 		MediaType:  view.Asset.MediaType,
+		Kind:       toProtoMediaKind(view.Asset.MediaKind),
 		SizeBytes:  fitUint64(view.Asset.SizeBytes),
 		Filename:   view.Asset.Filename,
 		UploadedAt: view.Asset.UploadedAt.UTC().Format(time.RFC3339),
@@ -489,10 +653,10 @@ func toProtoPublication(publication galaxy.Publication, pageURL string) *galaxyv
 // 分类依据是"调用方该做什么"，而不是错误来自哪一层：
 //
 //   - 存储故障 → Unavailable（退避重试）；
-//   - 取值不合法（名称过长、正文超限、类型不在白名单、摘要形状不对）→
-//     InvalidArgument（改了再试，重试没用）；
-//   - 正文不能发布 → InvalidArgument（消息里带具体位置）；
-//   - 本部署未启用资产或发布 → FailedPrecondition（换一种做法）；
+//   - 取值不合法（名称过长、路径不合法、类型不在白名单、摘要形状不对、清单
+//     不成型）→ InvalidArgument（改了再试，重试没用）；
+//   - 内容不能发布 → InvalidArgument（消息里带具体位置）；
+//   - 本部署未启用对象存储或发布 → FailedPrecondition（换一种做法）；
 //   - 状态不允许（版本正被发布、资产被引用、上传没完成）→ FailedPrecondition；
 //   - 目标不存在**或不属于调用者** → NotFound（同一个结论，见领域层）。
 func toGalaxyConnectError(err error) error {
@@ -514,23 +678,35 @@ func toGalaxyConnectError(err error) error {
 	case errors.Is(err, galaxy.ErrProjectDescriptionTooLong):
 		return connect.NewError(connect.CodeInvalidArgument,
 			fmt.Errorf("工程简介不能超过 %d 个字", galaxy.ProjectDescriptionMaxRunes))
-	case errors.Is(err, galaxy.ErrDocumentTooLarge):
+	case errors.Is(err, galaxy.ErrSiteFormInvalid):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("工程形态必须是 static 或 docs"))
+	case errors.Is(err, galaxy.ErrEntryPathInvalid):
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("文件路径不合法：%s", err.Error()))
+	case errors.Is(err, galaxy.ErrEntrySetInvalid):
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("文件清单不合法：%s", err.Error()))
+	case errors.Is(err, galaxy.ErrDigestInvalid):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("内容摘要的形状不合法"))
+	case errors.Is(err, galaxy.ErrTextTooLarge):
 		return connect.NewError(connect.CodeInvalidArgument,
-			fmt.Errorf("正文不能超过 %d KiB", galaxy.MaxDocumentBytes/1024))
-	case errors.Is(err, galaxy.ErrArtifactTooLarge):
+			fmt.Errorf("单份文本不能超过 %d KiB", galaxy.MaxTextBytes/1024))
+	case errors.Is(err, galaxy.ErrFileSetTooLarge):
 		return connect.NewError(connect.CodeInvalidArgument,
-			fmt.Errorf("发布产物不能超过 %d KiB", galaxy.MaxArtifactBytes/1024))
+			fmt.Errorf("整组内容不能超过 %d KiB", galaxy.MaxFileSetBytes/1024))
+	case errors.Is(err, galaxy.ErrTooManyFiles):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("文件数不能超过 %d 个", galaxy.MaxFiles))
+	case errors.Is(err, galaxy.ErrDigestMismatch):
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("字节与声明的摘要不符，上传已中止"))
 	case errors.Is(err, galaxy.ErrAssetTypeNotAllowed):
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("这个类型不在允许的范围内"))
-	case errors.Is(err, galaxy.ErrAssetDigestInvalid):
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("内容摘要的形状不合法"))
 	case errors.Is(err, galaxy.ErrAssetTooLarge):
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("文件超过该类别的上限"))
 	case errors.Is(err, galaxy.ErrInvalidContent):
-		// 消息里带具体位置（第几行、哪一处），因此原样透出。
+		// 消息里带具体位置（哪一份文件、哪一处），因此原样透出。
 		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
 	case errors.Is(err, galaxy.ErrAssetUnavailable):
-		return connect.NewError(connect.CodeFailedPrecondition, errors.New("本部署未启用资产功能"))
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("本部署未配置对象存储"))
 	case errors.Is(err, galaxy.ErrPublishUnavailable):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("本部署未启用发布功能"))
 	case errors.Is(err, galaxy.ErrVersionPublished):
@@ -538,12 +714,9 @@ func toGalaxyConnectError(err error) error {
 	case errors.Is(err, galaxy.ErrAssetReferenced):
 		return connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("资产仍被版本引用，不能删除：%s", err.Error()))
-	case errors.Is(err, galaxy.ErrAssetObjectMissing):
+	case errors.Is(err, galaxy.ErrAssetObjectMissing), errors.Is(err, galaxy.ErrContentObjectMissing):
 		return connect.NewError(connect.CodeFailedPrecondition,
 			errors.New("上传没有完成：对象不存在，请重试"))
-	case errors.Is(err, galaxy.ErrAssetDigestMismatch):
-		return connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("资产字节与声明的摘要不符，发布已中止"))
 	case errors.Is(err, rbac.ErrSubjectNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("主体不存在或已停用"))
 	default:

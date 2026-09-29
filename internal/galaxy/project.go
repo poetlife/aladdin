@@ -1,4 +1,5 @@
-// Package galaxy 是"用户写一份 HTML 并把它发布出去"这一能力的唯一实现。
+// Package galaxy 是"用户放下一组具名文件与素材、再把它发布成一个站点"这一能力
+// 的唯一实现。
 //
 // 边界：它不回答"你是谁"（认证，见 internal/identity），也不回答"你能做什么"
 // （RBAC，见 internal/rbac）。判定发生在服务端的鉴权拦截器里，本包消费的是
@@ -12,13 +13,15 @@
 // 归属不由 RBAC 表达，也因此**接口面上不存在"指定拥有者"的形状**：所有操作
 // 的目标工程都必须是调用者自己的，而调用者由凭证决定。
 //
-// 三条贯穿本包的不变量：
+// 四条贯穿本包的不变量：
 //
 //   - **版本不可变**：一个版本保存后逐字不变，且不因别处变化而变化（version.go）。
-//   - **正文是引用集合的唯一信源**：一个版本引用了哪些资产由它的正文决定，
-//     不另存一份清单（placeholder.go 是识别入口）。
-//   - **发布物恒为一个 HTML 文档**，只引用本工程资产，且交付时附带内容安全
-//     策略响应头（publish.go、csp.go）。
+//   - **库只存清单，不存字节**：文件组落到库里是一组「路径 → 内容摘要或资产
+//     标识」，字节一律在对象存储、按内容摘要共享（content_set.go）。
+//   - **清单是引用集合的唯一信源**：一个版本引用了哪些资产由它的资产条目直接
+//     读出，不解析任何文本（content_set.go 的 Manifest.Assets）。
+//   - **发布物是一组文本产物**：只引用本文件组里的条目，交付时附带内容安全策略
+//     响应头（publish.go、csp.go）。
 package galaxy
 
 import (
@@ -54,8 +57,8 @@ var (
 
 	// ErrDraftNotFound 表示这个工程还没有草稿行。
 	//
-	// **它不是故障**：草稿行是惰性创建的，本人第一次保存之前就没有这一行，
-	// 而"没有这一行"与"有一行但正文为空"在编辑与展示上完全等价。
+	// **它不是故障**：草稿行是惰性创建的，本人第一次推送之前就没有这一行，
+	// 而"没有这一行"与"有一行但清单为空"在编辑与展示上完全等价。
 	ErrDraftNotFound = errors.New("草稿不存在")
 
 	// ErrVersionNotFound 表示这个工程下没有这个版本。
@@ -97,27 +100,31 @@ type Project struct {
 	OwnerSubjectID string
 	Name           string
 	Description    string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// Form 是站点形态。**创建时定下，此后不可改**：它决定已保存版本的发布
+	// 语义，允许改形态等于让历史版本的产物无法复现。
+	Form      SiteForm
+	CreatedAt time.Time
+	UpdatedAt time.Time
 	// CurrentPublicationID 是**可空的发布指针**：空表示未发布。
 	//
-	// 它指向 publication 表里的一条记录，对外地址返回的是那条记录里的产物。
-	// 指针放在工程行上（而不是让发布记录反过来标记"我是当前的"），因为
-	// "当前发布的是哪一个"是工程的一个属性，只有一个写者。
+	// 它指向 publication 表里的一条记录，对外地址按那条记录里的**产物清单**
+	// 分派。指针放在工程行上（而不是让发布记录反过来标记"我是当前的"），
+	// 因为"当前发布的是哪一个"是工程的一个属性，只有一个写者。
 	CurrentPublicationID string
 }
 
-// Draft 是工程当前正在编辑的正文。
+// Draft 是工程当前正在编辑的文件清单。
 //
 // 它不是版本：随时可改，改它不产生版本，不参与发布，也不保证可退回。
 type Draft struct {
 	ProjectID string
-	Content   Document
+	// Manifest 只在 GetDraft 里非空。**库里只有清单，没有字节。**
+	Manifest Manifest
 	// UpdatedAt 为零值表示这个工程还没有草稿行（惰性创建）。
 	UpdatedAt time.Time
 }
 
-// Version 是正文的一次不可变快照。
+// Version 是文件清单的一次不可变快照。
 type Version struct {
 	// ID 由 aladdin 分配。
 	ID string
@@ -128,9 +135,14 @@ type Version struct {
 	// 删除一个版本会让后续序号出现空洞，这是可接受的：把序号当标识意味着
 	// 删除会波及所有更大的序号，而标识别名化正是这类 bug 的来源。
 	Seq int64
-	// Content 是保存那一刻草稿的内容（写入后不再修改）。
-	Content Document
-	SavedAt time.Time
+	// Manifest 是保存那一刻草稿的清单。**写入后不再修改。**
+	//
+	// **字节不随清单走**：它们是按内容摘要寻址的不可变对象，由多个版本共享。
+	Manifest Manifest
+	// RenderRulesVersion 是保存时所处的渲染规则版本。只有 `docs` 形态使用它，
+	// 重新发布时按它渲染而不是按当前最新的（见 doc_render.go）。
+	RenderRulesVersion int
+	SavedAt            time.Time
 }
 
 // Publication 是一次发布产生的对外产物。
@@ -141,14 +153,25 @@ type Publication struct {
 	// ProjectID 与 VersionID 记录这次发布的是哪一个工程的哪一个版本。
 	ProjectID string
 	VersionID string
-	// Content 是**改写后的 HTML**。这是对外地址真正返回的东西。
+	// Manifest 是**产物清单**：路径 → 内容摘要。对外地址按它分派。
 	//
 	// 落库而不是每次请求现算：库里存着"当前发布的是什么"这一事实，取用者
-	// 只读它，不必重新解析正文、重新查资产。
-	Content Document
+	// 只读它，不必重新读文件组、重新查资产、重新渲染。**而清单只有路径与
+	// 摘要，没有内容本身**——库因此不随内容增长。
+	Manifest Manifest
 	// PublishedBySubjectID 与 PublishedAt 是留痕。
 	PublishedBySubjectID string
 	PublishedAt          time.Time
+}
+
+// EntryView 是一条条目加上它在这一刻的短时读取地址。
+//
+// 地址与条目分开表达：地址每次读取都不同（它是一份会过期的凭证），而条目
+// （路径与摘要）是内容自己的属性。
+type EntryView struct {
+	Entry Entry
+	// URL 为空表示取不到地址（桶未配置或签发失败）。此时条目仍然列出。
+	URL string
 }
 
 // Store 是 galaxy 的持久化抽象（只读部分）。
@@ -166,23 +189,16 @@ type Store interface {
 	// "列出所有工程"的形状。
 	ListProjectsByOwner(ctx context.Context, ownerSubjectID string) ([]Project, error)
 
-	// GetDraft 返回该工程的草稿，没有草稿行时返回 ErrDraftNotFound。
+	// GetDraft 返回该工程的草稿清单，没有草稿行时返回 ErrDraftNotFound。
 	GetDraft(ctx context.Context, projectID string) (Draft, error)
 
-	// GetVersion 返回该工程下的一个版本（含正文），不存在时返回
+	// GetVersion 返回该工程下的一个版本（含清单），不存在时返回
 	// ErrVersionNotFound。
 	GetVersion(ctx context.Context, projectID, versionID string) (Version, error)
 
-	// ListVersions 返回该工程的版本元数据，按序号升序。**不带正文**：
-	// 版本正文可能有几百 KB，列表接口不该把它一起读上来。
+	// ListVersions 返回该工程的版本，按序号升序。**清单随行返回**：它只有
+	// 路径与摘要，几 KB 量级，而"哪些版本引用了这个资产"正是靠它回答的。
 	ListVersions(ctx context.Context, projectID string) ([]Version, error)
-
-	// ListVersionContents 返回该工程所有版本的正文。
-	//
-	// 它与 ListVersions 分开是刻意的：只有"哪些版本引用了这个资产"这一个
-	// 判断需要扫全部正文（见 version.go），而它一口气把大字段读出来的代价
-	// 应当由需要它的人承担。
-	ListVersionContents(ctx context.Context, projectID string) ([]Version, error)
 
 	// GetAsset 返回该工程下的一个资产，不存在时返回 ErrAssetNotFound。
 	GetAsset(ctx context.Context, projectID, assetID string) (Asset, error)
@@ -190,7 +206,7 @@ type Store interface {
 	// ListAssets 返回该工程的资产，按上传时间倒序。
 	ListAssets(ctx context.Context, projectID string) ([]Asset, error)
 
-	// GetPublication 按发布标识读回发布记录（含产物正文）。
+	// GetPublication 按发布标识读回发布记录（含产物清单）。
 	GetPublication(ctx context.Context, publicationID string) (Publication, error)
 }
 
@@ -201,11 +217,11 @@ type Store interface {
 type MutableStore interface {
 	Store
 
-	// CreateProject 写入一个新工程（标识与拥有者由调用方给定）。
+	// CreateProject 写入一个新工程（标识、拥有者与形态由调用方给定）。
 	CreateProject(ctx context.Context, project Project) error
 
 	// PutProjectMeta 覆盖工程的名称与简介，并更新更新时间。
-	// 它**不动**发布指针：一次改名不该影响发布态。
+	// 它**不动**发布指针，也**不动形态**：一次改名不该影响发布态。
 	PutProjectMeta(ctx context.Context, projectID, name, description string, at time.Time) error
 
 	// SetCurrentPublication 写入或清除发布指针。publicationID 为空表示撤回。
@@ -219,8 +235,10 @@ type MutableStore interface {
 	// 成为无从被引用的孤儿），公开的不回收（见 publish.go）。
 	DeleteProject(ctx context.Context, projectID string) error
 
-	// PutDraft 写入或覆盖草稿，行不存在时创建。
-	PutDraft(ctx context.Context, projectID string, content Document, at time.Time) error
+	// PutDraft 整组替换草稿，行不存在时创建。
+	//
+	// **它整组读写**：保存草稿表达的是完整状态，不是增量。
+	PutDraft(ctx context.Context, projectID string, manifest Manifest, at time.Time) error
 
 	// CreateVersion 写入一个版本，并**在工程内分配序号**后返回落库的版本。
 	//
@@ -292,14 +310,16 @@ func PublicationID(projectID, versionID string) string {
 // 它是**能力下发点**：能力由服务端说，客户端不猜。两个布尔项是部署形态的
 // 公开事实，不因调用者而异。
 type Capabilities struct {
-	// AssetUploadEnabled 为假时不渲染上传入口与资产区。
+	// AssetUploadEnabled 为假时不渲染上传入口与资产区。**它同时是内容的
+	// 前提**：桶是字节唯一能放的地方，没有桶就没有草稿、没有版本。
 	AssetUploadEnabled bool
 	// PublishEnabled 为假时不渲染发布入口。
 	PublishEnabled bool
-	// MaxDocumentBytes 与 MaxArtifactBytes 是正文与产物的字节上限。
-	MaxDocumentBytes int64
-	MaxArtifactBytes int64
-	AssetLimits      []AssetKindLimit
+	// MaxTextBytes / MaxFileSetBytes / MaxFiles 是文本的单份、整组与数量上限。
+	MaxTextBytes    int64
+	MaxFileSetBytes int64
+	MaxFiles        int64
+	AssetLimits     []AssetKindLimit
 }
 
 // Deps 是构造 Service 所需的取值。
@@ -308,9 +328,9 @@ type Deps struct {
 	Store MutableStore
 	// Assets 是私有区对象存储的**直传**入口（见 internal/objectstore）。
 	//
-	// **为 nil 表示这个部署没有配置私有桶**：资产功能整体缺席，而工程与版本
-	// 照常可用。缺席由 nil 表达，而不是由一个"什么都存不下"的实现表达——
-	// 后者会让一次配置缺失在运行时表现成一次存储故障。
+	// **为 nil 表示这个部署没有配置桶**：资产、**内容（草稿与版本）**与发布
+	// 整体缺席，而工程元数据照常可用。缺席由 nil 表达，而不是由一个"什么都
+	// 存不下"的实现表达——后者会让一次配置缺失在运行时表现成一次存储故障。
 	Assets objectstore.Store
 	// Public 是公开区的写入口。**为 nil 表示没有配置发布**：发布不可用。
 	// 它写的是与 Assets 同一个桶，区别在写下去的对象权限（公开读）。
@@ -354,8 +374,9 @@ func (s *Service) Capabilities() Capabilities {
 	return Capabilities{
 		AssetUploadEnabled: s.assets != nil,
 		PublishEnabled:     s.publishEnabled(),
-		MaxDocumentBytes:   MaxDocumentBytes,
-		MaxArtifactBytes:   MaxArtifactBytes,
+		MaxTextBytes:       MaxTextBytes,
+		MaxFileSetBytes:    MaxFileSetBytes,
+		MaxFiles:           MaxFiles,
 		AssetLimits:        AssetKindLimits(),
 	}
 }
@@ -368,10 +389,13 @@ func (s *Service) publishEnabled() bool {
 	return s.public != nil && !s.origin.IsZero()
 }
 
-// CreateProject 创建一个工程（工程标识与版本/资产标识的分配入口）。
-func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, description string) (Project, error) {
+// CreateProject 创建一个工程（工程标识的分配入口）。
+func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, description string, form SiteForm) (Project, error) {
 	if err := validateProjectMeta(name, description); err != nil {
 		return Project{}, err
+	}
+	if !form.IsValid() {
+		return Project{}, fmt.Errorf("%w: %q", ErrSiteFormInvalid, form)
 	}
 	id, err := NewProjectID()
 	if err != nil {
@@ -383,6 +407,7 @@ func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, descr
 		OwnerSubjectID: ownerSubjectID,
 		Name:           name,
 		Description:    description,
+		Form:           form,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -392,7 +417,8 @@ func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, descr
 	if s.logger != nil {
 		s.logger.Info("已创建工程",
 			zap.String("project_id", project.ID),
-			zap.String("subject_id", ownerSubjectID))
+			zap.String("subject_id", ownerSubjectID),
+			zap.String("form", string(form)))
 	}
 	return project, nil
 }
@@ -421,12 +447,13 @@ func (s *Service) UpdateProject(ctx context.Context, subjectID, projectID, name,
 	return s.store.GetProject(ctx, projectID)
 }
 
-// DeleteProject 删除一个工程，并把它的私有区资产字节一并清掉。
+// DeleteProject 删除一个工程，并把它的私有区对象（资产与内容）一并清掉。
 //
-// 已发布的地址立刻变成"不存在"（发布记录随工程一起删）；公开区的副本不回收。
+// 已发布的地址立刻变成"不存在"（发布记录随工程一起删）；公开区的副本不回收
 // ——它是一份独立对象，召回它需要一次对账，属于另一个职责。
 func (s *Service) DeleteProject(ctx context.Context, subjectID, projectID string) error {
-	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+	if err != nil {
 		return err
 	}
 	assets, err := s.store.ListAssets(ctx, projectID)
@@ -443,43 +470,100 @@ func (s *Service) DeleteProject(ctx context.Context, subjectID, projectID string
 		s.logger.Info("已删除工程",
 			zap.String("project_id", projectID),
 			zap.String("subject_id", subjectID),
+			zap.String("form", string(project.Form)),
 			zap.Int("assets", len(assets)))
 	}
 	return nil
 }
 
-// GetDraft 读取当前草稿。没有草稿行时返回一份空草稿，而不是错误。
+// GetDraft 读取当前草稿清单，并给每一项附上短时读取地址。
 //
-// 惰性创建的行与"保存过一次空内容"在编辑上完全等价，因此这里把
-// ErrDraftNotFound 折成零值——把"还没写过"表现成一个错误，会让编辑器在
-// 每个新工程上先显示一次失败。
-func (s *Service) GetDraft(ctx context.Context, subjectID, projectID string) (Draft, error) {
+// 没有草稿行时返回一份空清单，而不是错误：惰性创建的行与"推送过一次空清单"
+// 在编辑上完全等价，而把"还没推过"表现成一个错误会让编辑器在每个新工程上先
+// 显示一次失败。
+func (s *Service) GetDraft(ctx context.Context, subjectID, projectID string) (Draft, []EntryView, error) {
 	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
-		return Draft{}, err
+		return Draft{}, nil, err
 	}
 	draft, err := s.store.GetDraft(ctx, projectID)
 	if errors.Is(err, ErrDraftNotFound) {
-		return Draft{ProjectID: projectID}, nil
+		return Draft{ProjectID: projectID}, nil, nil
 	}
+	if err != nil {
+		return Draft{}, nil, err
+	}
+	return draft, s.attachURLs(ctx, projectID, draft.Manifest), nil
+}
+
+// PushDraft 以给定的清单**整组替换**草稿（它不产生版本）。
+//
+// 请求表达的是完整状态而不是增量：清单里没有的路径就是"删掉"。因此写入形状
+// 只有"整组"一种，两个入口并存会引出的那类覆盖冲突（网页上刚改的一句被一次
+// push 静默盖掉）连同它需要的基线校验一起不存在。
+func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, entries []Entry) (Draft, error) {
+	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
 	if err != nil {
 		return Draft{}, err
 	}
-	return draft, nil
-}
-
-// SaveDraft 覆盖当前草稿（它不产生版本）。
-func (s *Service) SaveDraft(ctx context.Context, subjectID, projectID string, content Document) (Draft, error) {
-	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+	manifest, err := NormalizeManifest(entries)
+	if err != nil {
 		return Draft{}, err
 	}
-	if err := CheckDocumentSize(content); err != nil {
+	if err := ValidateManifestForForm(project.Form, manifest); err != nil {
 		return Draft{}, err
 	}
 	now := s.now()
-	if err := s.store.PutDraft(ctx, projectID, content, now); err != nil {
+	if err := s.store.PutDraft(ctx, projectID, manifest, now); err != nil {
 		return Draft{}, err
 	}
-	return Draft{ProjectID: projectID, Content: content, UpdatedAt: now}, nil
+	if s.logger != nil {
+		s.logger.Info("已整组替换草稿",
+			zap.String("project_id", projectID),
+			zap.String("subject_id", subjectID),
+			zap.Int("files", len(manifest)))
+	}
+	return Draft{ProjectID: projectID, Manifest: manifest, UpdatedAt: now}, nil
+}
+
+// attachURLs 给清单的每一项附上编辑态的短时读取地址。
+//
+// 签发失败只留痕、不返错：清单本身仍然有意义，而一个取不到地址的条目的表现
+// 形式是"这一份暂时打不开"，与头像过期后的表现同源。
+func (s *Service) attachURLs(ctx context.Context, projectID string, manifest Manifest) []EntryView {
+	if s.assets == nil {
+		return nil
+	}
+	views := make([]EntryView, 0, len(manifest))
+	for _, entry := range manifest {
+		url, err := s.presignEntry(ctx, projectID, entry)
+		if err != nil {
+			if s.logger != nil {
+				s.logger.Warn("签发条目读取地址失败",
+					zap.String("project_id", projectID),
+					zap.String("path", entry.Path),
+					zap.Error(err))
+			}
+			views = append(views, EntryView{Entry: entry})
+			continue
+		}
+		views = append(views, EntryView{Entry: entry, URL: url})
+	}
+	return views
+}
+
+// presignEntry 为一个条目签发短时读取地址（唯一入口）。
+func (s *Service) presignEntry(ctx context.Context, projectID string, entry Entry) (string, error) {
+	if s.assets == nil {
+		return "", ErrAssetUnavailable
+	}
+	if entry.Kind == EntryKindAsset {
+		asset, err := s.assetOfProject(ctx, projectID, entry.AssetID)
+		if err != nil {
+			return "", err
+		}
+		return s.presignAsset(ctx, asset)
+	}
+	return s.assets.PresignGet(ctx, ContentObjectKey(projectID, entry.Digest), AssetURLTTL)
 }
 
 // validateProjectMeta 是名称与简介长度的唯一入口。
@@ -503,7 +587,7 @@ func (s *Service) deleteAssetObjects(ctx context.Context, projectID string, asse
 		return
 	}
 	for _, asset := range assets {
-		key := AssetObjectKey(projectID, asset.ID)
+		key := AssetObjectKey(projectID, asset.MediaKind, asset.ID)
 		if err := s.assets.Delete(ctx, key); err != nil && s.logger != nil {
 			s.logger.Warn("删除资产对象失败，元数据已清空",
 				zap.String("action", action),

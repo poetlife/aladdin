@@ -10,7 +10,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 
 成功的衡量标准：
 
-1. 只装了 aladdin 二进制的人，不打开浏览器就能把一份本地 HTML 发布出去，并拿到地址。
+1. 只装了 aladdin 二进制的人，不打开浏览器就能把一份本地产物（一个页面、一份**构建产物**、一组文档）发布出去，并拿到地址。
 2. 命令行与网页端的能力**一一对等**：不出现"网页能做、命令行做不了"。
 3. 权限声明、退出码、危险操作的确认行为与既有命令完全一致，脚本可以据此分支处理。
 4. 命令行不引入任何第二处判定权威、不缓存判定结果、不新增枚举入口。
@@ -25,10 +25,12 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | `galaxy project list` | 列出自己的工程 | `galaxy.project.read` |
 | `galaxy project create` / `update` / `delete` | 创建、改名与改简介、删除工程 | `galaxy.project.write` |
 | `galaxy project get` | 读取工程元数据 | `galaxy.project.read` |
-| `galaxy draft get` / `save` | 读取、保存当前草稿 | `galaxy.project.read` / `write` |
+| `galaxy project base` | 输出该工程的**发布根**，供构建命令使用 | `galaxy.project.read` |
+| `galaxy draft list` | 列出草稿里的路径与条目类别（文本 / 资产） | `galaxy.project.read` |
+| `galaxy draft pull` / `push` | 把草稿整组写到本地目录 / 以本地目录替换整组草稿 | `galaxy.project.read` / `write` |
 | `galaxy version save` / `delete` | 把草稿存成不可变版本、删除版本 | `galaxy.project.write` |
-| `galaxy version list` / `get` | 列出、读取版本 | `galaxy.project.read` |
-| `galaxy validate` | 校验一段正文能不能发布 | `galaxy.project.read` |
+| `galaxy version list` / `get` / `pull` | 列出、读取版本（单份文件用 `--path`）、把某个版本整组写到本地目录 | `galaxy.project.read` |
+| `galaxy validate` | 校验当前草稿能不能发布 | `galaxy.project.read` |
 | `galaxy asset list` | 列出工程资产库（含短时读取地址） | `galaxy.asset.read` |
 | `galaxy asset upload` / `delete` | 上传、删除资产 | `galaxy.asset.write` |
 | `galaxy publish` / `unpublish` | 发布一个版本、撤回发布 | `galaxy.project.publish` |
@@ -43,19 +45,27 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 
 原子命令加 shell 的 `&&` 已经足够表达"一路走到底"，且每一步的失败都能被单独处理。
 
-### 正文的输入与输出
+### 文件组的输入与输出
 
-**输入只有一个入口**：`--file <路径>`，其中 `-` 表示标准输入。`draft save` 与 `validate` 共用它，因此"校验通过的那份字节"与"存进草稿的那份字节"必然是同一份。文件读不到按**用法错误**处理（退出码与参数不合法同类）。
+**目录是整组的输入与输出单位。** 草稿与版本都是一组具名文件（见 [site-model.md](site-model.md)），因此命令行上与它们对应的也是目录，而不是一段文本。
 
-**输出**：
+**`push` 表达的是整组的期望状态，不是增量。** 目录里没有的路径就是"删掉"——与工程元数据的更新同一条取向：请求表达完整状态，不表达差异。否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
 
-- `draft get` 与 `version get` 在默认（text）模式下**只输出正文**，可以直接重定向成文件；
-- `--output json` 时输出完整的响应消息；
-- 其余命令在 text 模式下输出人可读摘要，`--output json` 时输出完整消息。
+**这是内容唯一的写入路径。** 网页端只读（见 [authoring.md](authoring.md)），因此写入形状只有"整组"一种——两个入口并存会引出的那类覆盖冲突（网页上刚改的一句被一次 push 静默盖掉）连同它需要的基线校验一起不存在。
+
+**`push` 内部包含若干次直传。** 目录里每个文件都要成为一个对象：非文本文件作为**资产条目**，文本文件作为**内容对象**（按内容摘要、仅当不存在时写入）。两者走的是同一条直传链路（签发 → 直传 → 提交），因此 `push` 是一次"整组送上去"的编排。它仍是一个原子命令：要么整组内容成为草稿，要么什么都没变。这与"不许把草稿 → 版本 → 发布串起来"不是一回事——后者串的是三个**用户可见的状态跃迁**，而这里只有一次。
+
+**`pull` 是清单加一串直连下载。** 先取回清单（路径 → 内容摘要），再按短时地址逐份下载写成目录。它是 `push` 的逆操作，两者往返之后目录内容逐字相同。
+
+**判定"哪些是文本"的表必须与服务端那一个白名单逐条一致**，并由测试钉住（与下面资产那一节的扩展名表同一条要求）：两处各判一份的表现是"命令行以为这是文本，服务端拒了它"。
+
+**构建产物的发布根来自服务端。** `project base` 输出该工程的发布根（形如 `<发布域>/g/<工程标识>/`），命令行把它交给构建命令（vite 用 `--base`），使产物里的绝对路径成立。**命令行不自己拼这个地址**：它与发布态的地址、内容安全策略里的允许来源同源（见 [publication.md](publication.md)），多一处拼接就是多一处会漂的来源。
+
+**输出**：整组写到给定目录（`pull`）；`--output json` 时输出完整的响应消息；其余命令在 text 模式下输出人可读摘要，`--output json` 时输出完整消息。
 
 字节数一律输出**原始数值**，不做人类可读换算：文件大小文案的唯一入口在网页端（见 [../../ssot-registry.md](../../ssot-registry.md)），在命令行另写一份就是第二个实现。
 
-**`validate` 在正文有问题时以非零状态退出**（不新占一个退出码，落在未分类失败那一档）。理由是脚本：一个校验入口的意义就是让 `validate && publish` 这样的写法成立，"有问题"必须是一个能被 shell 看见的结论，而不是一段只给人读的文字。
+**`validate` 在内容有问题时以非零状态退出**（不新占一个退出码，落在未分类失败那一档）。理由是脚本：一个校验入口的意义就是让 `validate && publish` 这样的写法成立，"有问题"必须是一个能被 shell 看见的结论，而不是一段只给人读的文字。
 
 ### 危险操作
 
@@ -72,7 +82,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 
 ### 资产上传：类型是声明的，摘要与服务端同源
 
-上传走的是**与网页端同一条链路**（签发 → 直传 → 提交，见 [../objectstore/README.md](../objectstore/README.md)）：服务端分配资产标识并签发一份短时、只允许写、只对那个键有效的凭证；命令行用凭证把字节直接传给对象存储；随后提交，由服务端核对。
+上传走的是**与网页端同一条链路**（签发 → 直传 → 提交，见 [../objectstore/README.md](../objectstore/README.md)）：服务端分配资产标识并签发一份短时、只允许写、只对那个键有效的凭证；命令行用凭证把字节直接传给对象存储；随后提交，由服务端核对。**内容对象（文本条目）走的是同一条实现**，差别只有键与类型来源（见 [asset-library.md](asset-library.md)）。
 
 两处与网页端不同，都源于"终端里没有浏览器给的 MIME 信息"：
 
@@ -87,7 +97,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 
 ### 未配置时
 
-未配置私有桶时上传与资产列表由服务端拒绝；未配置发布域时发布由服务端拒绝。两者都是"这个能力没开"，不是故障，命令行的提示要照此措辞。
+未配置桶时上传、内容与资产都由服务端拒绝（字节没有地方放）；未配置发布域时发布由服务端拒绝。两者都是"这个能力没开"，不是故障，命令行的提示要照此措辞。
 
 命令行**不先查一次能力再决定发不发请求**：那会把一次调用变成两次，而且判定权威在服务端。`galaxy capabilities` 是给人看、给脚本读的，不是命令行自己的前置判断。
 
@@ -98,6 +108,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 - **请求里没有作用域字段，也没有拥有者字段。** 作用域来自凭证，归属由凭证决定；命令行不为它们造参数。
 - **不缓存判定结果。** 本地的早退只有两处：凭证是否存在且未明显过期、参数形状是否合法。
 - **不提供一次走完全流程的命令**（理由见上）。
+- **不内含打包器。** 命令行不解析构建配置、不改写产物里的引用，只把发布根交给构建命令、把产物搬上去（见 [site-model.md](site-model.md)）。
 - **不做字节数的可读格式化**（理由见上）。
 
 ## 可验证性与长程执行
@@ -110,7 +121,9 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 危险集合正确 | `project delete` / `version delete` / `asset delete` / `publish` 带危险标记；`unpublish` 不带（`cmd/aladdin` 测试） |
 | 位置参数是用法错误 | 参数个数不对时退出码与其它用法错误同类，而不是落进"未分类失败"（`cmd/aladdin` 测试） |
 | 扩展名表与白名单一致 | 表中每个取值都能通过服务端那一个类型入口（`cmd/aladdin` 测试） |
-| 正文输入 | `--file`、`-`（stdin）、文件不存在三种情形各自的行为（`cmd/aladdin` 测试） |
+| 文件组输入 | `draft push` 一个目录、目录不存在、目录里含非文本文件三种情形各自的行为（`cmd/aladdin` 测试） || 文本与资产的分界一致 | 判定文本的扩展名表与资产类型表分别与服务端那一个入口逐条一致（`cmd/aladdin` 测试） |
+| 整组往返一致 | `push` 一个目录再 `pull` 回来，路径集合与每个文件的内容逐字相同（`cmd/aladdin` 测试） |
+| 发布根不自己拼 | `project base` 的输出与服务端在发布地址里用的发布根一致（`cmd/aladdin` 测试 + 端到端测试） |
 | 发布地址匿名可达 | 用命令行子进程跑完建工程 → 存草稿 → 存版本 → 发布，再不携带任何凭证取发布地址（端到端测试） |
 
 > **直传的 PUT 不在自动化覆盖内。** 测试装配里的对象存储是内存假实现，凭证指向真实的存储主机——没有真桶可写。"桶真的照做了策略"只能在部署后冒烟里验，这条边界与 [../objectstore/README.md](../objectstore/README.md) 写的是同一处。**不会为了测试给生产代码加一个"换地址"的开关**：那正是 [CLAUDE.md](../../../CLAUDE.md) 第 7 条禁止的那类开关。
@@ -120,8 +133,9 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 依赖对象 | 交互方式 |
 |---------|---------|
 | 服务端 GalaxyService | 经 Connect 调用，消费其拒绝语义；命令与权限码的对应关系必须与 proto 注解一致 |
+| 站点形态与文件组 | 整组文件的形状、发布根与文本/资产的分界见 [site-model.md](site-model.md) |
 | RBAC | 权限码取自生成常量，命令只做静态声明，不做本地判定（见 [../rbac/cli-permissions.md](../rbac/cli-permissions.md)） |
-| 对象存储直传 | 资产的字节走公共直传链路；命令行侧的实现见下 |
+| 对象存储直传 | 资产与内容对象的字节都走公共直传链路；命令行侧的实现见下 |
 | proto | 方法与权限码在 `api/proto/aladdin/galaxy/v1/` 中声明，经 `buf generate` 派生客户端 |
 | 命令行配置与凭证 | 目标地址与凭证经统一配置入口读取（见 [../config/cli-config.md](../config/cli-config.md)） |
 
@@ -134,7 +148,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 版本与校验 | [cmd/aladdin/command-galaxy-version.go](../../../cmd/aladdin/command-galaxy-version.go) |
 | 资产与上传编排 | [cmd/aladdin/command-galaxy-asset.go](../../../cmd/aladdin/command-galaxy-asset.go) |
 | 发布与撤回 | [cmd/aladdin/command-galaxy-publish.go](../../../cmd/aladdin/command-galaxy-publish.go) |
-| 正文的读取（唯一入口） | [cmd/aladdin/galaxy-content.go](../../../cmd/aladdin/galaxy-content.go) |
+| 文件组的读写与目录上送（唯一入口） | [cmd/aladdin/galaxy-content.go](../../../cmd/aladdin/galaxy-content.go) |
 | 命令行侧直传（唯一实现） | [cmd/aladdin/direct-upload.go](../../../cmd/aladdin/direct-upload.go) |
 | 命令的权限声明与静态检查 | [cmd/aladdin/permission-decl.go](../../../cmd/aladdin/permission-decl.go) |
 

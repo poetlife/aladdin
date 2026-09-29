@@ -212,10 +212,10 @@ func (SubjectProfileRecord) TableName() string { return "subject_profiles" }
 
 // GalaxyProjectRecord 是 galaxy 工程在库里的一行。
 //
-// 工程是创作单元：元数据 + 一份草稿 + 若干版本 + 一个资产库，但它自己这一行
-// 只有元数据。**工程表上不放大字段**（草稿正文、版本正文、发布产物都不在这
-// 张表上）：工程列表接口会读这一行，把一个几百 KB 的文本挂上去，正是档案模块
-// "头像字节不入库"要避免的同一件事。
+// 工程是创作单元：元数据 + 一种形态 + 一份草稿 + 若干版本 + 一个资产库，但它
+// 自己这一行只有元数据。**工程表上不放清单**（草稿、版本与发布的清单都不在这张
+// 表上）：工程列表接口会读这一行，把每个工程的清单一起读上来是一笔与列表无关
+// 的代价。整张表也不含任何字节。
 type GalaxyProjectRecord struct {
 	// ID 是工程标识，主键。由 aladdin 分配，**不可猜、不可改、不复用**——
 	// 它是发布地址的一部分，而发布态是公开匿名的。
@@ -232,6 +232,9 @@ type GalaxyProjectRecord struct {
 	Name string
 	// Description 是简介。空表示未填写。
 	Description string
+	// Form 是站点形态（static / docs）。**创建时定下，此后不可改**：它决定已
+	// 保存版本的发布语义，允许改形态等于让历史版本的产物无法复现。
+	Form string
 	// CurrentPublicationID 是**可空的发布指针**：空表示未发布，非空指向
 	// galaxy_publications 里的一条记录。
 	//
@@ -254,8 +257,11 @@ func (GalaxyProjectRecord) TableName() string { return "galaxy_projects" }
 type GalaxyDraftRecord struct {
 	// ProjectID 是工程标识，主键。一个工程最多一份草稿。
 	ProjectID string `gorm:"primaryKey;size:191"`
-	// Content 是一个完整的 HTML 文档（可能几百 KB）。
-	Content string
+	// Manifest 是文件清单的序列化形式：一组「路径 → 内容摘要或资产标识」。
+	//
+	// **它是整组读写的**：保存草稿表达的是完整状态，不是增量。**清单里没有
+	// 字节**——文本条目的字节是按内容摘要寻址的对象存储对象。
+	Manifest string
 	// UpdatedAt 是最后一次保存的时间。展示与排障用。
 	UpdatedAt time.Time
 }
@@ -263,7 +269,7 @@ type GalaxyDraftRecord struct {
 // TableName 实现 gorm 的表名解析。
 func (GalaxyDraftRecord) TableName() string { return "galaxy_drafts" }
 
-// GalaxyVersionRecord 是正文的一次不可变快照在库里的一行。
+// GalaxyVersionRecord 是文件清单的一次不可变快照在库里的一行。
 type GalaxyVersionRecord struct {
 	// ID 是版本标识，主键。由 aladdin 分配。
 	ID string `gorm:"primaryKey;size:191"`
@@ -274,11 +280,14 @@ type GalaxyVersionRecord struct {
 	// 刻意不加 (project_id, seq) 的唯一约束：那会把序号变成一个必须被维护的
 	// 结构，而"删除一个版本会让序号出现空洞"是可接受的。序号可空洞，标识不可。
 	Seq int64
-	// Content 是保存那一刻草稿的内容。**写入后不再修改。**
+	// Manifest 是保存那一刻草稿的清单。**写入后不再修改。**
 	//
-	// **版本引用了哪些资产不在这张表上**：它由正文里的占位符决定，正文是这件
-	// 事的唯一信源。再存一份清单等于让同一个结论有两个会漂移的来源。
-	Content string
+	// **版本引用了哪些资产由这一列直接读出**：清单的每一条写明它是文本条目
+	// 还是资产条目，因此这件事不必解析任何文本，也没有第二处集合。
+	Manifest string
+	// RenderRulesVersion 是保存时所处的渲染规则版本。只有 `docs` 形态使用它，
+	// 重新发布时按它渲染而不是按当前最新的（见 doc_render.go）。
+	RenderRulesVersion int
 	// SavedAt 是保存时间。排障与展示用。
 	SavedAt time.Time
 }
@@ -293,15 +302,16 @@ type GalaxyAssetRecord struct {
 	// ProjectID 是该资产所属工程，建索引的理由与版本表相同。
 	ProjectID string `gorm:"size:191;index"`
 	// Digest 是字节的密码学摘要（SHA-256 的十六进制），**是"同一份字节"的
-	// 标识**。公开区按它寻址，因此"这份资产是否已在公开区"是一个只看地址
-	// 就能回答的问题。
+	// 标识**。公开区按**（内容摘要，媒体类型）**寻址，因此同一份字节以两种
+	// 类型出现时是两个对象。
 	Digest string `gorm:"size:64"`
-	// MediaKind 是类别（图片 / 视频 / 音频），决定大小上限。
+	// MediaKind 是类别（图片 / 视频 / 音频 / 字体），决定大小上限，也是私有区
+	// 对象键里的一段。
 	MediaKind string
-	// MediaType 是**服务端对字节嗅探的结果**，不是上传方声明的。它同时决定
+	// MediaType 是**上传方声明的**类型，服务端只校验它在白名单内。它同时决定
 	// 此后下发时回给浏览器的内容类型——两者只有一个来源。
 	MediaType string
-	// SizeBytes 是字节数。
+	// SizeBytes 是字节数。它取自提交时对对象的核对，不是声明值。
 	SizeBytes int64
 	// Filename 是原始文件名。**仅供展示与排障**：它不作为对象键，也不参与
 	// 任何判断。它可能含路径分隔符、控制字符以及别人的名字。
@@ -313,21 +323,21 @@ type GalaxyAssetRecord struct {
 // TableName 实现 gorm 的表名解析。
 func (GalaxyAssetRecord) TableName() string { return "galaxy_assets" }
 
-// GalaxyPublicationRecord 是每次发布产生的对外产物在库里的一行。
+// GalaxyPublicationRecord 是每次发布产生的产物在库里的一行。
 //
 // **产物放在独立的发布表上，不放在工程行上**：工程行会被列表接口读取，往它
-// 上面挂一个几百 KB 的文本字段，正是档案模块那一课要避免的事。
+// 上面挂一组记录正是档案模块那一课要避免的事。工程行上只有一个可空的指针。
 type GalaxyPublicationRecord struct {
 	// ID 是发布标识，主键。由 aladdin 分配，且**只由工程与版本决定**，因此
 	// 同一次发布重试到落库这一步不会产生第二条记录。
 	ID string `gorm:"primaryKey;size:191"`
 	// ProjectID 建索引的理由与版本表相同。
-	ProjectID string `gorm:"size:191;index"`
+	ProjectID string `gorm:"size:191"`
 	// VersionID 是这次发布的是哪个版本。
 	VersionID string `gorm:"size:191"`
-	// Content 是**改写后的 HTML**。这是对外地址真正返回的东西，因此落库而
-	// 不是每次请求现算。
-	Content string
+	// Manifest 是**产物清单**：一组「路径 → 内容摘要」或资产条目。对外地址按
+	// 它分派；**字节不在库里**。
+	Manifest string
 	// PublishedBySubjectID 与 PublishedAt 是留痕。
 	PublishedBySubjectID string `gorm:"size:191"`
 	PublishedAt          time.Time

@@ -116,12 +116,16 @@ func TestGalaxyMethodsAreClassified(t *testing.T) {
 	}
 	// 上传与删除资产共用 galaxy.asset.write；读取与发布各有自己的码。
 	cases := map[string]rbac.PermissionCode{
-		"BeginAssetUpload":  rbac.PermissionGalaxyAssetWrite,
-		"CommitAssetUpload": rbac.PermissionGalaxyAssetWrite,
-		"DeleteAsset":       rbac.PermissionGalaxyAssetWrite,
-		"ListAssets":        rbac.PermissionGalaxyAssetRead,
-		"ListProjects":      rbac.PermissionGalaxyProjectRead,
-		"SaveDraft":         rbac.PermissionGalaxyProjectWrite,
+		"BeginAssetUpload":    rbac.PermissionGalaxyAssetWrite,
+		"CommitAssetUpload":   rbac.PermissionGalaxyAssetWrite,
+		"DeleteAsset":         rbac.PermissionGalaxyAssetWrite,
+		"ListAssets":          rbac.PermissionGalaxyAssetRead,
+		"ListProjects":        rbac.PermissionGalaxyProjectRead,
+		"PushDraft":           rbac.PermissionGalaxyProjectWrite,
+		"BeginContentUpload":  rbac.PermissionGalaxyProjectWrite,
+		"CommitContentUpload": rbac.PermissionGalaxyProjectWrite,
+		"ValidateDraft":       rbac.PermissionGalaxyProjectRead,
+		"PreviewDraft":        rbac.PermissionGalaxyProjectRead,
 	}
 	for method, want := range cases {
 		rule, err := rbac.Resolve("/" + serviceName + "/" + method)
