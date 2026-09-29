@@ -391,6 +391,161 @@ describe('校验结论自动产生', () => {
   })
 })
 
+describe('回到前台时重读草稿', () => {
+  function setVisibility(state: DocumentVisibilityState): void {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => state,
+    })
+  }
+
+  it('重新可见时重拉草稿并重新校验；焦点与可见性接连到来只问一次', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    const container = await renderEditor()
+    expect(container.textContent).toContain('可以发布')
+
+    vi.mocked(galaxyApi.getDraft).mockResolvedValue(
+      create(GetDraftResponseSchema, {
+        draft: create(DraftSchema, {
+          entries: [
+            create(FileEntrySchema, {
+              path: 'index.html',
+              source: { case: 'digest', value: 'cc' },
+              url: 'https://cos.example/signed/cc',
+            }),
+          ],
+        }),
+      }),
+    )
+    vi.mocked(galaxyApi.validateDraft).mockResolvedValue(
+      create(ValidateDraftResponseSchema, {
+        problems: [create(ValidationProblemSchema, { message: '缺了样式', path: 'index.html' })],
+      }),
+    )
+    vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
+      create(PreviewDraftResponseSchema, { html: '<h1>新的</h1>' }),
+    )
+
+    const draftCalls = vi.mocked(galaxyApi.getDraft).mock.calls.length
+    const validateCalls = vi.mocked(galaxyApi.validateDraft).mock.calls.length
+    setVisibility('visible')
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('focus'))
+    })
+
+    expect(vi.mocked(galaxyApi.getDraft).mock.calls.length).toBe(draftCalls + 1)
+    expect(vi.mocked(galaxyApi.validateDraft).mock.calls.length).toBe(validateCalls + 1)
+    expect(vi.mocked(galaxyApi.previewDraft).mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(container.textContent).toContain('1 处问题')
+    expect(container.textContent).not.toContain('可以发布')
+    expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toBe('<h1>新的</h1>')
+  })
+
+  it('页面隐藏时不重拉，避免把过期结论再问一遍', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    await renderEditor()
+    const validateCalls = vi.mocked(galaxyApi.validateDraft).mock.calls.length
+
+    setVisibility('hidden')
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('focus'))
+    })
+
+    expect(vi.mocked(galaxyApi.validateDraft).mock.calls.length).toBe(validateCalls)
+  })
+})
+
+describe('草稿有问题时的发布', () => {
+  const sameEntries = [
+    create(FileEntrySchema, {
+      path: 'index.html',
+      source: { case: 'digest', value: 'aa' },
+    }),
+    create(FileEntrySchema, {
+      path: 'style.css',
+      source: { case: 'digest', value: 'bb' },
+    }),
+  ]
+
+  beforeEach(() => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps({ publishEnabled: true }))
+    vi.mocked(galaxyApi.validateDraft).mockResolvedValue(
+      create(ValidateDraftResponseSchema, {
+        problems: [create(ValidationProblemSchema, { message: '引用坏了', path: 'index.html' })],
+      }),
+    )
+  })
+
+  it('与当前草稿清单相同的版本不可发布', async () => {
+    vi.mocked(galaxyApi.listVersions).mockResolvedValue(
+      create(ListVersionsResponseSchema, {
+        versions: [create(VersionSchema, { id: 'v1', seq: 1n, entries: sameEntries })],
+      }),
+    )
+
+    const container = await renderEditor()
+    const publish = findButton(container, '发布')
+    expect(publish, '没有找到发布按钮').not.toBeUndefined()
+    expect(publish?.disabled).toBe(true)
+  })
+
+  it('清单不同的历史版本仍可发布', async () => {
+    vi.mocked(galaxyApi.listVersions).mockResolvedValue(
+      create(ListVersionsResponseSchema, {
+        versions: [
+          create(VersionSchema, { id: 'v1', seq: 1n, entries: sameEntries }),
+          create(VersionSchema, {
+            id: 'v0',
+            seq: 0n,
+            entries: [
+              create(FileEntrySchema, {
+                path: 'index.html',
+                source: { case: 'digest', value: 'old' },
+              }),
+            ],
+          }),
+        ],
+      }),
+    )
+
+    const container = await renderEditor()
+    const publish = findButton(container, '发布')
+    expect(publish?.disabled).toBe(false)
+
+    await act(async () => {
+      publish?.click()
+    })
+    const items = Array.from(document.body.querySelectorAll('[role="menuitem"]'))
+    const blocked = items.find((item) => item.textContent?.includes('#1'))
+    const openable = items.find((item) => item.textContent?.includes('#0'))
+    expect(blocked, '没有找到与草稿相同的那一版').not.toBeUndefined()
+    expect(blocked?.getAttribute('aria-disabled')).toBe('true')
+    expect(openable?.getAttribute('aria-disabled')).not.toBe('true')
+  })
+
+  it('重拉失败时不再停留在上一次的可以发布', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    vi.mocked(galaxyApi.validateDraft).mockResolvedValue(create(ValidateDraftResponseSchema, {}))
+    const container = await renderEditor()
+    expect(container.textContent).toContain('可以发布')
+
+    vi.mocked(galaxyApi.getDraft).mockRejectedValue(new Error('网络断了'))
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    })
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(container.textContent).toContain('校验未完成')
+    expect(container.textContent).not.toContain('可以发布')
+    expect(container.textContent).toContain('网络断了')
+  })
+})
+
 // spec 的核查项：**接口面上不存在从网页端写内容的调用**。
 //
 // 这条断言看的是**真实的模块**（绕开本文件的 mock）：写入只有命令行一条路，

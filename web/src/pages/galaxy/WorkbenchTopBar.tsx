@@ -3,7 +3,7 @@ import type { MenuProps } from 'antd'
 import { ArrowLeft, ChevronDown, History, Images, Layers, Rocket } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import type { Project, Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import type { FileEntry, Project, Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { formatTime } from './format-time'
 import { ProjectInfoPopover } from './ProjectInfoPopover'
 
@@ -26,6 +26,15 @@ interface WorkbenchTopBarProps {
   assetPanelEnabled: boolean
   versionBusy: boolean
   publishBusy: boolean
+  /**
+   * 当前草稿的校验结论是「有问题」。
+   *
+   * 发布读的是版本，不是草稿。但与这份草稿清单相同的版本会被同一套规则拒绝，
+   * 顶栏不再提供那一次点击。清单不同的历史版本不受这一条影响。
+   */
+  draftHasProblems: boolean
+  /** 当前草稿清单，用来判断哪个版本会得到同一份拒绝。 */
+  draftEntries: readonly FileEntry[]
   onOpenAssets: () => void
   onOpenVersions: () => void
   onSaveVersion: () => void
@@ -50,8 +59,8 @@ interface WorkbenchTopBarProps {
  * 反过来。任何时刻只有一个 primary——"一页只有一个主操作"，只是"哪一个"
  * 由状态决定（见 docs/design/uiux/README.md）。
  *
- * 还没有版本时"发布"直接禁用。原因不另写提示：状态条的第 ② 段已经写着
- * "还没有版本 · 存一版就能发布"，就近说清楚比再弹一个气泡好。
+ * 还没有版本时"发布"直接禁用。原因不另写提示：状态条已经写着还没有版本。
+ * 草稿有问题时，与当前清单相同的版本同样禁用：状态条上的问题清单就是原因。
  */
 export function WorkbenchTopBar({
   project,
@@ -63,6 +72,8 @@ export function WorkbenchTopBar({
   assetPanelEnabled,
   versionBusy,
   publishBusy,
+  draftHasProblems,
+  draftEntries,
   onOpenAssets,
   onOpenVersions,
   onSaveVersion,
@@ -71,11 +82,16 @@ export function WorkbenchTopBar({
 }: WorkbenchTopBarProps): React.ReactNode {
   const navigate = useNavigate()
 
-  const publishAvailable = publishEnabled && canPublish && versions.length > 0
+  const draftSignature = manifestSignature(draftEntries)
+  const versionBlocked = (version: Version): boolean =>
+    draftHasProblems && manifestSignature(version.entries) === draftSignature
+  const publishableCount = versions.filter((version) => !versionBlocked(version)).length
+  const publishAvailable = publishEnabled && canPublish && publishableCount > 0
 
   // 新的排在前面：要发布的多半是刚存的那一版。
   const publishItems: NonNullable<MenuProps['items']> = [...versions].reverse().map((version) => ({
     key: version.id,
+    disabled: versionBlocked(version),
     label: `#${Number(version.seq)} · ${formatTime(version.savedAt)}${
       version.id === project.publishedVersionId ? '（当前发布）' : ''
     }`,
@@ -126,14 +142,23 @@ export function WorkbenchTopBar({
           <Dropdown
             // 默认是 hover 触发，而 hover 在触屏上不存在——手机上就点不开发布。
             trigger={['click']}
-            disabled={versions.length === 0}
-            menu={{ items: publishItems, onClick: ({ key }) => onPublish(key) }}
+            disabled={publishableCount === 0}
+            menu={{
+              items: publishItems,
+              onClick: ({ key }) => {
+                const version = versions.find((item) => item.id === key)
+                if (version === undefined || versionBlocked(version)) {
+                  return
+                }
+                onPublish(key)
+              },
+            }}
           >
             <Button
               type="primary"
               icon={<Rocket size={16} />}
               loading={publishBusy}
-              disabled={versions.length === 0}
+              disabled={publishableCount === 0}
             >
               {project.published ? '更新发布' : '发布'}
               <ChevronDown size={14} />
@@ -143,4 +168,24 @@ export function WorkbenchTopBar({
       </Space>
     </Flex>
   )
+}
+
+/**
+ * 清单的可比签名：路径加上字节从哪来。
+ *
+ * 顺序不影响「是不是同一份清单」。地址不参与——它每次读取都会变，不是内容。
+ */
+function manifestSignature(entries: readonly FileEntry[]): string {
+  return entries
+    .map((entry) => {
+      const source =
+        entry.source.case === 'digest'
+          ? `digest:${entry.source.value}`
+          : entry.source.case === 'assetId'
+            ? `asset:${entry.source.value}`
+            : 'missing'
+      return `${entry.path}\0${source}`
+    })
+    .sort()
+    .join('\n')
 }

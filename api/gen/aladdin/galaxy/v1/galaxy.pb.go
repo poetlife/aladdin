@@ -145,8 +145,8 @@ func (MediaKind) EnumDescriptor() ([]byte, []int) {
 //
 // 两类条目恰好对应"字节在哪"的两种答案（见 docs/design/galaxy/site-model.md）：
 // 文本条目的字节是按**内容摘要**寻址的内容对象；资产条目的字节是资产库里的
-// 一个媒体文件。**清单里没有字节本身**，因此同一个路径下的一份未改动文件在
-// 多个版本、多次发布之间共享同一个对象。
+// 一个媒体文件。**清单里没有字节本身**，因此同一个工程内、同一份未改动文件在
+// 多个版本、多次发布之间共享同一个对象。不跨工程共享。
 type FileEntry struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 相对路径。它是**公开地址的一部分**，因此字符集受 URL 安全字符集约束，
@@ -241,7 +241,8 @@ type isFileEntry_Source interface {
 }
 
 type FileEntry_Digest struct {
-	// 文本条目：字节的内容摘要（SHA-256 十六进制）。它同时是内容对象的键。
+	// 文本条目：字节的内容摘要（SHA-256 十六进制）。私有区对象键由工程标识与
+	// 它共同构成（`galaxy/<工程标识>/text/<摘要>`），不跨工程共享。
 	Digest string `protobuf:"bytes,2,opt,name=digest,proto3,oneof"`
 }
 
@@ -2222,7 +2223,8 @@ func (x *PreviewDraftResponse) GetHtml() string {
 type BeginContentUploadRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// **声明的**内容摘要（SHA-256 十六进制）。它同时是内容对象的键。
+	// **声明的**内容摘要（SHA-256 十六进制）。服务端用它和工程标识组成私有区
+	// 对象键（不跨工程共享）。已存在则不必再传。
 	Digest string `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
 	// **声明的**字节数。服务端据此在签发前早退，避免让用户白传一遍；真正的
 	// 大小上限由存储侧按策略执行。

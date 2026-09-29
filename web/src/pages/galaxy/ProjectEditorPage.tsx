@@ -21,6 +21,7 @@ import { AssetLibrary } from './AssetLibrary'
 import { LifecycleStrip } from './LifecycleStrip'
 import { formatTime } from './format-time'
 import { PreviewFrame } from './PreviewFrame'
+import { useReloadWhenVisible } from './reload-when-visible'
 import { VALIDATION_PENDING, type ValidationState } from './validation-state'
 import { VersionList } from './VersionList'
 import { WorkbenchTopBar } from './WorkbenchTopBar'
@@ -67,9 +68,10 @@ interface failure {
  * 路由已由 RequirePermission 保证 `galaxy.project.read`；页面内部按更细的权限码
  * 裁剪动作（存版本用 write、发布用 publish、资产用 asset.*）。
  *
- * 校验**自动产生**：打开页面就调一次服务端的 ValidateDraft，结论呈现在状态条上。
- * 前端不复写引用解析——"这份草稿能不能发布"只有服务端一个实现入口，两端各写一份
- * 的表现是"提示说没问题、发布说不行"。
+ * 校验**自动产生**：打开页面就调一次服务端的 ValidateDraft；这一页重新可见或窗口
+ * 重新获得焦点时再问一次，并重拉草稿。命令行可以在页面开着时 push，状态条不能停在
+ * 上一次的「可以发布」。前端不复写引用解析——"这份草稿能不能发布"只有服务端一个
+ * 实现入口，两端各写一份的表现是"提示说没问题、发布说不行"。
  */
 export function ProjectEditorPage(): React.ReactNode {
   const { projectId } = useParams<{ projectId: string }>()
@@ -109,9 +111,12 @@ export function ProjectEditorPage(): React.ReactNode {
   const [sourceText, setSourceText] = useState('')
   const [sourceBusy, setSourceBusy] = useState(false)
 
-  // 校验的竞态闸门：重新加载与重新校验都发请求，序号让先发后到的响应作废，
-  // 否则状态条上会停在一次过期的结论上。
+  // 校验、预览、回到前台这三路都会发请求。序号让先发后到的响应作废，
+  // 否则状态条或预览会停在一次过期的结论上。
   const validateSeq = useRef(0)
+  const previewSeq = useRef(0)
+  const refreshSeq = useRef(0)
+  const sourceSeq = useRef(0)
 
   const validate = useCallback(async (): Promise<void> => {
     if (projectId === undefined) {
@@ -149,11 +154,18 @@ export function ProjectEditorPage(): React.ReactNode {
       if (projectId === undefined) {
         return
       }
+      const seq = ++previewSeq.current
       try {
         const response = await galaxyApi.previewDraft(projectId, path)
+        if (seq !== previewSeq.current) {
+          return
+        }
         setPreviewHtml(response.html)
         setPreviewError(null)
       } catch (err) {
+        if (seq !== previewSeq.current) {
+          return
+        }
         // 预览这一块自己呈现失败，不把整页打成失败。
         setPreviewHtml('')
         setPreviewError(messageOf(err))
@@ -161,6 +173,44 @@ export function ProjectEditorPage(): React.ReactNode {
     },
     [projectId],
   )
+
+  /**
+   * 读一份文件的原文：客户端按短时地址**直连**取，服务端不代理字节。
+   *
+   * `keepPrevious` 用于回到前台时重读同一份：先清空会让源码区闪一下空。
+   */
+  const readEntryText = useCallback(async (entry: FileEntry, keepPrevious = false): Promise<void> => {
+    const seq = ++sourceSeq.current
+    setSelectedPath(entry.path)
+    if (!keepPrevious) {
+      setSourceText('')
+    }
+    if (entry.source.case !== 'digest') {
+      setSourceText('')
+      return
+    }
+    setSourceBusy(true)
+    setFailure(null)
+    try {
+      const response = await fetch(entry.url)
+      if (seq !== sourceSeq.current) {
+        return
+      }
+      if (!response.ok) {
+        throw new Error(`读取失败：HTTP ${response.status}`)
+      }
+      setSourceText(await response.text())
+    } catch (err) {
+      if (seq !== sourceSeq.current) {
+        return
+      }
+      setFailure({ message: messageOf(err), traceId: null })
+    } finally {
+      if (seq === sourceSeq.current) {
+        setSourceBusy(false)
+      }
+    }
+  }, [])
 
   const loadAssets = useCallback(async (): Promise<void> => {
     if (projectId === undefined || !canReadAssets) {
@@ -232,6 +282,110 @@ export function ProjectEditorPage(): React.ReactNode {
     void load()
   }, [load])
 
+  /**
+   * 回到这一页：重拉草稿、版本与工程，并重新校验、重新渲染预览。
+   *
+   * 不走整页 `load`——那会把加载骨架拉起来，也会把正在看的那一页重置回入口。
+   * 命令行 push 之后，状态条不能继续显示上一次的「可以发布」。拉取失败时把结论
+   * 标成未完成，而不是留着过期的「可以发布」。
+   */
+  const refreshOpenDraft = useCallback(async (): Promise<void> => {
+    if (projectId === undefined) {
+      return
+    }
+    const seq = ++refreshSeq.current
+    const contentEnabled = capabilities?.assetUploadEnabled === true
+    try {
+      // 拒绝要就地接住：中途因序号作废而返回时，这个请求不能变成未处理的拒绝。
+      const assetsPromise =
+        contentEnabled && canReadAssets
+          ? galaxyApi.listAssets(projectId).then(
+              (value) => ({ ok: true as const, value }),
+              (err: unknown) => ({ ok: false as const, err }),
+            )
+          : null
+      const [projectResponse, draftResponse, versionResponse] = await Promise.all([
+        galaxyApi.getProject(projectId),
+        galaxyApi.getDraft(projectId),
+        galaxyApi.listVersions(projectId),
+      ])
+      if (seq !== refreshSeq.current) {
+        return
+      }
+      const loadedProject = projectResponse.project
+      if (loadedProject === undefined) {
+        setValidation({ status: 'failed', problems: [] })
+        setFailure({ message: '工程不存在或已被删除', traceId: null })
+        return
+      }
+      const loadedEntries = draftResponse.draft?.entries ?? []
+      const nextPreview = loadedEntries.some((entry) => entry.path === previewPath)
+        ? previewPath
+        : defaultPreviewPath(loadedProject, loadedEntries)
+      const nextSelected = loadedEntries.some((entry) => entry.path === selectedPath)
+        ? selectedPath
+        : (loadedEntries[0]?.path ?? '')
+      setProject(loadedProject)
+      setEntries(loadedEntries)
+      setDraftUpdatedAt(draftResponse.draft?.updatedAt ?? '')
+      setVersions(versionResponse.versions)
+      setPreviewPath(nextPreview)
+      setSelectedPath(nextSelected)
+      setFailure(null)
+
+      if (contentEnabled) {
+        await validate()
+        if (seq !== refreshSeq.current) {
+          return
+        }
+        await renderPreview(nextPreview)
+        if (seq !== refreshSeq.current) {
+          return
+        }
+        const selectedEntry = loadedEntries.find((entry) => entry.path === nextSelected)
+        const shouldReread =
+          selectedEntry !== undefined &&
+          (mode === 'source' || (sourceText !== '' && selectedEntry.source.case === 'digest'))
+        if (shouldReread) {
+          await readEntryText(selectedEntry, selectedEntry.path === selectedPath)
+        }
+      }
+
+      if (assetsPromise !== null) {
+        const assetResult = await assetsPromise
+        if (seq !== refreshSeq.current) {
+          return
+        }
+        if (assetResult.ok) {
+          setAssets(assetResult.value.assets)
+        } else {
+          setFailure({ message: messageOf(assetResult.err), traceId: traceIdOf(assetResult.err) })
+        }
+      }
+    } catch (err) {
+      if (seq !== refreshSeq.current) {
+        return
+      }
+      setValidation({ status: 'failed', problems: [] })
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+    }
+  }, [
+    projectId,
+    capabilities,
+    canReadAssets,
+    previewPath,
+    selectedPath,
+    mode,
+    sourceText,
+    validate,
+    renderPreview,
+    readEntryText,
+  ])
+
+  useReloadWhenVisible(project !== null && !loading, () => {
+    void refreshOpenDraft()
+  })
+
   /** 重新渲染预览，即刷新内容里的短时资产地址。 */
   async function handleRefreshPreview(): Promise<void> {
     setPreviewBusy(true)
@@ -246,26 +400,9 @@ export function ProjectEditorPage(): React.ReactNode {
     }
   }
 
-  /** 读一份文件的原文：客户端按短时地址**直连**取，服务端不代理字节。 */
+  /** 源码视图里点一份文件。 */
   async function handleSelectEntry(entry: FileEntry): Promise<void> {
-    setSelectedPath(entry.path)
-    setSourceText('')
-    if (entry.source.case !== 'digest') {
-      return
-    }
-    setSourceBusy(true)
-    setFailure(null)
-    try {
-      const response = await fetch(entry.url)
-      if (!response.ok) {
-        throw new Error(`读取失败：HTTP ${response.status}`)
-      }
-      setSourceText(await response.text())
-    } catch (err) {
-      setFailure({ message: messageOf(err), traceId: null })
-    } finally {
-      setSourceBusy(false)
-    }
+    await readEntryText(entry)
   }
 
   async function handleSaveVersion(): Promise<void> {
@@ -367,6 +504,8 @@ export function ProjectEditorPage(): React.ReactNode {
       assetPanelEnabled={capabilities?.assetUploadEnabled === true && canReadAssets}
       versionBusy={contentBusy}
       publishBusy={publishBusy}
+      draftHasProblems={validation.status === 'problems'}
+      draftEntries={entries}
       onOpenAssets={() => setPanel('assets')}
       onOpenVersions={() => setPanel('versions')}
       onSaveVersion={() => void handleSaveVersion()}

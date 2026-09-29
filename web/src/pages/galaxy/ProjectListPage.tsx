@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -54,6 +54,11 @@ export function ProjectListPage(): React.ReactNode {
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  // 删工程会连带清版本与资产，请求往往不短。确认框上的 loading 与按钮禁用
+  // 都看这一个标识；ref 挡住同一次点击里的第二次提交（state 还没提交上去）。
+  const deletingRef = useRef<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -98,12 +103,23 @@ export function ProjectListPage(): React.ReactNode {
   }
 
   async function handleDelete(projectId: string): Promise<void> {
+    if (deletingRef.current !== null) {
+      return
+    }
+    deletingRef.current = projectId
+    setDeletingId(projectId)
+    setConfirmingId(projectId)
     try {
       await galaxyApi.deleteProject(projectId)
-      await load()
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+      return
+    } finally {
+      deletingRef.current = null
+      setDeletingId(null)
+      setConfirmingId(null)
     }
+    await load()
   }
 
   const columns: NonNullable<TableProps<Project>['columns']> = [
@@ -162,10 +178,17 @@ export function ProjectListPage(): React.ReactNode {
               title="删除这个工程？"
               description="会连带删掉它的全部版本与资产，已发布的地址立刻失效。此操作不可撤销。"
               okText="删除"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => void handleDelete(project.id)}
+              okButtonProps={{ danger: true, loading: deletingId === project.id }}
+              open={confirmingId === project.id}
+              onOpenChange={(nextOpen) => {
+                if (deletingRef.current !== null) {
+                  return
+                }
+                setConfirmingId(nextOpen ? project.id : null)
+              }}
+              onConfirm={() => handleDelete(project.id)}
             >
-              <Button type="link" danger icon={<Trash2 size={14} />}>
+              <Button type="link" danger disabled={deletingId !== null} icon={<Trash2 size={14} />}>
                 删除
               </Button>
             </Popconfirm>

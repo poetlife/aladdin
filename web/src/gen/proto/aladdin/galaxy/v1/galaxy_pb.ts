@@ -20,8 +20,8 @@ export const file_aladdin_galaxy_v1_galaxy: GenFile = /*@__PURE__*/
  *
  * 两类条目恰好对应"字节在哪"的两种答案（见 docs/design/galaxy/site-model.md）：
  * 文本条目的字节是按**内容摘要**寻址的内容对象；资产条目的字节是资产库里的
- * 一个媒体文件。**清单里没有字节本身**，因此同一个路径下的一份未改动文件在
- * 多个版本、多次发布之间共享同一个对象。
+ * 一个媒体文件。**清单里没有字节本身**，因此同一个工程内、同一份未改动文件在
+ * 多个版本、多次发布之间共享同一个对象。不跨工程共享。
  *
  * @generated from message aladdin.galaxy.v1.FileEntry
  */
@@ -39,7 +39,8 @@ export type FileEntry = Message<"aladdin.galaxy.v1.FileEntry"> & {
    */
   source: {
     /**
-     * 文本条目：字节的内容摘要（SHA-256 十六进制）。它同时是内容对象的键。
+     * 文本条目：字节的内容摘要（SHA-256 十六进制）。私有区对象键由工程标识与
+     * 它共同构成（`galaxy/<工程标识>/text/<摘要>`），不跨工程共享。
      *
      * @generated from field: string digest = 2;
      */
@@ -1013,7 +1014,8 @@ export type BeginContentUploadRequest = Message<"aladdin.galaxy.v1.BeginContentU
   projectId: string;
 
   /**
-   * **声明的**内容摘要（SHA-256 十六进制）。它同时是内容对象的键。
+   * **声明的**内容摘要（SHA-256 十六进制）。服务端用它和工程标识组成私有区
+   * 对象键（不跨工程共享）。已存在则不必再传。
    *
    * @generated from field: string digest = 2;
    */
