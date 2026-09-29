@@ -29,6 +29,8 @@
 | 一份渠道凭证是否可信、代表哪个渠道上的哪个身份 | `identity.TokenVerifier` 接口；每个渠道一个实现 | [internal/identity/channel.go](../internal/identity/channel.go)（Google 实现见 [google_verifier.go](../internal/identity/google_verifier.go)、GitHub 见 [github_verifier.go](../internal/identity/github_verifier.go)） |
 | 当前启用了哪些登录渠道 | `identity.Registry` | [internal/identity/channel.go](../internal/identity/channel.go) |
 | 一个 HTTP 路径是不是浏览器直连的非 RPC 入口（含 galaxy 的发布地址） | `isBrowserEntry` | [internal/server/middleware.go](../internal/server/middleware.go) |
+| 一个上报端标识是否合法（`web` / `cli` 白名单） | `observability.ClientFromHeader` | [internal/observability/client-id.go](../internal/observability/client-id.go) |
+| 一个裸 trace_id 是否合法（32 位小写十六进制、非全零） | `observability.ValidTraceID`；前端等价实现是 `parseTraceID` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
 | 服务端签发的浏览器 cookie 怎么构造、怎么取（属性集合唯一入口） | `opaqueCookie` / `cookieValue` | [internal/server/cookie.go](../internal/server/cookie.go) |
 | 一份浏览器直连的一次性凭据是否用过、是否还有效（导航状态与待绑定凭据共用） | `oneTimeStore` | [internal/server/one_time_store.go](../internal/server/one_time_store.go) |
 | 重定向型绑定的一份已校验身份是否还在等待兑换 | `pendingBindings` | [internal/server/pending_bindings.go](../internal/server/pending_bindings.go) |
@@ -116,6 +118,10 @@
 | 每个请求留一行可检索的日志（含 trace_id / 过程名 / 结果码 / 耗时） | `telemetryMiddleware.logRequest` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 遥测数据的导出与退出前冲刷 | `observability.Provider` 的 `Shutdown`（导出失败不影响业务） | [internal/observability/provider.go](../internal/observability/provider.go) |
 | 指标名、属性键与记录入口 | 常量定义 + `observability.Metrics` 的方法 | [internal/observability/metrics.go](../internal/observability/metrics.go) |
+| 客户端事件的校验、脱敏、限流与落盘 | `telemetry.Recorder.Report`（RPC 那一层只是薄壳） | [internal/telemetry/recorder.go](../internal/telemetry/recorder.go) |
+| 上报端标识 `x-aladdin-client` 的注入 | Web 传输层的拦截器 / CLI 客户端的请求头注入处 | [web/src/api/transport.ts](../web/src/api/transport.ts) / [pkg/client/client.go](../pkg/client/client.go) |
+| 前端客户端事件的上报入口（攒批、失败即时发送、页面隐藏冲刷） | `track` | [web/src/telemetry/track.ts](../web/src/telemetry/track.ts) |
+| 命令行本地失败的上报（配置/凭证/用法，退出前发出） | `recordLocalFailure` + `flushClientEvents`（只在退出路径调用） | [cmd/aladdin/telemetry-events.go](../cmd/aladdin/telemetry-events.go) |
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
 | 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh` | [deploy/deploy.sh](../deploy/deploy.sh) |
 | 本地开发环境的拉起（服务端 + 前端，同起同停） | `make dev`；两边的命令与种子配置各只有一处来源（`DEV_SERVER_CMD` / `WEB_DEV_CMD`），`dev` 与 `dev-server` / `web-dev` 都引用它们 | [Makefile](../Makefile) |
@@ -130,6 +136,8 @@
 | 接口契约与消息定义（服务端 + 前端类型） | proto 定义，经 `buf generate` 同时派生出 Go 与 TS 两侧代码 | [api/proto/](../api/proto/) |
 | 拒绝原因枚举（Go / TypeScript / CLI 三端同源） | [api/proto/aladdin/rbac/v1/errors.proto](../api/proto/aladdin/rbac/v1/errors.proto) | 由 `buf generate` 派生，三端均引用生成常量 |
 | 权限码全集（Go 常量与前端常量同源） | 权限目录，经 `make gen` 双向派生 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
+| 客户端事件的类型、动作允许清单与字段（Go / TypeScript 两端同源） | proto 定义，经 `buf generate` 派生 | [api/proto/aladdin/telemetry/v1/telemetry.proto](../api/proto/aladdin/telemetry/v1/telemetry.proto) |
+| 一个动作的日志取值、是否允许匿名、可携带哪些属性 | 动作策略表 | [internal/telemetry/actions.go](../internal/telemetry/actions.go) |
 | 角色 / 权限 / 主体关系的持久化数据 | `rbac.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/rbac/store.go](../internal/rbac/store.go) / [internal/rbac/gormstore/](../internal/rbac/gormstore/store.go) |
 | 会话（谁、到什么时候为止、作用域）的持久化数据 | 会话存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/session.go](../internal/identity/session.go) / [internal/identity/gormstore/](../internal/identity/gormstore/store.go) |
 | 身份别名（（来源，身份标识）→ 主体）的持久化数据 | 身份别名的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/identity.go](../internal/identity/identity.go) / [internal/identity/gormstore/identity.go](../internal/identity/gormstore/identity.go) |

@@ -159,6 +159,9 @@ func (c *Client) injectHeaders(ctx context.Context, header http.Header) {
 	// 请求头就是传播载体，包一层适配器即可（TextMapCarrier 比
 	// http.Header 多一个 Keys，见下面的 headerCarrier）。
 	observability.InjectTraceparent(ctx, headerCarrier{header: header})
+	// 上报端标识：服务端请求留痕据此区分命令行与浏览器。写死在这里，
+	// 与客户端事件的 Client.CLI 同源（见 observability.HeaderClient）。
+	header.Set(observability.HeaderClient, observability.ClientCLI)
 	if c.options.Token != "" {
 		header.Set(interceptor.HeaderAuthorization, "Bearer "+c.options.Token)
 	}

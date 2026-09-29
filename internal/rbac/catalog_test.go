@@ -19,6 +19,7 @@ import (
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
+	_ "github.com/poetlife/aladdin/api/gen/aladdin/telemetry/v1"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -130,10 +131,14 @@ func TestEveryMethodIsClassified(t *testing.T) {
 //
 // 公开方法数量只减不增；新增必须在评审中说明理由，因此这里把它固定下来。
 //
-// 五个成员各自为什么必须公开，见 docs/design/rbac/server-permissions.md。
+// 六个成员各自为什么必须公开，见 docs/design/rbac/server-permissions.md。
 // 其中"查询可用的登录方式"是这条规则的边界用例：它的返回内容本来就会
 // 出现在浏览器里，不公开不保护任何东西。命令行登录的两个方法则是与"登录"
 // 同一条循环依赖：调用方正是那个还没登录的终端。
+//
+// 遥测上报是第六个：登录页上的失败、命令行未登录就退出都发生在拿到会话之前，
+// 要求先认证才能上报是同一条循环依赖。它由服务端按动作白名单与限流兜住
+// （见 internal/telemetry），而不是靠"要求认证"。
 func TestPublicMethodsAreAllowlisted(t *testing.T) {
 	want := map[string]bool{
 		"/aladdin.identity.v1.IdentityService/Login":            true,
@@ -141,6 +146,7 @@ func TestPublicMethodsAreAllowlisted(t *testing.T) {
 		"/aladdin.identity.v1.IdentityService/GetAuthMethods":   true,
 		"/aladdin.identity.v1.IdentityService/StartDeviceLogin": true,
 		"/aladdin.identity.v1.IdentityService/PollDeviceLogin":  true,
+		"/aladdin.telemetry.v1.TelemetryService/ReportEvents":   true,
 	}
 	got := map[string]bool{}
 	eachMethod(t, func(fullMethod string, _ *descriptorpb.MethodOptions) {

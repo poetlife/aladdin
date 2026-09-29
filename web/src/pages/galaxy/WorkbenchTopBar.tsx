@@ -4,6 +4,8 @@ import { ArrowLeft, ChevronDown, History, Images, Layers, Rocket } from 'lucide-
 import { useNavigate } from 'react-router-dom'
 
 import type { FileEntry, Project, Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
+import { track } from '../../telemetry/track'
 import { formatTime } from './format-time'
 import { ProjectInfoPopover } from './ProjectInfoPopover'
 
@@ -148,6 +150,13 @@ export function WorkbenchTopBar({
               onClick: ({ key }) => {
                 const version = versions.find((item) => item.id === key)
                 if (version === undefined || versionBlocked(version)) {
+                  // 前端拦下、请求根本没发出去——这一点只有客户端事件答得了，
+                  // 服务端请求留痕里没有它（见 docs/observability.md）。
+                  track({
+                    surface: Surface.WEB_EDITOR,
+                    action: Action.PUBLISH,
+                    result: Result.BLOCKED,
+                  })
                   return
                 }
                 onPublish(key)

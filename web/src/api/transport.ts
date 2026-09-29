@@ -7,6 +7,7 @@ import { GalaxyService } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { IdentityService } from '../gen/proto/aladdin/identity/v1/identity_pb'
 import { ProfileService } from '../gen/proto/aladdin/profile/v1/profile_pb'
 import { RBACService } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
+import { TelemetryService } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 
 /**
  * 本文件是前端所有出站请求的唯一出口（见 docs/ssot-registry.md）。
@@ -33,12 +34,14 @@ export interface TransportOptions {
 }
 
 /** 链路标识的常量与生成/校验都在 trace-context 里，此处只做注入。 */
+import { CLIENT_HEADER, CLIENT_WEB } from './client-id'
 import { newTraceparent, TRACEPARENT_HEADER } from './trace-context'
 
 /**
  * 认证拦截器。
  *
- * 它同时负责凭证注入、链路标识注入，以及未认证时的统一会话失效处理。
+ * 它同时负责凭证注入、链路标识注入、**上报端标识注入**，以及未认证时的统一
+ * 会话失效处理。
  *
  * 关于"刷新后重试"：服务端目前签发的凭证不过期，因此这里不假装实现重试循环。
  * 接入真实凭证后，在 catch 分支里加"刷新一次并重放请求"即可——重放时务必
@@ -51,6 +54,10 @@ function createAuthInterceptor(options: TransportOptions): Interceptor {
     if (token !== null && token !== '') {
       req.header.set('Authorization', `Bearer ${token}`)
     }
+
+    // 上报端标识：服务端请求留痕据此区分浏览器与命令行。写死在这里，与
+    // 客户端事件的 Client.WEB 同源（见 ./client-id）。
+    req.header.set(CLIENT_HEADER, CLIENT_WEB)
 
     // 拿不到密码学随机数时不发这个头：缺头只是让服务端自己起一条链路，
     // 而发一个格式非法的值会污染服务端日志。
@@ -172,4 +179,14 @@ export function galaxyClient() {
  */
 export function eventsClient() {
   return createClient(EventsService, getTransport())
+}
+
+/**
+ * 遥测上报服务的客户端。
+ *
+ * 它只被 web/src/telemetry 使用——组件不得直接调用：攒批、即时发送与失败降级都在
+ * 那里统一处理（见 docs/observability.md 的「客户端事件」）。
+ */
+export function telemetryClient() {
+  return createClient(TelemetryService, getTransport())
 }

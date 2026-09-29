@@ -106,11 +106,14 @@ func (m *telemetryMiddleware) wrap(next http.Handler) http.Handler {
 
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		started := time.Now()
+		// 上报端标识在这里**校验后取一次**：一个不在白名单里的原值不能变成日志里
+		// 的一个新取值（见 observability.ClientFromHeader）。
+		client, _ := observability.ClientFromHeader(r.Header)
 		defer func() {
 			elapsed := time.Since(started)
 			observability.EndServerSpan(ctx, rec.status)
 			m.metrics.ServerRequest(ctx, procedure, strconv.Itoa(rec.status), elapsed)
-			m.logRequest(ctx, procedure, rec.status, elapsed)
+			m.logRequest(ctx, procedure, client, rec.status, elapsed)
 		}()
 
 		next.ServeHTTP(rec, r.WithContext(ctx))
@@ -125,9 +128,12 @@ func (m *telemetryMiddleware) wrap(next http.Handler) http.Handler {
 // 拿着它们返回的 trace_id 去搜日志会一无所获，而浏览器打开页面时最先发的
 // 恰恰就是这几个方法。
 //
-// 只记过程名、结果码、耗时与主体标识，**不记请求体**：Login 的请求体里装的
-// 就是凭证，而凭证绝不允许进日志（见 docs/design/config/credentials.md）。
-func (m *telemetryMiddleware) logRequest(ctx context.Context, procedure string, status int, elapsed time.Duration) {
+// 只记过程名、结果码、耗时、上报端与主体标识，**不记请求体**：Login 的请求体里
+// 装的就是凭证，而凭证绝不允许进日志（见 docs/design/config/credentials.md）。
+//
+// client 为空表示请求未携带（或携带了一个不在白名单里的）上报端标识，
+// 此时**不写这个字段**——写一个未校验的原值会让"按端检索"失去上界。
+func (m *telemetryMiddleware) logRequest(ctx context.Context, procedure, client string, status int, elapsed time.Duration) {
 	logger := observability.SpanLogger(ctx, m.logger)
 	if logger == nil {
 		return
@@ -138,6 +144,9 @@ func (m *telemetryMiddleware) logRequest(ctx context.Context, procedure string, 
 		// 毫秒而不是 zap.Duration 的秒：秒的浮点数（0.000617208）要数零才读得出，
 		// 而毫秒既可读、又能直接用查询语句比较。键名带单位，避免读者去猜。
 		zap.Float64("duration_ms", elapsed.Seconds()*1000),
+	}
+	if client != "" {
+		fields = append(fields, zap.String("client", client))
 	}
 	if subject, ok := interceptor.SubjectFromContext(ctx); ok {
 		fields = append(fields, zap.String("subject_id", subject.ID))
@@ -249,7 +258,20 @@ func (m *authMiddleware) wrap(next http.Handler) http.Handler {
 			m.reject(w, r, interceptor.DenyByAnnotation(path, rule.Reason))
 			return
 		case rbac.KindPublic:
-			// 公开方法不需要认证，直接交给 handler。
+			// 公开方法**不要求**认证，但只要带了凭证，仍尽力识别主体。
+			//
+			// 需要它的只有遥测上报（ReportEvents）：它既要允许匿名（登录页上的失败
+			// 发生在拿到会话之前），又要在已登录时把事件归到主体上并按主体限流。
+			// 认证结果在这里是"锦上添花"，因此**失败一律忽略**：
+			//   - 公开方法本就允许匿名，一次凭证问题不该让它失效；
+			//   - 把失败升级成拒绝，等于让一个过期凭证把登录入口也一起锁死，
+			//     而"登录失败"正是这个入口要记录的场景。
+			//
+			// 这里只影响"主体在不在 context 里"，不改变任何一次判定：公开方法的
+			// 判定在拦截器里已经返回，本分支根本不参与。
+			if subject, err := m.authn.Authenticate(r.Context(), r.Header); err == nil {
+				r = r.WithContext(interceptor.WithSubject(r.Context(), subject))
+			}
 			next.ServeHTTP(w, r)
 			return
 		}

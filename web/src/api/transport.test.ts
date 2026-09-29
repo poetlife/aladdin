@@ -1,6 +1,9 @@
+import { createClient } from '@connectrpc/connect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { resolveBinaryFormat } from './transport'
+import { IdentityService } from '../gen/proto/aladdin/identity/v1/identity_pb'
+import { CLIENT_HEADER, CLIENT_WEB } from './client-id'
+import { createTransport, resolveBinaryFormat } from './transport'
 
 describe('resolveBinaryFormat', () => {
   afterEach(() => {
@@ -35,5 +38,31 @@ describe('resolveBinaryFormat', () => {
   it('与其他查询参数共存时仍能识别', () => {
     vi.stubEnv('PROD', true)
     expect(resolveBinaryFormat('?foo=1&wire=json&bar=2')).toBe(false)
+  })
+})
+
+describe('传输层注入的上报端标识', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // 服务端请求留痕据此区分浏览器与命令行。它写死在拦截器里，因此每个出站
+  // 请求都必然带上——漏掉的表现是"服务端把 web 的调用当成未知来源"，
+  // 而那不会报错，只会让按端检索少一半数据。
+  it('每个出站请求都带上 x-aladdin-client: web', async () => {
+    const headers: Headers[] = []
+    vi.stubGlobal('fetch', async (_input: unknown, init?: RequestInit) => {
+      headers.push(new Headers(init?.headers))
+      // 报文内容不重要：本用例只看出站请求头。
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+
+    const transport = createTransport({ baseUrl: '', getToken: () => null })
+    const client = createClient(IdentityService, transport)
+    // 响应解码失败无所谓：请求已经发出去了，头部信息已经拿到。
+    await client.getAuthMethods({}).catch(() => undefined)
+
+    expect(headers).toHaveLength(1)
+    expect(headers[0]?.get(CLIENT_HEADER)).toBe(CLIENT_WEB)
   })
 })

@@ -36,12 +36,20 @@ func Execute() int {
 	root := newRootCommand()
 	err := root.Execute()
 
+	if err != nil {
+		printf(os.Stderr, "aladdin: %s\n", describeError(err))
+		// 本地失败（配置/凭证/用法）在服务端请求留痕里没有痕迹，只能在这里记下来。
+		recordLocalFailure(err)
+	}
+
+	// 上报必须早于遥测关闭：它自身会起 client span，而 provider 关掉之后
+	// 那一步就只是空转。顺序反过来会让本地失败永远报不出去。
+	flushClientEvents()
 	// 冲刷遥测。CLI 是短命进程，不主动冲刷就一定会丢掉最后一批数据；
 	// 而退出路径只有这一条，所以放在这里，而不是散落进各命令的 RunE。
 	shutdownTelemetry()
 
 	if err != nil {
-		printf(os.Stderr, "aladdin: %s\n", describeError(err))
 		return exitCodeFor(err)
 	}
 	return exitOK
@@ -58,6 +66,9 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// 记下这条命令，供退出路径上报本地失败时使用（见 telemetry-events.go）。
+			// 它放在最前面：即使下面某一条校验就失败，命令名也已经拿到了。
+			executedCommand = topLevelCommand(cmd)
 			if err := checkCommands(cmd.Root()); err != nil {
 				return err
 			}

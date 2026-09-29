@@ -2,6 +2,8 @@ import { Button, Divider, Flex, Popconfirm, Popover, Typography, theme } from 'a
 import { CircleCheck, TriangleAlert } from 'lucide-react'
 
 import type { Project, Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
+import { track } from '../../telemetry/track'
 import { describeValidation, type ValidationState } from './validation-state'
 
 interface LifecycleStripProps {
@@ -112,6 +114,10 @@ export function LifecycleStrip({
                   okText="撤回"
                   okButtonProps={{ danger: true }}
                   onConfirm={onUnpublish}
+                  // 取消：动作被主动放弃，与"失败"分开记——两者的修复方向不同。
+                  onCancel={() =>
+                    track({ surface: Surface.WEB_EDITOR, action: Action.UNPUBLISH, result: Result.CANCEL })
+                  }
                 >
                   <Button type="link" size="small" danger loading={publishBusy}>
                     撤回

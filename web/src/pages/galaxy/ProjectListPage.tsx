@@ -23,6 +23,8 @@ import { messageOf, traceIdOf } from '../../api/errors'
 import { PermissionGate } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
 import { SiteForm, type Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
+import { track } from '../../telemetry/track'
 import { formatTime } from './format-time'
 
 interface ProjectFormValues {
@@ -60,22 +62,30 @@ export function ProjectListPage(): React.ReactNode {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
-  const load = useCallback(async (): Promise<void> => {
+  // trackOpen 只在"进入这个页面"时为真：load 在删除之后也会被调用来刷新，
+  // 那一次不是"打开列表"，不该再报一条 PROJECT_LIST_OPEN。
+  const load = useCallback(async (trackOpen = false): Promise<void> => {
     setLoading(true)
     setFailure(null)
     try {
       const response = await galaxyApi.listProjects()
       setProjects(response.projects)
+      if (trackOpen) {
+        trackListOpen(Result.OK)
+      }
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
       setProjects([])
+      if (trackOpen) {
+        trackListOpen(Result.FAIL, err)
+      }
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    void load()
+    void load(true)
   }, [load])
 
   async function handleCreate(values: ProjectFormValues): Promise<void> {
@@ -183,6 +193,11 @@ export function ProjectListPage(): React.ReactNode {
               onOpenChange={(nextOpen) => {
                 if (deletingRef.current !== null) {
                   return
+                }
+                // 取消确认框：动作根本没发生（请求没发出去），服务端留痕里没有它。
+                // 成功与失败则由删除请求本身留痕覆盖，这里不重复报。
+                if (!nextOpen && confirmingId === project.id) {
+                  trackProjectDeleteCancel()
                 }
                 setConfirmingId(nextOpen ? project.id : null)
               }}
@@ -293,4 +308,23 @@ export function ProjectListPage(): React.ReactNode {
       </Modal>
     </Card>
   )
+}
+
+/** 上报一次"打开工程列表"。失败时带上 trace_id 以便与服务端留痕关联。 */
+function trackListOpen(result: Result, error?: unknown): void {
+  track({
+    surface: Surface.WEB_PROJECT_LIST,
+    action: Action.PROJECT_LIST_OPEN,
+    result,
+    traceId: error === undefined ? undefined : (traceIdOf(error) ?? undefined),
+  })
+}
+
+/** 上报一次"取消删除工程"：动作根本没发生，请求留痕里没有它。 */
+function trackProjectDeleteCancel(): void {
+  track({
+    surface: Surface.WEB_PROJECT_LIST,
+    action: Action.PROJECT_DELETE,
+    result: Result.CANCEL,
+  })
 }
