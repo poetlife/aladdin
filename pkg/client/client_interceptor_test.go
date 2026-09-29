@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -21,7 +22,7 @@ func TestInterceptorInjectsHeadersOnStreamingCalls(t *testing.T) {
 		func(_ context.Context, _ connect.Spec) connect.StreamingClientConn {
 			return &fakeStreamConn{header: http.Header{}}
 		},
-	)(context.Background(), connect.Spec{Procedure: "/aladdin.galaxy.v1.GalaxyService/WatchProject"})
+	)(context.Background(), connect.Spec{Procedure: "/aladdin.events.v1.EventsService/Watch"})
 
 	if got := conn.RequestHeader().Get(interceptor.HeaderAuthorization); got != "Bearer 凭证" {
 		t.Errorf("Authorization = %q，期望 %q", got, "Bearer 凭证")
@@ -59,10 +60,86 @@ func TestInterceptorOmitsEmptyCredential(t *testing.T) {
 		func(_ context.Context, _ connect.Spec) connect.StreamingClientConn {
 			return &fakeStreamConn{header: http.Header{}}
 		},
-	)(context.Background(), connect.Spec{Procedure: "/aladdin.galaxy.v1.GalaxyService/WatchProject"})
+	)(context.Background(), connect.Spec{Procedure: "/aladdin.events.v1.EventsService/Watch"})
 
 	if got := conn.RequestHeader().Get(interceptor.HeaderAuthorization); got != "" {
 		t.Errorf("匿名调用带上了 Authorization = %q", got)
+	}
+}
+
+// **http.Client 不带整体超时。**
+//
+// Timeout 覆盖读完整个响应体。设上它，一条订阅会在几十秒后被客户端自己掐断，
+// 而调用方传入的更长 context 救不了——超时发生在传输层。unary 的时限改由
+// boundCall 补到还没有截止时间的 context 上。
+func TestDialDoesNotTimeOutTheResponseBody(t *testing.T) {
+	c, err := Dial(Options{Address: "127.0.0.1:9", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("Dial 失败: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	if c.httpClient.Timeout != 0 {
+		t.Fatalf("http.Client.Timeout = %s，长连接会被这个时限掐断", c.httpClient.Timeout)
+	}
+}
+
+// 没有截止时间的 unary 调用仍受 Timeout 约束：拿掉 http.Client.Timeout 之后，
+// 这条不能一起消失，否则一次忘了传 context 的调用会一直挂着。
+func TestUnaryCallWithoutDeadlineInheritsTimeout(t *testing.T) {
+	c := &Client{options: Options{Timeout: time.Hour}}
+	_, err := c.interceptor().WrapUnary(
+		func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("unary 调用没有截止时间")
+			}
+			remaining := time.Until(deadline)
+			if remaining < 30*time.Minute || remaining > time.Hour {
+				t.Fatalf("剩余时间 = %s，期望接近 Timeout（1 小时）", remaining)
+			}
+			return connect.NewResponse(&struct{}{}), nil
+		},
+	)(context.Background(), connect.NewRequest(&struct{}{}))
+	if err != nil {
+		t.Fatalf("调用失败: %v", err)
+	}
+}
+
+// 调用方已经给了截止时间时，不拿默认超时去覆盖它。
+func TestUnaryCallKeepsExistingDeadline(t *testing.T) {
+	c := &Client{options: Options{Timeout: time.Millisecond}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	_, err := c.interceptor().WrapUnary(
+		func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("已有的截止时间丢了")
+			}
+			if time.Until(deadline) < 30*time.Minute {
+				t.Fatalf("已有的截止时间被收成了默认超时，还剩 %s", time.Until(deadline))
+			}
+			return connect.NewResponse(&struct{}{}), nil
+		},
+	)(ctx, connect.NewRequest(&struct{}{}))
+	if err != nil {
+		t.Fatalf("调用失败: %v", err)
+	}
+}
+
+// 流式调用不套 unary 的短超时：寿命由调用方的 context 决定。
+func TestStreamingCallDoesNotInheritUnaryTimeout(t *testing.T) {
+	c := &Client{options: Options{Timeout: time.Millisecond}}
+	var hasDeadline bool
+	_ = c.interceptor().WrapStreamingClient(
+		func(ctx context.Context, _ connect.Spec) connect.StreamingClientConn {
+			_, hasDeadline = ctx.Deadline()
+			return &fakeStreamConn{header: http.Header{}}
+		},
+	)(context.Background(), connect.Spec{Procedure: "/aladdin.events.v1.EventsService/Watch"})
+	if hasDeadline {
+		t.Fatal("流式调用被套上了 unary 的超时")
 	}
 }
 

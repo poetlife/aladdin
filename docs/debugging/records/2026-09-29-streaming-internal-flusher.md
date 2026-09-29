@@ -5,7 +5,7 @@
 
 ## 症状
 
-服务端流（订阅通道 `WatchProject`）在两条协议上都无法开流：
+服务端流（订阅通道 `Watch`）在两条协议上都无法开流：
 
 ```
 rpc error: code = Internal desc = *server.statusRecorder does not implement http.Flusher
@@ -51,5 +51,5 @@ rpc error: code = Internal desc = *server.statusRecorder does not implement http
   而不是 panic，也不是假装刷成功。
 - 离线判据：`internal/server` 的 `TestStatusRecorderExposesFlusher`——断言包装类型能满足
   `http.Flusher`，且刷新透传到底层。
-- 端到端判据：`test/e2e` 的 `TestWatchProjectSeesChangesOverBothProtocols`——两条协议
+- 端到端判据：`test/e2e` 的 `TestWatchSeesChangesOverBothProtocols`——两条协议
   各开一条流；这条链路坏掉时报的就是上面那句 Internal。

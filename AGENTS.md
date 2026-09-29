@@ -31,7 +31,7 @@
 | 个人档案 | [docs/design/profile/](docs/design/profile/README.md) | 主体的展示信息（昵称、头像、简介）：存放、下发与边界 |
 | 对象存储直传 | [docs/design/objectstore/](docs/design/objectstore/README.md) | 上传的公共链路：签发临时凭证、客户端直传、提交核对；类型与大小由存储侧策略强制 |
 | galaxy 创作与发布 | [docs/design/galaxy/](docs/design/galaxy/README.md) | 用户创作工程（多版本）、管理资产、发布成一个可公开访问的站点（`static` 内容原样服务、`docs` 渲染成多页）：引用完整性、公开匿名、渲染隔离 |
-| 服务端推送（事件通道） | [docs/design/events/](docs/design/events/README.md) | 一个资源的状态变化怎么通知到别的客户端：订阅粒度、至多一次与重连补洞、吊销窗口、心跳与反向代理要求 |
+| 服务端推送（事件通道） | [docs/design/events/](docs/design/events/README.md) | 一个资源的状态变化怎么通知到别的客户端：订阅粒度、连接内合并且断线不重放（重连以 RESYNC 补洞）、吊销窗口、心跳与反向代理要求 |
 | Web 界面 | [docs/design/web/](docs/design/web/README.md) | 呈现机制：主题（亮/暗/跟随系统）、图标与动效的来源、外壳结构、站内文档区，窄屏见 [responsive.md](docs/design/web/responsive.md) |
 | UI/UX 设计指导 | [docs/design/uiux/](docs/design/uiux/README.md) | 前端界面取舍：信息层级、间距节奏、空态与失败、文案、破坏性操作 |
 | 人读示意图约定 | [docs/design/diagram-conventions.md](docs/design/diagram-conventions.md) | design 文档里的人读图怎么画：默认 ASCII/Unicode 框图与表格，复杂沟通才上 Archify 件；图是说明视图，不是第二份事实来源 |

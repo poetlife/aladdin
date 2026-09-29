@@ -197,7 +197,8 @@ describe('断线与重连', () => {
 
   it('会话失效交给会话层，不再重连', async () => {
     const streams: FakeTopicStream[] = []
-    await renderProbe(streams, [], ['galaxy.project/甲'])
+    const seen: string[] = []
+    await renderProbe(streams, seen, ['galaxy.project/甲'])
 
     // 流上的错误不会被传输层的拦截器看到（拦截器只包住"建立调用"），因此会话
     // 失效要在这里收口，否则一次吊销既不会引导重新登录、又会被无限重连。
@@ -208,6 +209,24 @@ describe('断线与重连', () => {
 
     expect(vi.mocked(transport.notifyUnauthenticated)).toHaveBeenCalled()
     expect(streams.length, '会话已失效却还在重连').toBe(1)
+    expect(seen, '未认证却又触发了一次重拉').toEqual([])
+  })
+
+  it('不再重试的失败仍通知一次，页面才能离开旧状态', async () => {
+    const streams: FakeTopicStream[] = []
+    const seen: string[] = []
+    await renderProbe(streams, seen, ['galaxy.project/甲'])
+
+    // 工程已删除：重连会被拒，没有下一次 RESYNC。停掉之前必须通知一次。
+    streams[0]?.fail(new ConnectError('工程不存在', Code.NotFound))
+    await flush()
+    expect(seen).toEqual(['galaxy.project/甲'])
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SECOND_RECONNECT_MAX_MS * 10)
+    })
+    expect(streams.length, '不会变化的失败仍在重连').toBe(1)
+    expect(seen, '失败被通知了不止一次').toEqual(['galaxy.project/甲'])
   })
 
   it('网络类失败仍然重连', async () => {

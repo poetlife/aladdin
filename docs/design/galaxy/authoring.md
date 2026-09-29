@@ -167,7 +167,7 @@
 | 命令行 | 创作路径的落点：目录与素材由命令行送入，本页负责审阅与发布（见 [cli.md](cli.md)） |
 | RBAC | `galaxy.project.read` 决定这一页的入口是否渲染、`galaxy.project.write` 决定能否存版本（内容的写入在命令行，见 [cli.md](cli.md)；判定见 [../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)） |
 | Web 界面 | 页面结构、主题与窄屏适配见 [../web/README.md](../web/README.md) 与 [../web/responsive.md](../web/responsive.md) |
-| 事件通道 | 这一页订阅它正在看的那个工程；事件只说明"变了什么"，到达后由本页重拉草稿与结论（见 [../events/README.md](../events/README.md)） |
+| 事件通道 | 这一页订阅它正在看的那个工程；事件只说明这条主题变了，不含「变了什么」，到达后由本页重拉草稿与结论（见 [../events/README.md](../events/README.md)） |
 | 可观测性 | 保存与校验的留痕不含内容全文（见 [../../observability.md](../../observability.md)） |
 
 ## 待定决策

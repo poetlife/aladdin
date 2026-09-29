@@ -313,6 +313,40 @@ func TestWatchPassesTheOwnersErrorThrough(t *testing.T) {
 	}
 }
 
+// **主题退场前，还没取走的变更必须先送到。**
+//
+// 删除是「先 Publish 再 Close」。Done 与 Ready 会同时就绪，select 随机选一支；
+// 若先结束，这次变更就丢了。此后重连会被拒绝（资源已不存在），没有 RESYNC
+// 可补。重复多次是为了撞上那次随机选择——修之前大约一半会失败。
+func TestWatchDeliversPendingChangeWhenTopicRetires(t *testing.T) {
+	h := newEventsHarness(t, eventsOptions{})
+	h.grantRead(t)
+
+	for range 30 {
+		stream := h.open(t, watchTestTopic)
+		if event := next(t, stream); event.GetControl() != eventsv1.Control_CONTROL_RESYNC {
+			t.Fatalf("第一条 = %v，期望 RESYNC", event.GetControl())
+		}
+
+		h.bus.Publish(watchTestTopic)
+		h.bus.Close(watchTestTopic)
+
+		event := next(t, stream)
+		if event.GetTopic() != watchTestTopic {
+			t.Errorf("主题 = %q，期望 %q", event.GetTopic(), watchTestTopic)
+		}
+		if event.GetControl() != eventsv1.Control_CONTROL_UNSPECIFIED {
+			t.Errorf("控制类别 = %v，期望变更事件（主题退场前先送达）", event.GetControl())
+		}
+		if stream.Receive() {
+			t.Fatal("待取的变更发出去之后，流仍有事件")
+		}
+		if err := stream.Err(); err != nil {
+			t.Errorf("主题退场的流以 %v 结束，期望正常结束", err)
+		}
+	}
+}
+
 // 同一个主题订两次没有意义：它只该得到一条 RESYNC。
 func TestWatchDeduplicatesRepeatedTopics(t *testing.T) {
 	h := newEventsHarness(t, eventsOptions{})

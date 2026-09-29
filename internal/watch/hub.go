@@ -88,6 +88,10 @@ func (h *Hub) Publish(topic string) {
 // 因此去读一次、读到"不存在"，然后这条主题安静退场。
 //
 // 某条订阅的主题集合因此变空时，这条订阅也结束（见 Subscription.Done）。
+//
+// **待取集合不会在这里清空。** Done 与 Ready 可能同时就绪；只看 Done 就会丢掉
+// 还没取走的变更。结束这条订阅的那一侧要先把待取的取完再收摊（见事件通道的
+// Watch：主题退场后重连会被拒绝，没有下一次 RESYNC 可补）。
 func (h *Hub) Close(topic string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

@@ -25,8 +25,9 @@ const RECONNECT_MAX_MS = 30_000
  *    当前部署形态给不了（见 docs/design/events/README.md）。重开复用同一条退避
  *    链路，代价只是重连之后每个主题各重拉一次——而 RESYNC 正是为此存在的。
  * 2. **流结束时重连**：正常结束（服务端的上限寿命到点）与出错走同一条路。重连
- *    之后服务端会给每个主题各一条 RESYNC，于是重拉——这正是交付语义是"至多一次、
- *    不重放"仍然安全的原因。
+ *    之后服务端会给每个主题各一条 RESYNC，于是重拉——断线期间不重放，靠的就是
+ *    这一次。不再重试的失败（资源已不存在、没有权限）没有下一次 RESYNC，因此
+ *    在停掉之前把所订主题各通知一次，页面才能离开旧状态。
  * 3. **卸载即中止**：不中止的话那条流会一直挂在服务端（它的寿命上限是半小时），
  *    而这一页早就不在了。
  *
@@ -70,13 +71,21 @@ export function useWatch(topics: readonly string[], onChange: (topic: string) =>
           onChangeRef.current(event.topic)
         }
       } catch (error) {
+        if (stopped) {
+          return
+        }
         if (isUnauthenticated(error)) {
-          // 会话失效：交给会话层引导重新登录。重连也还是未认证，因此不再重连。
+          // 会话失效：交给会话层引导重新登录。重连也还是未认证，因此不再重连，
+          // 也不再发一次读取（那次读取同样未认证）。
           notifyUnauthenticated()
           return
         }
         if (isPermanentFailure(error)) {
-          // 请求本身不成立：退避再多次也是同一个结论。页面自己那次读取会显示原因。
+          // 请求本身不成立：退避再多次也是同一个结论。但不会再有 RESYNC，
+          // 页面若不再读一次，就会停在失败之前的状态（例如工程已被删除）。
+          for (const topic of subscribed) {
+            onChangeRef.current(topic)
+          }
           return
         }
         // 其余（网络中断、服务端重启）走退避重连。

@@ -40,7 +40,10 @@ type Options struct {
 	Token string
 	// Scope 是本次调用声明的作用域。为空时由服务端使用凭证的默认作用域。
 	Scope string
-	// Timeout 是单次调用的默认超时。
+	// Timeout 是单次 unary 调用的默认超时。调用方的 context 已有截止时间时以那个为准。
+	//
+	// **它不限制流的寿命。** 设在 http.Client.Timeout 上会把整段响应体的读取算进去，
+	// 一条订阅会在这个时限上被掐断，心跳也救不了。流的寿命由调用方传入的 context 决定。
 	Timeout time.Duration
 }
 
@@ -79,7 +82,9 @@ func Dial(opts Options) (*Client, error) {
 	}
 
 	return &Client{
-		httpClient: &http.Client{Transport: transport, Timeout: opts.Timeout},
+		// 不设 http.Client.Timeout：它覆盖读完整个响应体，长连接（Watch）会在
+		// 默认的几十秒上被掐断。unary 的时限由 boundCall 补到 context 上。
+		httpClient: &http.Client{Transport: transport},
 		baseURL:    scheme + "://" + opts.Address,
 		options:    opts,
 	}, nil
@@ -125,11 +130,27 @@ type clientInterceptor struct {
 // WrapUnary 实现 connect.Interceptor。
 func (i clientInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		ctx, cancel := i.client.boundCall(ctx)
+		defer cancel()
 		ctx, span := observability.StartClientSpan(ctx, req.Spec().Procedure)
 		defer span.End()
 		i.client.injectHeaders(ctx, req.Header())
 		return next(ctx, req)
 	}
+}
+
+// boundCall 给还没有截止时间的 unary 调用补上默认超时。
+//
+// 已经带截止时间的 context 保持原样：调用方（通常是 Client.Context）已经表达了
+// 这次调用要等多久。流式调用不走这里——短超时套在长连接上会把订阅掐断。
+func (c *Client) boundCall(ctx context.Context) (context.Context, context.CancelFunc) {
+	if c.options.Timeout <= 0 {
+		return ctx, func() {}
+	}
+	if _, hasDeadline := ctx.Deadline(); hasDeadline {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, c.options.Timeout)
 }
 
 // WrapStreamingClient 实现 connect.Interceptor：注入同一批请求头。

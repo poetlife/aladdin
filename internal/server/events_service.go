@@ -96,7 +96,7 @@ func (s *EventsService) Watch(ctx context.Context, req *connect.Request[eventsv1
 
 	// **每个主题各一条 RESYNC。** 调用方在连接建立之前无从知道"我已经同步到
 	// 哪一刻"：「上一次拉取完成」与「订阅建立」之间落下的那次改动没有别的机会
-	// 被补上。有了它，交付语义才可以是"至多一次、不重放"。
+	// 被补上。断线期间同样不重放，重连之后的 RESYNC 覆盖那个窗口。
 	for _, topic := range topics {
 		if err := sendEvent(stream, topic, eventsv1.Control_CONTROL_RESYNC); err != nil {
 			return nil
@@ -121,9 +121,15 @@ func (s *EventsService) Watch(ctx context.Context, req *connect.Request[eventsv1
 				return nil
 			}
 		case <-sub.Done():
-			// 它订的主题都不存在了（资源被删）。**正常结束**：调用方重连、重新
-			// 订阅，那时才会拿到"不存在"这个结论——把那条结论塞进这条流会让
-			// 一次删除看起来像一次连接故障。
+			// 它订的主题都不存在了（资源被删）。**先把还没取走的变更发出去**：
+			// Done 与 Ready 可能同时就绪，select 会随机选一支；先结束就把这次
+			// 变更丢掉。此后调用方重连会被拒绝（资源已不存在），没有 RESYNC
+			// 可补，页面就停在删除之前的状态。
+			//
+			// 发完再正常结束。发送失败也一样：对端已经不在，剩下的送不出去。
+			// 不把「不存在」塞进这条流：那会让一次删除看起来像一次连接故障。
+			// 调用方拿到变更后自己去读，读到的就是那个结论。
+			_ = flushPending(sub, stream)
 			return nil
 		case <-heartbeat.C:
 			// 心跳不是一次变更，也不属于任何主题：它是连接级的。
@@ -178,6 +184,22 @@ func (s *EventsService) authorizeTopics(ctx context.Context, subject rbac.Subjec
 		granted = append(granted, topic)
 	}
 	return granted, nil
+}
+
+// flushPending 把还没取走的变更发完。
+//
+// 主题退场时调用：待取集合以所订主题数为上限，循环是有界的。发送失败即停
+// （对端已经不在），剩下的也送不出去。
+func flushPending(sub *watch.Subscription, stream *connect.ServerStream[eventsv1.Event]) error {
+	for {
+		topic, ok := sub.Take()
+		if !ok {
+			return nil
+		}
+		if err := sendEvent(stream, topic, eventsv1.Control_CONTROL_UNSPECIFIED); err != nil {
+			return err
+		}
+	}
 }
 
 // sendEvent 是本流**唯一**的发送入口。
