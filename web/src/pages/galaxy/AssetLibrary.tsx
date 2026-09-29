@@ -4,7 +4,6 @@ import {
   Button,
   Empty,
   Form,
-  Image,
   Input,
   Modal,
   Popconfirm,
@@ -25,6 +24,7 @@ import { track } from '../../telemetry/track'
 import { sha256Hex } from '../../upload/content-digest'
 import { directUpload } from '../../upload/direct-upload'
 import { describeBytes } from '../../format/bytes'
+import { AssetMedia, MEDIA_HEIGHT } from './AssetMedia'
 import { formatTime } from './format-time'
 import { mediaKindOfDeclaredType } from './media-kind'
 
@@ -32,9 +32,6 @@ import { mediaKindOfDeclaredType } from './media-kind'
 // 选择框里能看到什么，**不是校验**：真正的类型由上传方声明、由服务端与存储侧判定。
 const ACCEPTED_TYPES =
   'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,audio/mpeg,audio/ogg,audio/wav'
-
-/** 预览区（也是"查看"的落点）的高度。 */
-const MEDIA_HEIGHT = 132
 
 interface AssetLibraryProps {
   projectId: string
@@ -449,7 +446,12 @@ function AssetCard({
           overflow: 'hidden',
         }}
       >
-        <AssetMedia asset={asset} label={label} />
+        <AssetMedia
+          url={asset.url}
+          mediaType={asset.mediaType}
+          label={label}
+          maxHeight={MEDIA_HEIGHT - 16}
+        />
       </div>
       <Space orientation="vertical" size={4} style={{ padding: 8, width: '100%' }}>
         <Typography.Text ellipsis={{ tooltip: label }}>{label}</Typography.Text>
@@ -521,33 +523,4 @@ function AssetCard({
       </Space>
     </div>
   )
-}
-
-/**
- * 资产的查看。
- *
- * 图片走 antd 的 `Image`：点一下放大到原图（这是"查看"，不是缩略图——本模块
- * 不做转码，放大的就是原样的字节）。视频与音频用各自的控件播放。
- * 服务端记录的类型前缀决定用哪一种；取不到地址时原样说明，不装作有。
- */
-function AssetMedia({ asset, label }: { asset: Asset; label: string }): React.ReactNode {
-  if (asset.url === '') {
-    return <Typography.Text type="secondary">无预览</Typography.Text>
-  }
-  if (asset.mediaType.startsWith('image/')) {
-    return (
-      <Image
-        src={asset.url}
-        alt={label}
-        style={{ maxWidth: '100%', maxHeight: MEDIA_HEIGHT - 16, objectFit: 'contain' }}
-      />
-    )
-  }
-  if (asset.mediaType.startsWith('video/')) {
-    return <video src={asset.url} controls style={{ maxWidth: '100%', maxHeight: MEDIA_HEIGHT }} />
-  }
-  if (asset.mediaType.startsWith('audio/')) {
-    return <audio src={asset.url} controls style={{ width: '100%' }} />
-  }
-  return null
 }
