@@ -174,16 +174,15 @@ type GalaxyServiceClient interface {
 	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而这条
 	// 路径要读对象存储、可能较慢，不适合被当作可缓存的安全方法。
 	ValidateDraft(context.Context, *connect.Request[v1.ValidateDraftRequest]) (*connect.Response[v1.ValidateDraftResponse], error)
-	// 把当前草稿渲染成一份可以放进沙箱 iframe 的 HTML，供**只有本人能看**的
-	// 预览使用。
+	// 给出**草稿整站的预览地址**，供只有本人能看的预览使用。
 	//
-	// **渲染在服务端，与发布共用同一段实现**：`docs` 形态的 markdown → HTML
-	// 只有一处实现，网页端不再引第二个渲染器——两份实现迟早漂移，而用户看到
-	// 的是"预览好好的、发布出来不一样"。
+	// 预览不是"把一份 HTML 塞进 iframe"：服务端把草稿整组按发布的路径形状，从
+	// 发布域上一条带**短时凭证**的地址上提供（见 docs/design/galaxy/site-model.md
+	// 的"预览"与 authoring.md）。页面因此有自己的源与目录，页内的相对地址、站点
+	// 绝对地址与脚本里拼出来的路径都由浏览器自己解析——与发布态同一套道理。
 	//
-	// 它复用**编辑态**的那套地址：`asset://` 记号被换成短时预签名地址，因此
-	// 预览里的图会随地址过期而显示不出来，刷新即得到新地址。预览不承诺与发布
-	// 态逐像素一致（见 docs/design/galaxy/authoring.md）。
+	// 凭证短时有效、随地址走；过期的表现是这一页取不到，重新调用本方法即得到新
+	// 地址（与"重新读取档案即得到新地址"同源）。
 	PreviewDraft(context.Context, *connect.Request[v1.PreviewDraftRequest]) (*connect.Response[v1.PreviewDraftResponse], error)
 	// 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
 	//
@@ -633,16 +632,15 @@ type GalaxyServiceHandler interface {
 	// 它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而这条
 	// 路径要读对象存储、可能较慢，不适合被当作可缓存的安全方法。
 	ValidateDraft(context.Context, *connect.Request[v1.ValidateDraftRequest]) (*connect.Response[v1.ValidateDraftResponse], error)
-	// 把当前草稿渲染成一份可以放进沙箱 iframe 的 HTML，供**只有本人能看**的
-	// 预览使用。
+	// 给出**草稿整站的预览地址**，供只有本人能看的预览使用。
 	//
-	// **渲染在服务端，与发布共用同一段实现**：`docs` 形态的 markdown → HTML
-	// 只有一处实现，网页端不再引第二个渲染器——两份实现迟早漂移，而用户看到
-	// 的是"预览好好的、发布出来不一样"。
+	// 预览不是"把一份 HTML 塞进 iframe"：服务端把草稿整组按发布的路径形状，从
+	// 发布域上一条带**短时凭证**的地址上提供（见 docs/design/galaxy/site-model.md
+	// 的"预览"与 authoring.md）。页面因此有自己的源与目录，页内的相对地址、站点
+	// 绝对地址与脚本里拼出来的路径都由浏览器自己解析——与发布态同一套道理。
 	//
-	// 它复用**编辑态**的那套地址：`asset://` 记号被换成短时预签名地址，因此
-	// 预览里的图会随地址过期而显示不出来，刷新即得到新地址。预览不承诺与发布
-	// 态逐像素一致（见 docs/design/galaxy/authoring.md）。
+	// 凭证短时有效、随地址走；过期的表现是这一页取不到，重新调用本方法即得到新
+	// 地址（与"重新读取档案即得到新地址"同源）。
 	PreviewDraft(context.Context, *connect.Request[v1.PreviewDraftRequest]) (*connect.Response[v1.PreviewDraftResponse], error)
 	// 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
 	//

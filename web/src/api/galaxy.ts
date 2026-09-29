@@ -85,7 +85,8 @@ export async function validateDraft(projectId: string) {
  * 一处实现，前端不再引第二个渲染器——两份实现迟早漂移，而用户看到的是"预览好好
  * 的、发布出来不一样"。
  *
- * path 只在 `static` 形态下有作用（逐页预览）；`docs` 形态忽略它（整站拼成一份）。
+ * path 是要预览的那一份（`static` 用它换一页）；为空表示入口。`docs` 的页面由服务端
+ * 渲染，因此给它的产物路径也可以。
  */
 export async function previewDraft(projectId: string, path = '') {
   return galaxyClient().previewDraft({ projectId, path })

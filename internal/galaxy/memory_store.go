@@ -20,21 +20,23 @@ import (
 type MemoryStore struct {
 	mu sync.RWMutex
 
-	projects     map[string]Project
-	drafts       map[string]Draft
-	versions     map[string]Version
-	assets       map[string]Asset
-	publications map[string]Publication
+	projects      map[string]Project
+	drafts        map[string]Draft
+	versions      map[string]Version
+	assets        map[string]Asset
+	publications  map[string]Publication
+	previewGrants map[string]PreviewGrant
 }
 
 // NewMemoryStore 构造一个空的 galaxy 存储。
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		projects:     map[string]Project{},
-		drafts:       map[string]Draft{},
-		versions:     map[string]Version{},
-		assets:       map[string]Asset{},
-		publications: map[string]Publication{},
+		projects:      map[string]Project{},
+		drafts:        map[string]Draft{},
+		versions:      map[string]Version{},
+		assets:        map[string]Asset{},
+		publications:  map[string]Publication{},
+		previewGrants: map[string]PreviewGrant{},
 	}
 }
 
@@ -313,6 +315,12 @@ func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 			delete(s.publications, id)
 		}
 	}
+	// 预览凭证也是工程的东西：工程没了，它的凭证一条都不该留下。
+	for token, grant := range s.previewGrants {
+		if grant.ProjectID == projectID {
+			delete(s.previewGrants, token)
+		}
+	}
 	return nil
 }
 
@@ -408,6 +416,35 @@ func (s *MemoryStore) PutPublication(_ context.Context, publication Publication)
 	// 检查点可续跑的前提。
 	publication.Manifest = cloneManifest(publication.Manifest)
 	s.publications[publication.ID] = publication
+	return nil
+}
+
+// GetPreviewGrant 实现 Store。
+func (s *MemoryStore) GetPreviewGrant(_ context.Context, token string) (PreviewGrant, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	grant, ok := s.previewGrants[token]
+	if !ok {
+		return PreviewGrant{}, ErrPreviewGrantNotFound
+	}
+	return grant, nil
+}
+
+// PutPreviewGrant 实现 MutableStore：写入一条凭证，并清掉该工程下已过期的那些。
+//
+// 清理只影响表的增长，不影响任何一次判定：过期与否始终由读取侧比较时间得出
+// （见 galaxy.PreviewGrant.Expired）。
+func (s *MemoryStore) PutPreviewGrant(_ context.Context, grant PreviewGrant, cleanupBefore time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for token, existing := range s.previewGrants {
+		if existing.ProjectID == grant.ProjectID && existing.Expired(cleanupBefore) {
+			delete(s.previewGrants, token)
+		}
+	}
+	s.previewGrants[grant.Token] = grant
 	return nil
 }
 

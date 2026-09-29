@@ -289,6 +289,100 @@ func TestGalaxyPublishedSiteIsPubliclyReachable(t *testing.T) {
 }
 
 // **docs 形态**：markdown 渲染成多页、每一页有自己的地址、导航只由 markdown 派生。
+// **预览通道**：草稿整组从发布域上一条带短时凭证的地址上给出，于是页面引用的样式、
+// 脚本与素材**都能按路径取到**。
+//
+// 这条只有走一遍真的 HTTP 请求才能回答。此前预览把单份文件塞进 `srcdoc`，那份文档
+// 没有自己的地址，`style.css` 这类相对引用一处也解析不了——生产上表现为"预览没有
+// 样式、图片全裂"。
+func TestGalaxyPreviewServesDraftSiteByPath(t *testing.T) {
+	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
+	client := connectGalaxy(t, h, testToken)
+
+	projectID := createProject(t, client, "预览的站点", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	pushDraft(t, client, projectID,
+		pushContentOverRPC(t, h, client, projectID, "index.html",
+			`<link rel="stylesheet" href="style.css"><span>你好</span><img src="img/pov-01.png"><script src="app.js"></script>`),
+		pushContentOverRPC(t, h, client, projectID, "style.css", "body{color:#222}"),
+		pushContentOverRPC(t, h, client, projectID, "app.js", "console.log(1)"),
+		pushAssetOverRPC(t, h, client, projectID, "img/pov-01.png", "image/png", pngBytes),
+	)
+
+	preview, err := client.PreviewDraft(context.Background(), connect.NewRequest(&galaxyv1.PreviewDraftRequest{
+		ProjectId: projectID,
+	}))
+	if err != nil {
+		t.Fatalf("取预览地址失败: %v", err)
+	}
+	address := preview.Msg.GetUrl()
+	previewPrefix := h.publishBase + galaxy.PublicPathPrefix + galaxy.PreviewPathSegment + "/"
+	if !strings.HasPrefix(address, previewPrefix) {
+		t.Fatalf("预览地址 = %q，期望落在发布域的预览前缀下", address)
+	}
+	if !strings.HasSuffix(address, "/index.html") {
+		t.Fatalf("预览地址 = %q，期望指向入口文件", address)
+	}
+	// 站点根：其余文件按它解析——这正是页面里那些相对地址要做的事。
+	root := strings.TrimSuffix(address, "index.html")
+
+	// 入口：**不带任何凭证**也取得回来——凭证就在地址里（地址即凭据），而它比发布
+	// 多出来的东西只有一条：短时有效。安全头与发布态逐条相同。
+	status, body, header := fetchPublished(t, h, address, "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("取预览入口 = %d，期望 200", status)
+	}
+	if !strings.Contains(body, "你好") {
+		t.Errorf("预览入口的正文不对: %s", body)
+	}
+	if got := header.Get("Content-Security-Policy"); got == "" {
+		t.Error("预览响应没有内容安全策略")
+	}
+	if got := header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q，期望 nosniff", got)
+	}
+	// 草稿会变：同一个路径的字节下一刻就可能不同，因此不进任何缓存。
+	if got := header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q，期望 no-store", got)
+	}
+
+	// 兄弟文件按路径取到，且**类型由扩展名派生**——内容对象在桶上是中性类型，
+	// 只有这一条路能让浏览器把它当样式与脚本用。
+	status, body, header = fetchPublished(t, h, root, "style.css", nil)
+	if status != http.StatusOK || body != "body{color:#222}" {
+		t.Fatalf("取 style.css = %d %q，期望 200 与原文", status, body)
+	}
+	if got := header.Get("Content-Type"); !strings.HasPrefix(got, "text/css") {
+		t.Errorf("style.css 的 Content-Type = %q，期望 text/css", got)
+	}
+	if status, body, _ = fetchPublished(t, h, root, "app.js", nil); status != http.StatusOK || body != "console.log(1)" {
+		t.Errorf("取 app.js = %d %q", status, body)
+	}
+
+	// 素材条目：重定向到**私有区**的短时地址（预览态不公开任何字节）。
+	status, _, header = fetchPublished(t, h, root, "img/pov-01.png", nil)
+	if status != http.StatusFound {
+		t.Fatalf("取素材 = %d，期望 302", status)
+	}
+	if location := header.Get("Location"); !strings.Contains(location, "/assets/") ||
+		strings.Contains(location, galaxy.ReleaseObjectKey("x", "y")) {
+		t.Errorf("素材的重定向目标 = %q，期望指向私有区", location)
+	}
+
+	// 草稿里没有的路径、以及被改过的凭证：都得到与"这一页不存在"相同的否定结论。
+	if status, _, _ := fetchPublished(t, h, root, "nope.css", nil); status != http.StatusNotFound {
+		t.Errorf("草稿里没有的路径 = %d，期望 404", status)
+	}
+	tampered := strings.Replace(address, galaxy.PreviewPathSegment+"/", galaxy.PreviewPathSegment+"/x", 1)
+	if status, _, _ := fetchPublished(t, h, tampered, "", nil); status != http.StatusNotFound {
+		t.Errorf("被改过的凭证 = %d，期望 404", status)
+	}
+
+	// **这条通道不改发布态**：还没发布，发布地址仍然是否定的。
+	if status, _, _ := fetchPublished(t, h, h.publishBase+galaxy.PublicPathPrefix+projectID, "", nil); status != http.StatusNotFound {
+		t.Errorf("未发布时发布地址 = %d，期望 404", status)
+	}
+}
+
 func TestGalaxyDocsSiteIsRenderedPerPage(t *testing.T) {
 	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 	client := connectGalaxy(t, h, testToken)

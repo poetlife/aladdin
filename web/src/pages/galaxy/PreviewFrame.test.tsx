@@ -9,12 +9,12 @@ import { PreviewFrame } from './PreviewFrame'
 
 let root: Root | null = null
 
-async function renderPreview(html: string): Promise<HTMLElement> {
+async function renderPreview(url: string): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<PreviewFrame html={html} />)
+    root?.render(<PreviewFrame url={url} />)
   })
   return container
 }
@@ -37,7 +37,7 @@ afterEach(async () => {
 describe('预览沙箱', () => {
   // spec 明确要求的核查项：预览落在不透明源上，沙箱属性里不得出现 allow-same-origin。
   it('沙箱属性里没有 allow-same-origin', async () => {
-    const container = await renderPreview('<!doctype html><h1>hi</h1>')
+    const container = await renderPreview('https://pub.example.com/g/p/tok/prj_x/index.html')
 
     const sandbox = iframe(container).getAttribute('sandbox') ?? ''
     expect(sandbox).not.toContain('allow-same-origin')
@@ -45,13 +45,17 @@ describe('预览沙箱', () => {
     expect(sandbox).toContain('allow-scripts')
   })
 
-  // 渲染在服务端（与发布共用同一段实现），因此这里把服务端给的那份 HTML
-  // **原样**放进 srcDoc：前端不再做任何改写，也就不可能与发布态漂移。
-  it('服务端渲染的结果原样进 srcDoc，前端不改写', async () => {
-    const html = '<!doctype html>\n<html><body><img src="/g/prj_x/logo.png"></body></html>'
+  // 预览加载的是**一条地址**而不是塞进来的一份 HTML：页面因此有自己的源与目录，
+  // 页内的相对地址与站点绝对地址都由浏览器自己解析（见 authoring.md 的"预览"）。
+  // 地址由服务端给出，前端原样使用，不拼、不改写。
+  it('服务端给的地址原样进 src', async () => {
+    const url = 'https://pub.example.com/g/p/tok/prj_x/index.html'
 
-    const container = await renderPreview(html)
+    const container = await renderPreview(url)
 
-    expect(iframe(container).getAttribute('srcdoc')).toBe(html)
+    const element = iframe(container)
+    expect(element.getAttribute('src')).toBe(url)
+    // 塞一份 HTML 的那条路已经不存在了。
+    expect(element.getAttribute('srcdoc')).toBeNull()
   })
 })
