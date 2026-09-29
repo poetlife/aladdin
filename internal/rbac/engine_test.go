@@ -116,6 +116,7 @@ func TestEngineEffectivePermissions(t *testing.T) {
 	want := map[PermissionCode]bool{
 		PermissionRbacRoleRead:    true,
 		PermissionRbacSubjectRead: true,
+		PermissionRbacScopeRead:   true,
 	}
 	if len(permissions) != len(want) {
 		t.Fatalf("权限数 = %d (%v), want %d", len(permissions), permissions, len(want))

@@ -46,6 +46,12 @@ const (
 	// RBACServiceListSubjectBindingsProcedure is the fully-qualified name of the RBACService's
 	// ListSubjectBindings RPC.
 	RBACServiceListSubjectBindingsProcedure = "/aladdin.rbac.v1.RBACService/ListSubjectBindings"
+	// RBACServiceListScopesProcedure is the fully-qualified name of the RBACService's ListScopes RPC.
+	RBACServiceListScopesProcedure = "/aladdin.rbac.v1.RBACService/ListScopes"
+	// RBACServicePutScopeProcedure is the fully-qualified name of the RBACService's PutScope RPC.
+	RBACServicePutScopeProcedure = "/aladdin.rbac.v1.RBACService/PutScope"
+	// RBACServiceDeleteScopeProcedure is the fully-qualified name of the RBACService's DeleteScope RPC.
+	RBACServiceDeleteScopeProcedure = "/aladdin.rbac.v1.RBACService/DeleteScope"
 	// RBACServicePublishPolicyProcedure is the fully-qualified name of the RBACService's PublishPolicy
 	// RPC.
 	RBACServicePublishPolicyProcedure = "/aladdin.rbac.v1.RBACService/PublishPolicy"
@@ -55,7 +61,12 @@ const (
 type RBACServiceClient interface {
 	// 读取角色定义。
 	GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error)
-	// 列出某个作用域下可见的角色。
+	// 列出角色定义全集。
+	//
+	// 请求里的 scope **只用于鉴权**（判断调用方有没有在该范围读角色的权限），
+	// **不用于过滤结果**：角色定义没有归属范围，全库只有一份。因此同一主体
+	// 在任意有读权限的范围上调用，拿到的都是同一个列表——切换管理范围不会
+	// 让这个列表变化，变化的是"还能不能读"。
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
 	// 创建或更新角色。属于不可逆操作，调用方需二次确认。
 	PutRole(context.Context, *connect.Request[v1.PutRoleRequest]) (*connect.Response[v1.PutRoleResponse], error)
@@ -65,6 +76,20 @@ type RBACServiceClient interface {
 	AssignRole(context.Context, *connect.Request[v1.AssignRoleRequest]) (*connect.Response[v1.AssignRoleResponse], error)
 	// 列出某个主体持有的角色绑定。
 	ListSubjectBindings(context.Context, *connect.Request[v1.ListSubjectBindingsRequest]) (*connect.Response[v1.ListSubjectBindingsResponse], error)
+	// 列出已登记的范围（全局不在其中：它是模型的根，不是一条登记记录）。
+	//
+	// 请求里的 scope 只用于鉴权，与结果无关：范围目录是部署级的，不按范围过滤。
+	ListScopes(context.Context, *connect.Request[v1.ListScopesRequest]) (*connect.Response[v1.ListScopesResponse], error)
+	// 登记一个范围，或改它的显示名。
+	//
+	// 路径是标识，**不可更改**；登记一个已存在的路径等同于改显示名
+	// （与重复授予同一角色是幂等的重复写入同理）。
+	PutScope(context.Context, *connect.Request[v1.PutScopeRequest]) (*connect.Response[v1.PutScopeResponse], error)
+	// 删除一个范围。不可逆。
+	//
+	// 范围内或其后代上仍有角色绑定时拒绝——与"删除仍被持有的角色"同构：
+	// 引用还在，就不允许把被引用的东西抽走。
+	DeleteScope(context.Context, *connect.Request[v1.DeleteScopeRequest]) (*connect.Response[v1.DeleteScopeResponse], error)
 	// 使一次角色变更正式生效（缓存失效 + 生效确认）。
 	// 对应 docs/design/rbac/role-model.md 的"生效确认"阶段。
 	PublishPolicy(context.Context, *connect.Request[v1.PublishPolicyRequest]) (*connect.Response[v1.PublishPolicyResponse], error)
@@ -120,6 +145,25 @@ func NewRBACServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		listScopes: connect.NewClient[v1.ListScopesRequest, v1.ListScopesResponse](
+			httpClient,
+			baseURL+RBACServiceListScopesProcedure,
+			connect.WithSchema(rBACServiceMethods.ByName("ListScopes")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		putScope: connect.NewClient[v1.PutScopeRequest, v1.PutScopeResponse](
+			httpClient,
+			baseURL+RBACServicePutScopeProcedure,
+			connect.WithSchema(rBACServiceMethods.ByName("PutScope")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteScope: connect.NewClient[v1.DeleteScopeRequest, v1.DeleteScopeResponse](
+			httpClient,
+			baseURL+RBACServiceDeleteScopeProcedure,
+			connect.WithSchema(rBACServiceMethods.ByName("DeleteScope")),
+			connect.WithClientOptions(opts...),
+		),
 		publishPolicy: connect.NewClient[v1.PublishPolicyRequest, v1.PublishPolicyResponse](
 			httpClient,
 			baseURL+RBACServicePublishPolicyProcedure,
@@ -137,6 +181,9 @@ type rBACServiceClient struct {
 	deleteRole          *connect.Client[v1.DeleteRoleRequest, v1.DeleteRoleResponse]
 	assignRole          *connect.Client[v1.AssignRoleRequest, v1.AssignRoleResponse]
 	listSubjectBindings *connect.Client[v1.ListSubjectBindingsRequest, v1.ListSubjectBindingsResponse]
+	listScopes          *connect.Client[v1.ListScopesRequest, v1.ListScopesResponse]
+	putScope            *connect.Client[v1.PutScopeRequest, v1.PutScopeResponse]
+	deleteScope         *connect.Client[v1.DeleteScopeRequest, v1.DeleteScopeResponse]
 	publishPolicy       *connect.Client[v1.PublishPolicyRequest, v1.PublishPolicyResponse]
 }
 
@@ -170,6 +217,21 @@ func (c *rBACServiceClient) ListSubjectBindings(ctx context.Context, req *connec
 	return c.listSubjectBindings.CallUnary(ctx, req)
 }
 
+// ListScopes calls aladdin.rbac.v1.RBACService.ListScopes.
+func (c *rBACServiceClient) ListScopes(ctx context.Context, req *connect.Request[v1.ListScopesRequest]) (*connect.Response[v1.ListScopesResponse], error) {
+	return c.listScopes.CallUnary(ctx, req)
+}
+
+// PutScope calls aladdin.rbac.v1.RBACService.PutScope.
+func (c *rBACServiceClient) PutScope(ctx context.Context, req *connect.Request[v1.PutScopeRequest]) (*connect.Response[v1.PutScopeResponse], error) {
+	return c.putScope.CallUnary(ctx, req)
+}
+
+// DeleteScope calls aladdin.rbac.v1.RBACService.DeleteScope.
+func (c *rBACServiceClient) DeleteScope(ctx context.Context, req *connect.Request[v1.DeleteScopeRequest]) (*connect.Response[v1.DeleteScopeResponse], error) {
+	return c.deleteScope.CallUnary(ctx, req)
+}
+
 // PublishPolicy calls aladdin.rbac.v1.RBACService.PublishPolicy.
 func (c *rBACServiceClient) PublishPolicy(ctx context.Context, req *connect.Request[v1.PublishPolicyRequest]) (*connect.Response[v1.PublishPolicyResponse], error) {
 	return c.publishPolicy.CallUnary(ctx, req)
@@ -179,7 +241,12 @@ func (c *rBACServiceClient) PublishPolicy(ctx context.Context, req *connect.Requ
 type RBACServiceHandler interface {
 	// 读取角色定义。
 	GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error)
-	// 列出某个作用域下可见的角色。
+	// 列出角色定义全集。
+	//
+	// 请求里的 scope **只用于鉴权**（判断调用方有没有在该范围读角色的权限），
+	// **不用于过滤结果**：角色定义没有归属范围，全库只有一份。因此同一主体
+	// 在任意有读权限的范围上调用，拿到的都是同一个列表——切换管理范围不会
+	// 让这个列表变化，变化的是"还能不能读"。
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
 	// 创建或更新角色。属于不可逆操作，调用方需二次确认。
 	PutRole(context.Context, *connect.Request[v1.PutRoleRequest]) (*connect.Response[v1.PutRoleResponse], error)
@@ -189,6 +256,20 @@ type RBACServiceHandler interface {
 	AssignRole(context.Context, *connect.Request[v1.AssignRoleRequest]) (*connect.Response[v1.AssignRoleResponse], error)
 	// 列出某个主体持有的角色绑定。
 	ListSubjectBindings(context.Context, *connect.Request[v1.ListSubjectBindingsRequest]) (*connect.Response[v1.ListSubjectBindingsResponse], error)
+	// 列出已登记的范围（全局不在其中：它是模型的根，不是一条登记记录）。
+	//
+	// 请求里的 scope 只用于鉴权，与结果无关：范围目录是部署级的，不按范围过滤。
+	ListScopes(context.Context, *connect.Request[v1.ListScopesRequest]) (*connect.Response[v1.ListScopesResponse], error)
+	// 登记一个范围，或改它的显示名。
+	//
+	// 路径是标识，**不可更改**；登记一个已存在的路径等同于改显示名
+	// （与重复授予同一角色是幂等的重复写入同理）。
+	PutScope(context.Context, *connect.Request[v1.PutScopeRequest]) (*connect.Response[v1.PutScopeResponse], error)
+	// 删除一个范围。不可逆。
+	//
+	// 范围内或其后代上仍有角色绑定时拒绝——与"删除仍被持有的角色"同构：
+	// 引用还在，就不允许把被引用的东西抽走。
+	DeleteScope(context.Context, *connect.Request[v1.DeleteScopeRequest]) (*connect.Response[v1.DeleteScopeResponse], error)
 	// 使一次角色变更正式生效（缓存失效 + 生效确认）。
 	// 对应 docs/design/rbac/role-model.md 的"生效确认"阶段。
 	PublishPolicy(context.Context, *connect.Request[v1.PublishPolicyRequest]) (*connect.Response[v1.PublishPolicyResponse], error)
@@ -240,6 +321,25 @@ func NewRBACServiceHandler(svc RBACServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	rBACServiceListScopesHandler := connect.NewUnaryHandler(
+		RBACServiceListScopesProcedure,
+		svc.ListScopes,
+		connect.WithSchema(rBACServiceMethods.ByName("ListScopes")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	rBACServicePutScopeHandler := connect.NewUnaryHandler(
+		RBACServicePutScopeProcedure,
+		svc.PutScope,
+		connect.WithSchema(rBACServiceMethods.ByName("PutScope")),
+		connect.WithHandlerOptions(opts...),
+	)
+	rBACServiceDeleteScopeHandler := connect.NewUnaryHandler(
+		RBACServiceDeleteScopeProcedure,
+		svc.DeleteScope,
+		connect.WithSchema(rBACServiceMethods.ByName("DeleteScope")),
+		connect.WithHandlerOptions(opts...),
+	)
 	rBACServicePublishPolicyHandler := connect.NewUnaryHandler(
 		RBACServicePublishPolicyProcedure,
 		svc.PublishPolicy,
@@ -260,6 +360,12 @@ func NewRBACServiceHandler(svc RBACServiceHandler, opts ...connect.HandlerOption
 			rBACServiceAssignRoleHandler.ServeHTTP(w, r)
 		case RBACServiceListSubjectBindingsProcedure:
 			rBACServiceListSubjectBindingsHandler.ServeHTTP(w, r)
+		case RBACServiceListScopesProcedure:
+			rBACServiceListScopesHandler.ServeHTTP(w, r)
+		case RBACServicePutScopeProcedure:
+			rBACServicePutScopeHandler.ServeHTTP(w, r)
+		case RBACServiceDeleteScopeProcedure:
+			rBACServiceDeleteScopeHandler.ServeHTTP(w, r)
 		case RBACServicePublishPolicyProcedure:
 			rBACServicePublishPolicyHandler.ServeHTTP(w, r)
 		default:
@@ -293,6 +399,18 @@ func (UnimplementedRBACServiceHandler) AssignRole(context.Context, *connect.Requ
 
 func (UnimplementedRBACServiceHandler) ListSubjectBindings(context.Context, *connect.Request[v1.ListSubjectBindingsRequest]) (*connect.Response[v1.ListSubjectBindingsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.rbac.v1.RBACService.ListSubjectBindings is not implemented"))
+}
+
+func (UnimplementedRBACServiceHandler) ListScopes(context.Context, *connect.Request[v1.ListScopesRequest]) (*connect.Response[v1.ListScopesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.rbac.v1.RBACService.ListScopes is not implemented"))
+}
+
+func (UnimplementedRBACServiceHandler) PutScope(context.Context, *connect.Request[v1.PutScopeRequest]) (*connect.Response[v1.PutScopeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.rbac.v1.RBACService.PutScope is not implemented"))
+}
+
+func (UnimplementedRBACServiceHandler) DeleteScope(context.Context, *connect.Request[v1.DeleteScopeRequest]) (*connect.Response[v1.DeleteScopeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.rbac.v1.RBACService.DeleteScope is not implemented"))
 }
 
 func (UnimplementedRBACServiceHandler) PublishPolicy(context.Context, *connect.Request[v1.PublishPolicyRequest]) (*connect.Response[v1.PublishPolicyResponse], error) {

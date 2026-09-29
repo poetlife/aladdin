@@ -18,6 +18,8 @@ var (
 	ErrBuiltinRoleUndeletable = errors.New("内置角色不可删除")
 	// ErrBuiltinRoleImmutable 表示内置角色的权限范围不可修改。
 	ErrBuiltinRoleImmutable = errors.New("内置角色的权限范围不可修改")
+	// ErrScopeInUse 表示范围仍被角色绑定引用（含其后代上的绑定），不可删除。
+	ErrScopeInUse = errors.New("范围仍被使用")
 )
 
 // ValidateInheritance 校验候选角色的继承链不成环，且被继承的角色都存在。
@@ -139,4 +141,24 @@ func ValidateRoleDeletion(roles map[string]RoleDefinition, bindings []RoleBindin
 		}
 	}
 	return nil
+}
+
+// ValidateScopeDeletion 校验范围可以删除：范围内（**含其后代**）没有被任何主体持有。
+//
+// 它是"这个范围能不能删"的**唯一入口**。存储实现的 DeleteScope 只执行不判定
+// （见 MutableStore），因此调用方必须先过这里。
+//
+// 判据与删除角色同构：引用还在，就不允许把被引用的东西抽走。绑定落在后代上也算
+// 被引用——层级由路径前缀表达，`tenant/acme` 之内本来就包含 `tenant/acme/project`。
+//
+// 传入的绑定由调用方先按范围取（BindingsUnderScope），这里只做判断，不再查一次。
+func ValidateScopeDeletion(path string, bindings []RoleBinding) error {
+	if len(bindings) == 0 {
+		return nil
+	}
+	// 报出条数与一个例子：管理员据此知道去哪儿把引用摘掉（见
+	// docs/design/rbac/scopes.md 的"删除要干净"）。
+	example := bindings[0]
+	return fmt.Errorf("%w: %q 仍被 %d 条绑定引用（例如主体 %q 的角色 %q 在 %q 上）",
+		ErrScopeInUse, path, len(bindings), example.SubjectID, example.RoleID, string(example.Scope))
 }

@@ -42,3 +42,14 @@ func roleLookupError(err error, roleID string) error {
 func subjectLookupError(err error, subjectID string) error {
 	return unavailable("读取主体 "+subjectID, err)
 }
+
+// scopeLookupError 翻译"按路径取范围"时可能出现的两种失败。
+//
+// 与角色同理：范围是登记制的，"没登记过"是一个明确的答案（ErrScopeNotFound），
+// 不该与"库用不了"混成一个。
+func scopeLookupError(err error, path string) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("%w: %s", rbac.ErrScopeNotFound, path)
+	}
+	return unavailable("读取范围 "+path, err)
+}

@@ -95,6 +95,7 @@ func newRootCommand() *cobra.Command {
 		newWhoAmICommand(),
 		newPermissionsCommand(),
 		newRoleCommand(),
+		newScopeCommand(),
 		newGalaxyCommand(),
 	)
 	return root

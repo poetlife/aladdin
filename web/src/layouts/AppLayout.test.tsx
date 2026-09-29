@@ -3,8 +3,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as identityApi from '../api/identity'
 import * as profileApi from '../api/profile'
+import * as rbacApi from '../api/rbac'
 import { SessionProvider } from '../auth'
+import { ScopesPage } from '../pages/ScopesPage'
 import { ThemeProvider } from '../theme'
 import { installMatchMedia } from '../test/match-media'
 import { AppLayout } from './AppLayout'
@@ -20,6 +23,17 @@ vi.mock('../api/identity', () => ({
 
 vi.mock('../api/transport', () => ({
   onUnauthenticated: vi.fn(),
+}))
+
+// 顶栏的管理范围会列出"我自己绑定的范围"，导航的权限分组也按权限码裁剪——
+// 两者都需要管理面接口，因此在文件级挡住它们。
+vi.mock('../api/rbac', () => ({
+  listRoles: vi.fn(),
+  listSubjectBindings: vi.fn(),
+  assignRole: vi.fn(),
+  listScopes: vi.fn(),
+  putScope: vi.fn(),
+  deleteScope: vi.fn(),
 }))
 
 vi.mock('../api/profile', () => ({
@@ -53,6 +67,9 @@ async function renderShell(path = '/'): Promise<HTMLElement> {
                 <Route path="/profile" element={<p>档案内容</p>} />
                 <Route path="/docs" element={<p>文档内容</p>} />
                 <Route path="/docs/cli" element={<p>命令行内容</p>} />
+                <Route path="/access/roles" element={<p>角色定义内容</p>} />
+                <Route path="/access/subjects" element={<p>人员授权内容</p>} />
+                <Route path="/access/scopes" element={<ScopesPage />} />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -61,6 +78,53 @@ async function renderShell(path = '/'): Promise<HTMLElement> {
     )
   })
   return container
+}
+
+/**
+ * 渲染一个**已认证且持有指定权限码**的外壳。
+ *
+ * 显式写入范围，绕开"首次登录时采纳服务端默认范围"那条路径——那条已由
+ * session.test.tsx 覆盖，这里要测的是外壳本身。
+ */
+async function renderAuthenticated(
+  permissions: string[],
+  path = '/',
+  scope = 'tenant/acme',
+): Promise<HTMLElement> {
+  globalThis.localStorage.setItem('aladdin.token', 'tok')
+  globalThis.localStorage.setItem('aladdin.scope', scope)
+  vi.mocked(identityApi.whoAmI).mockResolvedValue({
+    $typeName: 'aladdin.identity.v1.WhoAmIResponse',
+    subjectId: 'u1',
+    subjectType: 'user',
+    defaultScope: 'tenant/acme',
+  })
+  vi.mocked(identityApi.getSessionPermissions).mockResolvedValue({
+    $typeName: 'aladdin.identity.v1.GetSessionPermissionsResponse',
+    scope,
+    permissions,
+  })
+  return renderShell(path)
+}
+
+/** 往受控输入框里写值：直接改 value 不会触发 React 的 onChange。 */
+function typeInto(input: Element, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+/** 在文本框里按下回车。 */
+async function pressEnter(input: Element): Promise<void> {
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+}
+
+function scopeInput(container: HTMLElement): HTMLInputElement {
+  const input = container.querySelector('[aria-label="管理范围"]')
+  expect(input, '页头里没有管理范围控件').not.toBeNull()
+  return input as HTMLInputElement
 }
 
 /** 按无障碍标签点一颗按钮。 */
@@ -193,5 +257,118 @@ describe('外壳的宽窄两态', () => {
     expect(container.textContent).toContain('命令行内容')
     const selected = container.querySelector('.ant-menu-item-selected')
     expect(selected?.textContent).toContain('文档')
+  })
+})
+
+describe('权限分组与管理范围', () => {
+  it('有读角色权限时，「权限」分组里出现角色定义并能跳转', async () => {
+    installMatchMedia(true)
+
+    const container = await renderAuthenticated(['rbac.role.read'])
+    await clickByLabel(container, '打开导航')
+
+    // 分组是可展开的容器，子项要点开才看得见（这也是"分组"与"平铺两项"的区别）。
+    const group = [...document.querySelectorAll('.ant-drawer-body .ant-menu-submenu-title')].find(
+      (el) => el.textContent?.includes('权限'),
+    )
+    expect(group, '抽屉里没有「权限」分组').not.toBeUndefined()
+    await act(async () => {
+      group?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await clickDrawerNav('角色定义')
+
+    expect(container.textContent).toContain('角色定义内容')
+  })
+
+  // 深链或刷新进来时，选中项藏在收起的分组里等于没被选中——分组必须自己展开。
+  it('深链直接进角色定义页时，分组已展开且子项被选中', async () => {
+    installMatchMedia(false)
+
+    const container = await renderAuthenticated(['rbac.role.read'], '/access/roles')
+    await act(async () => {})
+
+    expect(container.textContent).toContain('角色定义内容')
+    const selected = container.querySelector('.ant-menu-item-selected')
+    expect(selected?.textContent).toContain('角色定义')
+  })
+
+  it('管理范围为全局时显示「全局」，不出现内部写法', async () => {
+    installMatchMedia(false)
+
+    const container = await renderAuthenticated([], '/', '')
+
+    expect(scopeInput(container).value).toBe('全局')
+    expect(container.textContent).not.toContain('<global>')
+  })
+
+    it('输入「全局」并回车后，提交的是空范围', async () => {
+    installMatchMedia(false)
+
+    const container = await renderAuthenticated([], '/', 'tenant/acme')
+    const input = scopeInput(container)
+    expect(input.value).toBe('tenant/acme')
+
+    // 让服务端如实回传被请求的范围：这条测的是"提交出去的是什么"，
+    // 别让夹具的固定返回值把提交值盖掉。必须在 render 之后设——mockResolvedValue
+    // 就是一次 mockImplementation，先设会被 renderAuthenticated 里那一次覆盖。
+    vi.mocked(identityApi.getSessionPermissions).mockImplementation(async (scope: string) => ({
+      $typeName: 'aladdin.identity.v1.GetSessionPermissionsResponse',
+      scope,
+      permissions: [],
+    }))
+
+    typeInto(input, '全局')
+    await pressEnter(input)
+
+    expect(identityApi.getSessionPermissions).toHaveBeenLastCalledWith('')
+    expect(globalThis.localStorage.getItem('aladdin.scope')).toBe('')
+  })
+
+  // 范围目录由外壳持有：范围页新建之后，顶栏的候选必须立刻跟着变。
+  // 三处各拉一份列表时这一条会失败——界面自相矛盾（见 web/src/rbac/scopes-context.tsx）。
+  it('在范围页新建的范围，立刻出现在顶栏的候选里', async () => {
+    installMatchMedia(false)
+    vi.mocked(rbacApi.listScopes)
+      .mockResolvedValueOnce({
+        $typeName: 'aladdin.rbac.v1.ListScopesResponse',
+        scopes: [{ $typeName: 'aladdin.rbac.v1.Scope', path: 'tenant/acme', displayName: '' }],
+      })
+      // 建完之后服务端的那一份就该多出这一条。
+      .mockResolvedValue({
+        $typeName: 'aladdin.rbac.v1.ListScopesResponse',
+        scopes: [{ $typeName: 'aladdin.rbac.v1.Scope', path: 'tenant/acme/project', displayName: '' }],
+      })
+    vi.mocked(rbacApi.putScope).mockResolvedValue({
+      $typeName: 'aladdin.rbac.v1.PutScopeResponse',
+      scope: { $typeName: 'aladdin.rbac.v1.Scope', path: 'tenant/acme/project', displayName: '' },
+    })
+
+    const container = await renderAuthenticated(
+      ['rbac.scope.read', 'rbac.scope.write'],
+      '/access/scopes',
+    )
+
+    const pathInput = container.querySelector('#path')
+    expect(pathInput, '范围页的路径输入框没渲染出来').not.toBeNull()
+    typeInto(pathInput as Element, 'tenant/acme/project')
+    await act(async () => {
+      const submit = [...container.querySelectorAll('button')].find(
+        (b) => (b.textContent ?? '').replace(/\s+/g, '') === '登记',
+      )
+      submit?.click()
+    })
+    await act(async () => {})
+
+    // 打开顶栏那个控件：候选里应该有它。
+    const auto = container.querySelector('.ant-select-auto-complete')
+    expect(auto, '顶栏没有管理范围控件').not.toBeNull()
+    const trigger = (auto as Element).querySelector('.ant-select-content') ?? auto
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+
+    const options = [...document.querySelectorAll('.ant-select-item-option')].map((o) => o.textContent)
+    expect(options).toContain('tenant/acme/project')
   })
 })
