@@ -91,10 +91,16 @@ export function AppHeader({ toggleIcon, toggleLabel, onToggle }: AppHeaderProps)
 
       {/* 工具区自己也是一个可换行的 flex 容器，而不是一个整体：
           Space 是一整个 flex 项，窄屏下它会整体溢出到页头之外（控件被裁掉），
-          换成容器后每个控件各自找位置，只会多占一行。 */}
+          换成容器后每个控件各自找位置，只会多占一行。
+
+          它**自己撑满页头剩下的宽度**，而不是靠 `marginLeft: auto` 靠到右边：
+          用 auto 边距时容器宽度由内容决定，而范围框的 flex-basis 是 160px、
+          内容的最大宽度只有 128px——容器据此算出的"最大内容宽度"比它内部
+          换行所需的小，于是换行判定认为主题开关放不下，把它挪到第二行，
+          页头中间却还空着一大片。撑满之后宽度是确定的，这类误判不再发生。 */}
       <div
         style={{
-          marginLeft: 'auto',
+          flex: '1 1 auto',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-end',
