@@ -134,7 +134,7 @@ Go 生态里最常用的 sqlite 驱动绑定 C 库，需要开启 cgo 并在构�
 | RBAC 模块 | 实现其 `Store` / `MutableStore` 抽象；判定语义不因后端改变（见 [../rbac/role-model.md](../rbac/role-model.md)） |
 | 身份认证模块 | 实现其会话存储抽象；会话表与 RBAC 的表由同一份定义、同一套迁移推进（见 [../identity/session-token.md](../identity/session-token.md)） |
 | 个人档案模块 | 实现其档案存储抽象；头像字节经对象存储而非库（见 [../profile/avatar-storage.md](../profile/avatar-storage.md)） |
-| galaxy 模块 | 实现其工程、草稿、版本、资产与发布记录的存储抽象；资产字节经对象存储，发布产物落库（见 [../galaxy/publication.md](../galaxy/publication.md)） |
+| galaxy 模块 | 实现其工程、草稿、版本、资产与发布记录的存储抽象；**库内只有清单与元数据，字节（文本条目的内容对象与资产的字节）经对象存储**（见 [../galaxy/site-model.md](../galaxy/site-model.md) 与 [../galaxy/publication.md](../galaxy/publication.md)） |
 | 可观测性 | 迁移与连接作为"涉及外部依赖调用"的关键路径留痕：调用前记目标（脱敏）、调用后记结果与耗时（见 [../../observability.md](../../observability.md)） |
 | ORM 与迁移库 | 提供方言适配与版本表；本模块只消费，不自行实现 SQL 方言分支 |
 
