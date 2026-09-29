@@ -120,6 +120,34 @@ func StartClientSpan(ctx context.Context, method string) (context.Context, trace
 	return otel.Tracer(scopeName).Start(ctx, method, trace.WithSpanKind(trace.SpanKindClient))
 }
 
+// ValidTraceID 判定一个字符串是不是合法的 W3C trace-id。
+//
+// 规则与 docs/observability.md 对入站 `traceparent` 的校验一致：32 位**小写**
+// 十六进制且非全零。前端侧的等价实现是 web/src/api/trace-context.ts 的
+// parseTraceID（TypeScript 引用不了这里），改动时必须同步。
+//
+// 它给"从外部收到一个裸 trace_id"的入口用（如客户端事件上报）。不校验就采信的
+// 后果与入站 traceparent 相同：日志里出现格式非法的 trace_id 会破坏所有基于它的
+// 检索。不合规时调用方应把它当作"未提供"，而不是拒掉整条业务数据。
+func ValidTraceID(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	nonzero := false
+	for i := 0; i < len(id); i++ {
+		switch c := id[i]; {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f':
+		default:
+			return false
+		}
+		if id[i] != '0' {
+			nonzero = true
+		}
+	}
+	return nonzero
+}
+
 // SpanLogger 返回带 trace_id 与 span_id 字段的 logger。
 //
 // 这是日志与链路关联的**唯一入口**：任何模块不得自行读取传播头、不得自行

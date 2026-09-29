@@ -7,12 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
 const testTraceID = "11112222333344445555666677778888"
@@ -185,6 +187,73 @@ func TestStatusRecorderExposesFlusher(t *testing.T) {
 	// 底层不是 Flusher 时它不能炸：那种 writer 上本来就没有可刷的东西，而一次
 	// panic 会把"包了一层"变成"这个服务不可用"。
 	(&statusRecorder{ResponseWriter: plainRecorder{}}).Flush()
+}
+
+// 请求留痕带 client：它回答"这次 RPC 是谁发的"，浏览器与命令行的失败模式与
+// 排障入口不同，只按过程名分组时分不出来。
+func TestRequestLogCarriesClient(t *testing.T) {
+	m, logs := newTestTelemetry(t, []string{"/aladdin.rbac.v1.RBACService/"})
+	req := httptest.NewRequest(http.MethodPost, "/aladdin.rbac.v1.RBACService/ListRoles", nil)
+	req.Header.Set(observability.HeaderClient, observability.ClientWeb)
+	m.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(httptest.NewRecorder(), req)
+
+	fields := logs.All()[0].ContextMap()
+	if fields["client"] != observability.ClientWeb {
+		t.Errorf("client = %v，期望 %q", fields["client"], observability.ClientWeb)
+	}
+}
+
+// 不在白名单里的取值**不写这个字段**：写一个未校验的原值会让"按端检索"
+// 失去上界（每次扫描器都能造一个新取值）。
+func TestRequestLogOmitsUnknownClient(t *testing.T) {
+	m, logs := newTestTelemetry(t, []string{"/aladdin.rbac.v1.RBACService/"})
+	req := httptest.NewRequest(http.MethodPost, "/aladdin.rbac.v1.RBACService/ListRoles", nil)
+	req.Header.Set(observability.HeaderClient, "curl/8")
+	m.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(httptest.NewRecorder(), req)
+
+	if _, ok := logs.All()[0].ContextMap()["client"]; ok {
+		t.Error("未知上报端不应写进日志")
+	}
+}
+
+// 公开路径上带了有效凭证时，主体仍应被识别。
+//
+// 需要它的只有遥测上报：它既要允许匿名（登录页失败），又要在已登录时把事件归到
+// 主体上。识别**不改变任何判定**——公开方法本就放行，因此失败也一律忽略。
+func TestPublicPathBestEffortIdentifiesSubject(t *testing.T) {
+	const procedure = "/aladdin.telemetry.v1.TelemetryService/ReportEvents"
+
+	machine := interceptor.NewTokenAuthenticator()
+	machine.Add("tok", rbac.Subject{ID: "sub_1"})
+	m := &authMiddleware{authn: machine, errorWriter: connect.NewErrorWriter(), logger: zap.NewNop()}
+
+	cases := []struct {
+		name, auth string
+		want       bool
+	}{
+		{"带有效凭证", "Bearer tok", true},
+		{"匿名", "", false},
+		{"凭证无效", "Bearer nope", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, procedure, nil)
+			if tc.auth != "" {
+				req.Header.Set("Authorization", tc.auth)
+			}
+			var got bool
+			m.wrap(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				_, got = interceptor.SubjectFromContext(r.Context())
+			})).ServeHTTP(httptest.NewRecorder(), req)
+			if got != tc.want {
+				t.Errorf("主体识别 = %v，期望 %v", got, tc.want)
+			}
+		})
+	}
 }
 
 // flushingRecorder 是一个会记下"刷过没有"的 ResponseWriter。

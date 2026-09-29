@@ -1,0 +1,184 @@
+syntax = "proto3";
+
+package aladdin.telemetry.v1;
+
+import "aladdin/rbac/v1/annotations.proto";
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/telemetry/v1;telemetryv1";
+
+// TelemetryService 接收**客户端事件**：那些不经过任何 RPC 的本地动作
+// （前端拦截、切换预览、本地校验失败、未登录就退出……）。
+//
+// 它存在的唯一理由，是服务端的请求留痕**看不见没有出站的操作**。只把 RPC
+// 留痕补全，回答得了"服务端处理了什么"，回答不了"用户想做什么、在哪一步被
+// 拦住"。本服务补的就是这一层。
+//
+// 两条边界，写死在这里：
+//
+//   - **它不是产品分析**。事件只有有界枚举与结果码，没有点击坐标、停留时长、
+//     页面路径，也没有草稿正文、凭证、本地路径——见 docs/observability.md 的
+//     「客户端事件」。需要那种粒度的分析，是另一件事。
+//   - **它不替代请求留痕**。已经打到服务端的 RPC 由服务端中间件记一行（含
+//     trace_id 与 client），客户端**不重复上报**成功的 RPC；重复只发生在
+//     "前端拦下、请求根本没发出去"的那些动作上。
+//
+// 归属：它是**基础设施**，不属于任何业务模块（与 EventsService 同理）。下一个
+// 要记动作的业务只往动作清单里加一项，不新建服务。
+service TelemetryService {
+  // 上报一批客户端事件。
+  //
+  // **公开方法**（无权限注解族里的 public）：登录页失败、CLI 未登录退出都发生在
+  // 拿到会话之前，要求先认证才能上报是循环依赖。由此带来的两条义务写在实现一侧：
+  //
+  //   - 只有清单里标记为「允许匿名」的动作在无主体时被接受，其余**丢弃**并在
+  //     DEBUG 级留一行——它是一次上报，绝不能被当成业务错误打回给客户端；
+  //   - 限流按主体（已识别时）或来源地址（匿名时）双重有界，防止它被当成一条
+  //     免费的自由日志通道。
+  //
+  // 它**不是** `authenticated_only`，也不是 `required_permission`：前者会让匿名
+  // 动作彻底进不来，后者要为遥测凭空造一个权限码。这是公开白名单里刻意增加的
+  // 一员，理由与代价登记在 docs/design/rbac/server-permissions.md。
+  //
+  // **不标 idempotency_level**：那个注解只对 unary 注册，且它决定"只读 ⇒ 额外
+  // 接受 GET"。上报是写副作用（它写日志），不是只读查询，标上它会让文档说出
+  // 一句不成立的话。
+  rpc ReportEvents(ReportEventsRequest) returns (ReportEventsResponse) {
+    option (aladdin.rbac.v1.public) = true;
+  }
+}
+
+// Client 是上报端的标识，与每个出站请求携带的 `x-aladdin-client` 头同源。
+//
+// 它同时出现在两处，各有用途：请求留痕的 `client` 字段回答"这次 RPC 是谁发的"，
+// 事件的 `client` 字段回答"这条本地动作是谁报的"。两处取值必须一致，由两端各自
+// 引用同一份常量保证（见 docs/observability.md）。
+enum Client {
+  CLIENT_UNSPECIFIED = 0;
+  // 浏览器前端。
+  CLIENT_WEB = 1;
+  // 命令行。
+  CLIENT_CLI = 2;
+}
+
+// Surface 是一条事件发生在哪个界面/入口上（粗粒度）。
+//
+// 它与 Action 是两个维度：Surface 回答"在哪"，Action 回答"做了什么"。两者都
+// 是有界枚举——高基数的取值（页面路径、工程标识）会随时间增长，不允许进入。
+enum Surface {
+  SURFACE_UNSPECIFIED = 0;
+  // 登录页（提交凭证、第三方登录回调之前的客户端动作）。
+  SURFACE_WEB_AUTH = 1;
+  // 工程列表页。
+  SURFACE_WEB_PROJECT_LIST = 2;
+  // 工程编辑页（工作台）。
+  SURFACE_WEB_EDITOR = 3;
+  // 预览：编辑页内的预览/源码切换，以及独立预览页。
+  SURFACE_WEB_PREVIEW = 4;
+  // 命令行（本地动作，未出站）。
+  SURFACE_CLI = 5;
+}
+
+// Action 是**动作允许清单**。清单之外的动作一律丢弃。
+//
+// 允许清单常驻在此处（而不是各端各写一份字符串常量），有三个直接好处：两端
+// 的动作码由同一次 `buf generate` 派生，不可能拼错或漂移；服务端校验只需比对
+// 生成常量，不必维护第二张表；新增一个动作必须改 proto 并重新生成，这本身就是
+// "无清单内的动作不记"这条约束的执行方式。
+//
+// 每个动作的**允许匿名**标记不在这里（enum 值带不了策略），在服务端的动作表里：
+// internal/telemetry/actions.go。
+enum Action {
+  ACTION_UNSPECIFIED = 0;
+
+  // 提交登录（表单或第三方凭证）。result=ok/fail；attrs.channel 是渠道枚举。
+  // 已打到服务端的登录由请求留痕覆盖；上报告诉我们的是"登录页拦下的失败"。
+  ACTION_AUTH_LOGIN = 1;
+  // 打开工程列表页。result=ok/fail。
+  ACTION_PROJECT_LIST_OPEN = 2;
+  // 打开工程编辑页。result=ok/fail。
+  ACTION_EDITOR_OPEN = 3;
+  // 保存草稿/存为版本。result=ok/fail/blocked；blocked 表示前端在发出请求之前
+  // 就拦下了（本地校验不过、工程标识缺失）——这正是本服务要捕获的形状。
+  ACTION_DRAFT_SAVE = 4;
+  // 发布。result=ok/fail/blocked；blocked 表示工作台在发请求前判定不可发布。
+  ACTION_PUBLISH = 5;
+  // 撤回发布。result=ok/fail/cancel；cancel 表示确认框被取消。
+  ACTION_UNPUBLISH = 6;
+  // 删除工程。result=ok/fail/cancel。
+  ACTION_PROJECT_DELETE = 7;
+  // 预览 / 源码切换。result=ok。
+  ACTION_PREVIEW_TOGGLE = 8;
+  // 打开独立预览页。result=ok/fail。
+  ACTION_PREVIEW_OPEN = 9;
+  // 打开资产库弹层。result=ok。
+  ACTION_ASSETS_OPEN = 10;
+  // 打开版本弹层。result=ok。
+  ACTION_VERSIONS_OPEN = 11;
+  // 保存资产元数据。result=ok/fail/blocked；blocked 表示表单校验没过就返回，
+  // 请求没发出去。
+  ACTION_ASSET_META_SAVE = 12;
+  // 选择并开始上传资产。result=ok/fail/blocked；blocked 表示按声明的上限在本地
+  // 早退（文件过大），请求没发出去。
+  ACTION_ASSET_UPLOAD = 13;
+  // 命令行本地失败：配置无效、未登录、参数校验不过——都在出站之前结束，服务端
+  // 请求留痕里没有它们。result=fail；attrs 带 command 与 reason。
+  ACTION_CLI_LOCAL_FAIL = 14;
+}
+
+// Result 是一条动作的结局。四个取值互斥，且必须能区分"失败"与"被拦下"：
+// 前者是动作执行了但没成功，后者是动作根本没被执行——两者的修复方向完全不同。
+enum Result {
+  RESULT_UNSPECIFIED = 0;
+  // 成功。
+  RESULT_OK = 1;
+  // 执行了但失败。
+  RESULT_FAIL = 2;
+  // 用户主动取消（确认框）。
+  RESULT_CANCEL = 3;
+  // 被执行方在发出请求之前拦下（本地校验、上限早退、能力未开放）。
+  RESULT_BLOCKED = 4;
+}
+
+// Event 是一条客户端事件。
+//
+// 字段全部有界：没有自由文本，没有任何"用户输入"。需要区分"哪一次"时带
+// trace_id；需要区分"哪个主体"时由服务端从会话得出，不由请求提供。
+message Event {
+  // 上报端。取值必须与本次请求携带的 `x-aladdin-client` 一致。
+  Client client = 1;
+  // 发生在哪个界面。
+  Surface surface = 2;
+  // 做了什么。必须在 Action 允许清单内，否则本条被丢弃。
+  Action action = 3;
+  // 结局。
+  Result result = 4;
+  // 耗时（毫秒）。0 表示未提供——proto3 无法区分"未提供"与"恰好 0 毫秒"，
+  // 因此 0 一律按未提供处理。上限由服务端在落盘前收敛。
+  uint32 duration_ms = 5;
+  // 若当时已有链路，带上它以便与 RPC 留痕关联。
+  //
+  // 服务端校验形状（32 位小写十六进制），不合规按未提供处理——一个格式非法的
+  // trace_id 写进日志会破坏所有基于它的检索（同 docs/observability.md 对入站
+  // traceparent 的校验）。
+  string trace_id = 6;
+  // 结构化补充信息。**白名单键**，只有服务端登记过的键会保留，取值也必须落在
+  // 该键的取值域内；其余一律剥除。禁止自由文本（见 docs/observability.md）。
+  map<string, string> attrs = 7;
+}
+
+// ReportEventsRequest 是一批事件。
+//
+// 批量而不是一次一条：切预览、开弹层这类 UI 动作会连发，一条一次 RPC 会把请求量
+// 与弱网失败率一起放大（issue 的补充说明）。单条只是本请求长度为 1 的特例，
+// 因此不为它另留一个方法。
+message ReportEventsRequest {
+  // 事件列表。空列表合法（此时什么也不做），服务端仍受调用次数限流约束。
+  repeated Event events = 1;
+}
+
+// ReportEventsResponse 刻意为空。
+//
+// 服务端丢弃一条事件（未知动作、不允许匿名、超限、属性不合规）时**不报错**：
+// 遥测的数据问题绝不能升级成客户端的业务错误，否则一次清单不一致就会让前端
+// 弹框、CLI 非零退出。丢弃与否由服务端日志回答，客户端只看得到"这一批被收到了"。
+message ReportEventsResponse {}

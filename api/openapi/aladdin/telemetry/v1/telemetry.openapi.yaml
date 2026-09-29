@@ -1,0 +1,302 @@
+openapi: 3.1.0
+info:
+  title: aladdin.telemetry.v1
+paths:
+  /aladdin.telemetry.v1.TelemetryService/ReportEvents:
+    post:
+      x-aladdin-auth:
+        kind: public
+      tags:
+        - aladdin.telemetry.v1.TelemetryService
+      summary: ReportEvents
+      description: |-
+        **鉴权**：公开接口，无需认证。
+
+        上报一批客户端事件。
+
+         **公开方法**（无权限注解族里的 public）：登录页失败、CLI 未登录退出都发生在
+         拿到会话之前，要求先认证才能上报是循环依赖。由此带来的两条义务写在实现一侧：
+
+           - 只有清单里标记为「允许匿名」的动作在无主体时被接受，其余**丢弃**并在
+             DEBUG 级留一行——它是一次上报，绝不能被当成业务错误打回给客户端；
+           - 限流按主体（已识别时）或来源地址（匿名时）双重有界，防止它被当成一条
+             免费的自由日志通道。
+
+         它**不是** `authenticated_only`，也不是 `required_permission`：前者会让匿名
+         动作彻底进不来，后者要为遥测凭空造一个权限码。这是公开白名单里刻意增加的
+         一员，理由与代价登记在 docs/design/rbac/server-permissions.md。
+
+         **不标 idempotency_level**：那个注解只对 unary 注册，且它决定"只读 ⇒ 额外
+         接受 GET"。上报是写副作用（它写日志），不是只读查询，标上它会让文档说出
+         一句不成立的话。
+      operationId: aladdin.telemetry.v1.TelemetryService.ReportEvents
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.telemetry.v1.ReportEventsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.telemetry.v1.ReportEventsResponse'
+components:
+  schemas:
+    aladdin.telemetry.v1.Action:
+      type: string
+      title: Action
+      enum:
+        - ACTION_UNSPECIFIED
+        - ACTION_AUTH_LOGIN
+        - ACTION_PROJECT_LIST_OPEN
+        - ACTION_EDITOR_OPEN
+        - ACTION_DRAFT_SAVE
+        - ACTION_PUBLISH
+        - ACTION_UNPUBLISH
+        - ACTION_PROJECT_DELETE
+        - ACTION_PREVIEW_TOGGLE
+        - ACTION_PREVIEW_OPEN
+        - ACTION_ASSETS_OPEN
+        - ACTION_VERSIONS_OPEN
+        - ACTION_ASSET_META_SAVE
+        - ACTION_ASSET_UPLOAD
+        - ACTION_CLI_LOCAL_FAIL
+      description: |-
+        Action 是**动作允许清单**。清单之外的动作一律丢弃。
+
+         允许清单常驻在此处（而不是各端各写一份字符串常量），有三个直接好处：两端
+         的动作码由同一次 `buf generate` 派生，不可能拼错或漂移；服务端校验只需比对
+         生成常量，不必维护第二张表；新增一个动作必须改 proto 并重新生成，这本身就是
+         "无清单内的动作不记"这条约束的执行方式。
+
+         每个动作的**允许匿名**标记不在这里（enum 值带不了策略），在服务端的动作表里：
+         internal/telemetry/actions.go。
+    aladdin.telemetry.v1.Client:
+      type: string
+      title: Client
+      enum:
+        - CLIENT_UNSPECIFIED
+        - CLIENT_WEB
+        - CLIENT_CLI
+      description: |-
+        Client 是上报端的标识，与每个出站请求携带的 `x-aladdin-client` 头同源。
+
+         它同时出现在两处，各有用途：请求留痕的 `client` 字段回答"这次 RPC 是谁发的"，
+         事件的 `client` 字段回答"这条本地动作是谁报的"。两处取值必须一致，由两端各自
+         引用同一份常量保证（见 docs/observability.md）。
+    aladdin.telemetry.v1.Result:
+      type: string
+      title: Result
+      enum:
+        - RESULT_UNSPECIFIED
+        - RESULT_OK
+        - RESULT_FAIL
+        - RESULT_CANCEL
+        - RESULT_BLOCKED
+      description: |-
+        Result 是一条动作的结局。四个取值互斥，且必须能区分"失败"与"被拦下"：
+         前者是动作执行了但没成功，后者是动作根本没被执行——两者的修复方向完全不同。
+    aladdin.telemetry.v1.Surface:
+      type: string
+      title: Surface
+      enum:
+        - SURFACE_UNSPECIFIED
+        - SURFACE_WEB_AUTH
+        - SURFACE_WEB_PROJECT_LIST
+        - SURFACE_WEB_EDITOR
+        - SURFACE_WEB_PREVIEW
+        - SURFACE_CLI
+      description: |-
+        Surface 是一条事件发生在哪个界面/入口上（粗粒度）。
+
+         它与 Action 是两个维度：Surface 回答"在哪"，Action 回答"做了什么"。两者都
+         是有界枚举——高基数的取值（页面路径、工程标识）会随时间增长，不允许进入。
+    aladdin.telemetry.v1.Event:
+      type: object
+      properties:
+        client:
+          allOf:
+            - title: client
+              description: 上报端。取值必须与本次请求携带的 `x-aladdin-client` 一致。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Client'
+        surface:
+          allOf:
+            - title: surface
+              description: 发生在哪个界面。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Surface'
+        action:
+          allOf:
+            - title: action
+              description: 做了什么。必须在 Action 允许清单内，否则本条被丢弃。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Action'
+        result:
+          allOf:
+            - title: result
+              description: 结局。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Result'
+        durationMs:
+          type: integer
+          title: duration_ms
+          description: |-
+            耗时（毫秒）。0 表示未提供——proto3 无法区分"未提供"与"恰好 0 毫秒"，
+             因此 0 一律按未提供处理。上限由服务端在落盘前收敛。
+        traceId:
+          type: string
+          title: trace_id
+          description: |-
+            若当时已有链路，带上它以便与 RPC 留痕关联。
+
+             服务端校验形状（32 位小写十六进制），不合规按未提供处理——一个格式非法的
+             trace_id 写进日志会破坏所有基于它的检索（同 docs/observability.md 对入站
+             traceparent 的校验）。
+        attrs:
+          type: object
+          title: attrs
+          additionalProperties:
+            type: string
+            title: value
+          description: |-
+            结构化补充信息。**白名单键**，只有服务端登记过的键会保留，取值也必须落在
+             该键的取值域内；其余一律剥除。禁止自由文本（见 docs/observability.md）。
+      title: Event
+      additionalProperties: false
+      description: |-
+        Event 是一条客户端事件。
+
+         字段全部有界：没有自由文本，没有任何"用户输入"。需要区分"哪一次"时带
+         trace_id；需要区分"哪个主体"时由服务端从会话得出，不由请求提供。
+    aladdin.telemetry.v1.Event.AttrsEntry:
+      type: object
+      properties:
+        key:
+          type: string
+          title: key
+        value:
+          type: string
+          title: value
+      title: AttrsEntry
+      additionalProperties: false
+    aladdin.telemetry.v1.ReportEventsRequest:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.telemetry.v1.Event'
+          title: events
+          description: 事件列表。空列表合法（此时什么也不做），服务端仍受调用次数限流约束。
+      title: ReportEventsRequest
+      additionalProperties: false
+      description: |-
+        ReportEventsRequest 是一批事件。
+
+         批量而不是一次一条：切预览、开弹层这类 UI 动作会连发，一条一次 RPC 会把请求量
+         与弱网失败率一起放大（issue 的补充说明）。单条只是本请求长度为 1 的特例，
+         因此不为它另留一个方法。
+    aladdin.telemetry.v1.ReportEventsResponse:
+      type: object
+      title: ReportEventsResponse
+      additionalProperties: false
+      description: |-
+        ReportEventsResponse 刻意为空。
+
+         服务端丢弃一条事件（未知动作、不允许匿名、超限、属性不合规）时**不报错**：
+         遥测的数据问题绝不能升级成客户端的业务错误，否则一次清单不一致就会让前端
+         弹框、CLI 非零退出。丢弃与否由服务端日志回答，客户端只看得到"这一批被收到了"。
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      enum:
+        - 1
+      description: Define the version of the Connect protocol
+      const: 1
+    connect-timeout-header:
+      type: number
+      title: Connect-Timeout-Ms
+      description: Define the timeout, in ms
+    connect.error:
+      type: object
+      properties:
+        code:
+          type: string
+          examples:
+            - CodeNotFound
+          enum:
+            - CodeCanceled
+            - CodeUnknown
+            - CodeInvalidArgument
+            - CodeDeadlineExceeded
+            - CodeNotFound
+            - CodeAlreadyExists
+            - CodePermissionDenied
+            - CodeResourceExhausted
+            - CodeFailedPrecondition
+            - CodeAborted
+            - CodeOutOfRange
+            - CodeInternal
+            - CodeUnavailable
+            - CodeDataLoss
+            - CodeUnauthenticated
+          description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+        message:
+          type: string
+          description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+        detail:
+          $ref: '#/components/schemas/google.protobuf.Any'
+      title: Connect Error
+      additionalProperties: true
+      description: 'Error type returned by Connect: https://connectrpc.com/docs/go/errors/#http-representation'
+    google.protobuf.Any:
+      type: object
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+          format: binary
+        debug:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+security: []
+tags:
+  - name: aladdin.telemetry.v1.TelemetryService
+    description: |-
+      TelemetryService 接收**客户端事件**：那些不经过任何 RPC 的本地动作
+       （前端拦截、切换预览、本地校验失败、未登录就退出……）。
+
+       它存在的唯一理由，是服务端的请求留痕**看不见没有出站的操作**。只把 RPC
+       留痕补全，回答得了"服务端处理了什么"，回答不了"用户想做什么、在哪一步被
+       拦住"。本服务补的就是这一层。
+
+       两条边界，写死在这里：
+
+         - **它不是产品分析**。事件只有有界枚举与结果码，没有点击坐标、停留时长、
+           页面路径，也没有草稿正文、凭证、本地路径——见 docs/observability.md 的
+           「客户端事件」。需要那种粒度的分析，是另一件事。
+         - **它不替代请求留痕**。已经打到服务端的 RPC 由服务端中间件记一行（含
+           trace_id 与 client），客户端**不重复上报**成功的 RPC；重复只发生在
+           "前端拦下、请求根本没发出去"的那些动作上。
+
+       归属：它是**基础设施**，不属于任何业务模块（与 EventsService 同理）。下一个
+       要记动作的业务只往动作清单里加一项，不新建服务。

@@ -4,8 +4,10 @@ import { Alert, Button, Card, Divider, Form, Input, Space, Typography, theme } f
 import { KeyRound, Lamp, LogIn } from 'lucide-react'
 
 import * as identityApi from '../api/identity'
-import { messageOf } from '../api/errors'
+import { messageOf, traceIdOf } from '../api/errors'
 import { GoogleSignInButton, useSession } from '../auth'
+import { Action, Result, Surface } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
+import { track } from '../telemetry/track'
 
 interface LoginFormValues {
   token: string
@@ -65,8 +67,10 @@ export function LoginPage(): React.ReactNode {
     setError(null)
     try {
       await signInWithGoogle(idToken)
+      trackLogin(Result.OK, 'google')
       void navigate(from, { replace: true })
     } catch (err) {
+      trackLogin(Result.FAIL, 'google', err)
       setError(messageOf(err))
     } finally {
       setSubmitting(false)
@@ -78,8 +82,10 @@ export function LoginPage(): React.ReactNode {
     setError(null)
     try {
       await signIn(values.token)
+      trackLogin(Result.OK, 'password')
       void navigate(from, { replace: true })
     } catch (err) {
+      trackLogin(Result.FAIL, 'password', err)
       setError(messageOf(err))
     } finally {
       setSubmitting(false)
@@ -156,4 +162,21 @@ export function LoginPage(): React.ReactNode {
       </Card>
     </div>
   )
+}
+
+/**
+ * 上报一次登录尝试。
+ *
+ * 登录的 RPC 本身已有服务端请求留痕，但它记不到**渠道**（请求体不进日志，
+ * 而渠道在请求体里）。"哪个渠道的失败在涨"正是这里要回答的问题，因此这条事件
+ * 与请求留痕不是重复：它补的是请求留痕缺失的那一维。
+ */
+function trackLogin(result: Result, channel: string, error?: unknown): void {
+  track({
+    surface: Surface.WEB_AUTH,
+    action: Action.AUTH_LOGIN,
+    result,
+    traceId: error === undefined ? undefined : (traceIdOf(error) ?? undefined),
+    attrs: { channel },
+  })
 }

@@ -15,7 +15,9 @@ import {
   type Project,
   type Version,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { useNarrowViewport } from '../../layouts/use-narrow-viewport'
+import { track } from '../../telemetry/track'
 import { MONOSPACE } from '../../theme'
 import { useWatch } from '../../watch/use-watch'
 import { projectTopic } from '../../watch/topics'
@@ -310,7 +312,9 @@ export function ProjectEditorPage(): React.ReactNode {
       if (capabilityResponse.capabilities?.previewEnabled === true) {
         await renderPreview(defaultPreviewPath(loadedProject, loadedEntries))
       }
+      trackEditorOpen(Result.OK)
     } catch (err) {
+      trackEditorOpen(Result.FAIL, err)
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
       setLoading(false)
@@ -467,6 +471,8 @@ export function ProjectEditorPage(): React.ReactNode {
 
   async function handleSaveVersion(): Promise<void> {
     if (projectId === undefined) {
+      // 前端拦下、请求根本没发出去——这正是客户端事件要捕获的形状。
+      trackBlocked(Surface.WEB_EDITOR, Action.DRAFT_SAVE)
       return
     }
     setContentBusy(true)
@@ -485,6 +491,7 @@ export function ProjectEditorPage(): React.ReactNode {
 
   async function handlePublish(versionId: string): Promise<void> {
     if (projectId === undefined) {
+      trackBlocked(Surface.WEB_EDITOR, Action.PUBLISH)
       return
     }
     setPublishBusy(true)
@@ -503,6 +510,7 @@ export function ProjectEditorPage(): React.ReactNode {
 
   async function handleUnpublish(): Promise<void> {
     if (projectId === undefined) {
+      trackBlocked(Surface.WEB_EDITOR, Action.UNPUBLISH)
       return
     }
     setPublishBusy(true)
@@ -566,8 +574,14 @@ export function ProjectEditorPage(): React.ReactNode {
       publishBusy={publishBusy}
       draftHasProblems={validation.status === 'problems'}
       draftEntries={entries}
-      onOpenAssets={() => setPanel('assets')}
-      onOpenVersions={() => setPanel('versions')}
+      onOpenAssets={() => {
+        setPanel('assets')
+        trackPanelOpen(Action.ASSETS_OPEN)
+      }}
+      onOpenVersions={() => {
+        setPanel('versions')
+        trackPanelOpen(Action.VERSIONS_OPEN)
+      }}
       onSaveVersion={() => void handleSaveVersion()}
       onPublish={(versionId) => void handlePublish(versionId)}
       onProjectChange={setProject}
@@ -674,7 +688,10 @@ export function ProjectEditorPage(): React.ReactNode {
         {previewEnabled ? (
           <Segmented<StageMode>
             value={stageMode}
-            onChange={setMode}
+            onChange={(next) => {
+              setMode(next)
+              track({ surface: Surface.WEB_PREVIEW, action: Action.PREVIEW_TOGGLE, result: Result.OK })
+            }}
             options={[
               { value: 'preview', label: '预览', icon: <Eye size={14} /> },
               { value: 'source', label: '源码', icon: <FileCode size={14} /> },
@@ -882,4 +899,29 @@ function defaultPreviewPath(project: Project | null, entries: readonly FileEntry
     return entryPath
   }
   return entries.find((entry) => entry.source.case === 'digest')?.path ?? ''
+}
+
+/** 上报一次"打开工程编辑页"。 */
+function trackEditorOpen(result: Result, error?: unknown): void {
+  track({
+    surface: Surface.WEB_EDITOR,
+    action: Action.EDITOR_OPEN,
+    result,
+    traceId: error === undefined ? undefined : (traceIdOf(error) ?? undefined),
+  })
+}
+
+/**
+ * 上报一次"前端拦下、请求没发出去"的动作。
+ *
+ * 只这一档上报：发布、存版本这类动作**成功与失败都由服务端请求留痕覆盖**（带上
+ * client 之后可按端归因），客户端再报一遍只会把同一件事数两遍。
+ */
+function trackBlocked(surface: Surface, action: Action): void {
+  track({ surface, action, result: Result.BLOCKED })
+}
+
+/** 上报一次"打开弹层"（资产库 / 版本）。 */
+function trackPanelOpen(action: Action): void {
+  track({ surface: Surface.WEB_EDITOR, action, result: Result.OK })
 }

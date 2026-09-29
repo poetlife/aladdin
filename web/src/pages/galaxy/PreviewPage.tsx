@@ -6,6 +6,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
 import type { Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
+import { track } from '../../telemetry/track'
 import { PreviewFrame } from './PreviewFrame'
 
 interface failure {
@@ -62,8 +64,21 @@ export function PreviewPage(): React.ReactNode {
     setLoading(true)
     setFailure(null)
     void load()
+      .then(() => {
+        if (!cancelled) {
+          // 落地成功：这条事件回答"独立预览页被打开并渲染出来了没有"，
+          // 而请求留痕只答得了其中每一次 RPC。
+          track({ surface: Surface.WEB_PREVIEW, action: Action.PREVIEW_OPEN, result: Result.OK })
+        }
+      })
       .catch((err: unknown) => {
         if (!cancelled) {
+          track({
+            surface: Surface.WEB_PREVIEW,
+            action: Action.PREVIEW_OPEN,
+            result: Result.FAIL,
+            traceId: traceIdOf(err) ?? undefined,
+          })
           setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
         }
       })

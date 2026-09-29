@@ -15,4 +15,5 @@ import (
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/objectstore/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
+	_ "github.com/poetlife/aladdin/api/gen/aladdin/telemetry/v1"
 )

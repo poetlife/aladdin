@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
@@ -74,3 +75,30 @@ type fakeStreamConn struct {
 }
 
 func (c *fakeStreamConn) RequestHeader() http.Header { return c.header }
+
+// 出站请求必须带上上报端标识：服务端请求留痕据此区分命令行与浏览器。
+// **匿名也要带**：它不是凭证，不随凭证存在与否变化。
+func TestInterceptorInjectsClientID(t *testing.T) {
+	c := &Client{}
+
+	req := connect.NewRequest(&struct{}{})
+	if _, err := c.interceptor().WrapUnary(
+		func(_ context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+			return connect.NewResponse(&struct{}{}), nil
+		},
+	)(context.Background(), req); err != nil {
+		t.Fatalf("调用失败: %v", err)
+	}
+	if got := req.Header().Get(observability.HeaderClient); got != observability.ClientCLI {
+		t.Errorf("unary 的 %s = %q，期望 %q", observability.HeaderClient, got, observability.ClientCLI)
+	}
+
+	conn := c.interceptor().WrapStreamingClient(
+		func(_ context.Context, _ connect.Spec) connect.StreamingClientConn {
+			return &fakeStreamConn{header: http.Header{}}
+		},
+	)(context.Background(), connect.Spec{Procedure: "/aladdin.galaxy.v1.GalaxyService/WatchProject"})
+	if got := conn.RequestHeader().Get(observability.HeaderClient); got != observability.ClientCLI {
+		t.Errorf("流式的 %s = %q，期望 %q", observability.HeaderClient, got, observability.ClientCLI)
+	}
+}

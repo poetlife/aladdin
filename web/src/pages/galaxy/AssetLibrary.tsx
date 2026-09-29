@@ -20,6 +20,8 @@ import { Copy, ImageUp, Pencil, Trash2 } from 'lucide-react'
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
 import type { Asset, AssetKindLimit } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
+import { track } from '../../telemetry/track'
 import { sha256Hex } from '../../upload/content-digest'
 import { directUpload } from '../../upload/direct-upload'
 import { describeBytes } from '../../format/bytes'
@@ -130,7 +132,15 @@ export function AssetLibrary({
     if (editing === null) {
       return
     }
-    const values = await metaForm.validateFields()
+    // 表单校验没过时 validateFields 会拒绝。接住它：这不是失败，是**根本没发出去**
+    // 的请求——正是客户端事件要区分出来的那一档（也顺手避免了未处理的拒绝）。
+    let values
+    try {
+      values = await metaForm.validateFields()
+    } catch {
+      track({ surface: Surface.WEB_EDITOR, action: Action.ASSET_META_SAVE, result: Result.BLOCKED })
+      return
+    }
     setSavingMeta(true)
     setMetaFailure(null)
     try {
@@ -167,6 +177,8 @@ export function AssetLibrary({
   async function handleFile(file: File): Promise<void> {
     const limit = limitFor(file)
     if (limit !== null && file.size > limit.maxBytes) {
+      // 按声明的上限在本地早退：请求没发出去，服务端留痕里没有这次尝试。
+      track({ surface: Surface.WEB_EDITOR, action: Action.ASSET_UPLOAD, result: Result.BLOCKED })
       setFailure({
         message: `该类别资产不能超过 ${describeBytes(limit.maxBytes)}`,
         traceId: null,

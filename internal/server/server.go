@@ -31,6 +31,7 @@ import (
 	identityv1connect "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
 	profilev1connect "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1/profilev1connect"
 	rbacv1connect "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
+	telemetryv1connect "github.com/poetlife/aladdin/api/gen/aladdin/telemetry/v1/telemetryv1connect"
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/galaxy"
 	"github.com/poetlife/aladdin/internal/identity"
@@ -39,6 +40,7 @@ import (
 	"github.com/poetlife/aladdin/internal/profile"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
+	"github.com/poetlife/aladdin/internal/telemetry"
 	"github.com/poetlife/aladdin/internal/watch"
 )
 
@@ -268,6 +270,17 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(eventsSrv, opts...)
 	register(eventsPath, eventsHandler)
 
+	// 客户端事件上报。**它是一条公开方法**（见 telemetry.proto 与
+	// docs/design/rbac/server-permissions.md）：登录页上的失败、命令行未登录就退出
+	// 都发生在拿到会话之前，要求先认证才能上报是循环依赖。
+	//
+	// 校验、脱敏、限流都在 internal/telemetry——那一层不认识 Connect，因此"什么会
+	// 被写进日志"可以脱离服务端单独测试。这里只做装配与协议层的取数。
+	telemetryRecorder := telemetry.NewRecorder(logger, telemetry.NewLimiter(telemetry.DefaultLimits))
+	telemetryPath, telemetryHandler := telemetryv1connect.NewTelemetryServiceHandler(
+		NewTelemetryService(telemetryRecorder), opts...)
+	register(telemetryPath, telemetryHandler)
+
 	// 发布地址：浏览器直连的非 RPC 入口。它**不经过鉴权**（发布态公开匿名，
 	// 地址即凭据），因此必须登记在 middleware 的浏览器直连清单里，否则会在
 	// rbac.Resolve 之前被当成一个没有注解的方法拦下。
@@ -283,6 +296,7 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		profilev1connect.ProfileServiceName,
 		galaxyv1connect.GalaxyServiceName,
 		eventsv1connect.EventsServiceName,
+		telemetryv1connect.TelemetryServiceName,
 	}
 	healthPath, healthHandler := grpchealth.NewHandler(grpchealth.NewStaticChecker(serviceNames...))
 	register(healthPath, healthHandler)
