@@ -111,6 +111,8 @@ export const GetRoleResponseSchema: GenMessage<GetRoleResponse> = /*@__PURE__*/
  */
 export type ListRolesRequest = Message<"aladdin.rbac.v1.ListRolesRequest"> & {
   /**
+   * 请求在哪个范围上读角色。仅用于鉴权，不过滤结果——角色定义是全局的。
+   *
    * @generated from field: string scope = 1;
    */
   scope: string;
@@ -283,6 +285,10 @@ export const AssignRoleResponseSchema: GenMessage<AssignRoleResponse> = /*@__PUR
  */
 export type ListSubjectBindingsRequest = Message<"aladdin.rbac.v1.ListSubjectBindingsRequest"> & {
   /**
+   * 请求在哪个范围上读绑定。用于鉴权，并作为展开 effective_permissions 的范围；
+   * 返回的 bindings **不按范围过滤**——主体在其它范围上的绑定同样会列出来，
+   * 否则"他在别处还持有什么"就看不到了。
+   *
    * @generated from field: string scope = 1;
    */
   scope: string;
@@ -420,7 +426,12 @@ export const RBACService: GenService<{
     output: typeof GetRoleResponseSchema;
   },
   /**
-   * 列出某个作用域下可见的角色。
+   * 列出角色定义全集。
+   *
+   * 请求里的 scope **只用于鉴权**（判断调用方有没有在该范围读角色的权限），
+   * **不用于过滤结果**：角色定义没有归属范围，全库只有一份。因此同一主体
+   * 在任意有读权限的范围上调用，拿到的都是同一个列表——切换管理范围不会
+   * 让这个列表变化，变化的是"还能不能读"。
    *
    * @generated from rpc aladdin.rbac.v1.RBACService.ListRoles
    */

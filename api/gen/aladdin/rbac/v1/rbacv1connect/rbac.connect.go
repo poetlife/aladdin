@@ -55,7 +55,12 @@ const (
 type RBACServiceClient interface {
 	// 读取角色定义。
 	GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error)
-	// 列出某个作用域下可见的角色。
+	// 列出角色定义全集。
+	//
+	// 请求里的 scope **只用于鉴权**（判断调用方有没有在该范围读角色的权限），
+	// **不用于过滤结果**：角色定义没有归属范围，全库只有一份。因此同一主体
+	// 在任意有读权限的范围上调用，拿到的都是同一个列表——切换管理范围不会
+	// 让这个列表变化，变化的是"还能不能读"。
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
 	// 创建或更新角色。属于不可逆操作，调用方需二次确认。
 	PutRole(context.Context, *connect.Request[v1.PutRoleRequest]) (*connect.Response[v1.PutRoleResponse], error)
@@ -179,7 +184,12 @@ func (c *rBACServiceClient) PublishPolicy(ctx context.Context, req *connect.Requ
 type RBACServiceHandler interface {
 	// 读取角色定义。
 	GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error)
-	// 列出某个作用域下可见的角色。
+	// 列出角色定义全集。
+	//
+	// 请求里的 scope **只用于鉴权**（判断调用方有没有在该范围读角色的权限），
+	// **不用于过滤结果**：角色定义没有归属范围，全库只有一份。因此同一主体
+	// 在任意有读权限的范围上调用，拿到的都是同一个列表——切换管理范围不会
+	// 让这个列表变化，变化的是"还能不能读"。
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
 	// 创建或更新角色。属于不可逆操作，调用方需二次确认。
 	PutRole(context.Context, *connect.Request[v1.PutRoleRequest]) (*connect.Response[v1.PutRoleResponse], error)

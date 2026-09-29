@@ -111,3 +111,50 @@ func TestAssignRoleHoldsLifecycleGate(t *testing.T) {
 		t.Fatal("AssignRole 结束后生命周期锁没有释放")
 	}
 }
+
+// ListRoles 不按请求范围过滤——角色定义是全局的，全库只有一份。
+//
+// 请求里的 scope 只参与鉴权（能不能在这个范围读角色），不参与结果裁剪。
+// 这条约定容易在"顺手加个过滤"的改动里被打破，而打破它的表现是：管理员
+// 切了管理范围，角色列表凭空少了一半，却没有任何一条文案解释为什么。
+// 因此它由测试固定，而不是只写在 proto 注释里。
+func TestListRolesReturnsAllRolesRegardlessOfScope(t *testing.T) {
+	ctx := context.Background()
+	store := rbac.NewMemoryStore()
+	svc := NewRBACService(store, rbac.NewEngine(store, zap.NewNop(), nil), &subjectLifecycleGate{})
+
+	idsAt := func(scope string) []string {
+		t.Helper()
+		resp, err := svc.ListRoles(ctx, connect.NewRequest(&rbacv1.ListRolesRequest{Scope: scope}))
+		if err != nil {
+			t.Fatalf("ListRoles(scope=%q) 失败: %v", scope, err)
+		}
+		ids := make([]string, 0, len(resp.Msg.GetRoles()))
+		for _, r := range resp.Msg.GetRoles() {
+			ids = append(ids, r.GetId())
+		}
+		return ids
+	}
+
+	global := idsAt("")
+	scoped := idsAt("tenant/acme")
+
+	// 两次调用的顺序由 rbac.SortRoles 定，是同一份规则，因此可以直接比。
+	if len(global) != len(scoped) {
+		t.Fatalf("全局范围与 tenant/acme 拿到的角色数不同：%d vs %d", len(global), len(scoped))
+	}
+	for i := range global {
+		if global[i] != scoped[i] {
+			t.Fatalf("两个范围下第 %d 个角色不同：%q vs %q", i, global[i], scoped[i])
+		}
+	}
+
+	// 与存储里的全集比对：确认不是"两个范围都返回了同一个子集"。
+	all, err := store.Roles(ctx)
+	if err != nil {
+		t.Fatalf("读取角色失败: %v", err)
+	}
+	if len(global) != len(all) {
+		t.Fatalf("ListRoles 返回 %d 个角色，存储里有 %d 个——列表被裁剪了", len(global), len(all))
+	}
+}

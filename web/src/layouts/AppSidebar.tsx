@@ -9,15 +9,73 @@ import {
   LogOut,
   ShieldCheck,
   Sparkles,
+  UserCog,
   X,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { useAnyPermission, useSession } from '../auth'
+import { usePermissionSet, useSession } from '../auth'
+import type { PermissionCode } from '../gen/permission-codes'
 import { PermissionCodes } from '../gen/permission-codes'
 import { avatarFallbackInitial, useProfile } from '../profile'
 
 const ICON_SIZE = 16
+
+/** 导航分组的标识。分组本身不指向任何页面，只是一个可展开的容器。 */
+const GROUP_ACCESS = 'access'
+
+/** 分组的显示信息。 */
+const GROUP_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
+  [GROUP_ACCESS]: { label: '权限', icon: <ShieldCheck size={ICON_SIZE} /> },
+}
+
+/**
+ * 一个导航项。
+ *
+ * 声明在一处：路径、标签、图标、所属分组、以及**看到它所需的权限**。
+ * 菜单树、选中态与展开态都从这份声明派生，免得"有哪几项""哪几项算叶子"
+ * 在几处各写一份——那正是导航最容易漂的地方。
+ */
+interface NavEntry {
+  /** 路由路径，同时是菜单项的 key。 */
+  path: string
+  label: string
+  icon: React.ReactNode
+  /** 所属分组；留空即一级项。 */
+  group?: string
+  /**
+   * 渲染这一项所需的权限码；留空表示任何已认证主体都能看到。
+   * 它只是展示裁剪，不是安全边界（见 docs/design/rbac/frontend-permissions.md）。
+   */
+  permission?: PermissionCode
+}
+
+const NAV: NavEntry[] = [
+  { path: '/', label: '概览', icon: <LayoutDashboard size={ICON_SIZE} /> },
+  { path: '/galaxy', label: '创作', icon: <Sparkles size={ICON_SIZE} />, permission: PermissionCodes.GalaxyProjectRead },
+  // 个人资料不需要权限码：它只作用于自己（见 docs/design/profile/README.md）。
+  { path: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
+  // 权限管理这一组：角色定义是"有哪些角色"，人员授权是"谁被授了哪个角色"。
+  // 两者同属一件事，因此收在一个分组里，而不是平铺成两个看不出关系的入口。
+  { path: '/access/roles', label: '角色定义', icon: <ShieldCheck size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacRoleRead },
+  { path: '/access/subjects', label: '人员授权', icon: <UserCog size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacSubjectRead },
+  // 文档区也不需要权限码：它讲的是"怎么把命令行装上并登录"，
+  // 而零权限的主体恰恰最需要它（见 docs/design/web/docs-area.md）。
+  // 导航**只有这一项**：章节加页只往区域里加，这里不再变。
+  { path: '/docs', label: '文档', icon: <BookOpen size={ICON_SIZE} /> },
+]
+
+/**
+ * 路径是否落在这一项上。
+ *
+ * 不能只比路径本身：页面可以更深（`/docs/cli`、`/galaxy/<工程标识>`），
+ * 进到子页时父项仍要高亮。
+ */
+function matchesPath(path: string, pathname: string): boolean {
+  if (path === '/') return pathname === '/'
+  return pathname === path || pathname.startsWith(`${path}/`)
+}
 
 interface AppSidebarProps {
   /** 是否收起成导轨（只留图标）。宽屏的收起态用得上；抽屉里恒为展开。 */
@@ -40,8 +98,7 @@ interface AppSidebarProps {
 export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps): React.ReactNode {
   const navigate = useNavigate()
   const location = useLocation()
-  const canReadRoles = useAnyPermission([PermissionCodes.RbacRoleRead])
-  const canReadGalaxy = useAnyPermission([PermissionCodes.GalaxyProjectRead])
+  const permissions = usePermissionSet()
 
   // 侧边栏内部的跳转一律走这里：导航项与账号区共用，"跳转之后要通知外壳"
   // （窄屏下就是收起抽屉）因此只有一份实现。分成两处就会漏——账号区那一条
@@ -51,26 +108,47 @@ export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps):
     onNavigate?.()
   }
 
-  const items = [
-    { key: '/', label: '概览', icon: <LayoutDashboard size={ICON_SIZE} /> },
-    // galaxy 创作入口：无 `galaxy.project.read` 时不渲染，导航栏不被无权项占据。
-    ...(canReadGalaxy
-      ? [{ key: '/galaxy', label: '创作', icon: <Sparkles size={ICON_SIZE} /> }]
-      : []),
-    // 个人资料不需要权限码：它只作用于自己（见 docs/design/profile/README.md）。
-    { key: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
-    ...(canReadRoles
-      ? [{ key: '/roles', label: '角色', icon: <ShieldCheck size={ICON_SIZE} /> }]
-      : []),
-    // 文档区也不需要权限码：它讲的是"怎么把命令行装上并登录"，
-    // 而零权限的主体恰恰最需要它（见 docs/design/web/docs-area.md）。
-    // 导航**只有这一项**：章节加页只往区域里加，这里不再变。
-    { key: '/docs', label: '文档', icon: <BookOpen size={ICON_SIZE} /> },
-  ]
+  const visible = NAV.filter(
+    (entry) => entry.permission === undefined || permissions.hasAny([entry.permission]),
+  )
 
-  // 导航项都是一级路径，而页面可以更深（/docs/cli、/galaxy/<工程标识>）。
-  // 拿整个路径去比对，进到子页时父项就不再高亮，因此取第一段。
-  const selectedKey = `/${location.pathname.split('/')[1] ?? ''}`
+  // 菜单树按声明顺序生成；分组在它的**第一个可见子项**处插入，
+  // 这样"权限"这一组出现在声明里那个位置，而不是被排到最前或最后。
+  const items: MenuProps['items'] = []
+  const emitted = new Set<string>()
+  for (const entry of visible) {
+    if (entry.group === undefined) {
+      items.push({ key: entry.path, label: entry.label, icon: entry.icon })
+      continue
+    }
+    if (emitted.has(entry.group)) continue
+    emitted.add(entry.group)
+    const children = visible.filter((e) => e.group === entry.group)
+    const group = GROUP_LABELS[entry.group]
+    items.push({
+      key: entry.group,
+      label: group?.label ?? entry.group,
+      icon: group?.icon,
+      children: children.map((e) => ({ key: e.path, label: e.label, icon: e.icon })),
+    })
+  }
+
+  // 选中态取**最长匹配**的那一项。原先取路径第一段，那是因为导航是扁平的；
+  // 有了分组之后，第一段是分组键（如 /access），会把分组本身选成选中项，
+  // 而分组不是页面。
+  const selectedKey =
+    visible
+      .filter((entry) => matchesPath(entry.path, location.pathname))
+      .sort((a, b) => b.path.length - a.path.length)[0]?.path ?? ''
+
+  // 深链或刷新进来时，选中项所在的分组必须**已经是展开的**——否则选中项
+  // 藏在收起的分组里，等于没被选中。
+  const activeGroup = visible.find((entry) => entry.path === selectedKey)?.group
+  const [openKeys, setOpenKeys] = useState<string[]>(activeGroup === undefined ? [] : [activeGroup])
+  useEffect(() => {
+    if (activeGroup === undefined) return
+    setOpenKeys((prev) => (prev.includes(activeGroup) ? prev : [...prev, activeGroup]))
+  }, [activeGroup])
 
   return (
     // 三段纵向排布：品牌区固定，导航占满剩余高度，账号区钉底。
@@ -79,11 +157,15 @@ export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps):
       <Brand collapsed={collapsed} onClose={onClose} />
       {/* 不传 inlineCollapsed：在 Sider 里它自己读 SiderContext 跟着收起，
           在抽屉里那份内容被 portal 到 SiderContext 之外，自然就是展开的——
-          正是我们要的，不用手动分叉。 */}
+          正是我们要的，不用手动分叉。
+
+          展开态只在**没收起**时受控：导轨态下 antd 把子菜单换成悬停弹出，
+          此时再塞一个 openKeys 会与它的悬停逻辑打架（子菜单弹不出来）。 */}
       <Menu
         mode="inline"
         selectedKeys={[selectedKey]}
         items={items}
+        {...(collapsed ? {} : { openKeys, onOpenChange: setOpenKeys })}
         onClick={({ key }) => {
           go(key)
         }}

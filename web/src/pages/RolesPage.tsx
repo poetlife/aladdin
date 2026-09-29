@@ -5,8 +5,7 @@ import { RefreshCw, ShieldCheck } from 'lucide-react'
 
 import * as rbacApi from '../api/rbac'
 import { messageOf, traceIdOf } from '../api/errors'
-import { PermissionGate, useSession } from '../auth'
-import { PermissionCodes } from '../gen/permission-codes'
+import { useSession } from '../auth'
 import type { Role } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
 
 const columns: NonNullable<TableProps<Role>['columns']> = [
@@ -43,10 +42,18 @@ interface failure {
 }
 
 /**
- * 角色列表页。
+ * 角色定义页。
  *
- * 它是"页面级裁剪"的示例：路由已由 RequirePermission 保证基础权限，
- * 页面内部再用 PermissionGate 处理粒度更细的写操作。
+ * 它列出的是**全库角色定义**：角色没有归属范围，因此这张表不随顶栏的管理范围
+ * 过滤。顶栏在这里的唯一作用是判断"你有没有资格在这个范围上读角色"——切换范围
+ * 让表格重取一次，内容不变，变的只是还能不能读。这句话必须写在界面上：只把
+ * 顶栏和表格摆在一起而不解释，会被读成"改范围筛选了列表"。
+ *
+ * 界面上不出现没有真实语义的动作。这里原先有个「发布变更」按钮，而服务端对应的
+ * `PublishPolicy` 目前是空实现（失效条目恒为 0），叫"发布"其实是重新读取——
+ * 名实不符的按钮比没有按钮更糟，因此去掉，只留「刷新」。
+ *
+ * 它是"页面级裁剪"的示例：路由已由 RequirePermission 保证基础权限。
  */
 export function RolesPage(): React.ReactNode {
   const { scope } = useSession()
@@ -81,18 +88,13 @@ export function RolesPage(): React.ReactNode {
       title={
         <Space size={8}>
           <ShieldCheck size={16} />
-          角色
+          角色定义
         </Space>
       }
       extra={
-        <Space>
-          <PermissionGate require={PermissionCodes.RbacPolicyPublish}>
-            <Button onClick={() => void load()}>发布变更</Button>
-          </PermissionGate>
-          <Button icon={<RefreshCw size={16} />} onClick={() => void load()}>
-            刷新
-          </Button>
-        </Space>
+        <Button icon={<RefreshCw size={16} />} onClick={() => void load()}>
+          刷新
+        </Button>
       }
     >
       {failure !== null && (
@@ -109,6 +111,12 @@ export function RolesPage(): React.ReactNode {
           style={{ marginBottom: 16 }}
         />
       )}
+      {/* 先把"这张表是什么"说清楚，再摆表格。少了这一句，改管理范围之后
+          列表纹丝不动会显得像没生效——而它本来就该纹丝不动。 */}
+      <Typography.Paragraph type="secondary">
+        这是全库的角色定义，不随顶栏的管理范围过滤。切换管理范围只影响「你能不能在这个范围上读它」，
+        以及给谁在哪个范围上授予它——不改变这张表的内容。
+      </Typography.Paragraph>
       <Table<Role>
         rowKey="id"
         columns={columns}
@@ -121,7 +129,7 @@ export function RolesPage(): React.ReactNode {
         scroll={{ x: 'max-content' }}
         locale={{
           emptyText: (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前作用域下没有角色" />
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未定义任何角色" />
           ),
         }}
       />

@@ -40,7 +40,12 @@ const (
 type RBACServiceClient interface {
 	// 读取角色定义。
 	GetRole(ctx context.Context, in *GetRoleRequest, opts ...grpc.CallOption) (*GetRoleResponse, error)
-	// 列出某个作用域下可见的角色。
+	// 列出角色定义全集。
+	//
+	// 请求里的 scope **只用于鉴权**（判断调用方有没有在该范围读角色的权限），
+	// **不用于过滤结果**：角色定义没有归属范围，全库只有一份。因此同一主体
+	// 在任意有读权限的范围上调用，拿到的都是同一个列表——切换管理范围不会
+	// 让这个列表变化，变化的是"还能不能读"。
 	ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error)
 	// 创建或更新角色。属于不可逆操作，调用方需二次确认。
 	PutRole(ctx context.Context, in *PutRoleRequest, opts ...grpc.CallOption) (*PutRoleResponse, error)
@@ -145,7 +150,12 @@ func (c *rBACServiceClient) PublishPolicy(ctx context.Context, in *PublishPolicy
 type RBACServiceServer interface {
 	// 读取角色定义。
 	GetRole(context.Context, *GetRoleRequest) (*GetRoleResponse, error)
-	// 列出某个作用域下可见的角色。
+	// 列出角色定义全集。
+	//
+	// 请求里的 scope **只用于鉴权**（判断调用方有没有在该范围读角色的权限），
+	// **不用于过滤结果**：角色定义没有归属范围，全库只有一份。因此同一主体
+	// 在任意有读权限的范围上调用，拿到的都是同一个列表——切换管理范围不会
+	// 让这个列表变化，变化的是"还能不能读"。
 	ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error)
 	// 创建或更新角色。属于不可逆操作，调用方需二次确认。
 	PutRole(context.Context, *PutRoleRequest) (*PutRoleResponse, error)

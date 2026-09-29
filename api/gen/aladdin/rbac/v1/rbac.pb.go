@@ -208,8 +208,9 @@ func (x *GetRoleResponse) GetRole() *Role {
 }
 
 type ListRolesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 请求在哪个范围上读角色。仅用于鉴权，不过滤结果——角色定义是全局的。
+	Scope         string `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -611,9 +612,12 @@ func (x *AssignRoleResponse) GetChangeId() string {
 }
 
 type ListSubjectBindingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
-	SubjectId     string                 `protobuf:"bytes,2,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 请求在哪个范围上读绑定。用于鉴权，并作为展开 effective_permissions 的范围；
+	// 返回的 bindings **不按范围过滤**——主体在其它范围上的绑定同样会列出来，
+	// 否则"他在别处还持有什么"就看不到了。
+	Scope         string `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	SubjectId     string `protobuf:"bytes,2,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
