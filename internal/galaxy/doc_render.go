@@ -25,7 +25,7 @@ import (
 //
 // **升级渲染器时必须把它加一。** 忘了加的表现是：一份以旧规则发布过的版本，
 // 在升级后重新发布得到了不同的产物，而没有任何地方提示这件事发生了。
-const RenderRulesVersion = 2
+const RenderRulesVersion = 3
 
 // Doc 是一份渲染好的文档页。
 //
@@ -369,16 +369,18 @@ func attributeString(node ast.Node, name string) string {
 //
 // 三种写法都算外部：带 scheme 的绝对地址（http、https、data、mailto …）、协议
 // 相对地址（`//host/x`）、以及 `asset://`（那是**本模块的记号**，由调用方先
-// 处理掉，走到这里说明它没被认出来）。纯锚点与查询串是页内导航，不算外部。
+// 处理掉，走到这里说明它没被认出来）。
+//
+// **"不是外部"不等于"要拿文件组去解析"。** `#小节` 与 `?q=1` 也不是外部地址，但它们
+// 同样不落在任何条目上——把这个二值判断当成"外部 / 站内文件引用"来用，就会让每一处
+// `[见小节](#小节)` 都变成一次"引用了不存在的位置"。那两档在进到本函数之前就由
+// splitDestination 摘掉了（见 link_resolver.go）。
 func isExternalDestination(dest string) bool {
 	if dest == "" {
 		return false
 	}
 	if strings.HasPrefix(dest, "//") {
 		return true
-	}
-	if strings.HasPrefix(dest, "#") || strings.HasPrefix(dest, "?") {
-		return false
 	}
 	colon := strings.IndexByte(dest, ':')
 	if colon <= 0 {

@@ -1,6 +1,8 @@
 package galaxy
 
 import (
+	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -345,12 +347,146 @@ func TestIsExternalDestination(t *testing.T) {
 			t.Errorf("%q 没被当成外部地址", dest)
 		}
 	}
-	internal := []string{"", "#anchor", "?q=1", "style.css", "/g/prj_abc/a.js"}
-	for _, dest := range internal {
+	// 既不是外部、也不落在文件组上的那一档写法：空串，以及只有后缀的 `#小节` /
+	// `?q=1`。它们**先**被 splitDestination 摘成"没有位置"，因此走不到这里；
+	// 这几个取值在这里断言的是"不会被误判成外部地址"。
+	notExternal := []string{"", "#anchor", "?q=1", "style.css", "/g/prj_abc/a.js"}
+	for _, dest := range notExternal {
 		if isExternalDestination(dest) {
 			t.Errorf("%q 被当成了外部地址", dest)
 		}
 	}
+}
+
+func TestSplitDestination(t *testing.T) {
+	cases := []struct {
+		dest         string
+		wantLocation string
+		wantSuffix   string
+	}{
+		{"guide/intro.md", "guide/intro.md", ""},
+		{"guide/intro.md#小节", "guide/intro.md", "#小节"},
+		{"#小节", "", "#小节"},
+		{"?q=1", "", "?q=1"},
+		{"a.md?q=1#f", "a.md", "?q=1#f"},
+		{"https://example.com/x#f", "https://example.com/x", "#f"},
+		{"", "", ""},
+	}
+	for _, tc := range cases {
+		location, suffix := splitDestination(tc.dest)
+		if location != tc.wantLocation || suffix != tc.wantSuffix {
+			t.Errorf("splitDestination(%q) = %q/%q，期望 %q/%q",
+				tc.dest, location, suffix, tc.wantLocation, tc.wantSuffix)
+		}
+	}
+}
+
+// 只有后缀的引用（页内锚点、查询串）指向**这一页自己**，发布态也必须原样保留。
+//
+// 它们以前会被当成"站点内位置"拿去查清单，于是每一处页内跳转都变成一次发布拒绝，
+// 而预览因为容忍坏引用照常显示——"预览说没问题、发布说不行"。
+func TestPageInternalReferenceIsKeptVerbatim(t *testing.T) {
+	const src = "# 标题\n\n## 成品概览\n\n甲。\n\n见[成品概览](#成品概览)，按[时间排](?sort=time)。\n"
+	manifest := docsManifest(t, map[string]string{"index.md": src})
+	site := SiteLinker{Slot: SlotDocs, Manifest: manifest, SiteRoot: "/g/prj_x/docs/"}
+
+	for name, linker := range map[string]LinkResolver{
+		"发布态": site,
+		"预览态": PreviewLinker{Site: site},
+	} {
+		doc, err := RenderDoc(DocSource{Path: "index.md", Body: []byte(src)}, linker)
+		if err != nil {
+			t.Fatalf("%s：渲染被拒: %v", name, err)
+		}
+		hrefs := hrefsIn(doc.Body)
+		for _, want := range []string{"#成品概览", "?sort=time"} {
+			if !slices.Contains(hrefs, want) {
+				t.Errorf("%s：正文里没有 %q 这处地址，实际有 %q", name, want, hrefs)
+			}
+		}
+	}
+}
+
+// 带上锚点的站内引用：位置照常解析成产物地址，后缀原样接回去——它指的是那一页的
+// 那一节，不是那一页的顶部。
+func TestCrossDocumentAnchorKeepsSuffix(t *testing.T) {
+	const index = "# 首页\n\n看[入门的小节](guide/intro.md#第一次)\n"
+	const intro = "# 入门\n\n## 第一次\n"
+	manifest := docsManifest(t, map[string]string{"index.md": index, "guide/intro.md": intro})
+	linker := SiteLinker{Slot: SlotDocs, Manifest: manifest, SiteRoot: "/g/prj_x/docs/"}
+
+	doc, err := RenderDoc(DocSource{Path: "index.md", Body: []byte(index)}, linker)
+	if err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	if hrefs := hrefsIn(doc.Body); !slices.Contains(hrefs, "/g/prj_x/docs/guide/intro.html#第一次") {
+		t.Errorf("跨文档锚点的地址不对，实际有 %q", hrefs)
+	}
+	// 位置本身还是要真的在清单里——不然它就被"只有后缀"那一档顺带放过去了。
+	if _, err := RenderDoc(
+		DocSource{Path: "index.md", Body: []byte("# 首页\n\n[没有](guide/nope.md#第一次)\n")},
+		linker,
+	); err == nil {
+		t.Error("指向不存在文件的锚点被放过了")
+	}
+}
+
+// hrefsIn 取出正文里每一处 href 的取值，并做百分号解码。
+//
+// 必须解码后再比：渲染器会给地址里的非 ASCII 做百分号编码（`#成品概览` 出来是
+// `#%E6%88%90…`），而浏览器在匹配 id 之前也会先解码——两边是同一处地址，直白的
+// 字符串比对只会比出编码形式这个噪音。
+func hrefsIn(body []byte) []string {
+	var hrefs []string
+	rest := string(body)
+	for {
+		i := strings.Index(rest, `href="`)
+		if i < 0 {
+			return hrefs
+		}
+		rest = rest[i+len(`href="`):]
+		j := strings.IndexByte(rest, '"')
+		if j < 0 {
+			return hrefs
+		}
+		raw := rest[:j]
+		rest = rest[j:]
+		decoded, err := url.PathUnescape(raw)
+		if err != nil {
+			decoded = raw
+		}
+		hrefs = append(hrefs, decoded)
+	}
+}
+
+// 取资源的引用没有"只有后缀"这一档：`![图](#某处)` 根本不是一个地址。
+func TestResourceReferenceCannotBeOnlyASuffix(t *testing.T) {
+	const src = "# 标题\n\n![图](#成品概览)\n"
+	manifest := docsManifest(t, map[string]string{"index.md": src})
+	if _, err := RenderDoc(
+		DocSource{Path: "index.md", Body: []byte(src)},
+		SiteLinker{Slot: SlotDocs, Manifest: manifest, SiteRoot: "/g/prj_x/docs/"},
+	); err == nil {
+		t.Error("指向页内锚点的图片引用被接受了")
+	}
+}
+
+// docsManifest 按「路径 → 源」造一份文本条目的清单。
+func docsManifest(t *testing.T, sources map[string]string) Manifest {
+	t.Helper()
+	entries := make([]Entry, 0, len(sources))
+	for entryPath, body := range sources {
+		entries = append(entries, Entry{
+			Path:   entryPath,
+			Kind:   EntryKindText,
+			Digest: ContentDigest([]byte(body)),
+		})
+	}
+	manifest, err := NormalizeManifest(entries)
+	if err != nil {
+		t.Fatalf("构造清单失败: %v", err)
+	}
+	return manifest
 }
 
 // 记号的识别：**恰好一个**记号才算，多一个字符就不算（未解析的 asset:// 必须
