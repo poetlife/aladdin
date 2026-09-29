@@ -56,6 +56,17 @@ describe('文档索引页', () => {
     expect(hrefs).toContain('/docs/cli')
   })
 
+  // 创作与发布是同一条规则下的第二处：索引有它、路由表里也得有它，
+  // 只有一处改到位就会表现为"点了这一项回到首页"。
+  it('列出创作与发布一章，并指向它的真实路径', async () => {
+    const container = await renderPage()
+
+    expect(container.textContent).toContain('创作与发布')
+
+    const hrefs = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'))
+    expect(hrefs).toContain('/docs/galaxy')
+  })
+
   // 接口参考是**外链**：它不在路由表里，走 React Router 的 <Link> 会被 `*`
   // 那条兜底接住，表现为"点了接口文档却回到首页"，且没有任何报错。
   // 只断言 href 区分不出这两者（两者渲染出来的都是 <a href>），所以这里

@@ -1,5 +1,5 @@
 import { Card, Space, Typography, theme } from 'antd'
-import { BookOpen, ChevronRight, FileJson, Terminal } from 'lucide-react'
+import { BookOpen, ChevronRight, FileJson, Sparkles, Terminal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 /**
@@ -34,6 +34,14 @@ export function DocsIndexPage(): React.ReactNode {
               icon={<Terminal size={18} />}
               title="命令行"
               blurb="怎么装、怎么登录、怎么升级"
+            />
+          </Link>
+
+          <Link to="/docs/galaxy">
+            <EntryRow
+              icon={<Sparkles size={18} />}
+              title="创作与发布"
+              blurb="写一份 HTML，用记号引用素材，发布成别人能打开的页面"
             />
           </Link>
 

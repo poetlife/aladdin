@@ -12,6 +12,7 @@ import { RolesPage } from './pages/RolesPage'
 import { PermissionCodes } from './gen/permission-codes'
 import { CliPage } from './pages/docs/CliPage'
 import { DocsIndexPage } from './pages/docs/DocsIndexPage'
+import { GalaxyPage } from './pages/docs/GalaxyPage'
 import { ProjectEditorPage } from './pages/galaxy/ProjectEditorPage'
 import { ProjectListPage } from './pages/galaxy/ProjectListPage'
 
@@ -60,6 +61,7 @@ export const router = createBrowserRouter([
           // "先装命令行才能登录、登录了才看得到怎么装命令行"这个环闭不上。
           { path: '/docs', element: <DocsIndexPage /> },
           { path: '/docs/cli', element: <CliPage /> },
+          { path: '/docs/galaxy', element: <GalaxyPage /> },
           {
             element: <RequirePermission require={[PermissionCodes.RbacRoleRead]} />,
             children: [{ path: '/roles', element: <RolesPage /> }],

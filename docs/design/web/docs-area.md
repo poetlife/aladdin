@@ -39,6 +39,7 @@
 | 入口 | 路径 | 是什么 | 内容归属 |
 |------|------|--------|---------|
 | 命令行 | `/docs/cli` | **一章**：前端的一页 | [../cli/install.md](../cli/install.md) |
+| 创作与发布 | `/docs/galaxy` | **一章**：前端的一页 | [../galaxy/cli.md](../galaxy/cli.md)（命令形状）与 [../galaxy/authoring.md](../galaxy/authoring.md)（素材怎么引用） |
 | 接口参考 | `/api-docs/` | **外链**：生成出来的静态页 | [../api-docs/README.md](../api-docs/README.md) |
 
 导航**只有一项**（「文档」→ `/docs`）：东西是往区域里加，不是往导航里加。
