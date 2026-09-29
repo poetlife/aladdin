@@ -2,6 +2,7 @@ import { Code, ConnectError, createClient } from '@connectrpc/connect'
 import type { Interceptor, Transport } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
 
+import { EventsService } from '../gen/proto/aladdin/events/v1/events_pb'
 import { GalaxyService } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { IdentityService } from '../gen/proto/aladdin/identity/v1/identity_pb'
 import { ProfileService } from '../gen/proto/aladdin/profile/v1/profile_pb'
@@ -161,4 +162,14 @@ export function profileClient() {
 /** galaxy 创作服务的客户端。 */
 export function galaxyClient() {
   return createClient(GalaxyService, getTransport())
+}
+
+/**
+ * 事件通道的客户端。
+ *
+ * 它是唯一一条**流式**调用：一条连接承载多个主题（见 docs/design/events/README.md）。
+ * 凭证与链路标识由同一个拦截器注入，因此这里不必也不得另写一份。
+ */
+export function eventsClient() {
+  return createClient(EventsService, getTransport())
 }

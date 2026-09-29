@@ -17,6 +17,8 @@ import {
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { useNarrowViewport } from '../../layouts/use-narrow-viewport'
 import { MONOSPACE } from '../../theme'
+import { useWatch } from '../../watch/use-watch'
+import { projectTopic } from '../../watch/topics'
 import { AssetLibrary } from './AssetLibrary'
 import { LifecycleStrip } from './LifecycleStrip'
 import { formatTime } from './format-time'
@@ -68,10 +70,13 @@ interface failure {
  * 路由已由 RequirePermission 保证 `galaxy.project.read`；页面内部按更细的权限码
  * 裁剪动作（存版本用 write、发布用 publish、资产用 asset.*）。
  *
- * 校验**自动产生**：打开页面就调一次服务端的 ValidateDraft；这一页重新可见或窗口
- * 重新获得焦点时再问一次，并重拉草稿。命令行可以在页面开着时 push，状态条不能停在
- * 上一次的「可以发布」。前端不复写引用解析——"这份草稿能不能发布"只有服务端一个
- * 实现入口，两端各写一份的表现是"提示说没问题、发布说不行"。
+ * 校验**自动产生**：打开页面就调一次服务端的 ValidateDraft；**这一页订阅了它正在
+ * 看的那个工程的主题**（见 docs/design/events/README.md），别处（命令行、另一个
+ * 标签页）改完就会推一条事件过来，随即重拉草稿、版本与预览并再问一次校验——状态条
+ * 不会停在别的入口改动之前的结论上。页面在后台时由"重新可见或窗口重新获得焦点"兜底
+ * 重拉一次（浏览器会冻结后台标签页，那条流可能已被对端关掉）。前端不复写引用解析
+ * ——"这份草稿能不能发布"只有服务端一个实现入口，两端各写一份的表现是"提示说没
+ * 问题、发布说不行"。
  */
 export function ProjectEditorPage(): React.ReactNode {
   const { projectId } = useParams<{ projectId: string }>()
@@ -381,6 +386,22 @@ export function ProjectEditorPage(): React.ReactNode {
     renderPreview,
     readEntryText,
   ])
+
+  // 两条路径都会重拉，分工是**主路径与兜底**：
+  //
+  //   - 订阅（下面这行）是主路径：命令行 `push` 之后事件会推过来，页面不用等
+  //     任何人做任何事；
+  //   - 重新可见/重新获得焦点是兜底：浏览器会冻结后台标签页，那条流可能已经被
+  //     对端关掉，而这一页回到前台时不该再等下一次事件（见
+  //     docs/design/events/README.md）。
+  //
+  // 主题集合就地写出来即可：`useWatch` 按**内容**而不是数组身份判断集合有没有变，
+  // 因此每次渲染新建一个数组不会让它重开一条流。加载完成之前集合为空——那时还
+  // 没有可订的工程。事件不带"变了什么"，到达即重拉这一页的整组读取（它本来就
+  // 是廉价的）。
+  useWatch(project === null || projectId === undefined ? [] : [projectTopic(projectId)], () => {
+    void refreshOpenDraft()
+  })
 
   useReloadWhenVisible(project !== null && !loading, () => {
     void refreshOpenDraft()

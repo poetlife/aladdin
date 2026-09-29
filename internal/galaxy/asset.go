@@ -388,6 +388,8 @@ func (s *Service) CommitAssetUpload(ctx context.Context, subjectID, projectID, a
 			zap.String("media_type", asset.MediaType),
 			zap.Int64("bytes", asset.SizeBytes))
 	}
+	// 事件在留痕之后发：资产库多了一份，订阅者的资产面板该跟上。
+	s.publish(projectID)
 	return asset, nil
 }
 
@@ -440,6 +442,7 @@ func (s *Service) DeleteAsset(ctx context.Context, subjectID, projectID, assetID
 	}
 	// 对象删除失败不影响"资产已删除"这一结论（库内是权威），与头像同源。
 	s.deleteAssetObjects(ctx, projectID, []Asset{asset}, "删除资产")
+	s.publish(projectID)
 	if s.logger != nil {
 		s.logger.Info("已删除资产",
 			zap.String("project_id", projectID),

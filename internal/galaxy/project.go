@@ -36,6 +36,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/objectstore"
+	"github.com/poetlife/aladdin/internal/watch"
 )
 
 // 字段长度上限，按**字符数**而不是字节数计：用户感知的长度是字数，按字节算
@@ -337,6 +338,13 @@ type Deps struct {
 	Public PublicStore
 	// Origin 是发布态地址的派生入口。零值表示没有配置发布域。
 	Origin PublicOrigin
+	// Events 是工程状态变化的总线：每一次成功的写入往里发一条小事件，供已经
+	// 打开的工作台看见别处（命令行、另一个标签页）的改动（见
+	// docs/design/events/README.md）。
+	//
+	// **为 nil 表示不推送**。它不影响任何写入路径的正确性——事件是提示不是事实，
+	// 订阅方收到之后自己去读现状。
+	Events *watch.Hub
 	// Logger 可以为 nil（测试），此时不产出留痕。
 	Logger *zap.Logger
 	// Now 可以为 nil，默认 time.Now。
@@ -349,6 +357,7 @@ type Service struct {
 	assets objectstore.Store
 	public PublicStore
 	origin PublicOrigin
+	events *watch.Hub
 	logger *zap.Logger
 	now    func() time.Time
 }
@@ -364,6 +373,7 @@ func NewService(deps Deps) *Service {
 		assets: deps.Assets,
 		public: deps.Public,
 		origin: deps.Origin,
+		events: deps.Events,
 		logger: deps.Logger,
 		now:    now,
 	}
@@ -414,6 +424,8 @@ func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, descr
 	if err := s.store.CreateProject(ctx, project); err != nil {
 		return Project{}, err
 	}
+	// 建立工程**不发事件**：订阅要给出一个工程标识，而这个标识刚刚才存在，
+	// 没有人可能订着它。给它发一条是无人可收的死代码。
 	if s.logger != nil {
 		s.logger.Info("已创建工程",
 			zap.String("project_id", project.ID),
@@ -444,6 +456,9 @@ func (s *Service) UpdateProject(ctx context.Context, subjectID, projectID, name,
 	if err := s.store.PutProjectMeta(ctx, projectID, name, description, s.now()); err != nil {
 		return Project{}, err
 	}
+	// 写入已经成功，事件就发出去：后面那次读取失败不改变"元数据已变"这个事实，
+	// 而少发一条事件会让订阅者停在旧内容上。
+	s.publish(projectID)
 	return s.store.GetProject(ctx, projectID)
 }
 
@@ -463,6 +478,8 @@ func (s *Service) DeleteProject(ctx context.Context, subjectID, projectID string
 	if err := s.store.DeleteProject(ctx, projectID); err != nil {
 		return err
 	}
+	// 工程不存在了：发一条事件并结束它的全部订阅（见 events.go 的顺序说明）。
+	s.publishDeleted(projectID)
 	// 对象删除失败不影响"工程已删除"这一结论：库内是权威，桶上可能因此留下
 	// 无从被引用的孤儿对象，而它没有功能影响（与头像同源）。
 	s.deleteAssetObjects(ctx, projectID, assets, "删除工程")
@@ -516,6 +533,7 @@ func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, en
 	if err := s.store.PutDraft(ctx, projectID, manifest, now); err != nil {
 		return Draft{}, err
 	}
+	s.publish(projectID)
 	if s.logger != nil {
 		s.logger.Info("已整组替换草稿",
 			zap.String("project_id", projectID),

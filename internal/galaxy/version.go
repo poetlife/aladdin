@@ -62,6 +62,7 @@ func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string) 
 	if err != nil {
 		return Version{}, err
 	}
+	s.publish(projectID)
 	if s.logger != nil {
 		s.logger.Info("已保存版本",
 			zap.String("project_id", projectID),
@@ -115,6 +116,7 @@ func (s *Service) DeleteVersion(ctx context.Context, subjectID, projectID, versi
 	if err := s.store.DeleteVersion(ctx, projectID, versionID); err != nil {
 		return err
 	}
+	s.publish(projectID)
 	if s.logger != nil {
 		s.logger.Info("已删除版本",
 			zap.String("project_id", projectID),

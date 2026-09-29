@@ -9,7 +9,11 @@ import (
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
-// reject 把判定结论转换为 Connect 错误。
+// Reject 把判定结论转换为 Connect 错误。
+//
+// 它是"拒绝原因 → RPC 错误"的**唯一实现**：鉴权拦截器用它，事件通道的逐主题
+// 判定也用它（见 internal/server/events_service.go 的 Watch）。多写一份映射就会
+// 出现"同一个拒绝原因，两条路径给出不同的码"。
 //
 // 状态码的选取对应 docs/design/rbac/server-permissions.md 的拒绝语义表。
 // **最关键的一条：不得把"无权限"与"未认证"混为一谈。**
@@ -18,7 +22,7 @@ import (
 //
 // 拒绝原因以结构化的 DenialDetail 挂在错误详情里，客户端三端
 // （Go / TypeScript / CLI）都从同一个生成类型读取，不做文本匹配。
-func reject(reason rbac.Reason) error {
+func Reject(reason rbac.Reason) error {
 	code, message := codeAndMessage(reason)
 	err := connect.NewError(code, errors.New(message))
 	// 详情构造失败时退回不带详情的错误：拒绝语义本身比详情更重要。
@@ -77,10 +81,10 @@ func DenyByAnnotation(procedure, reason string) error {
 // 一次全站登录风暴。它必须单独成类，让客户端退避重试。
 func RejectAuthFailure(err error) error {
 	if errors.Is(err, ErrStoreUnavailable) {
-		return reject(rbac.ReasonStoreUnavailable)
+		return Reject(rbac.ReasonStoreUnavailable)
 	}
 	if errors.Is(err, ErrNoCredential) || errors.Is(err, ErrInvalidCredential) {
-		return reject(rbac.ReasonSessionExpired)
+		return Reject(rbac.ReasonSessionExpired)
 	}
-	return reject(rbac.ReasonSubjectNotFound)
+	return Reject(rbac.ReasonSubjectNotFound)
 }

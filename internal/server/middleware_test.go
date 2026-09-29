@@ -159,3 +159,43 @@ func TestBrowserEntriesWouldOtherwiseBeDenied(t *testing.T) {
 		}
 	}
 }
+
+// **流式响应对包装类型有一条硬要求：它必须自己实现 http.Flusher。**
+//
+// connect-go 取 Flusher 时做的是**直接的类型断言**（`w.(http.Flusher)`，见它
+// protocol.go 的 newStreamingResponseWriter），不是 http.ResponseController——
+// 因此 statusRecorder 上那个 Unwrap 帮不上忙。少了这个方法的表现为**流式方法
+// 一律 Internal**（"*statusRecorder does not implement http.Flusher"），而同一个
+// 服务上的 unary 方法完全看不出来。这条断言把它钉在构建期。
+func TestStatusRecorderExposesFlusher(t *testing.T) {
+	flushed := false
+	var writer http.ResponseWriter = &statusRecorder{
+		ResponseWriter: flushingRecorder{flushed: &flushed},
+	}
+
+	flusher, ok := writer.(http.Flusher)
+	if !ok {
+		t.Fatal("statusRecorder 没有实现 http.Flusher：流式方法会在 connect-go 的类型断言处失败")
+	}
+	flusher.Flush()
+	if !flushed {
+		t.Error("Flush 没有透传到底层的 ResponseWriter")
+	}
+
+	// 底层不是 Flusher 时它不能炸：那种 writer 上本来就没有可刷的东西，而一次
+	// panic 会把"包了一层"变成"这个服务不可用"。
+	(&statusRecorder{ResponseWriter: plainRecorder{}}).Flush()
+}
+
+// flushingRecorder 是一个会记下"刷过没有"的 ResponseWriter。
+type flushingRecorder struct {
+	http.ResponseWriter
+	flushed *bool
+}
+
+func (f flushingRecorder) Flush() { *f.flushed = true }
+
+// plainRecorder 实现了 http.ResponseWriter，但**不**实现 http.Flusher。
+type plainRecorder struct {
+	http.ResponseWriter
+}

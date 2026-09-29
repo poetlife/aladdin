@@ -105,9 +105,11 @@
 | 登录、绑定与解绑的留痕（含主体标识与渠道，**不含令牌**） | `IdentityService` 的对应处理方法 | [internal/server/identity_service.go](../internal/server/identity_service.go) |
 | 档案变更的留痕（含主体标识与改了哪一项，**不含头像字节与简介全文**） | `ProfileService` 的对应处理方法 | [internal/server/profile_service.go](../internal/server/profile_service.go) |
 | 发布各阶段的留痕（校验 / 上架 / 落库 / 生效，**不含文本全文**） | `galaxy` 发布流程的埋点（四阶段的唯一入口） | [internal/galaxy/publish.go](../internal/galaxy/publish.go) |
+| 一个工程的变更通知谁（按主题扇出、变更合并） | 进程内总线（`Hub` 实例由服务端装配处唯一持有） | [internal/watch/hub.go](../internal/watch/hub.go) |
+| 一个主题能不能被订阅（类型前缀、权限码、归属判定） | 主题类型注册表（属主模块注册，通道只查表） | [internal/watch/topic.go](../internal/watch/topic.go) |
 | 资产字节上架到公开区 | 上架入口（按内容摘要幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
 | 客户端把字节直传到对象存储（资产与内容对象共用） | 两端的直传实现；**共享的是凭证形状（`DirectUploadCredential`），代码因跨语言各一份，不得出现第三种形状** | [web/src/upload/direct-upload.ts](../web/src/upload/direct-upload.ts) / [cmd/aladdin/direct-upload.go](../cmd/aladdin/direct-upload.go) |
-| 拒绝结论到 RPC 错误码与错误详情的转换 | `reject` / `DenyByAnnotation` | [internal/server/interceptor/rejection.go](../internal/server/interceptor/rejection.go) |
+| 拒绝结论到 RPC 错误码与错误详情的转换 | `Reject` / `DenyByAnnotation`（鉴权拦截器与事件通道的逐主题判定共用） | [internal/server/interceptor/rejection.go](../internal/server/interceptor/rejection.go) |
 | 按客户端协议写出错误响应（中间件层） | `connect.ErrorWriter` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 服务端为每个请求起 span、回写 `traceparent` 与 `x-trace-id` 响应头 | `observability.StartServerSpan` / `WriteTraceHeaders` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
 | 每个请求留一行可检索的日志（含 trace_id / 过程名 / 结果码 / 耗时） | `telemetryMiddleware.logRequest` | [internal/server/middleware.go](../internal/server/middleware.go) |

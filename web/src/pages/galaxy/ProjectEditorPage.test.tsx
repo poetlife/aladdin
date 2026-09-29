@@ -28,6 +28,9 @@ import {
   ValidationProblemSchema,
   VersionSchema,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import * as eventsApi from '../../api/events'
+import { fakeTopicStream, type FakeTopicStream } from '../../test/topic-event-stream'
+import { projectTopic } from '../../watch/topics'
 import { ProjectEditorPage } from './ProjectEditorPage'
 
 vi.mock('../../api/identity', () => ({
@@ -41,6 +44,10 @@ vi.mock('../../api/identity', () => ({
 
 vi.mock('../../api/transport', () => ({
   onUnauthenticated: vi.fn(),
+}))
+
+vi.mock('../../api/events', () => ({
+  watchTopics: vi.fn(),
 }))
 
 vi.mock('../../api/galaxy', () => ({
@@ -77,6 +84,17 @@ function caps(overrides: { assetUploadEnabled?: boolean; publishEnabled?: boolea
   })
 }
 
+/**
+ * 一条**安静的流**：不产出任何事件，直到被中止。它表示"这段时间没有变化"。
+ *
+ * 它是订阅的默认行为：工作台挂载即订阅，而裸 `vi.fn()` 返回 undefined，
+ * `for await` 会直接抛——那被兜底逻辑咽掉之后还会安排一次重连，于是每个用例
+ * 都多出一个定时器。
+ */
+function quietStream(signal: AbortSignal) {
+  return fakeTopicStream(signal).stream
+}
+
 /** 渲染工作台（路由里带一个 projectId）。 */
 async function renderEditor(): Promise<HTMLElement> {
   const container = document.createElement('div')
@@ -94,6 +112,21 @@ async function renderEditor(): Promise<HTMLElement> {
     )
   })
   return container
+}
+
+/**
+ * 让首屏那一串顺序 await 走完。
+ *
+ * 加载是多步顺序请求（工程 + 能力，然后草稿 + 版本，再资产、校验、预览），一次
+ * act 冲刷不保证走到底。而"事件到达之后重拉了几次"这类断言必须先有一个稳定的
+ * 基线——否则量到的基线本身还在动。
+ */
+async function settle(): Promise<void> {
+  for (let round = 0; round < 5; round += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
 }
 
 /** 按文本找一颗按钮；找不到返回 undefined。 */
@@ -181,6 +214,10 @@ beforeEach(() => {
   // 打开页面就会自动校验一次，因此每个用例都要有一个默认结论；
   // 不补的话 `vi.fn()` 返回 undefined，读 `response.problems` 直接抛。
   vi.mocked(galaxyApi.validateDraft).mockResolvedValue(create(ValidateDraftResponseSchema, {}))
+  // 同理，页面挂载即订阅：默认给一条安静的流（见 quietStream）。
+  vi.mocked(eventsApi.watchTopics).mockImplementation((_topics, signal) =>
+    quietStream(signal),
+  )
 })
 
 afterEach(async () => {
@@ -543,6 +580,59 @@ describe('草稿有问题时的发布', () => {
     expect(container.textContent).toContain('校验未完成')
     expect(container.textContent).not.toContain('可以发布')
     expect(container.textContent).toContain('网络断了')
+  })
+})
+
+describe('订阅推送：别处的改动不用等回到前台', () => {
+  it('收到事件即重拉草稿并重新校验，状态条不停在旧结论上', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+
+    // 捕捉这一页开的那条流，好在挂载之后往里推事件。
+    const streams: FakeTopicStream[] = []
+    vi.mocked(eventsApi.watchTopics).mockImplementation((_topics, signal) => {
+      const fake = fakeTopicStream(signal)
+      streams.push(fake)
+      return fake.stream
+    })
+
+    await renderEditor()
+    // 首屏是一串顺序 await，等它走完再量基线。
+    await settle()
+    const drafts = vi.mocked(galaxyApi.getDraft).mock.calls.length
+    const validations = vi.mocked(galaxyApi.validateDraft).mock.calls.length
+    expect(drafts, '首屏没有拉到草稿，这个用例的前提不成立').toBeGreaterThan(0)
+
+    await act(async () => {
+      // 首屏可能开过不止一条流：会话权限到达会让加载重跑一次，于是上一条被中止。
+      // 推给还活着的那一条——命令行在别处 push 了这个小工程的样子。
+      for (const stream of streams) {
+        if (!stream.aborted) {
+          stream.publish(projectTopic('p1'))
+        }
+      }
+      // 事件是被订阅循环取走的：让它走完，再让重拉那一串 await 走完。
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(
+      vi.mocked(galaxyApi.getDraft).mock.calls.length,
+      '事件到达后没有重拉草稿',
+    ).toBe(drafts + 1)
+    expect(
+      vi.mocked(galaxyApi.validateDraft).mock.calls.length,
+      '事件到达后没有重新问校验，状态条会停在旧结论上',
+    ).toBe(validations + 1)
+  })
+
+  it('订的是这个工程的主题，而且是它自己那一条', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    await renderEditor()
+    await settle()
+
+    // 主题的取值是跨语言的约定：前端这一侧由 watch/topics.ts 拼，服务端那一侧
+    // 由 galaxy.ProjectTopic 拼。两边各有一条测试钉住同一个字面量。
+    const subscribed = vi.mocked(eventsApi.watchTopics).mock.calls.map(([topics]) => topics)
+    expect(subscribed, '这一页没有按工程的主题订阅').toContainEqual(['galaxy.project/p1'])
   })
 })
 

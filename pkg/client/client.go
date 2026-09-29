@@ -91,7 +91,7 @@ func Dial(opts Options) (*Client, error) {
 // 因此这里能泛型地接住它们。**调用方不得自己拼这几个参数**：漏掉拦截器就等于
 // 这次调用不带凭证与链路标识，而它不会报错，只会表现为"权限不对"或"链路断了"。
 func NewService[T any](c *Client, ctor func(connect.HTTPClient, string, ...connect.ClientOption) T) T {
-	return ctor(c.httpClient, c.baseURL, connect.WithInterceptors(connect.UnaryInterceptorFunc(c.intercept)))
+	return ctor(c.httpClient, c.baseURL, connect.WithInterceptors(c.interceptor()))
 }
 
 // Context 返回一个带超时的 context。
@@ -109,25 +109,61 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// intercept 注入链路标识与凭证，并为本次 RPC 起 client span。
+// interceptor 是本客户端的拦截器：注入链路标识与凭证，并为调用起 client span。
 //
-// 这是客户端侧请求头的**唯一注入点**；调用方不得自行附加这些键，否则会出现
-// "某个方法带 scope、某个方法不带"的不一致。
-func (c *Client) intercept(next connect.UnaryFunc) connect.UnaryFunc {
+// **它必须同时覆盖 unary 与流式调用。** 生成出来的客户端把两条形状都暴露出来
+// （例如 galaxy 的订阅通道），而 connect.UnaryInterceptorFunc 对**流式调用是
+// 空实现**——用它的话，一次流式调用会静默地不带凭证与作用域，表现为"权限不对"
+// 而不是一个看得见的错误。
+func (c *Client) interceptor() connect.Interceptor { return clientInterceptor{client: c} }
+
+// clientInterceptor 把请求头的注入接到 Connect 的两个客户端入口上。
+type clientInterceptor struct {
+	client *Client
+}
+
+// WrapUnary 实现 connect.Interceptor。
+func (i clientInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		ctx, span := observability.StartClientSpan(ctx, req.Spec().Procedure)
 		defer span.End()
-
-		// 请求头就是传播载体，包一层适配器即可（TextMapCarrier 比
-		// http.Header 多一个 Keys，见下面的 headerCarrier）。
-		observability.InjectTraceparent(ctx, headerCarrier{header: req.Header()})
-		if c.options.Token != "" {
-			req.Header().Set(interceptor.HeaderAuthorization, "Bearer "+c.options.Token)
-		}
-		if c.options.Scope != "" {
-			req.Header().Set(interceptor.HeaderScope, c.options.Scope)
-		}
+		i.client.injectHeaders(ctx, req.Header())
 		return next(ctx, req)
+	}
+}
+
+// WrapStreamingClient 实现 connect.Interceptor：注入同一批请求头。
+//
+// **流式调用不起 client span。** 一条流是一个长连接，"这次调用"的结束点得挂在
+// 连接关闭上，而把 span 的结束点挂错（或漏挂）比没有 span 更坏——它会留下一批
+// 永不结束的 span。命令行目前不消费任何流（订阅通道由浏览器消费）；真要给它接上
+// 链路，这里该补一个包住连接的实现，而不是随手起一个不结束的 span。
+func (i clientInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
+		conn := next(ctx, spec)
+		// 请求头是**懒发送**的：连接建好之后、第一次发送之前仍然可以改。
+		i.client.injectHeaders(ctx, conn.RequestHeader())
+		return conn
+	}
+}
+
+// WrapStreamingHandler 是空实现：本类型只用在客户端，服务端那一侧不经过它。
+func (i clientInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return next
+}
+
+// injectHeaders 注入凭证、作用域与链路标识（客户端侧请求头的**唯一注入点**）。
+//
+// 调用方不得自行附加这些键，否则会出现"某个方法带 scope、某个方法不带"的不一致。
+func (c *Client) injectHeaders(ctx context.Context, header http.Header) {
+	// 请求头就是传播载体，包一层适配器即可（TextMapCarrier 比
+	// http.Header 多一个 Keys，见下面的 headerCarrier）。
+	observability.InjectTraceparent(ctx, headerCarrier{header: header})
+	if c.options.Token != "" {
+		header.Set(interceptor.HeaderAuthorization, "Bearer "+c.options.Token)
+	}
+	if c.options.Scope != "" {
+		header.Set(interceptor.HeaderScope, c.options.Scope)
 	}
 }
 

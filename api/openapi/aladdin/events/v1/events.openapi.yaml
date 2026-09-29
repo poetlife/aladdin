@@ -1,0 +1,263 @@
+openapi: 3.1.0
+info:
+  title: aladdin.events.v1
+paths:
+  /aladdin.events.v1.EventsService/Watch:
+    post:
+      x-aladdin-auth:
+        kind: authenticated_only
+      tags:
+        - aladdin.events.v1.EventsService
+      summary: Watch
+      description: |-
+        **鉴权**：需要登录。任何已认证主体均可调用。
+
+        订阅一组主题，之后它们上面的变化从这同一条流推过来。
+
+         **每个主题订阅成功后的第一条必定是该主题的 RESYNC**：调用方在连接建立之前
+         无从知道"我已经同步到哪一刻"，"上一次拉取完成"与"订阅建立"之间落下的改动
+         只有这一次机会被补上。
+
+         订阅的判定是**整组通过或整组拒绝**，不做"跳过订不上的那几条"：静默少订一个
+         主题会让调用方以为自己是最新的——那正是这条通道要消灭的状态。因此订了一条
+         没有权限、或不属于自己的主题，整条流以对应的错误结束（不是你的与不存在返回
+         同一个结论，与各领域自己的读取入口一致）。
+
+         **不标 idempotency_level**：那个注解决定同一条路径是否额外接受 GET（见
+         AGENTS.md），而它只对 unary 注册。标在这里会让文档与规范说出一句不成立的
+         话——"只读 ⇒ 可 GET"。
+
+         buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+         该规则假定输出是一条"响应"，而这条流的输出是一条条**事件**（同一个类型被推
+         多次，且其中两类是控制事件而非变更）。叫它 WatchResponse 会与这个通道的语义
+         打架，而这正是本模块其余部分依赖的那个词。规则本身是对的，此处只是它不适用。
+      operationId: aladdin.events.v1.EventsService.Watch
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/connect+json:
+            schema:
+              $ref: '#/components/schemas/aladdin.events.v1.WatchRequest'
+          application/connect+proto:
+            schema:
+              $ref: '#/components/schemas/aladdin.events.v1.WatchRequest'
+          application/grpc:
+            schema:
+              $ref: '#/components/schemas/aladdin.events.v1.WatchRequest'
+          application/grpc+proto:
+            schema:
+              $ref: '#/components/schemas/aladdin.events.v1.WatchRequest'
+          application/grpc+json:
+            schema:
+              $ref: '#/components/schemas/aladdin.events.v1.WatchRequest'
+          application/grpc-web:
+            schema:
+              $ref: '#/components/schemas/aladdin.events.v1.WatchRequest'
+          application/grpc-web+proto:
+            schema:
+              $ref: '#/components/schemas/aladdin.events.v1.WatchRequest'
+          application/grpc-web+json:
+            schema:
+              $ref: '#/components/schemas/aladdin.events.v1.WatchRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/connect+json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+            application/connect+proto:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+            application/grpc:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+            application/grpc+proto:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+            application/grpc+json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+            application/grpc-web:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+            application/grpc-web+proto:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+            application/grpc-web+json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/connect+json:
+              schema:
+                $ref: '#/components/schemas/aladdin.events.v1.Event'
+            application/connect+proto:
+              schema:
+                $ref: '#/components/schemas/aladdin.events.v1.Event'
+            application/grpc:
+              schema:
+                $ref: '#/components/schemas/aladdin.events.v1.Event'
+            application/grpc+proto:
+              schema:
+                $ref: '#/components/schemas/aladdin.events.v1.Event'
+            application/grpc+json:
+              schema:
+                $ref: '#/components/schemas/aladdin.events.v1.Event'
+            application/grpc-web:
+              schema:
+                $ref: '#/components/schemas/aladdin.events.v1.Event'
+            application/grpc-web+proto:
+              schema:
+                $ref: '#/components/schemas/aladdin.events.v1.Event'
+            application/grpc-web+json:
+              schema:
+                $ref: '#/components/schemas/aladdin.events.v1.Event'
+components:
+  schemas:
+    aladdin.events.v1.Control:
+      type: string
+      title: Control
+      enum:
+        - CONTROL_UNSPECIFIED
+        - CONTROL_RESYNC
+        - CONTROL_HEARTBEAT
+      description: |-
+        Control 是通道自己的控制类别，与任何业务无关。
+
+         两个取值都不是"某个资源发生了变化"，它们是这条长连接本身的机制。
+    aladdin.events.v1.Event:
+      type: object
+      properties:
+        topic:
+          type: string
+          title: topic
+          description: 这条事件是关于哪个主题的。**控制事件（心跳）不带主题**：它是连接级的。
+        control:
+          allOf:
+            - title: control
+              description: 控制类别。UNSPECIFIED 表示"这个主题变了"——普通事件。
+            - $ref: '#/components/schemas/aladdin.events.v1.Control'
+      title: Event
+      additionalProperties: false
+      description: |-
+        Event 是这条流上推给调用方的一条**小事件**。
+
+         **它不含内容**：没有正文、没有字节、没有短时地址，也没有"变了什么"。载荷只有
+         "哪个主题"与"这是不是一条控制事件"——因此它的大小与资源的内容体积无关，也不会
+         过期。
+    aladdin.events.v1.WatchRequest:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            type: string
+          title: topics
+          description: |-
+            主题，形如 `<类型>/<资源标识>`，例如 `galaxy.project/prj_3fK9…`。
+
+             类型名由**属主模块**注册（谁提供这个资源谁定义它），通道只按前缀查表。
+             重复的主题会被忽略；空集合是合法的（只收心跳），虽然少有正当理由。
+      title: WatchRequest
+      additionalProperties: false
+      description: WatchRequest 要订阅的主题集合。
+    connect-protocol-version:
+      type: number
+      title: Connect-Protocol-Version
+      enum:
+        - 1
+      description: Define the version of the Connect protocol
+      const: 1
+    connect-timeout-header:
+      type: number
+      title: Connect-Timeout-Ms
+      description: Define the timeout, in ms
+    connect.error:
+      type: object
+      properties:
+        code:
+          type: string
+          examples:
+            - CodeNotFound
+          enum:
+            - CodeCanceled
+            - CodeUnknown
+            - CodeInvalidArgument
+            - CodeDeadlineExceeded
+            - CodeNotFound
+            - CodeAlreadyExists
+            - CodePermissionDenied
+            - CodeResourceExhausted
+            - CodeFailedPrecondition
+            - CodeAborted
+            - CodeOutOfRange
+            - CodeInternal
+            - CodeUnavailable
+            - CodeDataLoss
+            - CodeUnauthenticated
+          description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+        message:
+          type: string
+          description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+        detail:
+          $ref: '#/components/schemas/google.protobuf.Any'
+      title: Connect Error
+      additionalProperties: true
+      description: 'Error type returned by Connect: https://connectrpc.com/docs/go/errors/#http-representation'
+    google.protobuf.Any:
+      type: object
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+          format: binary
+        debug:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+      description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+security: []
+tags:
+  - name: aladdin.events.v1.EventsService
+    description: |-
+      EventsService 是**连接级**的事件通道：一条服务端流承载所有主题。
+
+       它回答的问题只有一个：**"某个资源变了，怎么通知到别的客户端。"** 它不认识
+       任何具体业务——哪个资源可订阅、订阅它要什么权限、谁算这个资源的属主，全部由
+       属主模块注册（见 docs/design/events/README.md 的"主题"一节）。
+
+       三条设计要点，缺一条这个形状就不成立：
+
+         - **一条连接、多个主题。** 下一个要推送的业务只加主题，不再各开一条流、
+           各写一遍重连与退避。订阅集合变了就重开一条——连接内改订阅要双向流，而
+           双向流要求端到端 HTTP/2，本仓库的部署形态给不了（见设计文档的"为什么不做
+           双向流"）。
+         - **事件不含内容**：只有"哪个主题"与"是不是控制事件"。收到之后由调用方自己
+           去读现状（各业务既有的 unary 入口）。因此事件的大小与资源的内容体积无关，
+           也不会过期。**也没有"变了什么"**：客户端要做的事与类别无关，而一旦留下它，
+           共享的信封里就要长出各业务的词表。
+         - **事件是提示，不是事实。** 交付语义是至多一次、不重放：没收到的事件不会补，
+           而正确性不依赖收到任何一条——**订阅成功后的第一条必定是该主题的 RESYNC**，
+           任何一次（重）连接之后都必然有一次全量重拉；缓冲满时服务端**结束这条流**
+           （而不是静默丢弃），调用方因此会重连、也就必然会重拉。
+
+       由此得到唯一的客户端契约：**收到任何事件、以及任何一次（重）连接成功之后，
+       都重拉一次受影响的主题。**
+
+       鉴权：**开流只要已认证，权限是逐主题的**——需要哪个权限取决于请求里订的是哪条
+       主题，而那是数据，方法注解表达不了。这是对"权限声明写在方法注解上"那条硬性
+       约定的一处刻意例外，边界与代价写在设计文档里；逐主题的权限码仍然取自权限目录，
+       判定仍然只有 rbac.Engine 一处实现。

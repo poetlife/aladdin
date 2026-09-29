@@ -191,11 +191,28 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	return r.ResponseWriter.Write(b)
 }
 
+// Flush 把刷新透传给底层的 ResponseWriter。
+//
+// **流式响应要求这个方法本身存在**：connect-go 是**直接做接口断言**去取
+// http.Flusher 的（`responseWriter.(http.Flusher)`，见它 protocol.go 的
+// newStreamingResponseWriter），而不是走 http.ResponseController——因此下面那个
+// Unwrap 帮不上忙，包装类型必须自己实现 Flush。少了它的表现是**流式方法一律
+// Internal**："*server.statusRecorder does not implement http.Flusher"，
+// 而同一个服务上的 unary 方法完全看不出来（它的接入约定只覆盖到这条形状）。
+//
+// 底层不是 Flusher 时**什么都不做**：那种 writer 上本来就没有可刷的东西，而让
+// 断言失败会把 connect-go 变成"拒绝服务"——它宁可我们什么也不做。
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 // Unwrap 让 http.ResponseController 能找到被包装的 ResponseWriter，
 // 从而保住 Flusher 等可选接口。
 //
-// 少了它会直接坏掉流式响应——反射服务就是流式的，而它的失败方式
-// （连接挂住而不是报错）极难归因。
+// 它是给**用 ResponseController 的调用方**（以及 Go 标准库的新式接口协商）用的。
+// 光有它不够：见上面 Flush 的说明。
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // authMiddleware 在 HTTP 层完成认证。

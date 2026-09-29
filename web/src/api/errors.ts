@@ -48,6 +48,29 @@ export function isRetryable(error: unknown): boolean {
 }
 
 /**
+ * 报告这次失败**重试没有意义**：请求本身不成立，或会话已经失效。
+ *
+ * 与 isRetryable 是一对：那个回答"值得再试一次吗"，这个回答"再试还会是同一个结论
+ * 吗"。退避重连的策略用它来收口——退避再多次也救不回一个拼错的标识、一个没注册
+ * 过的主题类型、或一次已经不在的授权（见 web/src/watch/use-watch.ts）。
+ *
+ * **它不等于 `!isRetryable`**：网络中断、超时、服务端暂时不可用都不在其中，那些
+ * 值得重试。
+ */
+export function isPermanentFailure(error: unknown): boolean {
+  switch (ConnectError.from(error).code) {
+    case Code.Unauthenticated:
+    case Code.PermissionDenied:
+    case Code.InvalidArgument:
+    case Code.NotFound:
+    case Code.Unimplemented:
+      return true
+    default:
+      return false
+  }
+}
+
+/**
  * 取一条适合直接展示给用户的错误文案。
  *
  * 是鉴权拒绝就给出原因对应的解释，否则退回服务端原始消息。
