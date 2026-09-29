@@ -28,9 +28,15 @@ import { VALIDATION_PENDING, type ValidationState } from './validation-state'
 import { VersionList } from './VersionList'
 import { WorkbenchTopBar } from './WorkbenchTopBar'
 
-/** 预览/源码那块面积的下限与窄屏定高。 */
+/**
+ * 预览/源码那块面积的高度下限。
+ *
+ * **两态的差别只在下限**：上限都由"视口剩下的高度"给（宽窄都吃满，底部不留空），
+ * 视口比下限还矮时整页滚动。窄屏的下限更高，因为它没有并排要照顾，而手机上一屏
+ * 本来就矮——360 是"一屏内还看得出这一页长什么样"的取值。
+ */
 const STAGE_MIN_HEIGHT = 240
-const NARROW_STAGE_HEIGHT = 360
+const NARROW_STAGE_MIN_HEIGHT = 360
 
 /**
  * 弹层内容自己滚动。
@@ -662,7 +668,7 @@ export function ProjectEditorPage(): React.ReactNode {
     <Flex
       vertical
       gap={8}
-      style={narrow ? undefined : { flex: 1, minWidth: 0, minHeight: STAGE_MIN_HEIGHT }}
+      style={{ flex: 1, minWidth: 0, minHeight: narrow ? NARROW_STAGE_MIN_HEIGHT : STAGE_MIN_HEIGHT }}
     >
       <Flex align="center" justify="space-between" gap={12} wrap>
         {previewEnabled ? (
@@ -713,7 +719,7 @@ export function ProjectEditorPage(): React.ReactNode {
           <Typography.Text type="secondary">{sourceState}</Typography.Text>
         )}
       </Flex>
-      <div style={narrow ? { height: NARROW_STAGE_HEIGHT } : { flex: 1, minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0 }}>
         {stageMode === 'preview' ? (
           previewError !== null ? (
             <Alert
@@ -848,21 +854,9 @@ export function ProjectEditorPage(): React.ReactNode {
     />
   )
 
-  if (narrow) {
-    // 窄屏不走分栏：并排的两栏在手机上各自只剩一条缝，而且并排要求两栏都撑满
-    // 可用高度，这是 `wrap` 做不到的（见 docs/design/web/responsive.md）。
-    return (
-      <Flex vertical gap={12}>
-        {failureAlert}
-        {topBar}
-        {!contentEnabled && contentUnavailable}
-        {strip}
-        {stage}
-        {panels}
-      </Flex>
-    )
-  }
-
+  // 一列到底，宽窄都一样：容器占满内容区，那块面积吃掉剩下的高度（它的下限按
+  // 宽窄不同，见上面的常量）。**不按宽窄分叉出两段结构**——两段只有在"下限是多少"
+  // 这一处不同，结构上多一份就会各自演化（见 docs/design/web/responsive.md）。
   return (
     <Flex vertical gap={12} style={{ height: '100%', minHeight: 0 }}>
       {failureAlert}
