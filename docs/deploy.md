@@ -163,7 +163,7 @@ database_dsn: /opt/aladdin/data/aladdin.db
 
 要做就一次做完。**半套配置会让服务端拒绝启动**——只配桶地址不给密钥、或只给密钥不配桶地址，都在启动时报错并指出缺的是哪一项。
 
-1. **建一个桶，读写权限设为私有读写。** 公开读的桶等于把所有人的头像与工程素材公开可列举，而"预签名地址"这个设计的前提正是桶私有。三处内容靠键前缀区分，前缀都是常量：`avatars/<主体标识>`、`galaxy/<工程标识>/<资产标识>`（私有区）与 `galaxy/release/<内容摘要>`（公开区）。**公开区也在这个桶里**，靠逐对象的公开读与其余对象区分，见下面"发布域与公开区"。
+1. **建一个桶，读写权限设为私有读写。** 公开读的桶等于把所有人的头像与工程素材公开可列举，而"预签名地址"这个设计的前提正是桶私有。三处内容靠键前缀区分，前缀都是常量：`avatars/<主体标识>`、`galaxy/<工程标识>/`（私有区，其下是 `assets/` 与 `text/`）与 `galaxy/<工程标识>/release/<内容摘要>`（公开区）。**公开区也在这个桶里**，靠逐对象的公开读与其余对象区分，见下面"发布域与公开区"。
 2. **建一个子账号（CAM），只授予这一个桶的权限，且尽量收窄到这两段前缀（`avatars/` 与 `galaxy/`）。** 不要用主账号密钥：主账号密钥能操作该账号下的全部云资源，而服务端只需要碰一个桶里的两段前缀。这个子账号还需要 **`sts:GetFederationToken`**——直传凭证由服务端用长期密钥换出来（见 [design/objectstore/README.md](design/objectstore/README.md)）；不给这一项时上传会以"换取直传凭证失败"报错。
 3. **把密钥写进一个仅属主可读的文件**，交给 systemd 读：
 
@@ -195,7 +195,7 @@ EOF
 
 #### 发布域与公开区（只有要启用 galaxy 发布时才需要）
 
-galaxy 的发布把工程资产**按内容摘要**上架到上面那个桶的 `galaxy/release/` 下，并在上架时把那些对象**逐个设成公开读**；发布页面本身由服务端在一个**独立域**上返回。
+galaxy 的发布把该工程引用的资产上架到上面那个桶里**这个工程自己的** `galaxy/<工程标识>/release/` 下（段内按内容摘要寻址），并在上架时把那些对象**逐个设成公开读**；发布页面本身由服务端在一个**独立域**上返回。
 
 > **不需要第二个桶，也不需要第二份授权。** 公开区与私有区共用第 1 步那个桶：桶本身保持默认私有读写，公开读**不由桶级策略给出**——上架过程逐个对象设置它。子账号的权限范围不变。
 
@@ -429,7 +429,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 可观测性 | 日志走 journald；`otel_endpoint` 留空表示不上报，链路标识照常生成与传播 |
 | 头像存储 | COS 桶；桶地址由 `cos_bucket_url` 给出，密钥由 systemd 的 `EnvironmentFile` 提供（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)） |
 | galaxy 资产私有区 | 同一个桶的 `galaxy/` 前缀；地址同样由 `cos_bucket_url` 给出（见 [design/galaxy/asset-library.md](design/galaxy/asset-library.md)） |
-| galaxy 发布 | 与资产**同一个桶**的 `galaxy/release/` 前缀（公开读由每个对象自己带着）与一个**独立的发布域**（`galaxy_publish_base_url`）；发布域的可注册域必须与主域不同（见 [design/galaxy/publication.md](design/galaxy/publication.md)） |
+| galaxy 发布 | 与资产**同一个桶**的 `galaxy/<工程标识>/release/` 前缀（公开读由每个对象自己带着）与一个**独立的发布域**（`galaxy_publish_base_url`）；发布域的可注册域必须与主域不同（见 [design/galaxy/publication.md](design/galaxy/publication.md)） |
 
 ## 可验证性与长程执行
 
@@ -452,8 +452,8 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 密钥文件仅属主可读 | `/opt/aladdin/secrets.env` 权限为 0600、属主为 aladdin（部署后核对） |
 | 密钥只有一份、只有一行 | `/opt/aladdin` 下没有按功能拆开的 env 文件（`cos.env`、`github.env` 等），单元里的 `EnvironmentFile=` 也恰好一行且指向 `secrets.env`（部署后核对） |
 | 桶为默认私有读写 | 去掉预签名参数直接访问私有对象地址被拒（部署后冒烟） |
-| 公开区对象为公开读 | `galaxy/release/` 下的对象无需签名即可取到（部署后冒烟） |
-| 公开区不含私有内容 | `galaxy/release/` 下只有按内容摘要命名的发布物对象；桶未开启列举权限（部署后冒烟） |
+| 公开区对象为公开读 | `galaxy/<工程标识>/release/` 下的对象无需签名即可取到（部署后冒烟） |
+| 公开区不含私有内容 | `galaxy/<工程标识>/release/` 下只有按内容摘要命名的发布物对象；桶未开启列举权限（部署后冒烟） |
 | 直传凭证不得能声明权限 | 用当前策略签发的临时凭证带 ACL 头与授权头各直传一次，两次都被存储侧拒绝（部署后冒烟，见 [design/objectstore/README.md](design/objectstore/README.md)） |
 | 发布域与主域不同注册域 | 两个域的注册域不同，且配置校验在启动时通过（`internal/config` 测试 + 部署后检查） |
 | 发布域上无凭证可达 | 不带任何凭证请求 `https://<发布域>/g/<工程标识>` 能取到当前产物（部署后冒烟） |

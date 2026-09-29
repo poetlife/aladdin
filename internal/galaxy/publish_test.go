@@ -103,9 +103,10 @@ func TestAssetEntryIsDispatchedAsRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("取公开区地址失败: %v", err)
 	}
-	// 公开区按（内容摘要，类型）寻址。
-	if !strings.HasPrefix(url, testBucketOrigin+"/"+releaseKeyPrefix) {
-		t.Errorf("公开区地址 = %q，期望落在 %s 下", url, releaseKeyPrefix)
+	// 公开区按工程切分，段内按（内容摘要，类型）寻址。
+	releasePrefix := assetKeyPrefix + project.ID + "/" + releaseKeySegment + "/"
+	if !strings.HasPrefix(url, testBucketOrigin+"/"+releasePrefix) {
+		t.Errorf("公开区地址 = %q，期望落在 %s 下", url, releasePrefix)
 	}
 	if !strings.Contains(url, ContentDigest([]byte("png"))) {
 		t.Errorf("公开区地址 %q 里没有内容摘要", url)

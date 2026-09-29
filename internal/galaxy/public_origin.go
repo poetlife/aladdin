@@ -97,13 +97,14 @@ func slotRootPath(projectID string, slot ContentSlot) string {
 
 // AssetURL 返回一个公开区对象的地址。
 //
-// 键由**内容摘要与媒体类型**共同决定（见 promote.go 的 ReleaseObjectKey）：同一
-// 份字节以两种类型上架是两个对象，各自回给浏览器正确的类型。
-func (o PublicOrigin) AssetURL(digest, mediaType string) string {
+// 键由**工程标识、内容摘要与媒体类型**共同决定（见 promote.go 的 ReleaseObjectKey）：
+// 公开区按工程切分，段内按（内容摘要，媒体类型）寻址——同一份字节以两种类型上架是
+// 两个对象，各自回给浏览器正确的类型。
+func (o PublicOrigin) AssetURL(projectID, digest, mediaType string) string {
 	if o.IsZero() {
 		return ""
 	}
-	return strings.TrimSuffix(o.assets.String(), "/") + "/" + ReleaseObjectKey(digest, mediaType)
+	return strings.TrimSuffix(o.assets.String(), "/") + "/" + ReleaseObjectKey(projectID, digest, mediaType)
 }
 
 // AllowedSource 返回内容安全策略里允许的资源来源。

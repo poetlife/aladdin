@@ -407,7 +407,10 @@ func (s *Service) PublishedEntry(ctx context.Context, projectID string, slot Con
 		return Entry{}, ErrPublicationNotFound
 	}
 	if requestPath == "" {
-		requestPath = slot.EntryPath()
+		// **入口取的是产物路径，不是文件组里的路径。** 两者在 `docs` 槽上不同：
+		// 入口源是 `index.md`，而产物里那一页是 `index.html`。拿源路径去查清单会
+		// 查不到——表现是"文档槽的发布地址（`/g/<标识>/docs`）打不开"。
+		requestPath = ArtifactPath(slot, slot.EntryPath())
 	}
 	entry, ok := publication.Manifest.Find(requestPath)
 	if !ok {
@@ -452,5 +455,5 @@ func (s *Service) PublishedAssetURL(ctx context.Context, projectID, assetID stri
 		}
 		return "", err
 	}
-	return s.origin.AssetURL(asset.Digest, asset.MediaType), nil
+	return s.origin.AssetURL(projectID, asset.Digest, asset.MediaType), nil
 }

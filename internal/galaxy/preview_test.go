@@ -86,7 +86,7 @@ func TestPreviewServesDraftSiteByPath(t *testing.T) {
 	if asset.RedirectURL == "" {
 		t.Fatal("资产条目应该给一个重定向地址")
 	}
-	if !strings.Contains(asset.RedirectURL, "/assets/") || strings.Contains(asset.RedirectURL, releaseKeyPrefix) {
+	if !strings.Contains(asset.RedirectURL, "/assets/") || strings.Contains(asset.RedirectURL, "/"+releaseKeySegment+"/") {
 		t.Fatalf("预览里的资产应指向私有区，实际是 %q", asset.RedirectURL)
 	}
 

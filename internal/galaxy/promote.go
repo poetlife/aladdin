@@ -8,12 +8,11 @@ import (
 	"sync"
 )
 
-// releaseKeyPrefix 是公开区对象键的前缀。
+// releaseKeySegment 是公开区对象键里的一段，位于**工程标识之后**。
 //
-// 它是**常量，不是配置项**，理由与 assetKeyPrefix 相同。它与私有区的键
-// `galaxy/<工程标识>/…` 在**同一个桶**里共存而不相撞：本前缀的第二段恒为
-// `release`，而工程标识恒以 `prj_` 开头。
-const releaseKeyPrefix = "galaxy/release/"
+// 它是**常量，不是配置项**，理由与 assetKeyPrefix 相同。它与同一个工程下的
+// `assets/` 与 `text/` 两段并列而不相撞（见 asset.go 与 content_set.go）。
+const releaseKeySegment = "release"
 
 // MediaTypeTag 返回一个媒体类型在公开区键里的那一段。
 //
@@ -22,8 +21,8 @@ const releaseKeyPrefix = "galaxy/release/"
 // 寻址会让后一次上架覆盖前一次的类型，表现是某个页面拿到错的内容类型。
 //
 // 它是**从声明的类型派生的纯函数**：同一个类型在任何工程、任何次发布里都得到
-// 同一个取值，因此"这份字节以这个类型是否已经上架"仍是一个只看地址就能回答的
-// 问题。`/` 换成 `-` 是为了让它是一段路径而不是两级目录。
+// 同一个取值，因此同一个工程里"这份字节以这个类型是否已经上架"仍是一个只看地址
+// 就能回答的问题。`/` 换成 `-` 是为了让它是一段路径而不是两级目录。
 func MediaTypeTag(mediaType string) string {
 	tag := strings.ToLower(strings.TrimSpace(mediaType))
 	tag = strings.NewReplacer("/", "-", ";", "-", " ", "-", "\\", "-").Replace(tag)
@@ -32,14 +31,19 @@ func MediaTypeTag(mediaType string) string {
 
 // ReleaseObjectKey 返回一个已上架的资产在**公开区**的对象键（唯一入口）。
 //
-// 这一区按**（内容摘要，媒体类型）**寻址：同一份字节在任何工程、任何版本、
-// 任何次发布里都落在同一个键上，因此"这份字节是否已经上架"是一个只看地址就能
-// 回答的问题。
+// 形状是 `galaxy/<工程标识>/release/<内容摘要>/<类型标识>`：**先按工程切分，段内按
+// （内容摘要，媒体类型）寻址**。因此"这个工程的这份字节以这个类型是否已经上架"是
+// 一个只看地址就能回答的问题，而在**同一个工程内**重复发布同一个版本不产生新字节。
 //
-// **公开区里没有工程标识段**：跨工程共享同一份字节，也就不该带任何一个工程的
-// 标识。私有区按归属切分、公开区按内容寻址，两者形状不同是因为它们是两种边界。
-func ReleaseObjectKey(digest, mediaType string) string {
-	return releaseKeyPrefix + digest + "/" + MediaTypeTag(mediaType)
+// **代价要说清楚：跨工程不再共享同一份字节。** 两个工程用到同一张底图是两份对象、
+// 两份存储；换来的是"这些发布物属于哪个工程"在控制台里一眼可见，以及"按工程清理"
+// 这条路留着（公开区孤儿对象的回收见 docs/design/galaxy/publication.md 的待定决策）。
+//
+// 键上带工程标识**不改变隔离**：公开与私有靠**逐对象的公开读**区分，不由键或桶
+// 区分（见 docs/design/galaxy/asset-library.md）。`release` 那一段仍然让一个键一眼
+// 看出它是不是公开区的东西。
+func ReleaseObjectKey(projectID, digest, mediaType string) string {
+	return assetKeyPrefix + projectID + "/" + releaseKeySegment + "/" + digest + "/" + MediaTypeTag(mediaType)
 }
 
 // ErrPublicStoreUnavailable 表示公开区不可用。
@@ -106,7 +110,7 @@ func (s *Service) promoteAssets(ctx context.Context, assets []Asset) (PromoteOut
 		return outcome, ErrPublicStoreUnavailable
 	}
 	for _, asset := range assets {
-		key := ReleaseObjectKey(asset.Digest, asset.MediaType)
+		key := ReleaseObjectKey(asset.ProjectID, asset.Digest, asset.MediaType)
 		exists, err := s.public.Exists(ctx, key)
 		if err != nil {
 			return outcome, err

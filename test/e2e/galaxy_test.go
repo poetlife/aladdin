@@ -173,6 +173,24 @@ func publishDraftSlot(t *testing.T, client galaxyv1connect.GalaxyServiceClient, 
 	return published.Msg.GetPublication().GetUrl()
 }
 
+// siteRoot 返回一条槽根地址的**带结尾斜杠**形式（只保留路径）。
+//
+// 发布地址由服务端算出来时**不带**结尾斜杠（见 galaxy.PublicOrigin.PageURL），而
+// 站点根是它带斜杠的形式：页内相对地址按文档所在的目录解析，不带斜杠的槽根会让
+// 浏览器退一层目录去取 `/g/style.css`。因此入口页本身要用这个形式取（见
+// internal/server/galaxy_public.go 的 slotRootTarget）。
+//
+// 只保留路径是因为**重定向的目标就是一条路径**：服务端不把发布域写进 `Location`
+// ——那个域前面还隔着一层 nginx，绝对化会把不该出现的端口带出去。取值与它逐字比较，
+// 因此这里必须是路径形式。
+func siteRoot(address string) string {
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return strings.TrimSuffix(address, "/") + "/"
+	}
+	return strings.TrimSuffix(parsed.Path, "/") + "/"
+}
+
 // fetchPublished 取发布地址上的一个路径（**不带任何凭证**）。
 //
 // 发布地址的主机名是**发布域**，而它在测试里没有 DNS：请求因此打在同一台监听器
@@ -189,7 +207,7 @@ func fetchPublished(t *testing.T, h harness, address, entryPath string, headers 
 	if entryPath != "" {
 		parsed.Path = strings.TrimSuffix(parsed.Path, "/") + "/" + entryPath
 	}
-	request, err := http.NewRequest(http.MethodGet, "http://"+h.address+parsed.Path, nil)
+	request, err := http.NewRequest(http.MethodGet, "http://"+h.address+parsed.RequestURI(), nil)
 	if err != nil {
 		t.Fatalf("构造请求失败: %v", err)
 	}
@@ -232,9 +250,24 @@ func TestGalaxyPublishedSiteIsPubliclyReachable(t *testing.T) {
 		t.Fatalf("发布地址 = %q，期望落在发布域的前缀下", address)
 	}
 
-	// 入口地址（不带路径）与 `index.html` 是**同一页**。
+	// **槽根带结尾斜杠，不带斜杠的先 301 过去**：页内相对地址按文档所在的目录解析，
+	// 而站点根是 `/g/<标识>/`——`/g/<标识>` 会让浏览器把 `style.css` 解析成
+	// `/g/style.css`，而那一条不在集合里（表现为"发布成功了但样式全丢"）。
+	status, _, header := fetchPublished(t, h, address, "", nil)
+	if status != http.StatusMovedPermanently {
+		t.Fatalf("不带斜杠的槽根 = %d，期望 301", status)
+	}
+	if got := header.Get("Location"); got != siteRoot(address) {
+		t.Errorf("重定向目标 = %q，期望 %q", got, siteRoot(address))
+	}
+	// 查询串跟着走：分享出去的地址可能带着它，重定向不该把它丢掉。
+	if _, _, header := fetchPublished(t, h, address+"?from=share", "", nil); header.Get("Location") != siteRoot(address)+"?from=share" {
+		t.Errorf("带查询串的重定向目标 = %q，期望查询串原样跟着", header.Get("Location"))
+	}
+
+	// 带斜杠的槽根（`entryPath` 为空）与 `index.html` 是**同一页**。
 	for _, entryPath := range []string{"", "index.html"} {
-		status, body, header := fetchPublished(t, h, address, entryPath, nil)
+		status, body, header := fetchPublished(t, h, siteRoot(address), entryPath, nil)
 		if status != http.StatusOK {
 			t.Fatalf("未带凭证请求 %q = %d，期望 200", entryPath, status)
 		}
@@ -277,7 +310,7 @@ func TestGalaxyPublishedSiteIsPubliclyReachable(t *testing.T) {
 	if status != http.StatusFound {
 		t.Fatalf("资产条目 = %d，期望 302", status)
 	}
-	wantLocation := h.bucket + "/" + galaxy.ReleaseObjectKey(sha256Hex(pngBytes), "image/png")
+	wantLocation := h.bucket + "/" + galaxy.ReleaseObjectKey(projectID, sha256Hex(pngBytes), "image/png")
 	if got := header.Get("Location"); got != wantLocation {
 		t.Errorf("重定向目标 = %q，期望 %q", got, wantLocation)
 	}
@@ -379,8 +412,9 @@ func TestGalaxyPreviewServesDraftSiteByPath(t *testing.T) {
 	if status != http.StatusFound {
 		t.Fatalf("取素材 = %d，期望 302", status)
 	}
+	// `release` 那一段是公开区（见 galaxy.ReleaseObjectKey）；预览的素材不走那条路。
 	if location := header.Get("Location"); !strings.Contains(location, "/assets/") ||
-		strings.Contains(location, galaxy.ReleaseObjectKey("x", "y")) {
+		strings.Contains(location, "/release/") {
 		t.Errorf("素材的重定向目标 = %q，期望指向私有区", location)
 	}
 
@@ -394,7 +428,8 @@ func TestGalaxyPreviewServesDraftSiteByPath(t *testing.T) {
 	}
 
 	// **这条通道不改发布态**：还没发布，发布地址仍然是否定的。
-	if status, _, _ := fetchPublished(t, h, h.publishBase+galaxy.PublicPathPrefix+projectID, "", nil); status != http.StatusNotFound {
+	unpublished := h.publishBase + galaxy.PublicPathPrefix + projectID
+	if status, _, _ := fetchPublished(t, h, siteRoot(unpublished), "", nil); status != http.StatusNotFound {
 		t.Errorf("未发布时发布地址 = %d，期望 404", status)
 	}
 }
@@ -434,6 +469,15 @@ func TestGalaxyDocsSiteIsRenderedPerPage(t *testing.T) {
 	if status, css, _ := fetchPublished(t, h, address, "theme.css", nil); status != http.StatusOK || css != "body{color:red}" {
 		t.Errorf("theme.css = %d / %q", status, css)
 	}
+
+	// 文档槽的槽根同样带结尾斜杠：它下面的相对地址按 `docs/` 那一层解析。
+	status, _, header = fetchPublished(t, h, address, "", nil)
+	if status != http.StatusMovedPermanently || header.Get("Location") != siteRoot(address) {
+		t.Errorf("不带斜杠的文档槽根 = %d / %q，期望 301 到带斜杠的形式", status, header.Get("Location"))
+	}
+	if status, body, _ := fetchPublished(t, h, siteRoot(address), "", nil); status != http.StatusOK || !strings.Contains(body, "首页") {
+		t.Errorf("带斜杠的文档槽根 = %d / %q，期望 200 与首页", status, body)
+	}
 }
 
 // 未发布、已撤回、标识没被猜中、路径不在集合里：发布地址一律返回**不存在**。
@@ -444,18 +488,26 @@ func TestGalaxyNegativeConclusionsAreTheSame(t *testing.T) {
 
 	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 
+	// 槽根一律先补斜杠：发布过、没发布过、标识根本不存在——三者**同一个**结果。
+	// 否则"重定向还是 404"本身就成了"这个标识是真的"这条信号。
 	unpublished := h.publishBase + galaxy.PublicPathPrefix + projectID
-	if status, _, _ := fetchPublished(t, h, unpublished, "", nil); status != http.StatusNotFound {
-		t.Errorf("未发布的地址 = %d，期望 404", status)
-	}
 	missing := h.publishBase + galaxy.PublicPathPrefix + "prj_没有这个工程"
-	if status, _, _ := fetchPublished(t, h, missing, "", nil); status != http.StatusNotFound {
-		t.Errorf("不存在的地址 = %d，期望 404", status)
+	for _, absent := range []string{unpublished, missing} {
+		status, _, header := fetchPublished(t, h, absent, "", nil)
+		// 非 ASCII 的路径在 `Location` 里会被转义（HTTP 头只能是 ASCII），按解码后的
+		// 路径比较。
+		location, unescapeErr := url.PathUnescape(header.Get("Location"))
+		if status != http.StatusMovedPermanently || unescapeErr != nil || location != siteRoot(absent) {
+			t.Errorf("%s 的无斜杠形式 = %d / %q，期望 301 到带斜杠的形式", absent, status, header.Get("Location"))
+		}
+		if status, _, _ := fetchPublished(t, h, siteRoot(absent), "", nil); status != http.StatusNotFound {
+			t.Errorf("%s = %d，期望 404", absent, status)
+		}
 	}
 
 	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html", "<p>发布</p>"))
 	address := publishDraft(t, client, projectID)
-	if status, _, _ := fetchPublished(t, h, address, "", nil); status != http.StatusOK {
+	if status, _, _ := fetchPublished(t, h, siteRoot(address), "", nil); status != http.StatusOK {
 		t.Fatalf("发布之后 = %d，期望 200", status)
 	}
 	// 路径不在集合里与"未发布"是同一个结论。
@@ -468,7 +520,7 @@ func TestGalaxyNegativeConclusionsAreTheSame(t *testing.T) {
 		t.Fatalf("撤回失败: %v", err)
 	}
 	for _, entryPath := range []string{"", "index.html"} {
-		if status, _, _ := fetchPublished(t, h, address, entryPath, nil); status != http.StatusNotFound {
+		if status, _, _ := fetchPublished(t, h, siteRoot(address), entryPath, nil); status != http.StatusNotFound {
 			t.Errorf("撤回之后 %q = %d，期望 404", entryPath, status)
 		}
 	}
@@ -489,7 +541,7 @@ func TestGalaxyDraftChangeDoesNotAffectPublishedSite(t *testing.T) {
 		t.Fatalf("保存版本失败: %v", err)
 	}
 
-	_, body, _ := fetchPublished(t, h, address, "", nil)
+	_, body, _ := fetchPublished(t, h, siteRoot(address), "", nil)
 	if strings.Contains(body, "改过之后") {
 		t.Error("改草稿之后发布地址上的内容变了——发布的是版本，不是草稿")
 	}
@@ -685,9 +737,9 @@ func TestGalaxyPromotesOnlyReferencedAssets(t *testing.T) {
 	if h.public.Count() != 1 {
 		t.Fatalf("公开区对象数 = %d，期望 1（只上架被引用的）", h.public.Count())
 	}
-	// 键是公开区里的**完整**对象键：公开区与私有区在同一个桶里，区分靠这段前缀；
-	// 而它含**内容类型**——同一份字节以两种类型上架是两个对象。
-	key := galaxy.ReleaseObjectKey(sha256Hex(pngBytes), "image/png")
+	// 键是公开区里的**完整**对象键：它按工程切分、含**内容类型**——同一份字节以两种
+	// 类型上架是两个对象，而所属工程在键上就看得出来。
+	key := galaxy.ReleaseObjectKey(projectID, sha256Hex(pngBytes), "image/png")
 	if keys := h.public.Keys(); len(keys) != 1 || keys[0] != key {
 		t.Errorf("公开区的对象键 = %v，期望只含被引用的那一个（%s）", keys, key)
 	}
@@ -814,7 +866,7 @@ func TestGalaxyAssetMetadataIsEditableWithoutTouchingBytes(t *testing.T) {
 		t.Fatalf("发布后取页面 = %d，期望 200", status)
 	}
 	releaseKeys := h.public.Keys()
-	releaseKey := galaxy.ReleaseObjectKey(sha256Hex(pngBytes), "image/png")
+	releaseKey := galaxy.ReleaseObjectKey(projectID, sha256Hex(pngBytes), "image/png")
 	if len(releaseKeys) != 1 || releaseKeys[0] != releaseKey {
 		t.Fatalf("公开区的键 = %v，期望只有 %s", releaseKeys, releaseKey)
 	}
