@@ -110,6 +110,8 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			&database.GalaxyAssetRecord{},
 			&database.GalaxyPublicationRecord{},
 			&database.GalaxyDraftRecord{},
+			// 预览凭证也是工程的东西：工程没了，它的凭证一条都不该留下。
+			&database.GalaxyPreviewGrantRecord{},
 		} {
 			if err := tx.Where("project_id = ?", projectID).Delete(model).Error; err != nil {
 				return err

@@ -94,7 +94,7 @@ func (s *Service) Publish(ctx context.Context, subjectID, projectID, versionID s
 
 	// 阶段一：受理与校验。不能发布则终止，**不留任何痕迹**（指针未动、
 	// 公开区无新对象、发布表无新行）。
-	artifacts, report, err := s.buildArtifacts(ctx, project, version.Manifest)
+	artifacts, report, err := s.buildArtifacts(ctx, project, version.Manifest, false)
 	if err != nil {
 		return Publication{}, err
 	}
@@ -419,105 +419,4 @@ func (s *Service) PublishedAssetURL(ctx context.Context, projectID, assetID stri
 		return "", err
 	}
 	return s.origin.AssetURL(asset.Digest, asset.MediaType), nil
-}
-
-// PreviewDraft 把当前草稿渲染成一份可以放进沙箱 iframe 的 HTML。
-//
-// **渲染在服务端，与发布共用同一段实现**：`docs` 形态的 markdown → HTML 只有
-// 一处实现，网页端不再引第二个渲染器——两份实现迟早漂移，而用户看到的是
-// "预览好好的、发布出来不一样"。
-//
-// 它复用**编辑态**的那套地址：`asset://` 记号被换成短时预签名地址，因此预览里
-// 的图会随地址过期而显示不出来，刷新即得到新地址。
-//
-// **它不做审查、不做裁剪**：内容写什么就渲染什么，引用坏了就显示坏的。这处
-// 有问题由校验入口单独给出——把两者混起来会让用户以为预览看起来对就等于发布
-// 能成功。
-func (s *Service) PreviewDraft(ctx context.Context, subjectID, projectID, entryPath string) ([]byte, error) {
-	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
-	if err != nil {
-		return nil, err
-	}
-	draft, err := s.store.GetDraft(ctx, projectID)
-	if errors.Is(err, ErrDraftNotFound) {
-		return []byte(emptyPreviewDocument), nil
-	} else if err != nil {
-		return nil, err
-	}
-	if len(draft.Manifest) == 0 {
-		return []byte(emptyPreviewDocument), nil
-	}
-
-	urlOf := func(entry Entry) (string, error) { return s.presignEntry(ctx, projectID, entry) }
-
-	if project.Form != SiteFormDocs {
-		// `static` 只能**逐页预览**：页内的站内导航在预览里不可用（沙箱文档
-		// 没有自己的源），而记号照常被换成短时地址。
-		target := entryPath
-		if target == "" {
-			target = project.Form.EntryPath()
-		}
-		entry, ok := draft.Manifest.Find(target)
-		if !ok {
-			return nil, fmt.Errorf("%w: %s", ErrEntrySetInvalid, target)
-		}
-		data, err := s.assets.Read(ctx, ContentObjectKey(projectID, entry.Digest))
-		if err != nil {
-			return nil, err
-		}
-		return SubstituteAssetMarkers(data, func(assetID string) (string, error) {
-			asset, found := assetEntryByID(draft.Manifest, assetID)
-			if !found {
-				return PlaceholderScheme + assetID, nil
-			}
-			url, err := urlOf(asset)
-			if err != nil || url == "" {
-				return PlaceholderScheme + assetID, nil
-			}
-			return url, nil
-		})
-	}
-
-	// `docs`：整站渲染一遍、拼成一份、用文内锚点导航。
-	sources := make([]DocSource, 0, len(draft.Manifest))
-	skeleton := make([]Doc, 0, len(draft.Manifest))
-	for _, entry := range draft.Manifest {
-		if !IsMarkdownPath(entry.Path) {
-			continue
-		}
-		data, err := s.assets.Read(ctx, ContentObjectKey(projectID, entry.Digest))
-		if err != nil {
-			return nil, err
-		}
-		sources = append(sources, DocSource{Path: entry.Path, Body: data})
-		skeleton = append(skeleton, Doc{SourcePath: entry.Path, ArtifactPath: ArtifactPath(project.Form, entry.Path)})
-	}
-	sortDocs(skeleton)
-	linker := func(from string) LinkResolver {
-		return PreviewLinker{
-			Form:     project.Form,
-			Manifest: draft.Manifest,
-			Docs:     skeleton,
-			URLOf:    urlOf,
-		}
-	}
-	docs, err := RenderDocs(sources, linker)
-	if err != nil {
-		return nil, err
-	}
-	return RenderPreviewDocument(docs, s.origin.SiteRoot(projectID)), nil
-}
-
-// emptyPreviewDocument 是草稿为空时的预览页。它不是错误页：新工程打开编辑器
-// 时本来就还没有内容。
-const emptyPreviewDocument = "<!doctype html><meta charset=\"utf-8\"><p>这份草稿还是空的。</p>"
-
-// sortDocs 按源路径升序，与 RenderDocs 的顺序一致——锚点在渲染之前就要定下来，
-// 因此这里必须用同一个序。
-func sortDocs(docs []Doc) {
-	for i := 1; i < len(docs); i++ {
-		for j := i; j > 0 && docs[j].SourcePath < docs[j-1].SourcePath; j-- {
-			docs[j], docs[j-1] = docs[j-1], docs[j]
-		}
-	}
 }

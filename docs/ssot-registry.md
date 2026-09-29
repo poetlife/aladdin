@@ -41,7 +41,8 @@
 | 一个主体的展示名（昵称，未设则回退到渠道标识，再回退到主体标识） | 档案的展示名解析入口 | [internal/profile/profiles.go](../internal/profile/profiles.go) |
 | 字节数的展示文案（头像上限、资产上限、文件大小） | `describeBytes` | [web/src/format/bytes.ts](../web/src/format/bytes.ts) |
 | 一段源里出现了哪些 `asset://` 记号（去重且有序） | 记号的识别入口（逐字扫描，不解析 HTML） | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) |
-| 一处引用（记号、文档间链接、站点内路径）解析成什么地址 | 引用的解析入口（发布态给站点绝对地址、预览态给文内锚点与短时地址；两处共用同一处"落在哪一条条目上"的判断） | [internal/galaxy/link_resolver.go](../internal/galaxy/link_resolver.go) |
+| 一处引用（记号、文档间链接、站点内路径）解析成什么地址 | 引用的解析入口（发布态给发布根下的绝对地址、预览态给预览根下的绝对地址；两处共用同一处"落在哪一条条目上"的判断，预览那处只是不因坏引用而失败） | [internal/galaxy/link_resolver.go](../internal/galaxy/link_resolver.go) |
+| 预览里草稿按哪条地址取字节（路径形状、短时凭证、"发布根换成预览根"） | 预览通道的路径与凭证入口 | [internal/galaxy/preview.go](../internal/galaxy/preview.go) |
 | 一个路径是不是文件组里的一条条目，以及它是文本还是资产（发布态取字节的分派） | 文件组的集合成员查询（只查表，不解析路径） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
 | 内容对象的键（按内容摘要寻址）与"仅当不存在时写入" | 内容对象的写入入口（含写入后的摘要核对） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
 | 发布态文本条目的响应形状（内容类型、`ETag`、可缓存性） | 发布态的文本响应入口 | [internal/server/galaxy_public.go](../internal/server/galaxy_public.go) |

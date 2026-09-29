@@ -228,7 +228,7 @@ func (f *fixture) buildArtifacts(t *testing.T, projectID string) map[string][]by
 	if err != nil {
 		t.Fatalf("读草稿失败: %v", err)
 	}
-	artifacts, report, err := f.service.buildArtifacts(context.Background(), project, draft.Manifest)
+	artifacts, report, err := f.service.buildArtifacts(context.Background(), project, draft.Manifest, false)
 	if err != nil {
 		t.Fatalf("校验出错（期望是一个结论）: %v", err)
 	}

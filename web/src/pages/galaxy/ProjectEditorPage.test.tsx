@@ -80,10 +80,21 @@ vi.mock('../../api/galaxy', () => ({
 
 let root: Root | null = null
 
-/** 一份能力下发：默认配了桶（内容可用），按需覆盖。 */
-function caps(overrides: { assetUploadEnabled?: boolean; publishEnabled?: boolean } = {}) {
+// 服务端给的那条预览地址：落在发布域上、带短时凭证，前端原样放进 iframe。
+const previewURL = 'https://pub.example.com/g/p/tok/prj_x/index.html'
+
+/** 一份能力下发：默认配了桶（内容可用）与发布域（预览可用），按需覆盖。 */
+function caps(
+  overrides: { assetUploadEnabled?: boolean; publishEnabled?: boolean; previewEnabled?: boolean } = {},
+) {
+  const assetUploadEnabled = overrides.assetUploadEnabled ?? true
   return create(GetCapabilitiesResponseSchema, {
-    capabilities: create(CapabilitiesSchema, { assetUploadEnabled: true, ...overrides }),
+    capabilities: create(CapabilitiesSchema, {
+      assetUploadEnabled,
+      // 预览还要求发布域；没有桶就没有内容，也就没有预览（与服务端的判据一致）。
+      previewEnabled: assetUploadEnabled,
+      ...overrides,
+    }),
   })
 }
 
@@ -212,7 +223,7 @@ beforeEach(() => {
   )
   vi.mocked(galaxyApi.listVersions).mockResolvedValue(create(ListVersionsResponseSchema, {}))
   vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
-    create(PreviewDraftResponseSchema, { html: '<h1>hi</h1>' }),
+    create(PreviewDraftResponseSchema, { url: previewURL }),
   )
   // 打开页面就会自动校验一次，因此每个用例都要有一个默认结论；
   // 不补的话 `vi.fn()` 返回 undefined，读 `response.problems` 直接抛。
@@ -241,7 +252,7 @@ describe('工作台的形态', () => {
 
     expect(container.querySelector('iframe')).not.toBeNull()
     // 预览渲染的是**服务端给的那份 HTML**。
-    expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toBe('<h1>hi</h1>')
+    expect(container.querySelector('iframe')?.getAttribute('src')).toBe(previewURL)
     expect(container.querySelector('textarea')).toBeNull()
   })
 
@@ -331,6 +342,23 @@ describe('工作台的能力裁剪', () => {
     // 没配桶时校验与预览必然失败，因此不去问。
     expect(galaxyApi.validateDraft).not.toHaveBeenCalled()
     expect(galaxyApi.previewDraft).not.toHaveBeenCalled()
+  })
+
+  // **预览的又一条前提是发布域**：它落在发布域上的一条通道上。没有它时不渲染预览
+  // 这个模式（只留只读的源码视图），也不去取一条注定取不到的地址——如实缺席，而不是
+  // 给一份解析不了自己引用的文档（见 spec 的"没有发布域的部署没有预览"）。
+  it('没有发布域时不渲染预览，只留源码视图', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
+      caps({ publishEnabled: false, previewEnabled: false }),
+    )
+
+    const container = await renderEditor()
+
+    expect(container.textContent).toContain('这个部署没有发布域，预览不可用')
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(galaxyApi.previewDraft).not.toHaveBeenCalled()
+    // 源码视图照常是当前的模式（它只依赖桶），因此直接就是文件列表。
+    expect(container.textContent).toContain('index.html')
   })
 
   it('publish_enabled 为真时才渲染发布入口', async () => {
@@ -463,7 +491,7 @@ describe('回到前台时重读草稿', () => {
       }),
     )
     vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
-      create(PreviewDraftResponseSchema, { html: '<h1>新的</h1>' }),
+      create(PreviewDraftResponseSchema, { url: previewURL }),
     )
 
     const draftCalls = vi.mocked(galaxyApi.getDraft).mock.calls.length
@@ -479,7 +507,7 @@ describe('回到前台时重读草稿', () => {
     expect(vi.mocked(galaxyApi.previewDraft).mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(container.textContent).toContain('1 处问题')
     expect(container.textContent).not.toContain('可以发布')
-    expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toBe('<h1>新的</h1>')
+    expect(container.querySelector('iframe')?.getAttribute('src')).toBe(previewURL)
   })
 
   it('页面隐藏时不重拉，避免把过期结论再问一遍', async () => {

@@ -71,9 +71,14 @@ var (
 	// 区分它们等于告诉一个猜地址的人"这个标识是真的，只是还没发布"。
 	ErrPublicationNotFound = errors.New("发布物不存在")
 
+	// ErrPreviewGrantNotFound 表示库里没有这条预览凭证（或它已经过期被清掉）。
+	//
+	// 它是**存储层的否定结论**，与"这次预览请求该不该给东西"不是一回事：后者
+	// 由 galaxy.ErrPreviewNotFound 回答（见 preview.go）。
+	ErrPreviewGrantNotFound = errors.New("预览凭证不存在")
+
 	// ErrProjectNameTooLong 表示工程名称超过长度上限。
 	ErrProjectNameTooLong = errors.New("工程名称过长")
-
 	// ErrProjectDescriptionTooLong 表示工程简介超过长度上限。
 	ErrProjectDescriptionTooLong = errors.New("工程简介过长")
 
@@ -218,6 +223,14 @@ type Store interface {
 
 	// GetPublication 按发布标识读回发布记录（含产物清单）。
 	GetPublication(ctx context.Context, publicationID string) (Publication, error)
+
+	// GetPreviewGrant 按凭证本体读回一条预览凭证，没有时返回
+	// ErrPreviewGrantNotFound。
+	//
+	// **过期不由它判定**：它只回答"库里有没有这一条"，过期与否由调用方比较
+	// 时间（见 PreviewGrant.Expired）。把判定放在读里会让"这条凭证此刻算不算
+	// 数"多出第二种说法。
+	GetPreviewGrant(ctx context.Context, token string) (PreviewGrant, error)
 }
 
 // MutableStore 是 Store 的写能力。
@@ -277,6 +290,16 @@ type MutableStore interface {
 
 	// PutPublication 写入一条发布记录；同一条记录重复写入不产生第二条。
 	PutPublication(ctx context.Context, publication Publication) error
+
+	// PutPreviewGrant 写入一条预览凭证，并**在同一个事务里**清掉该工程下在
+	// cleanupBefore 之前失效的凭证。
+	//
+	// 清理挂在写入这一处而不是单开一个接口：表的增长于是只由"还有多少条活着的
+	// 凭证"决定，而预览请求（读的那条路）是只读的；挂在读上会让一次取图顺带写库。
+	//
+	// 失效时刻由调用方给出，不由存储自己取当前时间：判断留在上层，存储只读写
+	// 事实（与"存储保持哑"同源），这条清理因此可测。
+	PutPreviewGrant(ctx context.Context, grant PreviewGrant, cleanupBefore time.Time) error
 }
 
 // 标识前缀。**唯一入口**是本文件的分配函数：工程标识与资产标识由创建入口
@@ -335,6 +358,9 @@ type Capabilities struct {
 	AssetUploadEnabled bool
 	// PublishEnabled 为假时不渲染发布入口。
 	PublishEnabled bool
+	// PreviewEnabled 为假时不渲染预览：预览走发布域上的一条通道，没有发布域的
+	// 部署就没有预览（见 preview.go 的 previewEnabled）。
+	PreviewEnabled bool
 	// MaxTextBytes / MaxFileSetBytes / MaxFiles 是文本的单份、整组与数量上限。
 	MaxTextBytes    int64
 	MaxFileSetBytes int64
@@ -403,6 +429,7 @@ func (s *Service) Capabilities() Capabilities {
 	return Capabilities{
 		AssetUploadEnabled: s.assets != nil,
 		PublishEnabled:     s.publishEnabled(),
+		PreviewEnabled:     s.previewEnabled(),
 		MaxTextBytes:       MaxTextBytes,
 		MaxFileSetBytes:    MaxFileSetBytes,
 		MaxFiles:           MaxFiles,

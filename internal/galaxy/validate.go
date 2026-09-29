@@ -72,7 +72,7 @@ func (s *Service) ValidateDraft(ctx context.Context, subjectID, projectID string
 	} else if err != nil {
 		return Report{}, err
 	}
-	_, report, err := s.buildArtifacts(ctx, project, draft.Manifest)
+	_, report, err := s.buildArtifacts(ctx, project, draft.Manifest, false)
 	return report, err
 }
 
@@ -93,7 +93,11 @@ func (s *Service) ValidateDraft(ctx context.Context, subjectID, projectID string
 //
 // 返回的产物是「产物路径 → 字节」。**它就是发布要写进内容对象的东西**，因此
 // 校验通过之后发布不必再算一遍。
-func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest Manifest) (map[string][]byte, Report, error) {
+//
+// tolerant 为真时是**预览要的那一档**：产物照给，坏引用原样留着（见
+// buildPreviewArtifacts）。两档共用这一处实现，是因为"一处引用落在哪一条条目上"
+// 只有一个判断入口——两处各写一份的表现是"预览说这处没问题、发布说不行"。
+func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest Manifest, tolerant bool) (map[string][]byte, Report, error) {
 	var problems []Problem
 
 	if _, ok := manifest.Find(project.Form.EntryPath()); !ok {
@@ -126,6 +130,14 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest 
 	siteRoot := s.origin.SiteRoot(project.ID)
 	artifacts := make(map[string][]byte, len(manifest))
 
+	// 引用解析器按模式二选一：发布与校验要"坏引用即失败"，预览要"坏引用原样
+	// 留着"。两者共用同一处"引用落在哪一条条目上"的判断（见 link_resolver.go），
+	// 地址也同形——预览根那次替换在交付那一步逐字完成。
+	var linker LinkResolver = SiteLinker{Form: project.Form, Manifest: manifest, SiteRoot: siteRoot}
+	if tolerant {
+		linker = PreviewLinker{Site: SiteLinker{Form: project.Form, Manifest: manifest, SiteRoot: siteRoot}}
+	}
+
 	// markdown 需要先把整组渲染出来才能谈导航与文档间链接，因此分两趟：
 	// 第一趟只渲染 markdown（逐份，好把问题定位到具体文件），第二趟拼产物。
 	var docs []Doc
@@ -138,10 +150,7 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest 
 			if !ok {
 				continue // 读不到字节已由 loadTextEntries 报过
 			}
-			doc, err := RenderDoc(
-				DocSource{Path: entry.Path, Body: source},
-				SiteLinker{Form: project.Form, Manifest: manifest, SiteRoot: siteRoot},
-			)
+			doc, err := RenderDoc(DocSource{Path: entry.Path, Body: source}, linker)
 			if err != nil {
 				problems = append(problems, Problem{Path: entry.Path, Message: err.Error()})
 				continue
@@ -150,7 +159,7 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest 
 		}
 	}
 
-	if len(problems) > 0 {
+	if !tolerant && len(problems) > 0 {
 		return nil, Report{Problems: sortedProblems(problems)}, nil
 	}
 
@@ -188,26 +197,41 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest 
 		artifacts[artifactPath] = substituted
 	}
 
-	if len(problems) > 0 {
+	if !tolerant && len(problems) > 0 {
 		return nil, Report{Problems: sortedProblems(problems)}, nil
 	}
 
-	// 产物的总量与文件数上限。
-	var total int
-	for _, data := range artifacts {
-		total += len(data)
+	// 产物的总量与文件数上限。**它是发布与校验的责任，不是渲染的责任**：预览
+	// 照给产物——超限这件事由校验入口单独指出（见 authoring.md 的"预览不做审查"）。
+	if !tolerant {
+		var total int
+		for _, data := range artifacts {
+			total += len(data)
+		}
+		if total > MaxFileSetBytes {
+			return nil, Report{Problems: []Problem{{
+				Message: fmt.Sprintf("产物共 %d 字节，超过上限 %d 字节", total, MaxFileSetBytes),
+			}}}, nil
+		}
+		if len(artifacts) > MaxFiles {
+			return nil, Report{Problems: []Problem{{
+				Message: fmt.Sprintf("产物共 %d 个文件，超过上限 %d 个", len(artifacts), MaxFiles),
+			}}}, nil
+		}
 	}
-	if total > MaxFileSetBytes {
-		return nil, Report{Problems: []Problem{{
-			Message: fmt.Sprintf("产物共 %d 字节，超过上限 %d 字节", total, MaxFileSetBytes),
-		}}}, nil
-	}
-	if len(artifacts) > MaxFiles {
-		return nil, Report{Problems: []Problem{{
-			Message: fmt.Sprintf("产物共 %d 个文件，超过上限 %d 个", len(artifacts), MaxFiles),
-		}}}, nil
-	}
-	return artifacts, Report{}, nil
+	return artifacts, Report{Problems: sortedProblems(problems)}, nil
+}
+
+// buildPreviewArtifacts 是预览要的那一档产物：**有问题也给产物**，坏引用原样留着，
+// 文档间链接的解析也不因坏引用而失败。
+//
+// 它与发布/校验共用同一段渲染、同一处"引用落在哪一条条目上"的判断，差别只有一条：
+// 坏引用要不要中止。这一条差别是刻意的——预览是"看看现在长什么样"，把它做成一个
+// 会因为一处坏引用而整体拒绝的东西，用户就看不到修复它之后剩下的部分（见
+// docs/design/galaxy/authoring.md）。
+func (s *Service) buildPreviewArtifacts(ctx context.Context, project Project, manifest Manifest) (map[string][]byte, error) {
+	artifacts, _, err := s.buildArtifacts(ctx, project, manifest, true)
+	return artifacts, err
 }
 
 // loadTextEntries 读出清单里每一条文本条目的字节，并核对体积上限。

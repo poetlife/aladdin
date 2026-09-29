@@ -27,5 +27,6 @@ func migrations() []*gormigrate.Migration {
 		migration0007GalaxyFileSet,
 		migration0008ScopesTable,
 		migration0009GalaxyAssetMetadata,
+		migration0010GalaxyPreviewGrants,
 	}
 }

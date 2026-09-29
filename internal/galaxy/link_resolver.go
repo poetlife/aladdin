@@ -75,60 +75,31 @@ func (l SiteLinker) entryFor(from, dest string, isResource bool) (Entry, error) 
 // 而不是第二个返回值，是因为解析入口只有一个返回形状（见 LinkResolver）。
 var errNavigationLink = fmt.Errorf("导航链接")
 
-// PreviewLinker 把引用解析成**预览态**的地址。
+// PreviewLinker 把引用解析成**预览态**的站点内绝对地址。
 //
-// 预览落在不透明源的沙箱 iframe 上，站内引用解析不到（沙箱文档没有自己的源）。
-// 因此 docs 形态把文档间链接变成**文内锚点**（整站被拼成一份），而其余条目
-// 指向编辑态的短时地址。
+// 它与 SiteLinker **同形**（都给出 `<站点根>/<产物路径>`），因为预览的页面也在
+// 一个真实的地址空间里——预览通道把草稿整组按发布的路径形状给出，于是页内引用
+// 由浏览器自己解析（见 docs/design/galaxy/site-model.md 的"预览"）。两处只在
+// 最后一步分道：交付那一步把**发布根逐字换成预览根**，因此这里算出来的仍然是
+// 发布根下的地址。
 //
-// **预览不做审查、不做裁剪**：解析不出来的引用原样留着（显示成坏的），而"这处
-// 有问题"由校验入口单独给出。把两者混起来会让用户以为预览看起来对就等于发布
-// 能成功。
+// 与 SiteLinker 的差别只有一条：**它不因坏引用而失败**。预览不做审查、不做裁剪，
+// 解析不出来的引用原样留着（显示成坏的），"这处有问题"由校验入口单独给出。把两者
+// 混起来会让用户以为预览看起来对就等于发布能成功。
 type PreviewLinker struct {
-	Form     SiteForm
-	Manifest Manifest
-	// Docs 是已渲染的文档页，用来把文档间链接变成锚点。
-	Docs []Doc
-	// URLOf 给出一个条目在编辑态的短时地址。
-	URLOf func(Entry) (string, error)
+	// Site 是发布态那套解析：预览与发布共用**同一处**"引用落在哪一条条目上"的
+	// 判断，差别只有"坏引用要不要中止"这一条。因此这里持有一个 SiteLinker，而
+	// 不是把它的字段再抄一遍。
+	Site SiteLinker
 }
 
 // Resolve 实现 LinkResolver。**它不返回错误**：预览容忍坏引用。
 func (l PreviewLinker) Resolve(from, dest string, isResource bool) (string, error) {
-	if assetID, ok := placeholderID(dest); ok {
-		entry, found := assetEntryByID(l.Manifest, assetID)
-		if !found {
-			return dest, nil
-		}
-		return l.urlOrDest(entry, dest), nil
-	}
-	if isExternalDestination(dest) {
+	resolved, err := l.Site.Resolve(from, dest, isResource)
+	if err != nil {
+		// 导航链接本来就走这条路（SiteLinker 把外部地址原样返回），坏引用也一样：
+		// 留着作者写的那个地址，让预览显示成坏的。
 		return dest, nil
 	}
-	entryPath, ok := resolveEntryPath("", from, dest)
-	if !ok {
-		return dest, nil
-	}
-	entry, found := l.Manifest.Find(entryPath)
-	if !found {
-		return dest, nil
-	}
-	if l.Form == SiteFormDocs && IsMarkdownPath(entryPath) {
-		if anchor, ok := PreviewAnchorFor(l.Docs, entryPath); ok {
-			return anchor, nil
-		}
-	}
-	return l.urlOrDest(entry, dest), nil
-}
-
-// urlOrDest 取一个条目的短时地址，取不到时保留原引用。
-func (l PreviewLinker) urlOrDest(entry Entry, dest string) string {
-	if l.URLOf == nil {
-		return dest
-	}
-	url, err := l.URLOf(entry)
-	if err != nil || url == "" {
-		return dest
-	}
-	return url
+	return resolved, nil
 }
