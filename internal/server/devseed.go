@@ -60,6 +60,12 @@ func ApplyDevSeed(s *Server, logger *zap.Logger) error {
 	if err := s.store.PutSubject(ctx, subject); err != nil {
 		return fmt.Errorf("注入开发主体失败: %w", err)
 	}
+	// 把种子的范围登记进目录，否则一个刚起来的开发库范围目录是空的，顶栏与
+	// 人员授权页都无从选起（见 docs/design/rbac/scopes.md）。上面的校验已保证
+	// scope 非空——空即全局，而全局不是登记记录。
+	if err := s.store.PutScope(ctx, rbac.ScopeDefinition{Path: string(scope)}); err != nil {
+		return fmt.Errorf("登记开发范围失败: %w", err)
+	}
 	if err := s.store.Bind(ctx, rbac.RoleBinding{
 		SubjectID: subjectID,
 		RoleID:    roleID,

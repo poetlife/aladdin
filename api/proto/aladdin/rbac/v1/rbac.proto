@@ -56,6 +56,33 @@ service RBACService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
+  // 列出已登记的范围（全局不在其中：它是模型的根，不是一条登记记录）。
+  //
+  // 请求里的 scope 只用于鉴权，与结果无关：范围目录是部署级的，不按范围过滤。
+  rpc ListScopes(ListScopesRequest) returns (ListScopesResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.scope.read";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // 登记一个范围，或改它的显示名。
+  //
+  // 路径是标识，**不可更改**；登记一个已存在的路径等同于改显示名
+  // （与重复授予同一角色是幂等的重复写入同理）。
+  rpc PutScope(PutScopeRequest) returns (PutScopeResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.scope.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 删除一个范围。不可逆。
+  //
+  // 范围内或其后代上仍有角色绑定时拒绝——与"删除仍被持有的角色"同构：
+  // 引用还在，就不允许把被引用的东西抽走。
+  rpc DeleteScope(DeleteScopeRequest) returns (DeleteScopeResponse) {
+    option (aladdin.rbac.v1.required_permission) = "rbac.scope.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
   // 使一次角色变更正式生效（缓存失效 + 生效确认）。
   // 对应 docs/design/rbac/role-model.md 的"生效确认"阶段。
   rpc PublishPolicy(PublishPolicyRequest) returns (PublishPolicyResponse) {
@@ -117,6 +144,8 @@ message DeleteRoleResponse {
   string change_id = 1;
 }
 
+// AssignRole 的目标范围必须是**已登记**的范围（全局除外，它是模型的根）。
+// 这条校验只在授予侧做：回收永远要能做，哪怕目标范围已经不在目录里。
 message AssignRoleRequest {
   string scope = 1;
   // 目标主体标识。
@@ -149,6 +178,49 @@ message RoleBinding {
   string role_id = 2;
   string scope = 3;
 }
+
+// Scope 是一个已登记的范围。
+//
+// 路径是标识（也是判定的输入），**一经登记不可更改**——与角色标识同构；
+// "改路径"因此不是改名，而是"删掉旧范围 + 新建一个"。
+// 显示名只用于展示，可改，且不参与判定、不参与匹配。
+//
+// 全局（根）不是一条登记记录：它永远可用、不可创建也不可删除。
+message Scope {
+  string path = 1;
+  string display_name = 2;
+}
+
+message ListScopesRequest {
+  // 请求在哪个范围上读目录。仅用于鉴权，不过滤结果。
+  string scope = 1;
+}
+
+message ListScopesResponse {
+  repeated Scope scopes = 1;
+}
+
+message PutScopeRequest {
+  // 请求在哪个范围上登记。仅用于鉴权。
+  string scope = 1;
+  // 要登记（或改显示名）的路径。路径为空表示全局，而全局不可登记，因此会被拒绝。
+  string path = 2;
+  // 展示名。留空则界面回落到显示路径本身。
+  string display_name = 3;
+}
+
+message PutScopeResponse {
+  Scope scope = 1;
+}
+
+message DeleteScopeRequest {
+  // 请求在哪个范围上删除。仅用于鉴权。
+  string scope = 1;
+  // 要删除的范围路径。
+  string path = 2;
+}
+
+message DeleteScopeResponse {}
 
 message PublishPolicyRequest {
   string scope = 1;

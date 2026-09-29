@@ -33,6 +33,18 @@ type RoleDefinition struct {
 	MutuallyExclusiveWith []string
 }
 
+// ScopeDefinition 是一个**已登记**的范围（见 docs/design/rbac/scopes.md）。
+//
+// 路径是标识，一经登记不可更改——与 RoleDefinition.ID 同构；"改路径"不是改名，
+// 而是"删掉旧范围 + 新建一个"。显示名只用于展示，**不参与判定、不参与匹配**，
+// 因此两个范围可以重名。
+//
+// 全局（根）不是一条登记记录：它永远可用、不可创建也不可删除，因而不出现在这里。
+type ScopeDefinition struct {
+	Path        string
+	DisplayName string
+}
+
 // RoleBinding 是"主体在某个作用域上持有某个角色"这一事实。
 type RoleBinding struct {
 	SubjectID string

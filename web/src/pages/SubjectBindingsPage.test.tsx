@@ -7,6 +7,7 @@ import * as identityApi from '../api/identity'
 import * as rbacApi from '../api/rbac'
 import { Code, ConnectError } from '../api/errors'
 import { SessionProvider } from '../auth'
+import { ScopesProvider } from '../rbac'
 import { ThemeProvider } from '../theme'
 import { SubjectBindingsPage } from './SubjectBindingsPage'
 
@@ -27,6 +28,9 @@ vi.mock('../api/rbac', () => ({
   listRoles: vi.fn(),
   listSubjectBindings: vi.fn(),
   assignRole: vi.fn(),
+  listScopes: vi.fn(),
+  putScope: vi.fn(),
+  deleteScope: vi.fn(),
 }))
 
 // React 19 要求显式声明这是 act 环境，否则每次 render 都会打印警告。
@@ -59,9 +63,12 @@ async function renderPage(permissions: string[]): Promise<HTMLElement> {
     root?.render(
       <ThemeProvider>
         <SessionProvider>
-          <MemoryRouter>
-            <SubjectBindingsPage />
-          </MemoryRouter>
+          {/* 可授予的范围来自外壳持有的目录；单独渲染这一页时补上它。 */}
+          <ScopesProvider>
+            <MemoryRouter>
+              <SubjectBindingsPage />
+            </MemoryRouter>
+          </ScopesProvider>
         </SessionProvider>
       </ThemeProvider>,
     )
@@ -79,8 +86,8 @@ function buttonByText(container: HTMLElement, text: string): HTMLButtonElement |
   )
 }
 
-const READ_ONLY = ['rbac.subject.read']
-const READ_WRITE = ['rbac.subject.read', 'rbac.subject.assign']
+const READ_ONLY = ['rbac.subject.read', 'rbac.scope.read']
+const READ_WRITE = ['rbac.subject.read', 'rbac.scope.read', 'rbac.subject.assign']
 
 beforeEach(() => {
   globalThis.localStorage?.clear()
@@ -95,6 +102,16 @@ beforeEach(() => {
         inherits: [],
         mutuallyExclusiveWith: [],
         builtin: true,
+      },
+    ],
+  })
+  vi.mocked(rbacApi.listScopes).mockResolvedValue({
+    $typeName: 'aladdin.rbac.v1.ListScopesResponse',
+    scopes: [
+      {
+        $typeName: 'aladdin.rbac.v1.Scope',
+        path: 'tenant/acme',
+        displayName: 'Acme 事业部',
       },
     ],
   })
@@ -204,5 +221,74 @@ describe('人员授权页', () => {
     const container = await renderPage(READ_WRITE)
 
     expect(buttonByText(container, '回收')).not.toBeUndefined()
+  })
+
+  // 授予的目标范围只能从**已登记**的范围里选：服务端会拒绝未登记的范围，与其让
+  // 人输一个必然被拒的字符串，不如在源头就不给输（见 docs/design/rbac/scopes.md）。
+  it('授予的目标范围是选出来的，不是手输的', async () => {
+    vi.mocked(rbacApi.listSubjectBindings).mockResolvedValue({
+      $typeName: 'aladdin.rbac.v1.ListSubjectBindingsResponse',
+      bindings: [],
+      effectivePermissions: [],
+    })
+
+    const container = await renderPage(READ_WRITE)
+
+    // 已登记范围的显示名出现在下拉的当前值里（初值就是当前管理范围 tenant/acme）。
+    expect(container.textContent).toContain('Acme 事业部（tenant/acme）')
+    // 手输的入口没有了。
+    expect(container.textContent).not.toContain('留空为全局')
+  })
+
+  // 目录读不到或还是空的时候，只给「全局」可选，并把原因说出来——否则人手输一个
+  // 范围会收到"范围未登记"而不知道为什么。
+  it('范围目录为空时说明原因', async () => {
+    vi.mocked(rbacApi.listScopes).mockResolvedValue({
+      $typeName: 'aladdin.rbac.v1.ListScopesResponse',
+      scopes: [],
+    })
+    vi.mocked(rbacApi.listSubjectBindings).mockResolvedValue({
+      $typeName: 'aladdin.rbac.v1.ListSubjectBindingsResponse',
+      bindings: [],
+      effectivePermissions: [],
+    })
+
+    const container = await renderPage(READ_WRITE)
+
+    expect(container.textContent).toContain('暂时列不出已登记的范围')
+  })
+
+  // 回收必须带**这条绑定自己的范围**。带当前管理范围时，服务端按三元组定位到的是
+  // 另一条不存在的绑定，而 Unbind 对"本来就没有"是幂等的——它会静默地什么也不做，
+  // 界面上还回一句"已更新"。
+  it('回收带的是绑定自己的范围，不是当前管理范围', async () => {
+    vi.mocked(rbacApi.listSubjectBindings).mockResolvedValue({
+      $typeName: 'aladdin.rbac.v1.ListSubjectBindingsResponse',
+      bindings: [
+        {
+          $typeName: 'aladdin.rbac.v1.RoleBinding',
+          subjectId: 'u1',
+          roleId: 'viewer',
+          scope: 'tenant/acme/project/web',
+        },
+      ],
+      effectivePermissions: [],
+    })
+    vi.mocked(rbacApi.assignRole).mockResolvedValue({
+      $typeName: 'aladdin.rbac.v1.AssignRoleResponse',
+      changeId: 'binding:u1',
+    })
+
+    const container = await renderPage(READ_WRITE)
+    buttonByText(container, '回收')?.click()
+    await act(async () => {})
+
+    // 当前管理范围是 tenant/acme，而这条绑定在更窄的范围上。
+    expect(rbacApi.assignRole).toHaveBeenCalledWith(
+      'tenant/acme/project/web',
+      'u1',
+      'viewer',
+      false,
+    )
   })
 })

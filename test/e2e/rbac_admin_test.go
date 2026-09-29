@@ -179,3 +179,61 @@ func TestBuiltinRoleIsUndeletableOverWire(t *testing.T) {
 		t.Fatalf("状态码 = %s, want FailedPrecondition (err=%v)", got, err)
 	}
 }
+
+// 范围管理面在真实链路上走一遍：登记、列出、删除；未登记的范围不能绑定。
+//
+// 与角色那几条同构：定义存在 ↔ 可授予；登记存在 ↔ 可绑定。
+func TestScopeRegistryOverWire(t *testing.T) {
+	ctx, svc, cancel := adminClient(t)
+	defer cancel()
+
+	// 范围必须落在夹具主体自己的范围**之内**：判定要求授予的作用域被凭证的
+	// 作用域包含，兄弟范围会先在鉴权那一层被拒（那是另一个结论，不是这里要测的）。
+	const path = "tenant/acme/e2e-scope"
+
+	// 未登记的范围：授予被拒。
+	if _, err := svc.AssignRole(ctx, &rbacv1.AssignRoleRequest{
+		Scope: path, SubjectId: testSubject, RoleId: rbac.RoleAuditor, Grant: true,
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("未登记范围授予的状态码 = %s, want NotFound (err=%v)", status.Code(err), err)
+	}
+
+	if _, err := svc.PutScope(ctx, &rbacv1.PutScopeRequest{Scope: testScope, Path: path}); err != nil {
+		t.Fatalf("登记范围失败: %v", err)
+	}
+	listed, err := svc.ListScopes(ctx, &rbacv1.ListScopesRequest{Scope: testScope})
+	if err != nil {
+		t.Fatalf("列出范围失败: %v", err)
+	}
+	found := false
+	for _, s := range listed.GetScopes() {
+		if s.GetPath() == path {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("登记后没有出现在目录里: %+v", listed.GetScopes())
+	}
+
+	// 登记之后可以授。
+	if _, err := svc.AssignRole(ctx, &rbacv1.AssignRoleRequest{
+		Scope: path, SubjectId: testSubject, RoleId: rbac.RoleAuditor, Grant: true,
+	}); err != nil {
+		t.Fatalf("已登记范围授予失败: %v", err)
+	}
+
+	// 引用还在，删不掉。
+	if _, err := svc.DeleteScope(ctx, &rbacv1.DeleteScopeRequest{Scope: testScope, Path: path}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("删除仍被引用的范围的状态码 = %s, want FailedPrecondition (err=%v)", status.Code(err), err)
+	}
+
+	// 摘掉引用后删得掉。
+	if _, err := svc.AssignRole(ctx, &rbacv1.AssignRoleRequest{
+		Scope: path, SubjectId: testSubject, RoleId: rbac.RoleAuditor, Grant: false,
+	}); err != nil {
+		t.Fatalf("回收失败: %v", err)
+	}
+	if _, err := svc.DeleteScope(ctx, &rbacv1.DeleteScopeRequest{Scope: testScope, Path: path}); err != nil {
+		t.Fatalf("引用摘掉后删除应成功: %v", err)
+	}
+}

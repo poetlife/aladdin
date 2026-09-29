@@ -20,7 +20,7 @@ import * as rbacApi from '../api/rbac'
 import { messageOf, traceIdOf } from '../api/errors'
 import { PermissionGate, useAnyPermission, useSession } from '../auth'
 import { PermissionCodes } from '../gen/permission-codes'
-import { formatScope } from '../rbac'
+import { formatScope, GLOBAL_SCOPE_LABEL, useScopes } from '../rbac'
 import type { Role, RoleBinding } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
 
 // failure 是一次失败的展示信息：给用户的文案，以及可拿去找日志的追踪 ID。
@@ -67,6 +67,9 @@ export function SubjectBindingsPage(): React.ReactNode {
   const [granted, setGranted] = useState(false)
   const [revoking, setRevoking] = useState(false)
   const [form] = Form.useForm<GrantFormValues>()
+
+  // 可授予的范围来自范围目录（见 docs/design/rbac/scopes.md）。
+  const registered = useScopes()
 
   const query = useCallback(
     async (raw: string): Promise<void> => {
@@ -122,9 +125,10 @@ export function SubjectBindingsPage(): React.ReactNode {
   }, [scope])
 
   // 授予范围跟着**当前管理范围**走：那个范围是"我现在在哪儿工作"，
-  // 授予的默认落点就该在那儿，而不是上次留下的旧值。
+  // 授予的默认落点就该在那儿，而不是上次留下的旧值。这里存的是**范围值**
+  //（空串 = 全局），不是界面写法——下拉框的取值就是它。
   useEffect(() => {
-    form.setFieldsValue({ scope: formatScope(scope) })
+    form.setFieldsValue({ scope })
   }, [scope, form])
 
   // 进来先查自己：多数时候管理员要做的第一件事就是核对自己现在有什么。
@@ -160,7 +164,11 @@ export function SubjectBindingsPage(): React.ReactNode {
     setGrantFailure(null)
     setGranted(false)
     try {
-      await rbacApi.assignRole(scope, binding.subjectId, binding.roleId, false)
+      // 请求里的范围必须是**这条绑定自己的范围**，不是当前管理范围：服务端按
+      // （主体, 角色, 范围）三元组定位那条绑定，带错范围删到的是另一条不存在的，
+      // 而 Unbind 对"本来就没有"是幂等的——于是它会静默地什么也不做。
+      // 鉴权也在那个范围上做：要收回某范围的授权，你得在那个范围上有权。
+      await rbacApi.assignRole(binding.scope, binding.subjectId, binding.roleId, false)
       await query(queried)
     } catch (err) {
       setGrantFailure(messageOf(err))
@@ -170,6 +178,18 @@ export function SubjectBindingsPage(): React.ReactNode {
   }
 
   const roleNames = new Map(roles.map((r) => [r.id, r.displayName]))
+
+  // 授予的目标范围只能从**已登记**的范围里选：服务端会拒绝未登记的范围，与其让人
+  // 输一个必然被拒的字符串，不如在源头就不给选。「全局」在这里是**合法**目标——
+  // 管理面的空范围就是全局（与会话查询里"不指定"的含义不同，见
+  // docs/design/rbac/scopes.md）。
+  const scopeOptions = [
+    { value: '', label: GLOBAL_SCOPE_LABEL },
+    ...registered.scopes.map((s) => ({
+      value: s.path,
+      label: s.displayName === '' ? s.path : `${s.displayName}（${s.path}）`,
+    })),
+  ]
 
   // 「操作」整列随权限出现或消失。PermissionGate 包不了**列定义**（它不是控件），
   // 因此这里用同一个权限入口做集合成员测试——判定语义仍然只有那一处。
@@ -345,7 +365,7 @@ export function SubjectBindingsPage(): React.ReactNode {
         <Form<GrantFormValues>
           form={form}
           layout="vertical"
-          initialValues={{ scope: formatScope(scope) }}
+          initialValues={{ scope }}
           onFinish={(values) => void handleGrant(values)}
         >
           <Form.Item name="roleId" label="角色" rules={[{ required: true, message: '请选择一个角色' }]}>
@@ -359,9 +379,14 @@ export function SubjectBindingsPage(): React.ReactNode {
           <Form.Item
             name="scope"
             label="授予在哪个范围"
-            extra="这个范围既是判定的范围，也会写进绑定。要授到某个范围，你得在那个范围上有授予权限。留空即全局。"
+            extra="这个范围既是判定的范围，也会写进绑定。范围必须是「范围」页里登记过的——服务端会拒绝未登记的范围，所以这里只给选，不给猜。"
           >
-            <Input placeholder="留空为全局" />
+            <Select
+              options={scopeOptions}
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择范围"
+            />
           </Form.Item>
           <PermissionGate
             require={PermissionCodes.RbacSubjectAssign}
@@ -389,6 +414,14 @@ export function SubjectBindingsPage(): React.ReactNode {
         {queried !== '' && unknownSubject && (
           <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
             「{queried}」不存在或尚未登记，无法授予——请先核对主体标识。
+          </Typography.Paragraph>
+        )}
+        {/* 目录读不到或还是空的时，这里只剩「全局」可选。说出来，否则人手输一个
+            范围会收到"范围未登记"而不知道为什么。 */}
+        {registered.scopes.length === 0 && (
+          <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
+            暂时列不出已登记的范围（没有读范围目录的权限，或这个部署还没登记过任何范围）。
+            除「全局」外要授到具体范围，请先到「范围」页登记它。
           </Typography.Paragraph>
         )}
       </Card>

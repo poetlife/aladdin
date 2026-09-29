@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/rbac/v1/rbac.proto.
  */
 export const file_aladdin_rbac_v1_rbac: GenFile = /*@__PURE__*/
-  fileDesc("ChphbGFkZGluL3JiYWMvdjEvcmJhYy5wcm90bxIPYWxhZGRpbi5yYmFjLnYxIoEBCgRSb2xlEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRITCgtwZXJtaXNzaW9ucxgDIAMoCRIQCghpbmhlcml0cxgEIAMoCRIfChdtdXR1YWxseV9leGNsdXNpdmVfd2l0aBgFIAMoCRIPCgdidWlsdGluGAYgASgIIjAKDkdldFJvbGVSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJEg8KB3JvbGVfaWQYAiABKAkiNgoPR2V0Um9sZVJlc3BvbnNlEiMKBHJvbGUYASABKAsyFS5hbGFkZGluLnJiYWMudjEuUm9sZSIhChBMaXN0Um9sZXNSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJIjkKEUxpc3RSb2xlc1Jlc3BvbnNlEiQKBXJvbGVzGAEgAygLMhUuYWxhZGRpbi5yYmFjLnYxLlJvbGUiRAoOUHV0Um9sZVJlcXVlc3QSDQoFc2NvcGUYASABKAkSIwoEcm9sZRgCIAEoCzIVLmFsYWRkaW4ucmJhYy52MS5Sb2xlIkkKD1B1dFJvbGVSZXNwb25zZRIjCgRyb2xlGAEgASgLMhUuYWxhZGRpbi5yYmFjLnYxLlJvbGUSEQoJY2hhbmdlX2lkGAIgASgJIjMKEURlbGV0ZVJvbGVSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJEg8KB3JvbGVfaWQYAiABKAkiJwoSRGVsZXRlUm9sZVJlc3BvbnNlEhEKCWNoYW5nZV9pZBgBIAEoCSJWChFBc3NpZ25Sb2xlUmVxdWVzdBINCgVzY29wZRgBIAEoCRISCgpzdWJqZWN0X2lkGAIgASgJEg8KB3JvbGVfaWQYAyABKAkSDQoFZ3JhbnQYBCABKAgiJwoSQXNzaWduUm9sZVJlc3BvbnNlEhEKCWNoYW5nZV9pZBgBIAEoCSI/ChpMaXN0U3ViamVjdEJpbmRpbmdzUmVxdWVzdBINCgVzY29wZRgBIAEoCRISCgpzdWJqZWN0X2lkGAIgASgJImwKG0xpc3RTdWJqZWN0QmluZGluZ3NSZXNwb25zZRIuCghiaW5kaW5ncxgBIAMoCzIcLmFsYWRkaW4ucmJhYy52MS5Sb2xlQmluZGluZxIdChVlZmZlY3RpdmVfcGVybWlzc2lvbnMYAiADKAkiQQoLUm9sZUJpbmRpbmcSEgoKc3ViamVjdF9pZBgBIAEoCRIPCgdyb2xlX2lkGAIgASgJEg0KBXNjb3BlGAMgASgJIjgKFFB1Ymxpc2hQb2xpY3lSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJEhEKCWNoYW5nZV9pZBgCIAEoCSJHChVQdWJsaXNoUG9saWN5UmVzcG9uc2USEQoJY2hhbmdlX2lkGAEgASgJEhsKE2ludmFsaWRhdGVkX2VudHJpZXMYAiABKAUyvgYKC1JCQUNTZXJ2aWNlEmcKB0dldFJvbGUSHy5hbGFkZGluLnJiYWMudjEuR2V0Um9sZVJlcXVlc3QaIC5hbGFkZGluLnJiYWMudjEuR2V0Um9sZVJlc3BvbnNlIhmQAgGKiCcOcmJhYy5yb2xlLnJlYWSQiCcBEm0KCUxpc3RSb2xlcxIhLmFsYWRkaW4ucmJhYy52MS5MaXN0Um9sZXNSZXF1ZXN0GiIuYWxhZGRpbi5yYmFjLnYxLkxpc3RSb2xlc1Jlc3BvbnNlIhmQAgGKiCcOcmJhYy5yb2xlLnJlYWSQiCcBEmUKB1B1dFJvbGUSHy5hbGFkZGluLnJiYWMudjEuUHV0Um9sZVJlcXVlc3QaIC5hbGFkZGluLnJiYWMudjEuUHV0Um9sZVJlc3BvbnNlIheKiCcPcmJhYy5yb2xlLndyaXRlkIgnARJuCgpEZWxldGVSb2xlEiIuYWxhZGRpbi5yYmFjLnYxLkRlbGV0ZVJvbGVSZXF1ZXN0GiMuYWxhZGRpbi5yYmFjLnYxLkRlbGV0ZVJvbGVSZXNwb25zZSIXiognD3JiYWMucm9sZS53cml0ZZCIJwEScgoKQXNzaWduUm9sZRIiLmFsYWRkaW4ucmJhYy52MS5Bc3NpZ25Sb2xlUmVxdWVzdBojLmFsYWRkaW4ucmJhYy52MS5Bc3NpZ25Sb2xlUmVzcG9uc2UiG4qIJxNyYmFjLnN1YmplY3QuYXNzaWdukIgnARKOAQoTTGlzdFN1YmplY3RCaW5kaW5ncxIrLmFsYWRkaW4ucmJhYy52MS5MaXN0U3ViamVjdEJpbmRpbmdzUmVxdWVzdBosLmFsYWRkaW4ucmJhYy52MS5MaXN0U3ViamVjdEJpbmRpbmdzUmVzcG9uc2UiHJACAYqIJxFyYmFjLnN1YmplY3QucmVhZJCIJwESewoNUHVibGlzaFBvbGljeRIlLmFsYWRkaW4ucmJhYy52MS5QdWJsaXNoUG9saWN5UmVxdWVzdBomLmFsYWRkaW4ucmJhYy52MS5QdWJsaXNoUG9saWN5UmVzcG9uc2UiG4qIJxNyYmFjLnBvbGljeS5wdWJsaXNokIgnAUI8WjpnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL3JiYWMvdjE7cmJhY3YxYgZwcm90bzM", [file_aladdin_rbac_v1_annotations]);
+  fileDesc("ChphbGFkZGluL3JiYWMvdjEvcmJhYy5wcm90bxIPYWxhZGRpbi5yYmFjLnYxIoEBCgRSb2xlEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRITCgtwZXJtaXNzaW9ucxgDIAMoCRIQCghpbmhlcml0cxgEIAMoCRIfChdtdXR1YWxseV9leGNsdXNpdmVfd2l0aBgFIAMoCRIPCgdidWlsdGluGAYgASgIIjAKDkdldFJvbGVSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJEg8KB3JvbGVfaWQYAiABKAkiNgoPR2V0Um9sZVJlc3BvbnNlEiMKBHJvbGUYASABKAsyFS5hbGFkZGluLnJiYWMudjEuUm9sZSIhChBMaXN0Um9sZXNSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJIjkKEUxpc3RSb2xlc1Jlc3BvbnNlEiQKBXJvbGVzGAEgAygLMhUuYWxhZGRpbi5yYmFjLnYxLlJvbGUiRAoOUHV0Um9sZVJlcXVlc3QSDQoFc2NvcGUYASABKAkSIwoEcm9sZRgCIAEoCzIVLmFsYWRkaW4ucmJhYy52MS5Sb2xlIkkKD1B1dFJvbGVSZXNwb25zZRIjCgRyb2xlGAEgASgLMhUuYWxhZGRpbi5yYmFjLnYxLlJvbGUSEQoJY2hhbmdlX2lkGAIgASgJIjMKEURlbGV0ZVJvbGVSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJEg8KB3JvbGVfaWQYAiABKAkiJwoSRGVsZXRlUm9sZVJlc3BvbnNlEhEKCWNoYW5nZV9pZBgBIAEoCSJWChFBc3NpZ25Sb2xlUmVxdWVzdBINCgVzY29wZRgBIAEoCRISCgpzdWJqZWN0X2lkGAIgASgJEg8KB3JvbGVfaWQYAyABKAkSDQoFZ3JhbnQYBCABKAgiJwoSQXNzaWduUm9sZVJlc3BvbnNlEhEKCWNoYW5nZV9pZBgBIAEoCSI/ChpMaXN0U3ViamVjdEJpbmRpbmdzUmVxdWVzdBINCgVzY29wZRgBIAEoCRISCgpzdWJqZWN0X2lkGAIgASgJImwKG0xpc3RTdWJqZWN0QmluZGluZ3NSZXNwb25zZRIuCghiaW5kaW5ncxgBIAMoCzIcLmFsYWRkaW4ucmJhYy52MS5Sb2xlQmluZGluZxIdChVlZmZlY3RpdmVfcGVybWlzc2lvbnMYAiADKAkiQQoLUm9sZUJpbmRpbmcSEgoKc3ViamVjdF9pZBgBIAEoCRIPCgdyb2xlX2lkGAIgASgJEg0KBXNjb3BlGAMgASgJIisKBVNjb3BlEgwKBHBhdGgYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJIiIKEUxpc3RTY29wZXNSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJIjwKEkxpc3RTY29wZXNSZXNwb25zZRImCgZzY29wZXMYASADKAsyFi5hbGFkZGluLnJiYWMudjEuU2NvcGUiRAoPUHV0U2NvcGVSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJEgwKBHBhdGgYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJIjkKEFB1dFNjb3BlUmVzcG9uc2USJQoFc2NvcGUYASABKAsyFi5hbGFkZGluLnJiYWMudjEuU2NvcGUiMQoSRGVsZXRlU2NvcGVSZXF1ZXN0Eg0KBXNjb3BlGAEgASgJEgwKBHBhdGgYAiABKAkiFQoTRGVsZXRlU2NvcGVSZXNwb25zZSI4ChRQdWJsaXNoUG9saWN5UmVxdWVzdBINCgVzY29wZRgBIAEoCRIRCgljaGFuZ2VfaWQYAiABKAkiRwoVUHVibGlzaFBvbGljeVJlc3BvbnNlEhEKCWNoYW5nZV9pZBgBIAEoCRIbChNpbnZhbGlkYXRlZF9lbnRyaWVzGAIgASgFMpAJCgtSQkFDU2VydmljZRJnCgdHZXRSb2xlEh8uYWxhZGRpbi5yYmFjLnYxLkdldFJvbGVSZXF1ZXN0GiAuYWxhZGRpbi5yYmFjLnYxLkdldFJvbGVSZXNwb25zZSIZkAIBiognDnJiYWMucm9sZS5yZWFkkIgnARJtCglMaXN0Um9sZXMSIS5hbGFkZGluLnJiYWMudjEuTGlzdFJvbGVzUmVxdWVzdBoiLmFsYWRkaW4ucmJhYy52MS5MaXN0Um9sZXNSZXNwb25zZSIZkAIBiognDnJiYWMucm9sZS5yZWFkkIgnARJlCgdQdXRSb2xlEh8uYWxhZGRpbi5yYmFjLnYxLlB1dFJvbGVSZXF1ZXN0GiAuYWxhZGRpbi5yYmFjLnYxLlB1dFJvbGVSZXNwb25zZSIXiognD3JiYWMucm9sZS53cml0ZZCIJwESbgoKRGVsZXRlUm9sZRIiLmFsYWRkaW4ucmJhYy52MS5EZWxldGVSb2xlUmVxdWVzdBojLmFsYWRkaW4ucmJhYy52MS5EZWxldGVSb2xlUmVzcG9uc2UiF4qIJw9yYmFjLnJvbGUud3JpdGWQiCcBEnIKCkFzc2lnblJvbGUSIi5hbGFkZGluLnJiYWMudjEuQXNzaWduUm9sZVJlcXVlc3QaIy5hbGFkZGluLnJiYWMudjEuQXNzaWduUm9sZVJlc3BvbnNlIhuKiCcTcmJhYy5zdWJqZWN0LmFzc2lnbpCIJwESjgEKE0xpc3RTdWJqZWN0QmluZGluZ3MSKy5hbGFkZGluLnJiYWMudjEuTGlzdFN1YmplY3RCaW5kaW5nc1JlcXVlc3QaLC5hbGFkZGluLnJiYWMudjEuTGlzdFN1YmplY3RCaW5kaW5nc1Jlc3BvbnNlIhyQAgGKiCcRcmJhYy5zdWJqZWN0LnJlYWSQiCcBEnEKCkxpc3RTY29wZXMSIi5hbGFkZGluLnJiYWMudjEuTGlzdFNjb3Blc1JlcXVlc3QaIy5hbGFkZGluLnJiYWMudjEuTGlzdFNjb3Blc1Jlc3BvbnNlIhqQAgGKiCcPcmJhYy5zY29wZS5yZWFkkIgnARJpCghQdXRTY29wZRIgLmFsYWRkaW4ucmJhYy52MS5QdXRTY29wZVJlcXVlc3QaIS5hbGFkZGluLnJiYWMudjEuUHV0U2NvcGVSZXNwb25zZSIYiognEHJiYWMuc2NvcGUud3JpdGWQiCcBEnIKC0RlbGV0ZVNjb3BlEiMuYWxhZGRpbi5yYmFjLnYxLkRlbGV0ZVNjb3BlUmVxdWVzdBokLmFsYWRkaW4ucmJhYy52MS5EZWxldGVTY29wZVJlc3BvbnNlIhiKiCcQcmJhYy5zY29wZS53cml0ZZCIJwESewoNUHVibGlzaFBvbGljeRIlLmFsYWRkaW4ucmJhYy52MS5QdWJsaXNoUG9saWN5UmVxdWVzdBomLmFsYWRkaW4ucmJhYy52MS5QdWJsaXNoUG9saWN5UmVzcG9uc2UiG4qIJxNyYmFjLnBvbGljeS5wdWJsaXNokIgnAUI8WjpnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL3JiYWMvdjE7cmJhY3YxYgZwcm90bzM", [file_aladdin_rbac_v1_annotations]);
 
 /**
  * @generated from message aladdin.rbac.v1.Role
@@ -228,6 +228,9 @@ export const DeleteRoleResponseSchema: GenMessage<DeleteRoleResponse> = /*@__PUR
   messageDesc(file_aladdin_rbac_v1_rbac, 8);
 
 /**
+ * AssignRole 的目标范围必须是**已登记**的范围（全局除外，它是模型的根）。
+ * 这条校验只在授予侧做：回收永远要能做，哪怕目标范围已经不在目录里。
+ *
  * @generated from message aladdin.rbac.v1.AssignRoleRequest
  */
 export type AssignRoleRequest = Message<"aladdin.rbac.v1.AssignRoleRequest"> & {
@@ -358,6 +361,161 @@ export const RoleBindingSchema: GenMessage<RoleBinding> = /*@__PURE__*/
   messageDesc(file_aladdin_rbac_v1_rbac, 13);
 
 /**
+ * Scope 是一个已登记的范围。
+ *
+ * 路径是标识（也是判定的输入），**一经登记不可更改**——与角色标识同构；
+ * "改路径"因此不是改名，而是"删掉旧范围 + 新建一个"。
+ * 显示名只用于展示，可改，且不参与判定、不参与匹配。
+ *
+ * 全局（根）不是一条登记记录：它永远可用、不可创建也不可删除。
+ *
+ * @generated from message aladdin.rbac.v1.Scope
+ */
+export type Scope = Message<"aladdin.rbac.v1.Scope"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+};
+
+/**
+ * Describes the message aladdin.rbac.v1.Scope.
+ * Use `create(ScopeSchema)` to create a new message.
+ */
+export const ScopeSchema: GenMessage<Scope> = /*@__PURE__*/
+  messageDesc(file_aladdin_rbac_v1_rbac, 14);
+
+/**
+ * @generated from message aladdin.rbac.v1.ListScopesRequest
+ */
+export type ListScopesRequest = Message<"aladdin.rbac.v1.ListScopesRequest"> & {
+  /**
+   * 请求在哪个范围上读目录。仅用于鉴权，不过滤结果。
+   *
+   * @generated from field: string scope = 1;
+   */
+  scope: string;
+};
+
+/**
+ * Describes the message aladdin.rbac.v1.ListScopesRequest.
+ * Use `create(ListScopesRequestSchema)` to create a new message.
+ */
+export const ListScopesRequestSchema: GenMessage<ListScopesRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_rbac_v1_rbac, 15);
+
+/**
+ * @generated from message aladdin.rbac.v1.ListScopesResponse
+ */
+export type ListScopesResponse = Message<"aladdin.rbac.v1.ListScopesResponse"> & {
+  /**
+   * @generated from field: repeated aladdin.rbac.v1.Scope scopes = 1;
+   */
+  scopes: Scope[];
+};
+
+/**
+ * Describes the message aladdin.rbac.v1.ListScopesResponse.
+ * Use `create(ListScopesResponseSchema)` to create a new message.
+ */
+export const ListScopesResponseSchema: GenMessage<ListScopesResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_rbac_v1_rbac, 16);
+
+/**
+ * @generated from message aladdin.rbac.v1.PutScopeRequest
+ */
+export type PutScopeRequest = Message<"aladdin.rbac.v1.PutScopeRequest"> & {
+  /**
+   * 请求在哪个范围上登记。仅用于鉴权。
+   *
+   * @generated from field: string scope = 1;
+   */
+  scope: string;
+
+  /**
+   * 要登记（或改显示名）的路径。路径为空表示全局，而全局不可登记，因此会被拒绝。
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * 展示名。留空则界面回落到显示路径本身。
+   *
+   * @generated from field: string display_name = 3;
+   */
+  displayName: string;
+};
+
+/**
+ * Describes the message aladdin.rbac.v1.PutScopeRequest.
+ * Use `create(PutScopeRequestSchema)` to create a new message.
+ */
+export const PutScopeRequestSchema: GenMessage<PutScopeRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_rbac_v1_rbac, 17);
+
+/**
+ * @generated from message aladdin.rbac.v1.PutScopeResponse
+ */
+export type PutScopeResponse = Message<"aladdin.rbac.v1.PutScopeResponse"> & {
+  /**
+   * @generated from field: aladdin.rbac.v1.Scope scope = 1;
+   */
+  scope?: Scope | undefined;
+};
+
+/**
+ * Describes the message aladdin.rbac.v1.PutScopeResponse.
+ * Use `create(PutScopeResponseSchema)` to create a new message.
+ */
+export const PutScopeResponseSchema: GenMessage<PutScopeResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_rbac_v1_rbac, 18);
+
+/**
+ * @generated from message aladdin.rbac.v1.DeleteScopeRequest
+ */
+export type DeleteScopeRequest = Message<"aladdin.rbac.v1.DeleteScopeRequest"> & {
+  /**
+   * 请求在哪个范围上删除。仅用于鉴权。
+   *
+   * @generated from field: string scope = 1;
+   */
+  scope: string;
+
+  /**
+   * 要删除的范围路径。
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+};
+
+/**
+ * Describes the message aladdin.rbac.v1.DeleteScopeRequest.
+ * Use `create(DeleteScopeRequestSchema)` to create a new message.
+ */
+export const DeleteScopeRequestSchema: GenMessage<DeleteScopeRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_rbac_v1_rbac, 19);
+
+/**
+ * @generated from message aladdin.rbac.v1.DeleteScopeResponse
+ */
+export type DeleteScopeResponse = Message<"aladdin.rbac.v1.DeleteScopeResponse"> & {
+};
+
+/**
+ * Describes the message aladdin.rbac.v1.DeleteScopeResponse.
+ * Use `create(DeleteScopeResponseSchema)` to create a new message.
+ */
+export const DeleteScopeResponseSchema: GenMessage<DeleteScopeResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_rbac_v1_rbac, 20);
+
+/**
  * @generated from message aladdin.rbac.v1.PublishPolicyRequest
  */
 export type PublishPolicyRequest = Message<"aladdin.rbac.v1.PublishPolicyRequest"> & {
@@ -379,7 +537,7 @@ export type PublishPolicyRequest = Message<"aladdin.rbac.v1.PublishPolicyRequest
  * Use `create(PublishPolicyRequestSchema)` to create a new message.
  */
 export const PublishPolicyRequestSchema: GenMessage<PublishPolicyRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_rbac_v1_rbac, 14);
+  messageDesc(file_aladdin_rbac_v1_rbac, 21);
 
 /**
  * @generated from message aladdin.rbac.v1.PublishPolicyResponse
@@ -403,7 +561,7 @@ export type PublishPolicyResponse = Message<"aladdin.rbac.v1.PublishPolicyRespon
  * Use `create(PublishPolicyResponseSchema)` to create a new message.
  */
 export const PublishPolicyResponseSchema: GenMessage<PublishPolicyResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_rbac_v1_rbac, 15);
+  messageDesc(file_aladdin_rbac_v1_rbac, 22);
 
 /**
  * RBACService 是权限体系的管理面。
@@ -479,6 +637,44 @@ export const RBACService: GenService<{
     methodKind: "unary";
     input: typeof ListSubjectBindingsRequestSchema;
     output: typeof ListSubjectBindingsResponseSchema;
+  },
+  /**
+   * 列出已登记的范围（全局不在其中：它是模型的根，不是一条登记记录）。
+   *
+   * 请求里的 scope 只用于鉴权，与结果无关：范围目录是部署级的，不按范围过滤。
+   *
+   * @generated from rpc aladdin.rbac.v1.RBACService.ListScopes
+   */
+  listScopes: {
+    methodKind: "unary";
+    input: typeof ListScopesRequestSchema;
+    output: typeof ListScopesResponseSchema;
+  },
+  /**
+   * 登记一个范围，或改它的显示名。
+   *
+   * 路径是标识，**不可更改**；登记一个已存在的路径等同于改显示名
+   * （与重复授予同一角色是幂等的重复写入同理）。
+   *
+   * @generated from rpc aladdin.rbac.v1.RBACService.PutScope
+   */
+  putScope: {
+    methodKind: "unary";
+    input: typeof PutScopeRequestSchema;
+    output: typeof PutScopeResponseSchema;
+  },
+  /**
+   * 删除一个范围。不可逆。
+   *
+   * 范围内或其后代上仍有角色绑定时拒绝——与"删除仍被持有的角色"同构：
+   * 引用还在，就不允许把被引用的东西抽走。
+   *
+   * @generated from rpc aladdin.rbac.v1.RBACService.DeleteScope
+   */
+  deleteScope: {
+    methodKind: "unary";
+    input: typeof DeleteScopeRequestSchema;
+    output: typeof DeleteScopeResponseSchema;
   },
   /**
    * 使一次角色变更正式生效（缓存失效 + 生效确认）。

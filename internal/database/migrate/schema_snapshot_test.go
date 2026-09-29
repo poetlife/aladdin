@@ -75,6 +75,9 @@ table roles
   permissions text pk=false null=true
 table schema_migrations
   id text pk=true null=true
+table scopes
+  display_name text pk=false null=true
+  path text pk=true null=true
 table sessions
   default_scope text pk=false null=true
   expires_at datetime pk=false null=true

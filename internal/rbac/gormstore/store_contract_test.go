@@ -331,6 +331,98 @@ func TestContractDeleteMissingRole(t *testing.T) {
 	})
 }
 
+// 范围的登记是 upsert：重复登记一个已存在的路径是"改显示名"，不是冲突，
+// 也不能把路径换掉——路径是标识（见 docs/design/rbac/scopes.md）。
+func TestContractScopeLifecycle(t *testing.T) {
+	forEachStore(t, func(t *testing.T, store rbac.MutableStore) {
+		ctx := context.Background()
+
+		if _, err := store.Scope(ctx, "tenant/acme"); !errors.Is(err, rbac.ErrScopeNotFound) {
+			t.Errorf("未登记范围 err = %v，期望 ErrScopeNotFound", err)
+		}
+
+		if err := store.PutScope(ctx, rbac.ScopeDefinition{Path: "tenant/acme", DisplayName: "Acme"}); err != nil {
+			t.Fatalf("登记范围失败: %v", err)
+		}
+		got, err := store.Scope(ctx, "tenant/acme")
+		if err != nil {
+			t.Fatalf("登记后应能读到: %v", err)
+		}
+		if got.Path != "tenant/acme" || got.DisplayName != "Acme" {
+			t.Errorf("读回 = %+v", got)
+		}
+
+		// 重复登记同一个路径 = 改显示名。
+		if err := store.PutScope(ctx, rbac.ScopeDefinition{Path: "tenant/acme", DisplayName: "改过的名字"}); err != nil {
+			t.Fatalf("改显示名失败: %v", err)
+		}
+		got, err = store.Scope(ctx, "tenant/acme")
+		if err != nil {
+			t.Fatalf("改显示名后应能读到: %v", err)
+		}
+		if got.Path != "tenant/acme" || got.DisplayName != "改过的名字" {
+			t.Errorf("改显示名后 = %+v", got)
+		}
+
+		scopes, err := store.Scopes(ctx)
+		if err != nil {
+			t.Fatalf("列出范围失败: %v", err)
+		}
+		if len(scopes) != 1 || scopes[0].Path != "tenant/acme" {
+			t.Errorf("范围列表 = %+v，期望只有一条 tenant/acme", scopes)
+		}
+
+		if err := store.DeleteScope(ctx, "tenant/acme"); err != nil {
+			t.Fatalf("删除范围失败: %v", err)
+		}
+		if _, err := store.Scope(ctx, "tenant/acme"); !errors.Is(err, rbac.ErrScopeNotFound) {
+			t.Errorf("删除后仍能读到，err = %v", err)
+		}
+		// 删除不存在的范围报错而不是静默成功：多半是调用方拼错了路径。
+		if err := store.DeleteScope(ctx, "tenant/acme"); !errors.Is(err, rbac.ErrScopeNotFound) {
+			t.Errorf("删除不存在的范围 err = %v，期望 ErrScopeNotFound", err)
+		}
+	})
+}
+
+// 一个范围内的绑定**包含它的后代**：层级由路径前缀表达，父包含子；全局包含一切。
+func TestContractBindingsUnderScope(t *testing.T) {
+	forEachStore(t, func(t *testing.T, store rbac.MutableStore) {
+		ctx := context.Background()
+		for _, b := range []rbac.RoleBinding{
+			{SubjectID: "u1", RoleID: rbac.RoleViewer, Scope: "tenant/acme"},
+			{SubjectID: "u2", RoleID: rbac.RoleViewer, Scope: "tenant/acme/project"},
+			{SubjectID: "u3", RoleID: rbac.RoleViewer, Scope: "tenant/other"},
+		} {
+			if err := store.Bind(ctx, b); err != nil {
+				t.Fatalf("写入绑定失败: %v", err)
+			}
+		}
+
+		under, err := store.BindingsUnderScope(ctx, "tenant/acme")
+		if err != nil {
+			t.Fatalf("查询范围下的绑定失败: %v", err)
+		}
+		if len(under) != 2 {
+			t.Errorf("tenant/acme 下应有两条（自己与后代），得到 %+v", under)
+		}
+		// 兄弟范围不算进来：前缀匹配不能退化成"字符串以 tenant 开头"。
+		for _, b := range under {
+			if b.SubjectID == "u3" {
+				t.Errorf("tenant/other 不该落在 tenant/acme 之内：%+v", under)
+			}
+		}
+
+		all, err := store.BindingsUnderScope(ctx, rbac.GlobalScope)
+		if err != nil {
+			t.Fatalf("查询全局下的绑定失败: %v", err)
+		}
+		if len(all) != 3 {
+			t.Errorf("全局应包含全部绑定，得到 %+v", all)
+		}
+	})
+}
+
 // newTestStore 打开一个临时目录里的库，走的是服务端启动时的同一条路径。
 func newTestStore(t *testing.T) *Store {
 	t.Helper()

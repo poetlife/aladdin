@@ -25,3 +25,18 @@ export async function assignRole(
 ) {
   return rbacClient().assignRole({ scope, subjectId, roleId, grant })
 }
+
+/** 列出已登记的范围。不含全局：它是模型的根，不是目录里的一条。 */
+export async function listScopes(scope: string) {
+  return rbacClient().listScopes({ scope })
+}
+
+/** 登记一个范围，或改它的显示名。路径是标识，传进来是什么就是什么（不可改）。 */
+export async function putScope(scope: string, path: string, displayName: string) {
+  return rbacClient().putScope({ scope, path, displayName })
+}
+
+/** 删除一个范围。范围内或其后代上仍有绑定时服务端拒绝。 */
+export async function deleteScope(scope: string, path: string) {
+  return rbacClient().deleteScope({ scope, path })
+}

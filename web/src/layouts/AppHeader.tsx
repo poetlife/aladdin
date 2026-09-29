@@ -3,7 +3,7 @@ import { Building2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { useSession } from '../auth'
-import { formatScope, GLOBAL_SCOPE_LABEL, parseScope, useMyScopes } from '../rbac'
+import { formatScope, GLOBAL_SCOPE_LABEL, parseScope, useMyScopes, useScopes } from '../rbac'
 import { ThemeSwitch } from '../theme'
 
 const { Header } = Layout
@@ -35,7 +35,13 @@ interface AppHeaderProps {
 export function AppHeader({ toggleIcon, toggleLabel, onToggle }: AppHeaderProps): React.ReactNode {
   const { token } = theme.useToken()
   const { scope, setScope } = useSession()
-  const { scopes, available } = useMyScopes()
+
+  // 候选项首选**已登记的范围目录**（这个部署里有哪些范围，见
+  // docs/design/rbac/scopes.md），读不到时退回**我自己的绑定范围**——后者是
+  // 前者的子集，退回不丢候选。目录为空既可能是没权限，也可能是还没登记过，
+  // 两种情形下退回都一样对。
+  const catalog = useScopes()
+  const mine = useMyScopes()
 
   // 输入框里显示的永远是**界面写法**：空串显示成「全局」。
   const [draft, setDraft] = useState(() => formatScope(scope))
@@ -55,10 +61,13 @@ export function AppHeader({ toggleIcon, toggleLabel, onToggle }: AppHeaderProps)
     }
   }
 
-  // 候选项来自**主体自己的绑定范围**。不额外塞一个「全局」：请求里的空范围在
-  // 服务端表示"不指定、按凭证默认范围解析"，不是"我要全局"，因此它不是一个
-  // 用户能点选的落点——真正的全局会作为解析结果出现在这个框里。
-  const options = scopes.map((s) => ({ value: formatScope(s), label: formatScope(s) }))
+  const candidates =
+    catalog.scopes.length > 0 ? catalog.scopes.map((s) => s.path) : mine.scopes
+
+  // 不额外塞一个「全局」：请求里的空范围在服务端表示"不指定、按凭证默认范围解析"，
+  // 不是"我要全局"，因此它不是一个用户能点选的落点——真正的全局会作为**解析结果**
+  // 出现在这个框里。
+  const options = candidates.map((s) => ({ value: formatScope(s), label: formatScope(s) }))
 
   return (
     <Header
@@ -108,10 +117,10 @@ export function AppHeader({ toggleIcon, toggleLabel, onToggle }: AppHeaderProps)
               <strong>解析结果回填到这里</strong>——框里显示的永远是实际生效的那个。
               <br />
               它与权限码里的「领域」段（如 rbac、galaxy）不是一回事。
-              {!available && (
+              {candidates.length === 0 && (
                 <>
                   <br />
-                  暂时列不出你已绑定的范围，可直接输入路径。
+                  暂时列不出可用的范围，可直接输入路径。
                 </>
               )}
             </span>

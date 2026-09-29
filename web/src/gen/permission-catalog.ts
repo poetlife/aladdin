@@ -16,6 +16,8 @@ export const PermissionCatalog: readonly PermissionCatalogEntry[] = [
   { code: 'rbac.role.write', description: '创建、修改、删除角色。属不可逆操作' },
   { code: 'rbac.subject.read', description: '读取主体的角色绑定关系' },
   { code: 'rbac.subject.assign', description: '为主体授予或回收角色，会改变权限边界' },
+  { code: 'rbac.scope.read', description: '读取范围目录：这个部署里登记了哪些范围' },
+  { code: 'rbac.scope.write', description: '登记范围、改显示名、删除范围。删除属不可逆操作' },
   { code: 'rbac.policy.publish', description: '使一次角色变更正式生效（缓存失效与生效确认）' },
   { code: 'audit.log.read', description: '查阅审计日志' },
   { code: 'audit.log.export', description: '导出审计日志。属批量操作' },

@@ -19,6 +19,12 @@ const (
 	// PermissionRbacSubjectAssign 为主体授予或回收角色，会改变权限边界
 	PermissionRbacSubjectAssign PermissionCode = "rbac.subject.assign"
 
+	// PermissionRbacScopeRead 读取范围目录：这个部署里登记了哪些范围
+	PermissionRbacScopeRead PermissionCode = "rbac.scope.read"
+
+	// PermissionRbacScopeWrite 登记范围、改显示名、删除范围。删除属不可逆操作
+	PermissionRbacScopeWrite PermissionCode = "rbac.scope.write"
+
 	// PermissionRbacPolicyPublish 使一次角色变更正式生效（缓存失效与生效确认）
 	PermissionRbacPolicyPublish PermissionCode = "rbac.policy.publish"
 
@@ -53,6 +59,8 @@ var AllPermissionCodes = []PermissionCode{
 	PermissionRbacRoleWrite,
 	PermissionRbacSubjectRead,
 	PermissionRbacSubjectAssign,
+	PermissionRbacScopeRead,
+	PermissionRbacScopeWrite,
 	PermissionRbacPolicyPublish,
 	PermissionAuditLogRead,
 	PermissionAuditLogExport,
@@ -103,6 +111,8 @@ var BuiltinRoles = []RoleDefinition{
 			PermissionRbacRoleWrite,
 			PermissionRbacSubjectRead,
 			PermissionRbacSubjectAssign,
+			PermissionRbacScopeRead,
+			PermissionRbacScopeWrite,
 			PermissionRbacPolicyPublish,
 		},
 		Inherits:              nil,
@@ -117,6 +127,7 @@ var BuiltinRoles = []RoleDefinition{
 			PermissionAuditLogExport,
 			PermissionRbacRoleRead,
 			PermissionRbacSubjectRead,
+			PermissionRbacScopeRead,
 		},
 		Inherits:              nil,
 		MutuallyExclusiveWith: nil,
@@ -128,6 +139,7 @@ var BuiltinRoles = []RoleDefinition{
 		Permissions: []PermissionCode{
 			PermissionRbacRoleRead,
 			PermissionRbacSubjectRead,
+			PermissionRbacScopeRead,
 		},
 		Inherits:              nil,
 		MutuallyExclusiveWith: nil,

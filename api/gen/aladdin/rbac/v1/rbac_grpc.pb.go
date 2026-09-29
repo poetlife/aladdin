@@ -25,6 +25,9 @@ const (
 	RBACService_DeleteRole_FullMethodName          = "/aladdin.rbac.v1.RBACService/DeleteRole"
 	RBACService_AssignRole_FullMethodName          = "/aladdin.rbac.v1.RBACService/AssignRole"
 	RBACService_ListSubjectBindings_FullMethodName = "/aladdin.rbac.v1.RBACService/ListSubjectBindings"
+	RBACService_ListScopes_FullMethodName          = "/aladdin.rbac.v1.RBACService/ListScopes"
+	RBACService_PutScope_FullMethodName            = "/aladdin.rbac.v1.RBACService/PutScope"
+	RBACService_DeleteScope_FullMethodName         = "/aladdin.rbac.v1.RBACService/DeleteScope"
 	RBACService_PublishPolicy_FullMethodName       = "/aladdin.rbac.v1.RBACService/PublishPolicy"
 )
 
@@ -55,6 +58,20 @@ type RBACServiceClient interface {
 	AssignRole(ctx context.Context, in *AssignRoleRequest, opts ...grpc.CallOption) (*AssignRoleResponse, error)
 	// 列出某个主体持有的角色绑定。
 	ListSubjectBindings(ctx context.Context, in *ListSubjectBindingsRequest, opts ...grpc.CallOption) (*ListSubjectBindingsResponse, error)
+	// 列出已登记的范围（全局不在其中：它是模型的根，不是一条登记记录）。
+	//
+	// 请求里的 scope 只用于鉴权，与结果无关：范围目录是部署级的，不按范围过滤。
+	ListScopes(ctx context.Context, in *ListScopesRequest, opts ...grpc.CallOption) (*ListScopesResponse, error)
+	// 登记一个范围，或改它的显示名。
+	//
+	// 路径是标识，**不可更改**；登记一个已存在的路径等同于改显示名
+	// （与重复授予同一角色是幂等的重复写入同理）。
+	PutScope(ctx context.Context, in *PutScopeRequest, opts ...grpc.CallOption) (*PutScopeResponse, error)
+	// 删除一个范围。不可逆。
+	//
+	// 范围内或其后代上仍有角色绑定时拒绝——与"删除仍被持有的角色"同构：
+	// 引用还在，就不允许把被引用的东西抽走。
+	DeleteScope(ctx context.Context, in *DeleteScopeRequest, opts ...grpc.CallOption) (*DeleteScopeResponse, error)
 	// 使一次角色变更正式生效（缓存失效 + 生效确认）。
 	// 对应 docs/design/rbac/role-model.md 的"生效确认"阶段。
 	PublishPolicy(ctx context.Context, in *PublishPolicyRequest, opts ...grpc.CallOption) (*PublishPolicyResponse, error)
@@ -128,6 +145,36 @@ func (c *rBACServiceClient) ListSubjectBindings(ctx context.Context, in *ListSub
 	return out, nil
 }
 
+func (c *rBACServiceClient) ListScopes(ctx context.Context, in *ListScopesRequest, opts ...grpc.CallOption) (*ListScopesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListScopesResponse)
+	err := c.cc.Invoke(ctx, RBACService_ListScopes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *rBACServiceClient) PutScope(ctx context.Context, in *PutScopeRequest, opts ...grpc.CallOption) (*PutScopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutScopeResponse)
+	err := c.cc.Invoke(ctx, RBACService_PutScope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *rBACServiceClient) DeleteScope(ctx context.Context, in *DeleteScopeRequest, opts ...grpc.CallOption) (*DeleteScopeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteScopeResponse)
+	err := c.cc.Invoke(ctx, RBACService_DeleteScope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *rBACServiceClient) PublishPolicy(ctx context.Context, in *PublishPolicyRequest, opts ...grpc.CallOption) (*PublishPolicyResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PublishPolicyResponse)
@@ -165,6 +212,20 @@ type RBACServiceServer interface {
 	AssignRole(context.Context, *AssignRoleRequest) (*AssignRoleResponse, error)
 	// 列出某个主体持有的角色绑定。
 	ListSubjectBindings(context.Context, *ListSubjectBindingsRequest) (*ListSubjectBindingsResponse, error)
+	// 列出已登记的范围（全局不在其中：它是模型的根，不是一条登记记录）。
+	//
+	// 请求里的 scope 只用于鉴权，与结果无关：范围目录是部署级的，不按范围过滤。
+	ListScopes(context.Context, *ListScopesRequest) (*ListScopesResponse, error)
+	// 登记一个范围，或改它的显示名。
+	//
+	// 路径是标识，**不可更改**；登记一个已存在的路径等同于改显示名
+	// （与重复授予同一角色是幂等的重复写入同理）。
+	PutScope(context.Context, *PutScopeRequest) (*PutScopeResponse, error)
+	// 删除一个范围。不可逆。
+	//
+	// 范围内或其后代上仍有角色绑定时拒绝——与"删除仍被持有的角色"同构：
+	// 引用还在，就不允许把被引用的东西抽走。
+	DeleteScope(context.Context, *DeleteScopeRequest) (*DeleteScopeResponse, error)
 	// 使一次角色变更正式生效（缓存失效 + 生效确认）。
 	// 对应 docs/design/rbac/role-model.md 的"生效确认"阶段。
 	PublishPolicy(context.Context, *PublishPolicyRequest) (*PublishPolicyResponse, error)
@@ -195,6 +256,15 @@ func (UnimplementedRBACServiceServer) AssignRole(context.Context, *AssignRoleReq
 }
 func (UnimplementedRBACServiceServer) ListSubjectBindings(context.Context, *ListSubjectBindingsRequest) (*ListSubjectBindingsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSubjectBindings not implemented")
+}
+func (UnimplementedRBACServiceServer) ListScopes(context.Context, *ListScopesRequest) (*ListScopesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListScopes not implemented")
+}
+func (UnimplementedRBACServiceServer) PutScope(context.Context, *PutScopeRequest) (*PutScopeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutScope not implemented")
+}
+func (UnimplementedRBACServiceServer) DeleteScope(context.Context, *DeleteScopeRequest) (*DeleteScopeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteScope not implemented")
 }
 func (UnimplementedRBACServiceServer) PublishPolicy(context.Context, *PublishPolicyRequest) (*PublishPolicyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishPolicy not implemented")
@@ -328,6 +398,60 @@ func _RBACService_ListSubjectBindings_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RBACService_ListScopes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListScopesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RBACServiceServer).ListScopes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RBACService_ListScopes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RBACServiceServer).ListScopes(ctx, req.(*ListScopesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RBACService_PutScope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutScopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RBACServiceServer).PutScope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RBACService_PutScope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RBACServiceServer).PutScope(ctx, req.(*PutScopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RBACService_DeleteScope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteScopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RBACServiceServer).DeleteScope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RBACService_DeleteScope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RBACServiceServer).DeleteScope(ctx, req.(*DeleteScopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _RBACService_PublishPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PublishPolicyRequest)
 	if err := dec(in); err != nil {
@@ -376,6 +500,18 @@ var RBACService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSubjectBindings",
 			Handler:    _RBACService_ListSubjectBindings_Handler,
+		},
+		{
+			MethodName: "ListScopes",
+			Handler:    _RBACService_ListScopes_Handler,
+		},
+		{
+			MethodName: "PutScope",
+			Handler:    _RBACService_PutScope_Handler,
+		},
+		{
+			MethodName: "DeleteScope",
+			Handler:    _RBACService_DeleteScope_Handler,
 		},
 		{
 			MethodName: "PublishPolicy",

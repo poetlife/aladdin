@@ -25,6 +25,9 @@ vi.mock('../api/rbac', () => ({
   listRoles: vi.fn(),
   listSubjectBindings: vi.fn(),
   assignRole: vi.fn(),
+  listScopes: vi.fn(),
+  putScope: vi.fn(),
+  deleteScope: vi.fn(),
 }))
 
 // React 19 要求显式声明这是 act 环境，否则每次 render 都会打印警告。

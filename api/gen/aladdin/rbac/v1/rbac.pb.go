@@ -497,6 +497,8 @@ func (x *DeleteRoleResponse) GetChangeId() string {
 	return ""
 }
 
+// AssignRole 的目标范围必须是**已登记**的范围（全局除外，它是模型的根）。
+// 这条校验只在授予侧做：回收永远要能做，哪怕目标范围已经不在目录里。
 type AssignRoleRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Scope string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
@@ -779,6 +781,351 @@ func (x *RoleBinding) GetScope() string {
 	return ""
 }
 
+// Scope 是一个已登记的范围。
+//
+// 路径是标识（也是判定的输入），**一经登记不可更改**——与角色标识同构；
+// "改路径"因此不是改名，而是"删掉旧范围 + 新建一个"。
+// 显示名只用于展示，可改，且不参与判定、不参与匹配。
+//
+// 全局（根）不是一条登记记录：它永远可用、不可创建也不可删除。
+type Scope struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Scope) Reset() {
+	*x = Scope{}
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Scope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Scope) ProtoMessage() {}
+
+func (x *Scope) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Scope.ProtoReflect.Descriptor instead.
+func (*Scope) Descriptor() ([]byte, []int) {
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *Scope) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *Scope) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+type ListScopesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 请求在哪个范围上读目录。仅用于鉴权，不过滤结果。
+	Scope         string `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListScopesRequest) Reset() {
+	*x = ListScopesRequest{}
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListScopesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListScopesRequest) ProtoMessage() {}
+
+func (x *ListScopesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListScopesRequest.ProtoReflect.Descriptor instead.
+func (*ListScopesRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ListScopesRequest) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+type ListScopesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scopes        []*Scope               `protobuf:"bytes,1,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListScopesResponse) Reset() {
+	*x = ListScopesResponse{}
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListScopesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListScopesResponse) ProtoMessage() {}
+
+func (x *ListScopesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListScopesResponse.ProtoReflect.Descriptor instead.
+func (*ListScopesResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListScopesResponse) GetScopes() []*Scope {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+type PutScopeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 请求在哪个范围上登记。仅用于鉴权。
+	Scope string `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	// 要登记（或改显示名）的路径。路径为空表示全局，而全局不可登记，因此会被拒绝。
+	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// 展示名。留空则界面回落到显示路径本身。
+	DisplayName   string `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutScopeRequest) Reset() {
+	*x = PutScopeRequest{}
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutScopeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutScopeRequest) ProtoMessage() {}
+
+func (x *PutScopeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutScopeRequest.ProtoReflect.Descriptor instead.
+func (*PutScopeRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *PutScopeRequest) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *PutScopeRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *PutScopeRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+type PutScopeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scope         *Scope                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutScopeResponse) Reset() {
+	*x = PutScopeResponse{}
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutScopeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutScopeResponse) ProtoMessage() {}
+
+func (x *PutScopeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutScopeResponse.ProtoReflect.Descriptor instead.
+func (*PutScopeResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *PutScopeResponse) GetScope() *Scope {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+type DeleteScopeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 请求在哪个范围上删除。仅用于鉴权。
+	Scope string `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	// 要删除的范围路径。
+	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteScopeRequest) Reset() {
+	*x = DeleteScopeRequest{}
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteScopeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteScopeRequest) ProtoMessage() {}
+
+func (x *DeleteScopeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteScopeRequest.ProtoReflect.Descriptor instead.
+func (*DeleteScopeRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *DeleteScopeRequest) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *DeleteScopeRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type DeleteScopeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteScopeResponse) Reset() {
+	*x = DeleteScopeResponse{}
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteScopeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteScopeResponse) ProtoMessage() {}
+
+func (x *DeleteScopeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteScopeResponse.ProtoReflect.Descriptor instead.
+func (*DeleteScopeResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{20}
+}
+
 type PublishPolicyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Scope string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
@@ -790,7 +1137,7 @@ type PublishPolicyRequest struct {
 
 func (x *PublishPolicyRequest) Reset() {
 	*x = PublishPolicyRequest{}
-	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[14]
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +1149,7 @@ func (x *PublishPolicyRequest) String() string {
 func (*PublishPolicyRequest) ProtoMessage() {}
 
 func (x *PublishPolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[14]
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +1162,7 @@ func (x *PublishPolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishPolicyRequest.ProtoReflect.Descriptor instead.
 func (*PublishPolicyRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{14}
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PublishPolicyRequest) GetScope() string {
@@ -843,7 +1190,7 @@ type PublishPolicyResponse struct {
 
 func (x *PublishPolicyResponse) Reset() {
 	*x = PublishPolicyResponse{}
-	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[15]
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -855,7 +1202,7 @@ func (x *PublishPolicyResponse) String() string {
 func (*PublishPolicyResponse) ProtoMessage() {}
 
 func (x *PublishPolicyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[15]
+	mi := &file_aladdin_rbac_v1_rbac_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -868,7 +1215,7 @@ func (x *PublishPolicyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishPolicyResponse.ProtoReflect.Descriptor instead.
 func (*PublishPolicyResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{15}
+	return file_aladdin_rbac_v1_rbac_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PublishPolicyResponse) GetChangeId() string {
@@ -936,13 +1283,30 @@ const file_aladdin_rbac_v1_rbac_proto_rawDesc = "" +
 	"\n" +
 	"subject_id\x18\x01 \x01(\tR\tsubjectId\x12\x17\n" +
 	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12\x14\n" +
-	"\x05scope\x18\x03 \x01(\tR\x05scope\"I\n" +
+	"\x05scope\x18\x03 \x01(\tR\x05scope\">\n" +
+	"\x05Scope\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\")\n" +
+	"\x11ListScopesRequest\x12\x14\n" +
+	"\x05scope\x18\x01 \x01(\tR\x05scope\"D\n" +
+	"\x12ListScopesResponse\x12.\n" +
+	"\x06scopes\x18\x01 \x03(\v2\x16.aladdin.rbac.v1.ScopeR\x06scopes\"^\n" +
+	"\x0fPutScopeRequest\x12\x14\n" +
+	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12!\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\"@\n" +
+	"\x10PutScopeResponse\x12,\n" +
+	"\x05scope\x18\x01 \x01(\v2\x16.aladdin.rbac.v1.ScopeR\x05scope\">\n" +
+	"\x12DeleteScopeRequest\x12\x14\n" +
+	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"\x15\n" +
+	"\x13DeleteScopeResponse\"I\n" +
 	"\x14PublishPolicyRequest\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x1b\n" +
 	"\tchange_id\x18\x02 \x01(\tR\bchangeId\"e\n" +
 	"\x15PublishPolicyResponse\x12\x1b\n" +
 	"\tchange_id\x18\x01 \x01(\tR\bchangeId\x12/\n" +
-	"\x13invalidated_entries\x18\x02 \x01(\x05R\x12invalidatedEntries2\xbe\x06\n" +
+	"\x13invalidated_entries\x18\x02 \x01(\x05R\x12invalidatedEntries2\x90\t\n" +
 	"\vRBACService\x12g\n" +
 	"\aGetRole\x12\x1f.aladdin.rbac.v1.GetRoleRequest\x1a .aladdin.rbac.v1.GetRoleResponse\"\x19\x8a\x88'\x0erbac.role.read\x90\x88'\x01\x90\x02\x01\x12m\n" +
 	"\tListRoles\x12!.aladdin.rbac.v1.ListRolesRequest\x1a\".aladdin.rbac.v1.ListRolesResponse\"\x19\x8a\x88'\x0erbac.role.read\x90\x88'\x01\x90\x02\x01\x12e\n" +
@@ -951,7 +1315,11 @@ const file_aladdin_rbac_v1_rbac_proto_rawDesc = "" +
 	"DeleteRole\x12\".aladdin.rbac.v1.DeleteRoleRequest\x1a#.aladdin.rbac.v1.DeleteRoleResponse\"\x17\x8a\x88'\x0frbac.role.write\x90\x88'\x01\x12r\n" +
 	"\n" +
 	"AssignRole\x12\".aladdin.rbac.v1.AssignRoleRequest\x1a#.aladdin.rbac.v1.AssignRoleResponse\"\x1b\x8a\x88'\x13rbac.subject.assign\x90\x88'\x01\x12\x8e\x01\n" +
-	"\x13ListSubjectBindings\x12+.aladdin.rbac.v1.ListSubjectBindingsRequest\x1a,.aladdin.rbac.v1.ListSubjectBindingsResponse\"\x1c\x8a\x88'\x11rbac.subject.read\x90\x88'\x01\x90\x02\x01\x12{\n" +
+	"\x13ListSubjectBindings\x12+.aladdin.rbac.v1.ListSubjectBindingsRequest\x1a,.aladdin.rbac.v1.ListSubjectBindingsResponse\"\x1c\x8a\x88'\x11rbac.subject.read\x90\x88'\x01\x90\x02\x01\x12q\n" +
+	"\n" +
+	"ListScopes\x12\".aladdin.rbac.v1.ListScopesRequest\x1a#.aladdin.rbac.v1.ListScopesResponse\"\x1a\x8a\x88'\x0frbac.scope.read\x90\x88'\x01\x90\x02\x01\x12i\n" +
+	"\bPutScope\x12 .aladdin.rbac.v1.PutScopeRequest\x1a!.aladdin.rbac.v1.PutScopeResponse\"\x18\x8a\x88'\x10rbac.scope.write\x90\x88'\x01\x12r\n" +
+	"\vDeleteScope\x12#.aladdin.rbac.v1.DeleteScopeRequest\x1a$.aladdin.rbac.v1.DeleteScopeResponse\"\x18\x8a\x88'\x10rbac.scope.write\x90\x88'\x01\x12{\n" +
 	"\rPublishPolicy\x12%.aladdin.rbac.v1.PublishPolicyRequest\x1a&.aladdin.rbac.v1.PublishPolicyResponse\"\x1b\x8a\x88'\x13rbac.policy.publish\x90\x88'\x01B<Z:github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1;rbacv1b\x06proto3"
 
 var (
@@ -966,7 +1334,7 @@ func file_aladdin_rbac_v1_rbac_proto_rawDescGZIP() []byte {
 	return file_aladdin_rbac_v1_rbac_proto_rawDescData
 }
 
-var file_aladdin_rbac_v1_rbac_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_aladdin_rbac_v1_rbac_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_aladdin_rbac_v1_rbac_proto_goTypes = []any{
 	(*Role)(nil),                        // 0: aladdin.rbac.v1.Role
 	(*GetRoleRequest)(nil),              // 1: aladdin.rbac.v1.GetRoleRequest
@@ -982,8 +1350,15 @@ var file_aladdin_rbac_v1_rbac_proto_goTypes = []any{
 	(*ListSubjectBindingsRequest)(nil),  // 11: aladdin.rbac.v1.ListSubjectBindingsRequest
 	(*ListSubjectBindingsResponse)(nil), // 12: aladdin.rbac.v1.ListSubjectBindingsResponse
 	(*RoleBinding)(nil),                 // 13: aladdin.rbac.v1.RoleBinding
-	(*PublishPolicyRequest)(nil),        // 14: aladdin.rbac.v1.PublishPolicyRequest
-	(*PublishPolicyResponse)(nil),       // 15: aladdin.rbac.v1.PublishPolicyResponse
+	(*Scope)(nil),                       // 14: aladdin.rbac.v1.Scope
+	(*ListScopesRequest)(nil),           // 15: aladdin.rbac.v1.ListScopesRequest
+	(*ListScopesResponse)(nil),          // 16: aladdin.rbac.v1.ListScopesResponse
+	(*PutScopeRequest)(nil),             // 17: aladdin.rbac.v1.PutScopeRequest
+	(*PutScopeResponse)(nil),            // 18: aladdin.rbac.v1.PutScopeResponse
+	(*DeleteScopeRequest)(nil),          // 19: aladdin.rbac.v1.DeleteScopeRequest
+	(*DeleteScopeResponse)(nil),         // 20: aladdin.rbac.v1.DeleteScopeResponse
+	(*PublishPolicyRequest)(nil),        // 21: aladdin.rbac.v1.PublishPolicyRequest
+	(*PublishPolicyResponse)(nil),       // 22: aladdin.rbac.v1.PublishPolicyResponse
 }
 var file_aladdin_rbac_v1_rbac_proto_depIdxs = []int32{
 	0,  // 0: aladdin.rbac.v1.GetRoleResponse.role:type_name -> aladdin.rbac.v1.Role
@@ -991,25 +1366,33 @@ var file_aladdin_rbac_v1_rbac_proto_depIdxs = []int32{
 	0,  // 2: aladdin.rbac.v1.PutRoleRequest.role:type_name -> aladdin.rbac.v1.Role
 	0,  // 3: aladdin.rbac.v1.PutRoleResponse.role:type_name -> aladdin.rbac.v1.Role
 	13, // 4: aladdin.rbac.v1.ListSubjectBindingsResponse.bindings:type_name -> aladdin.rbac.v1.RoleBinding
-	1,  // 5: aladdin.rbac.v1.RBACService.GetRole:input_type -> aladdin.rbac.v1.GetRoleRequest
-	3,  // 6: aladdin.rbac.v1.RBACService.ListRoles:input_type -> aladdin.rbac.v1.ListRolesRequest
-	5,  // 7: aladdin.rbac.v1.RBACService.PutRole:input_type -> aladdin.rbac.v1.PutRoleRequest
-	7,  // 8: aladdin.rbac.v1.RBACService.DeleteRole:input_type -> aladdin.rbac.v1.DeleteRoleRequest
-	9,  // 9: aladdin.rbac.v1.RBACService.AssignRole:input_type -> aladdin.rbac.v1.AssignRoleRequest
-	11, // 10: aladdin.rbac.v1.RBACService.ListSubjectBindings:input_type -> aladdin.rbac.v1.ListSubjectBindingsRequest
-	14, // 11: aladdin.rbac.v1.RBACService.PublishPolicy:input_type -> aladdin.rbac.v1.PublishPolicyRequest
-	2,  // 12: aladdin.rbac.v1.RBACService.GetRole:output_type -> aladdin.rbac.v1.GetRoleResponse
-	4,  // 13: aladdin.rbac.v1.RBACService.ListRoles:output_type -> aladdin.rbac.v1.ListRolesResponse
-	6,  // 14: aladdin.rbac.v1.RBACService.PutRole:output_type -> aladdin.rbac.v1.PutRoleResponse
-	8,  // 15: aladdin.rbac.v1.RBACService.DeleteRole:output_type -> aladdin.rbac.v1.DeleteRoleResponse
-	10, // 16: aladdin.rbac.v1.RBACService.AssignRole:output_type -> aladdin.rbac.v1.AssignRoleResponse
-	12, // 17: aladdin.rbac.v1.RBACService.ListSubjectBindings:output_type -> aladdin.rbac.v1.ListSubjectBindingsResponse
-	15, // 18: aladdin.rbac.v1.RBACService.PublishPolicy:output_type -> aladdin.rbac.v1.PublishPolicyResponse
-	12, // [12:19] is the sub-list for method output_type
-	5,  // [5:12] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	14, // 5: aladdin.rbac.v1.ListScopesResponse.scopes:type_name -> aladdin.rbac.v1.Scope
+	14, // 6: aladdin.rbac.v1.PutScopeResponse.scope:type_name -> aladdin.rbac.v1.Scope
+	1,  // 7: aladdin.rbac.v1.RBACService.GetRole:input_type -> aladdin.rbac.v1.GetRoleRequest
+	3,  // 8: aladdin.rbac.v1.RBACService.ListRoles:input_type -> aladdin.rbac.v1.ListRolesRequest
+	5,  // 9: aladdin.rbac.v1.RBACService.PutRole:input_type -> aladdin.rbac.v1.PutRoleRequest
+	7,  // 10: aladdin.rbac.v1.RBACService.DeleteRole:input_type -> aladdin.rbac.v1.DeleteRoleRequest
+	9,  // 11: aladdin.rbac.v1.RBACService.AssignRole:input_type -> aladdin.rbac.v1.AssignRoleRequest
+	11, // 12: aladdin.rbac.v1.RBACService.ListSubjectBindings:input_type -> aladdin.rbac.v1.ListSubjectBindingsRequest
+	15, // 13: aladdin.rbac.v1.RBACService.ListScopes:input_type -> aladdin.rbac.v1.ListScopesRequest
+	17, // 14: aladdin.rbac.v1.RBACService.PutScope:input_type -> aladdin.rbac.v1.PutScopeRequest
+	19, // 15: aladdin.rbac.v1.RBACService.DeleteScope:input_type -> aladdin.rbac.v1.DeleteScopeRequest
+	21, // 16: aladdin.rbac.v1.RBACService.PublishPolicy:input_type -> aladdin.rbac.v1.PublishPolicyRequest
+	2,  // 17: aladdin.rbac.v1.RBACService.GetRole:output_type -> aladdin.rbac.v1.GetRoleResponse
+	4,  // 18: aladdin.rbac.v1.RBACService.ListRoles:output_type -> aladdin.rbac.v1.ListRolesResponse
+	6,  // 19: aladdin.rbac.v1.RBACService.PutRole:output_type -> aladdin.rbac.v1.PutRoleResponse
+	8,  // 20: aladdin.rbac.v1.RBACService.DeleteRole:output_type -> aladdin.rbac.v1.DeleteRoleResponse
+	10, // 21: aladdin.rbac.v1.RBACService.AssignRole:output_type -> aladdin.rbac.v1.AssignRoleResponse
+	12, // 22: aladdin.rbac.v1.RBACService.ListSubjectBindings:output_type -> aladdin.rbac.v1.ListSubjectBindingsResponse
+	16, // 23: aladdin.rbac.v1.RBACService.ListScopes:output_type -> aladdin.rbac.v1.ListScopesResponse
+	18, // 24: aladdin.rbac.v1.RBACService.PutScope:output_type -> aladdin.rbac.v1.PutScopeResponse
+	20, // 25: aladdin.rbac.v1.RBACService.DeleteScope:output_type -> aladdin.rbac.v1.DeleteScopeResponse
+	22, // 26: aladdin.rbac.v1.RBACService.PublishPolicy:output_type -> aladdin.rbac.v1.PublishPolicyResponse
+	17, // [17:27] is the sub-list for method output_type
+	7,  // [7:17] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_aladdin_rbac_v1_rbac_proto_init() }
@@ -1024,7 +1407,7 @@ func file_aladdin_rbac_v1_rbac_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aladdin_rbac_v1_rbac_proto_rawDesc), len(file_aladdin_rbac_v1_rbac_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

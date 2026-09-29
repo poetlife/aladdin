@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as identityApi from '../api/identity'
 import * as profileApi from '../api/profile'
+import * as rbacApi from '../api/rbac'
 import { SessionProvider } from '../auth'
+import { ScopesPage } from '../pages/ScopesPage'
 import { ThemeProvider } from '../theme'
 import { installMatchMedia } from '../test/match-media'
 import { AppLayout } from './AppLayout'
@@ -29,6 +31,9 @@ vi.mock('../api/rbac', () => ({
   listRoles: vi.fn(),
   listSubjectBindings: vi.fn(),
   assignRole: vi.fn(),
+  listScopes: vi.fn(),
+  putScope: vi.fn(),
+  deleteScope: vi.fn(),
 }))
 
 vi.mock('../api/profile', () => ({
@@ -64,6 +69,7 @@ async function renderShell(path = '/'): Promise<HTMLElement> {
                 <Route path="/docs/cli" element={<p>命令行内容</p>} />
                 <Route path="/access/roles" element={<p>角色定义内容</p>} />
                 <Route path="/access/subjects" element={<p>人员授权内容</p>} />
+                <Route path="/access/scopes" element={<ScopesPage />} />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -296,7 +302,7 @@ describe('权限分组与管理范围', () => {
     expect(container.textContent).not.toContain('<global>')
   })
 
-  it('输入「全局」并回车后，提交的是空范围', async () => {
+    it('输入「全局」并回车后，提交的是空范围', async () => {
     installMatchMedia(false)
 
     const container = await renderAuthenticated([], '/', 'tenant/acme')
@@ -317,5 +323,52 @@ describe('权限分组与管理范围', () => {
 
     expect(identityApi.getSessionPermissions).toHaveBeenLastCalledWith('')
     expect(globalThis.localStorage.getItem('aladdin.scope')).toBe('')
+  })
+
+  // 范围目录由外壳持有：范围页新建之后，顶栏的候选必须立刻跟着变。
+  // 三处各拉一份列表时这一条会失败——界面自相矛盾（见 web/src/rbac/scopes-context.tsx）。
+  it('在范围页新建的范围，立刻出现在顶栏的候选里', async () => {
+    installMatchMedia(false)
+    vi.mocked(rbacApi.listScopes)
+      .mockResolvedValueOnce({
+        $typeName: 'aladdin.rbac.v1.ListScopesResponse',
+        scopes: [{ $typeName: 'aladdin.rbac.v1.Scope', path: 'tenant/acme', displayName: '' }],
+      })
+      // 建完之后服务端的那一份就该多出这一条。
+      .mockResolvedValue({
+        $typeName: 'aladdin.rbac.v1.ListScopesResponse',
+        scopes: [{ $typeName: 'aladdin.rbac.v1.Scope', path: 'tenant/acme/project', displayName: '' }],
+      })
+    vi.mocked(rbacApi.putScope).mockResolvedValue({
+      $typeName: 'aladdin.rbac.v1.PutScopeResponse',
+      scope: { $typeName: 'aladdin.rbac.v1.Scope', path: 'tenant/acme/project', displayName: '' },
+    })
+
+    const container = await renderAuthenticated(
+      ['rbac.scope.read', 'rbac.scope.write'],
+      '/access/scopes',
+    )
+
+    const pathInput = container.querySelector('#path')
+    expect(pathInput, '范围页的路径输入框没渲染出来').not.toBeNull()
+    typeInto(pathInput as Element, 'tenant/acme/project')
+    await act(async () => {
+      const submit = [...container.querySelectorAll('button')].find(
+        (b) => (b.textContent ?? '').replace(/\s+/g, '') === '登记',
+      )
+      submit?.click()
+    })
+    await act(async () => {})
+
+    // 打开顶栏那个控件：候选里应该有它。
+    const auto = container.querySelector('.ant-select-auto-complete')
+    expect(auto, '顶栏没有管理范围控件').not.toBeNull()
+    const trigger = (auto as Element).querySelector('.ant-select-content') ?? auto
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+
+    const options = [...document.querySelectorAll('.ant-select-item-option')].map((o) => o.textContent)
+    expect(options).toContain('tenant/acme/project')
   })
 })

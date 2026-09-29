@@ -57,6 +57,17 @@ func ApplyBootstrap(
 	}
 	scope := rbac.ParseScope(cfg.Scope)
 
+	// 把引导范围登记进范围目录。**不能漏**：新部署的范围目录是空的，而管理员
+	// 登录后第一件要能做成的事就是"看到我在哪个范围里"（见
+	// docs/design/rbac/scopes.md）。这与"引导主体的默认作用域必须一起设置"
+	// 是同一类坑——少了它，刚建立的管理员面前是一片空白。
+	// 全局不登记：它是模型的根，不是目录里的一条。
+	if scope != rbac.GlobalScope {
+		if err := store.PutScope(ctx, rbac.ScopeDefinition{Path: string(scope)}); err != nil {
+			return fmt.Errorf("登记引导范围失败: %w", err)
+		}
+	}
+
 	if err := ensureBootstrapSubject(ctx, store, subject, scope); err != nil {
 		return err
 	}

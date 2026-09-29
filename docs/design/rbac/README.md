@@ -30,6 +30,7 @@ aladdin 是前端（React + antd）、服务端（Go + gRPC）、命令行（cob
 | 子模块 | 职责 | 文件 |
 |--------|------|------|
 | 角色与权限模型 | 主体、角色、权限、作用域的定义与相互关系 | [role-model.md](role-model.md) |
+| 作用域的登记与生命周期 | 登记表、绑定必须指向已登记范围、删除的引用约束、空范围的两种含义 | [scopes.md](scopes.md) |
 | 鉴权决策 | 决策语义、决策点、缓存与失效、审计留痕 | [enforcement.md](enforcement.md) |
 | 服务端接入 | 协议选择、处理链路、方法到权限码的映射、拒绝语义 | [server-permissions.md](server-permissions.md) |
 | 前端接入 | 会话权限码获取、路由与组件级裁剪 | [frontend-permissions.md](frontend-permissions.md) |

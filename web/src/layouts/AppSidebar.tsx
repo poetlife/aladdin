@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChevronDown,
   CircleUserRound,
+  FolderTree,
   KeyRound,
   Lamp,
   LayoutDashboard,
@@ -61,6 +62,8 @@ const NAV: NavEntry[] = [
   // 两者同属一件事，因此收在一个分组里，而不是平铺成两个看不出关系的入口。
   { path: '/access/roles', label: '角色定义', icon: <ShieldCheck size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacRoleRead },
   { path: '/access/subjects', label: '人员授权', icon: <UserCog size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacSubjectRead },
+  // 范围目录：绑定只能指向已登记的范围，因此它在给人授权之前（见 scopes.md）。
+  { path: '/access/scopes', label: '范围', icon: <FolderTree size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacScopeRead },
   // 权限码目录是只读对照（码 + 说明 + 直接声明它的角色），与角色定义同一道权限门。
   { path: '/access/codes', label: '权限码', icon: <KeyRound size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacRoleRead },
   // 文档区也不需要权限码：它讲的是"怎么把命令行装上并登录"，

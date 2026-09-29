@@ -21,6 +21,7 @@
 - 顶栏控件回答的问题是"**我在哪个授权范围下工作**"，它的标题就叫**管理范围**，不叫裸的"作用域"。
 - 候选项来自**当前主体自己的角色绑定范围**（他的绑定在哪些范围上，那些范围就是他最可能管理的范围）；候选不够时允许直接手输路径。列不出绑定时（没有读主体的权限、主体还没登记、这次读取失败）不给任何候选，只留手输，并在提示里说明可以手输。
 - 范围**留空表示"不指定"**：会话查询会回落到凭证的默认作用域，并把实际使用的那个回传回来。因此框里显示的是**解析结果**，而不是用户敲进去的字面量——这也正是"随手填个范围就把自己关在门外"不可能发生的原因。
+- **注意这与授予时的空范围不是一回事**：管理面（授予角色）的空范围就是全局。两种含义的对照见 [scopes.md](scopes.md)，不得互相替代——因此「全局」是授予表单里合法的目标，却不是顶栏的合法候选。
 - 界面上一律显示「**全局**」；空值与「全局」是同一个意思的两种写法。`<global>` 这类内部写法不出现在面向使用者的文字里。
 - 它必须带一句解释：范围是层级路径、**父包含子**、最上层是「全局」，以及它与权限码「领域」不是一回事。
 - 改管理范围等同于**会话权限变更**：必须重新获取权限码集合（见 [frontend-permissions.md](frontend-permissions.md)），不允许沿用旧集合。
@@ -95,7 +96,9 @@
 | 顶栏管理范围控件 | [web/src/layouts/AppHeader.tsx](../../../web/src/layouts/AppHeader.tsx) |
 | 范围的显示格式化（空值 → 「全局」） | [web/src/rbac/format-scope.ts](../../../web/src/rbac/format-scope.ts) |
 | 候选项来源（当前主体的绑定范围） | [web/src/rbac/use-my-scopes.ts](../../../web/src/rbac/use-my-scopes.ts) |
+| 候选项来源（已登记的范围目录） | [web/src/rbac/use-scopes.ts](../../../web/src/rbac/use-scopes.ts) |
 | 人员授权页 | [web/src/pages/SubjectBindingsPage.tsx](../../../web/src/pages/SubjectBindingsPage.tsx) |
+| 范围页 | [web/src/pages/ScopesPage.tsx](../../../web/src/pages/ScopesPage.tsx) |
 | 角色定义页 | [web/src/pages/RolesPage.tsx](../../../web/src/pages/RolesPage.tsx) |
 | 权限码目录页 | [web/src/pages/PermissionCatalogPage.tsx](../../../web/src/pages/PermissionCatalogPage.tsx) |
 | 权限码目录数据（由权限目录生成） | [web/src/gen/permission-catalog.ts](../../../web/src/gen/permission-catalog.ts) |

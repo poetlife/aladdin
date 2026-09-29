@@ -3,6 +3,7 @@ package rbac
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -11,6 +12,12 @@ var ErrRoleNotFound = errors.New("角色不存在")
 
 // ErrSubjectNotFound 表示主体不存在或已被停用。
 var ErrSubjectNotFound = errors.New("主体不存在")
+
+// ErrScopeNotFound 表示指定范围未登记。
+//
+// 它与"登记表里没有这条"是一回事：范围目录是登记制的，没登记过就是不存在
+// （见 docs/design/rbac/scopes.md）。
+var ErrScopeNotFound = errors.New("范围未登记")
 
 // ErrStoreUnavailable 表示存储不可用。
 //
@@ -80,20 +87,47 @@ type MutableStore interface {
 
 	// BindingsOfRole 返回持有该角色的全部绑定，用于删除角色前的占用校验。
 	BindingsOfRole(ctx context.Context, roleID string) ([]RoleBinding, error)
+
+	// Scopes 返回全部已登记的范围（不含全局：它不是登记记录）。
+	Scopes(ctx context.Context) ([]ScopeDefinition, error)
+
+	// Scope 返回指定路径的登记记录，未登记时返回 ErrScopeNotFound。
+	Scope(ctx context.Context, path string) (ScopeDefinition, error)
+
+	// PutScope 登记一个范围，或改它的显示名。调用方需先确认路径不是全局
+	// （全局不是登记记录，见 docs/design/rbac/scopes.md）。
+	PutScope(ctx context.Context, scope ScopeDefinition) error
+
+	// DeleteScope 删除一条登记记录。调用方需先完成约束校验；未登记时返回
+	// ErrScopeNotFound。
+	DeleteScope(ctx context.Context, path string) error
+
+	// BindingsUnderScope 返回落在 scope 上**以及其全部后代上**的绑定，
+	// 用于删除范围前的引用校验。
+	//
+	// 包含语义复用 Scope.Contains（唯一实现），实现里不得另写一套前缀匹配：
+	// 范围路径是自由文本，SQL 里的 LIKE 还要处理 % 与 _ 的转义，而两份匹配
+	// 迟早会有一份漏掉边界。
+	BindingsUnderScope(ctx context.Context, scope Scope) ([]RoleBinding, error)
 }
 
 // MemoryStore 是 Store 的内存实现，用于测试与本地开发。
 type MemoryStore struct {
 	mu       sync.RWMutex
 	roles    map[string]RoleDefinition
+	scopes   map[string]ScopeDefinition
 	subjects map[string]Subject
 	bindings []RoleBinding
 }
 
 // NewMemoryStore 构造一个内存存储，并载入内置角色。
+//
+// **不预置任何范围**：范围是部署的登记数据，全局不是登记记录，因此一个空库
+// 的范围目录本来就是空的（见 docs/design/rbac/scopes.md）。
 func NewMemoryStore() *MemoryStore {
 	s := &MemoryStore{
 		roles:    map[string]RoleDefinition{},
+		scopes:   map[string]ScopeDefinition{},
 		subjects: map[string]Subject{},
 	}
 	for _, r := range BuiltinRoles {
@@ -171,6 +205,67 @@ func (s *MemoryStore) BindingsOfRole(_ context.Context, roleID string) ([]RoleBi
 		}
 	}
 	return SortBindings(out), nil
+}
+
+// BindingsUnderScope 实现 MutableStore。
+func (s *MemoryStore) BindingsUnderScope(_ context.Context, scope Scope) ([]RoleBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []RoleBinding
+	for _, b := range s.bindings {
+		// 包含语义只有一处实现：这里不自己比字符串前缀。
+		if scope.Contains(b.Scope) {
+			out = append(out, b)
+		}
+	}
+	return SortBindings(out), nil
+}
+
+// Scopes 实现 Store。
+func (s *MemoryStore) Scopes(_ context.Context) ([]ScopeDefinition, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]ScopeDefinition, 0, len(s.scopes))
+	for _, sc := range s.scopes {
+		out = append(out, sc)
+	}
+	return SortScopes(out), nil
+}
+
+// Scope 实现 Store。
+func (s *MemoryStore) Scope(_ context.Context, path string) (ScopeDefinition, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sc, ok := s.scopes[path]
+	if !ok {
+		return ScopeDefinition{}, fmt.Errorf("%w: %s", ErrScopeNotFound, path)
+	}
+	return sc, nil
+}
+
+// PutScope 实现 MutableStore。
+//
+// 与 PutRole 一样只执行、不判定：路径是不是全局由调用方先校验
+// （见 docs/design/rbac/scopes.md）。
+func (s *MemoryStore) PutScope(_ context.Context, scope ScopeDefinition) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scopes[scope.Path] = scope
+	return nil
+}
+
+// DeleteScope 实现 MutableStore。
+//
+// 删除不存在的范围返回 ErrScopeNotFound，而不是静默成功——多半意味着调用方
+// 拼错了路径，与删除角色同一个判据。
+func (s *MemoryStore) DeleteScope(_ context.Context, path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.scopes[path]; !ok {
+		return fmt.Errorf("%w: %s", ErrScopeNotFound, path)
+	}
+	delete(s.scopes, path)
+	return nil
 }
 
 // Roles 实现 Store。

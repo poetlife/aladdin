@@ -26,6 +26,14 @@ func SortRoles(roles []RoleDefinition) []RoleDefinition {
 	return roles
 }
 
+// SortScopes 使范围列表按路径有序，便于测试断言与前端差分。
+//
+// 就地排序并返回同一个切片，便于在存储实现的返回处直接串联调用。
+func SortScopes(scopes []ScopeDefinition) []ScopeDefinition {
+	sort.Slice(scopes, func(i, j int) bool { return scopes[i].Path < scopes[j].Path })
+	return scopes
+}
+
 // SortBindings 使绑定列表按（主体, 角色, 作用域）有序。
 //
 // 一条规则覆盖两种查询：按主体反查时主体相同，退化为主体内部的（角色,

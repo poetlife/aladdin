@@ -10,6 +10,7 @@ import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { PermissionCatalogPage } from './pages/PermissionCatalogPage'
 import { RolesPage } from './pages/RolesPage'
+import { ScopesPage } from './pages/ScopesPage'
 import { SubjectBindingsPage } from './pages/SubjectBindingsPage'
 import { PermissionCodes } from './gen/permission-codes'
 import { CliPage } from './pages/docs/CliPage'
@@ -79,6 +80,12 @@ export const router = createBrowserRouter([
           {
             element: <RequirePermission require={[PermissionCodes.RbacSubjectRead]} />,
             children: [{ path: '/access/subjects', element: <SubjectBindingsPage /> }],
+          },
+          // 范围目录：这个部署里登记了哪些范围。绑定只能指向已登记的范围
+          //（见 docs/design/rbac/scopes.md）。
+          {
+            element: <RequirePermission require={[PermissionCodes.RbacScopeRead]} />,
+            children: [{ path: '/access/scopes', element: <ScopesPage /> }],
           },
           // 权限管理原先挂在 /roles 下。旧地址留一次跳转：部署文档里
           // 的 SPA 回落冒烟步骤正是拿它当例子（见 docs/deploy.md）。
