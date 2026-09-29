@@ -13,6 +13,7 @@ import {
   WhoAmIResponseSchema,
 } from '../../gen/proto/aladdin/identity/v1/identity_pb'
 import {
+  ContentSlot,
   GetProjectResponseSchema,
   PreviewDraftResponseSchema,
   ProjectSchema,
@@ -86,7 +87,11 @@ beforeEach(() => {
 
   vi.mocked(galaxyApi.getProject).mockResolvedValue(
     create(GetProjectResponseSchema, {
-      project: create(ProjectSchema, { id: 'p1', name: '我的工程' }),
+      project: create(ProjectSchema, {
+        id: 'p1',
+        name: '我的工程',
+        slots: [{ slot: ContentSlot.SITE }],
+      }),
     }),
   )
   vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
@@ -113,7 +118,7 @@ describe('单独打开的预览页', () => {
     expect(sandbox).toContain('allow-scripts')
     expect(iframe(container).getAttribute('src')).toBe(previewURL)
     // 它读的是**草稿**，因此调用的是预览入口，而不是发布地址。
-    expect(galaxyApi.previewDraft).toHaveBeenCalledWith('p1')
+    expect(galaxyApi.previewDraft).toHaveBeenCalledWith('p1', ContentSlot.SITE)
   })
 
   it('地址原样使用：前端不拼路径，也不往里塞字节', async () => {

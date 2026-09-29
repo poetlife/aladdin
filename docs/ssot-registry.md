@@ -46,11 +46,11 @@
 | 一个路径是不是文件组里的一条条目，以及它是文本还是资产（发布态取字节的分派） | 文件组的集合成员查询（只查表，不解析路径） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
 | 内容对象的键（按内容摘要寻址）与"仅当不存在时写入" | 内容对象的写入入口（含写入后的摘要核对） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
 | 发布态文本条目的响应形状（内容类型、`ETag`、可缓存性） | 发布态的文本响应入口 | [internal/server/galaxy_public.go](../internal/server/galaxy_public.go) |
-| 一个文件是文本还是资产（扩展名白名单，**取值按形态不同**） | 文本类型白名单（唯一入口，命令行与服务端共用同一张表） | [internal/galaxy/site.go](../internal/galaxy/site.go) |
+| 一个文件是文本还是资产（扩展名白名单，**取值按内容槽不同**） | 文本类型白名单（唯一入口，命令行与服务端共用同一张表） | [internal/galaxy/content_slot.go](../internal/galaxy/content_slot.go) |
 | 文档站的导航（取哪些文件、按什么序、标题从哪里来） | 导航的派生入口（只取 markdown） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
-| 一个工程的内容形态与入口路径 | 站点形态的解析入口 | [internal/galaxy/site.go](../internal/galaxy/site.go) |
-| 一个工程的发布根（构建时注入与发布态地址共用） | 发布根的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
-| markdown 到 HTML 的渲染（`docs` 形态） | 文档渲染入口（确定性的唯一实现，发布时使用） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
+| 一个工程有哪些内容槽、每个槽的入口路径与地址，以及哪一段路径是保留段 | 内容槽的解析入口（槽的合法取值、入口、保留段共用这一处判断） | [internal/galaxy/content_slot.go](../internal/galaxy/content_slot.go) |
+| 一个工程的发布根（构建时注入与发布态地址共用，**按槽派生**；槽根带结尾斜杠，不带时由交付入口 301 过去） | 发布根的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
+| markdown 到 HTML 的渲染（`docs` 槽） | 文档渲染入口（确定性的唯一实现，发布时使用） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
 | 发布产物交付时的内容安全策略 | CSP 响应头的构造入口 | [internal/galaxy/csp.go](../internal/galaxy/csp.go) |
 | 上传方声明的类型能不能作为头像 | 头像的类型白名单（唯一入口；声明不等于验证，见直传） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
 | 上传方声明的类型能不能作为资产 | 资产的类型白名单与分档上限（唯一入口；声明不等于验证，见直传） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
@@ -146,7 +146,7 @@
 | 上传的字节怎么进对象存储（签发直传凭证、核对提交结果） | 直传的公共契约（生产实现是 COS，测试注入假实现） | [internal/objectstore/upload.go](../internal/objectstore/upload.go) / [internal/objectstore/cosupload/](../internal/objectstore/cosupload/) |
 | 工程、文件清单（草稿与版本）、资产与发布产物清单的持久化数据 | galaxy 的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) / [internal/galaxy/gormstore/](../internal/galaxy/gormstore/) |
 | 直传凭证里那条策略长什么样（动作、资源、类型与长度条件） | 策略的构造入口 | [internal/objectstore/cosupload/policy.go](../internal/objectstore/cosupload/policy.go) |
-| 公开区的对象与它的地址 | 上架入口（公开区唯一的写入口，按（内容摘要，类型）幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
+| 公开区的对象与它的地址 | 上架入口（公开区唯一的写入口，按（工程，内容摘要，类型）幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
 | 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用） | [internal/galaxy/project.go](../internal/galaxy/project.go) |
 | 表结构与迁移清单（库里长什么样） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/schema.go](../internal/database/schema.go) / [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |
 | 服务端配置（监听地址、日志级别与路径） | 服务端 `config.yml` + `config.local.yml`，经 `config.LoadServer` 读取 | [internal/config/load.go](../internal/config/load.go) |

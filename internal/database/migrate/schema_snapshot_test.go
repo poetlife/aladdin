@@ -39,18 +39,22 @@ table galaxy_assets
 table galaxy_drafts
   manifest text pk=false null=true
   project_id text pk=true null=true
+  slot text pk=true null=true
   updated_at datetime pk=false null=true
 table galaxy_preview_grants
   created_at datetime pk=false null=true
   expires_at datetime pk=false null=true
   project_id text pk=false null=true
+  slot text pk=false null=true
   subject_id text pk=false null=true
   token text pk=true null=true
+table galaxy_project_slots
+  current_publication_id text pk=false null=true
+  project_id text pk=true null=true
+  slot text pk=true null=true
 table galaxy_projects
   created_at datetime pk=false null=true
-  current_publication_id text pk=false null=true
   description text pk=false null=true
-  form text pk=false null=true
   id text pk=true null=true
   name text pk=false null=true
   owner_subject_id text pk=false null=true
@@ -61,6 +65,7 @@ table galaxy_publications
   project_id text pk=false null=true
   published_at datetime pk=false null=true
   published_by_subject_id text pk=false null=true
+  slot text pk=false null=true
   version_id text pk=false null=true
 table galaxy_versions
   id text pk=true null=true
@@ -69,6 +74,7 @@ table galaxy_versions
   render_rules_version integer pk=false null=true
   saved_at datetime pk=false null=true
   seq integer pk=false null=true
+  slot text pk=false null=true
 table identities
   display text pk=false null=true
   external_id text pk=true null=true

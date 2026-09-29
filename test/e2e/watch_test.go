@@ -160,7 +160,7 @@ func TestWatchSeesChangesOverBothProtocols(t *testing.T) {
 		t.Run(protocol.name, func(t *testing.T) {
 			h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 			client := connectGalaxy(t, h, testToken)
-			projectID := createProject(t, client, "订阅", galaxyv1.SiteForm_SITE_FORM_STATIC)
+			projectID := createProject(t, client, "订阅", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 			topic := galaxy.ProjectTopic(projectID)
 
 			watch := protocol.open(t, h, testToken, topic)
@@ -193,8 +193,8 @@ func TestWatchSeesChangesOverBothProtocols(t *testing.T) {
 func TestWatchCarriesMultipleTopicsOnOneStream(t *testing.T) {
 	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 	client := connectGalaxy(t, h, testToken)
-	first := createProject(t, client, "甲", galaxyv1.SiteForm_SITE_FORM_STATIC)
-	second := createProject(t, client, "乙", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	first := createProject(t, client, "甲", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
+	second := createProject(t, client, "乙", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 
 	watch := watchProtocols()[0].open(t, h, testToken, galaxy.ProjectTopic(first), galaxy.ProjectTopic(second))
 	watch.next(t) // 甲 的 RESYNC
@@ -244,7 +244,7 @@ func TestWatchRefusesPerTopic(t *testing.T) {
 				// 而一个不存在的工程会引入另一条拒因（NotFound），把断言搅浑。
 				ownerToken := injectGalaxyAuthor(t, h)
 				client := connectGalaxy(t, h, ownerToken)
-				projectID := createProject(t, client, "订阅", galaxyv1.SiteForm_SITE_FORM_STATIC)
+				projectID := createProject(t, client, "订阅", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 
 				got := protocol.refuse(t, h, tc.token, galaxy.ProjectTopic(projectID))
 				if got != tc.want {
@@ -264,7 +264,7 @@ func TestWatchRefusesSomeoneElsesProject(t *testing.T) {
 		t.Run(protocol.name, func(t *testing.T) {
 			h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 			owner := connectGalaxy(t, h, testToken)
-			projectID := createProject(t, owner, "别人的工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+			projectID := createProject(t, owner, "别人的工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 
 			// 第二个主体有同一个角色：它能创作，但只能碰自己的东西。
 			const otherToken = "e2e-watch-other-token"

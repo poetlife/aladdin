@@ -27,6 +27,7 @@ func (s *Store) GetPreviewGrant(ctx context.Context, token string) (galaxy.Previ
 	return galaxy.PreviewGrant{
 		Token:     rec.Token,
 		ProjectID: rec.ProjectID,
+		Slot:      galaxy.ContentSlot(rec.Slot),
 		SubjectID: rec.SubjectID,
 		ExpiresAt: rec.ExpiresAt,
 		CreatedAt: rec.CreatedAt,
@@ -43,6 +44,7 @@ func (s *Store) PutPreviewGrant(ctx context.Context, grant galaxy.PreviewGrant, 
 	rec := database.GalaxyPreviewGrantRecord{
 		Token:     grant.Token,
 		ProjectID: grant.ProjectID,
+		Slot:      string(grant.Slot),
 		SubjectID: grant.SubjectID,
 		ExpiresAt: grant.ExpiresAt,
 		CreatedAt: grant.CreatedAt,

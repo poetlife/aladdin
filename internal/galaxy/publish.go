@@ -60,7 +60,7 @@ func (s *Service) logStage(ctx context.Context, level, stage string, fields ...z
 	}
 }
 
-// Publish 把一个版本发布成对外可达的产物。
+// Publish 把**某一个槽的一个版本**发布成对外可达的产物。
 //
 // 四个阶段的顺序不可调换，且**检查点设在"产物落库"完成之后**：
 //
@@ -72,19 +72,21 @@ func (s *Service) logStage(ctx context.Context, level, stage string, fields ...z
 //     重试落在同一条记录上）。**整套一次性生效就落在这里**：切换是一个单点，
 //     因此不存在"入口是新的、而某一页还是旧的"。
 //
+// **它只碰这一个槽**：另一个槽的发布指针与地址不受影响。
+//
 // 准入由两把闸门共同决定：`galaxy.project.publish` 权限码（在 proto 的方法
 // 注解上声明，由鉴权拦截器执行）与工程归属（OwnedProject）。
-func (s *Service) Publish(ctx context.Context, subjectID, projectID, versionID string) (Publication, error) {
+func (s *Service) Publish(ctx context.Context, subjectID, projectID string, slot ContentSlot, versionID string) (Publication, error) {
 	if !s.publishEnabled() {
 		return Publication{}, ErrPublishUnavailable
 	}
-	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+	project, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot)
 	if err != nil {
 		return Publication{}, err
 	}
 	// **只能发布版本，不能发布草稿**：草稿是可变的，"发布一个可变的东西"
 	// 没有意义。因此这里读的是版本表，草稿清单根本不会被读到。
-	version, err := s.store.GetVersion(ctx, projectID, versionID)
+	version, err := s.store.GetVersion(ctx, projectID, slot, versionID)
 	if err != nil {
 		return Publication{}, err
 	}
@@ -94,7 +96,7 @@ func (s *Service) Publish(ctx context.Context, subjectID, projectID, versionID s
 
 	// 阶段一：受理与校验。不能发布则终止，**不留任何痕迹**（指针未动、
 	// 公开区无新对象、发布表无新行）。
-	artifacts, report, err := s.buildArtifacts(ctx, project, version.Manifest, false)
+	artifacts, report, err := s.buildArtifacts(ctx, project, slot, version.Manifest, false)
 	if err != nil {
 		return Publication{}, err
 	}
@@ -103,6 +105,7 @@ func (s *Service) Publish(ctx context.Context, subjectID, projectID, versionID s
 		s.logStage(ctx, "warn", stageValidate,
 			zap.String("publication_id", publicationID),
 			zap.String("project_id", projectID),
+			zap.String("slot", string(slot)),
 			zap.String("version_id", versionID),
 			zap.String("subject_id", subjectID),
 			zap.String("decision", "reject"),
@@ -112,6 +115,7 @@ func (s *Service) Publish(ctx context.Context, subjectID, projectID, versionID s
 	s.logStage(ctx, "info", stageValidate,
 		zap.String("publication_id", publicationID),
 		zap.String("project_id", projectID),
+		zap.String("slot", string(slot)),
 		zap.String("version_id", versionID),
 		zap.String("subject_id", subjectID),
 		zap.String("decision", "accept"))
@@ -152,6 +156,7 @@ func (s *Service) Publish(ctx context.Context, subjectID, projectID, versionID s
 		ID:                   publicationID,
 		ProjectID:            projectID,
 		VersionID:            versionID,
+		Slot:                 slot,
 		Manifest:             manifest,
 		PublishedBySubjectID: subjectID,
 		PublishedAt:          s.now(),
@@ -166,13 +171,14 @@ func (s *Service) Publish(ctx context.Context, subjectID, projectID, versionID s
 		zap.Int("new_objects", newObjects))
 
 	// 阶段四：切换与生效。指针切换是幂等的，且**只在这里**改变对外可见的结果。
-	if err := s.store.SetCurrentPublication(ctx, projectID, publicationID, s.now()); err != nil {
+	if err := s.store.SetCurrentPublication(ctx, projectID, slot, publicationID, s.now()); err != nil {
 		return Publication{}, err
 	}
 	s.publish(projectID)
 	s.logStage(ctx, "info", stageSwitch,
 		zap.String("publication_id", publicationID),
 		zap.String("project_id", projectID),
+		zap.String("slot", string(slot)),
 		zap.String("effective_at", publication.PublishedAt.Format(time.RFC3339)))
 	return publication, nil
 }
@@ -244,92 +250,115 @@ func sortStrings(values []string) {
 	}
 }
 
-// Unpublish 撤回发布：把发布指针置空，地址**立刻**不可达（不依赖缓存过期）。
+// Unpublish 撤回**某一个槽**的发布：把那个槽的发布指针置空，它的地址**立刻**
+// 不可达（不依赖缓存过期）。**另一个槽不受任何影响。**
 //
 // 发布记录**保留**，因此可以重新发布同一个版本。公开区的副本不因撤回而删除：
 // 它是一份独立对象，召回它需要一次对账。
-func (s *Service) Unpublish(ctx context.Context, subjectID, projectID string) error {
-	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+func (s *Service) Unpublish(ctx context.Context, subjectID, projectID string, slot ContentSlot) error {
+	project, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot)
 	if err != nil {
 		return err
 	}
-	if project.CurrentPublicationID == "" {
+	enabled, _ := project.FindSlot(slot)
+	if enabled.CurrentPublicationID == "" {
 		// 已经未发布：撤回是幂等的。**什么都没变就不发事件**——订阅者为一次
 		// 没有发生的变更重拉一遍是白费的。
 		return nil
 	}
-	if err := s.store.SetCurrentPublication(ctx, projectID, "", s.now()); err != nil {
+	if err := s.store.SetCurrentPublication(ctx, projectID, slot, "", s.now()); err != nil {
 		return err
 	}
 	s.publish(projectID)
 	return nil
 }
 
-// ProjectView 是工程元数据加上它的发布状态。
-//
-// 对外地址由服务端算好（见 public_origin.go 的派生入口），客户端不拼——拼一份
-// 就是第三个地址来源。
-type ProjectView struct {
-	Project Project
-	// Published 为真表示指针非空。它与"地址可用"是两件事：发布域没配置时
-	// 指针可能还在，而地址算不出来。
+// SlotView 是**一个内容槽**的对外状态。
+type SlotView struct {
+	Slot ContentSlot
+	// Published 为真表示这个槽的指针非空。它与"地址可用"是两件事：发布域
+	// 没配置时指针可能还在，而地址算不出来。
 	Published bool
-	// Publication 是当前发布记录，未发布时为零值。
+	// Publication 是这个槽的当前发布记录，未发布时为零值。
 	Publication Publication
-	// PublishedURL 是发布地址，未发布或发布域未配置时为空。
+	// PublishedURL 是这个槽的发布地址，未发布或发布域未配置时为空。
 	PublishedURL string
-	// BaseURL 是**发布根**，未配置发布域时为空。
+	// BaseURL 是这个槽的**发布根**，未配置发布域时为空。
 	//
-	// 它与是否已发布无关：构建命令用它（见 cli.md 的 `project base`），而"产物里
-	// 的绝对路径要成立"这件事不取决于页面发没发出去。
+	// 它与是否已发布无关：构建命令用它（见 cli.md 的 `project base`），而
+	// "产物里的绝对路径要成立"这件事不取决于页面发没发出去。
 	BaseURL string
 }
 
-// View 读出一个工程的对外状态。
-func (s *Service) View(ctx context.Context, project Project) (ProjectView, error) {
-	publication, published, err := s.CurrentPublication(ctx, project)
-	if err != nil {
-		return ProjectView{}, err
-	}
-	return ProjectView{
-		Project:      project,
-		Published:    published,
-		Publication:  publication,
-		PublishedURL: s.PageURL(project.ID),
-		BaseURL:      s.BaseURL(project.ID),
-	}, nil
+// ProjectView 是工程元数据加上**它每个槽**的发布状态。
+//
+// 每个槽一条，顺序与工程上的槽一致——**状态按槽分开**，因此没有"这个工程发布了
+// 没有"这样一个问题（站点发了、文档没发是完全正常的一档）。
+type ProjectView struct {
+	Project Project
+	Slots   []SlotView
 }
 
-// CurrentPublication 返回工程当前发布的那条记录与它的对外地址。
+// FindSlot 取一个槽的对外状态，未启用时第二个返回值为假。
+func (v ProjectView) FindSlot(slot ContentSlot) (SlotView, bool) {
+	for _, candidate := range v.Slots {
+		if candidate.Slot == slot {
+			return candidate, true
+		}
+	}
+	return SlotView{}, false
+}
+
+// View 读出一个工程**每个槽**的对外状态。
+func (s *Service) View(ctx context.Context, project Project) (ProjectView, error) {
+	views := make([]SlotView, 0, len(project.Slots))
+	for _, enabled := range project.Slots {
+		publication, published, err := s.CurrentPublication(ctx, project, enabled.Slot)
+		if err != nil {
+			return ProjectView{}, err
+		}
+		views = append(views, SlotView{
+			Slot:         enabled.Slot,
+			Published:    published,
+			Publication:  publication,
+			PublishedURL: s.PageURL(project.ID, enabled.Slot),
+			BaseURL:      s.BaseURL(project.ID, enabled.Slot),
+		})
+	}
+	return ProjectView{Project: project, Slots: views}, nil
+}
+
+// CurrentPublication 返回**某一个槽**当前发布的那条记录。
 //
-// 第二个返回值为假表示未发布（指针为空）。地址为空的可能有两种：发布域未配置
-// （此时发布本身也不可用），或这条记录是在配置还在时发布的——两种情况都如实
-// 反映"现在这个地址打不开"，而不是编一个出来。
-func (s *Service) CurrentPublication(ctx context.Context, project Project) (Publication, bool, error) {
-	if project.CurrentPublicationID == "" {
+// 第二个返回值为假表示这个槽未发布（指针为空）。地址为空的可能有两种：发布域
+// 未配置（此时发布本身也不可用），或这条记录是在配置还在时发布的——两种情况都
+// 如实反映"现在这个地址打不开"，而不是编一个出来。
+func (s *Service) CurrentPublication(ctx context.Context, project Project, slot ContentSlot) (Publication, bool, error) {
+	enabled, ok := project.FindSlot(slot)
+	if !ok || enabled.CurrentPublicationID == "" {
 		return Publication{}, false, nil
 	}
-	publication, err := s.store.GetPublication(ctx, project.CurrentPublicationID)
+	publication, err := s.store.GetPublication(ctx, enabled.CurrentPublicationID)
 	if err != nil {
 		return Publication{}, false, err
 	}
 	return publication, true, nil
 }
 
-// PageURL 返回一个工程的发布地址，未配置发布域时为空。
-func (s *Service) PageURL(projectID string) string {
-	return s.origin.PageURL(projectID)
+// PageURL 返回一个槽的发布地址，未配置发布域时为空。
+func (s *Service) PageURL(projectID string, slot ContentSlot) string {
+	return s.origin.PageURL(projectID, slot)
 }
 
-// BaseURL 返回一个工程的**发布根**，未配置发布域时为空。
+// BaseURL 返回一个槽的**发布根**，未配置发布域时为空。
 //
 // 它是构建命令要的那个值（见 cli.md 的 `project base`）：产物里的绝对路径靠它
 // 成立，与"页面有没有发出去"无关。
-func (s *Service) BaseURL(projectID string) string {
+func (s *Service) BaseURL(projectID string, slot ContentSlot) string {
 	if s.origin.IsZero() {
 		return ""
 	}
-	return s.origin.SiteRoot(projectID)
+	return s.origin.SiteRoot(projectID, slot)
 }
 
 // Origin 返回发布态地址的派生入口。
@@ -339,47 +368,55 @@ func (s *Service) BaseURL(projectID string) string {
 // 策略允许 B"，而它表现为"发布成功了但什么都显示不出来"。
 func (s *Service) Origin() PublicOrigin { return s.origin }
 
-// PublishedEntry 查一条发布态的请求路径命中哪一条条目（集合成员测试的唯一入口）。
+// PublishedEntry 查一条发布态的请求路径命中**某一个槽**的哪一条条目
+// （集合成员测试的唯一入口）。
 //
 // **它不做归属校验**：发布态是公开匿名的，"地址即凭据"——拿到地址的人能看，
 // 猜不出地址的人看不到。因此本方法不能有"调用者"这个参数。
 //
 // **它不读对象存储**：这条路径要能在校验命中（`ETag` 相符）时只读库里的清单。
 //
-// 未发布、已撤回、工程不存在、标识没被猜中、路径不在集合里——五者返回同一个
-// 结论（ErrPublicationNotFound）。区分它们等于告诉一个猜地址的人"这个标识是
-// 真的"或"这一页是真的，只是还没发布"。
+// **槽没有启用**、未发布、已撤回、工程不存在、标识没被猜中、路径不在集合里
+// ——六者返回同一个结论（ErrPublicationNotFound）。区分它们等于告诉一个猜地址
+// 的人"这个标识是真的"或"这一页是真的，只是还没发布"。
 //
-// 请求路径为空表示入口页（`/g/<标识>` 与 `/g/<标识>/index.html` 是同一页）。
-func (s *Service) PublishedEntry(ctx context.Context, projectID, requestPath string) (SiteForm, Entry, error) {
+// 请求路径为空表示入口页（`/g/<标识>` 与 `/g/<标识>/index.html` 是同一页；
+// docs 槽同理，入口在它自己的根下）。
+func (s *Service) PublishedEntry(ctx context.Context, projectID string, slot ContentSlot, requestPath string) (Entry, error) {
 	if !s.publishEnabled() {
-		return "", Entry{}, ErrPublicationNotFound
+		return Entry{}, ErrPublicationNotFound
 	}
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, ErrProjectNotFound) {
-			return "", Entry{}, ErrPublicationNotFound
+			return Entry{}, ErrPublicationNotFound
 		}
-		return "", Entry{}, err
+		return Entry{}, err
 	}
-	if project.CurrentPublicationID == "" {
-		return "", Entry{}, ErrPublicationNotFound
+	if _, ok := project.FindSlot(slot); !ok {
+		return Entry{}, ErrPublicationNotFound
 	}
-	publication, err := s.store.GetPublication(ctx, project.CurrentPublicationID)
+	publication, published, err := s.CurrentPublication(ctx, project, slot)
 	if err != nil {
 		if errors.Is(err, ErrPublicationNotFound) {
-			return "", Entry{}, ErrPublicationNotFound
+			return Entry{}, ErrPublicationNotFound
 		}
-		return "", Entry{}, err
+		return Entry{}, err
+	}
+	if !published {
+		return Entry{}, ErrPublicationNotFound
 	}
 	if requestPath == "" {
-		requestPath = project.Form.EntryPath()
+		// **入口取的是产物路径，不是文件组里的路径。** 两者在 `docs` 槽上不同：
+		// 入口源是 `index.md`，而产物里那一页是 `index.html`。拿源路径去查清单会
+		// 查不到——表现是"文档槽的发布地址（`/g/<标识>/docs`）打不开"。
+		requestPath = ArtifactPath(slot, slot.EntryPath())
 	}
 	entry, ok := publication.Manifest.Find(requestPath)
 	if !ok {
-		return "", Entry{}, ErrPublicationNotFound
+		return Entry{}, ErrPublicationNotFound
 	}
-	return project.Form, entry, nil
+	return entry, nil
 }
 
 // ReadPublishedText 读出一份发布态文本的字节。
@@ -418,5 +455,5 @@ func (s *Service) PublishedAssetURL(ctx context.Context, projectID, assetID stri
 		}
 		return "", err
 	}
-	return s.origin.AssetURL(asset.Digest, asset.MediaType), nil
+	return s.origin.AssetURL(projectID, asset.Digest, asset.MediaType), nil
 }

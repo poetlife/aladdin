@@ -73,10 +73,10 @@ func TestStoreContract(t *testing.T) {
 				if _, err := store.GetProject(ctx, "prj_没有"); !errors.Is(err, galaxy.ErrProjectNotFound) {
 					t.Errorf("err = %v，期望 ErrProjectNotFound", err)
 				}
-				if _, err := store.GetDraft(ctx, "prj_没有"); !errors.Is(err, galaxy.ErrDraftNotFound) {
+				if _, err := store.GetDraft(ctx, "prj_没有", galaxy.SlotSite); !errors.Is(err, galaxy.ErrDraftNotFound) {
 					t.Errorf("err = %v，期望 ErrDraftNotFound", err)
 				}
-				if _, err := store.GetVersion(ctx, "prj_没有", "ver_没有"); !errors.Is(err, galaxy.ErrVersionNotFound) {
+				if _, err := store.GetVersion(ctx, "prj_没有", galaxy.SlotSite, "ver_没有"); !errors.Is(err, galaxy.ErrVersionNotFound) {
 					t.Errorf("err = %v，期望 ErrVersionNotFound", err)
 				}
 				if _, err := store.GetAsset(ctx, "prj_没有", "ast_没有"); !errors.Is(err, galaxy.ErrAssetNotFound) {
@@ -90,7 +90,7 @@ func TestStoreContract(t *testing.T) {
 			t.Run("工程名称无唯一约束", func(t *testing.T) {
 				for _, id := range []string{"prj_a", "prj_b"} {
 					if err := store.CreateProject(ctx, galaxy.Project{
-						ID: id, OwnerSubjectID: "usr_1", Name: "同名", Form: galaxy.SiteFormStatic,
+						ID: id, OwnerSubjectID: "usr_1", Name: "同名", Slots: []galaxy.ProjectSlot{{Slot: galaxy.SlotSite}},
 						CreatedAt: now, UpdatedAt: now,
 					}); err != nil {
 						t.Fatalf("写入工程失败: %v", err)
@@ -103,13 +103,13 @@ func TestStoreContract(t *testing.T) {
 				if len(projects) != 2 {
 					t.Errorf("工程数 = %d，期望 2（同名不该被唯一约束拦住）", len(projects))
 				}
-				// 形态随工程行往返。
+				// 内容槽随工程行往返。
 				project, err := store.GetProject(ctx, "prj_a")
 				if err != nil {
 					t.Fatalf("读取工程失败: %v", err)
 				}
-				if project.Form != galaxy.SiteFormStatic {
-					t.Errorf("形态 = %q，期望 static", project.Form)
+				if slots := project.EnabledSlots(); len(slots) != 1 || slots[0] != galaxy.SlotSite {
+					t.Errorf("内容槽 = %v，期望恰好一个 site", slots)
 				}
 			})
 
@@ -124,14 +124,14 @@ func TestStoreContract(t *testing.T) {
 			})
 
 			t.Run("草稿行惰性创建且整组替换", func(t *testing.T) {
-				if _, err := store.GetDraft(ctx, "prj_draft"); !errors.Is(err, galaxy.ErrDraftNotFound) {
+				if _, err := store.GetDraft(ctx, "prj_draft", galaxy.SlotSite); !errors.Is(err, galaxy.ErrDraftNotFound) {
 					t.Fatalf("err = %v，期望 ErrDraftNotFound", err)
 				}
 				first := testManifest("index.html", "aa")
-				if err := store.PutDraft(ctx, "prj_draft", first, now); err != nil {
+				if err := store.PutDraft(ctx, "prj_draft", galaxy.SlotSite, first, now); err != nil {
 					t.Fatalf("写入草稿失败: %v", err)
 				}
-				draft, err := store.GetDraft(ctx, "prj_draft")
+				draft, err := store.GetDraft(ctx, "prj_draft", galaxy.SlotSite)
 				if err != nil {
 					t.Fatalf("读取草稿失败: %v", err)
 				}
@@ -143,10 +143,10 @@ func TestStoreContract(t *testing.T) {
 					{Path: "index.html", Kind: galaxy.EntryKindText, Digest: "bb"},
 					{Path: "a.png", Kind: galaxy.EntryKindAsset, AssetID: "ast_1"},
 				}
-				if err := store.PutDraft(ctx, "prj_draft", second, now); err != nil {
+				if err := store.PutDraft(ctx, "prj_draft", galaxy.SlotSite, second, now); err != nil {
 					t.Fatalf("覆盖草稿失败: %v", err)
 				}
-				draft, err = store.GetDraft(ctx, "prj_draft")
+				draft, err = store.GetDraft(ctx, "prj_draft", galaxy.SlotSite)
 				if err != nil {
 					t.Fatalf("读取草稿失败: %v", err)
 				}
@@ -162,7 +162,7 @@ func TestStoreContract(t *testing.T) {
 
 			t.Run("序号从 1 开始且可空洞", func(t *testing.T) {
 				first, err := store.CreateVersion(ctx, galaxy.Version{
-					ID: "ver_1", ProjectID: "prj_v", Manifest: testManifest("index.html", "aa"),
+					ID: "ver_1", ProjectID: "prj_v", Slot: galaxy.SlotSite, Manifest: testManifest("index.html", "aa"),
 					RenderRulesVersion: 1, SavedAt: now,
 				})
 				if err != nil {
@@ -172,21 +172,21 @@ func TestStoreContract(t *testing.T) {
 					t.Errorf("首个版本的序号 = %d，期望 1", first.Seq)
 				}
 				if _, err := store.CreateVersion(ctx, galaxy.Version{
-					ID: "ver_2", ProjectID: "prj_v", Manifest: testManifest("index.html", "bb"), SavedAt: now,
+					ID: "ver_2", ProjectID: "prj_v", Slot: galaxy.SlotSite, Manifest: testManifest("index.html", "bb"), SavedAt: now,
 				}); err != nil {
 					t.Fatalf("写入版本失败: %v", err)
 				}
 				third, err := store.CreateVersion(ctx, galaxy.Version{
-					ID: "ver_3", ProjectID: "prj_v", Manifest: testManifest("index.html", "cc"), SavedAt: now,
+					ID: "ver_3", ProjectID: "prj_v", Slot: galaxy.SlotSite, Manifest: testManifest("index.html", "cc"), SavedAt: now,
 				})
 				if err != nil {
 					t.Fatalf("写入版本失败: %v", err)
 				}
 				// 删中间一个：序号**不重排**，空洞是允许的。
-				if err := store.DeleteVersion(ctx, "prj_v", "ver_2"); err != nil {
+				if err := store.DeleteVersion(ctx, "prj_v", galaxy.SlotSite, "ver_2"); err != nil {
 					t.Fatalf("删除版本失败: %v", err)
 				}
-				thirdAfter, err := store.GetVersion(ctx, "prj_v", third.ID)
+				thirdAfter, err := store.GetVersion(ctx, "prj_v", galaxy.SlotSite, third.ID)
 				if err != nil {
 					t.Fatalf("读取版本失败: %v", err)
 				}
@@ -195,7 +195,7 @@ func TestStoreContract(t *testing.T) {
 				}
 				// 下一个版本的序号接着最大值走，不填补空洞。
 				fourth, err := store.CreateVersion(ctx, galaxy.Version{
-					ID: "ver_4", ProjectID: "prj_v", Manifest: testManifest("index.html", "dd"), SavedAt: now,
+					ID: "ver_4", ProjectID: "prj_v", Slot: galaxy.SlotSite, Manifest: testManifest("index.html", "dd"), SavedAt: now,
 				})
 				if err != nil {
 					t.Fatalf("写入版本失败: %v", err)
@@ -204,7 +204,7 @@ func TestStoreContract(t *testing.T) {
 					t.Errorf("第四个版本的序号 = %d，期望 4", fourth.Seq)
 				}
 				// 列表**带清单**（它只有路径与摘要），渲染规则版本随行。
-				versions, err := store.ListVersions(ctx, "prj_v")
+				versions, err := store.ListVersions(ctx, "prj_v", galaxy.SlotSite)
 				if err != nil {
 					t.Fatalf("列出版本失败: %v", err)
 				}
@@ -223,7 +223,7 @@ func TestStoreContract(t *testing.T) {
 				if err := store.PutProjectMeta(ctx, "prj_v", "改名", "", now); !errors.Is(err, galaxy.ErrProjectNotFound) {
 					t.Fatalf("对不存在的工程改元数据 err = %v，期望 ErrProjectNotFound", err)
 				}
-				version, err := store.GetVersion(ctx, "prj_v", "ver_1")
+				version, err := store.GetVersion(ctx, "prj_v", galaxy.SlotSite, "ver_1")
 				if err != nil {
 					t.Fatalf("读取版本失败: %v", err)
 				}
@@ -452,18 +452,22 @@ func TestStoreContract(t *testing.T) {
 			})
 
 			t.Run("撤回不删发布记录", func(t *testing.T) {
-				if err := store.SetCurrentPublication(ctx, "prj_a", "pub_1", now); err != nil {
+				if err := store.SetCurrentPublication(ctx, "prj_a", galaxy.SlotSite, "pub_1", now); err != nil {
 					t.Fatalf("切换发布指针失败: %v", err)
 				}
-				if err := store.SetCurrentPublication(ctx, "prj_a", "", now); err != nil {
+				if err := store.SetCurrentPublication(ctx, "prj_a", galaxy.SlotSite, "", now); err != nil {
 					t.Fatalf("清空发布指针失败: %v", err)
 				}
 				project, err := store.GetProject(ctx, "prj_a")
 				if err != nil {
 					t.Fatalf("读取工程失败: %v", err)
 				}
-				if project.CurrentPublicationID != "" {
-					t.Errorf("发布指针 = %q，期望为空", project.CurrentPublicationID)
+				slot, ok := project.FindSlot(galaxy.SlotSite)
+				if !ok {
+					t.Fatal("站点槽不见了")
+				}
+				if slot.CurrentPublicationID != "" {
+					t.Errorf("发布指针 = %q，期望为空", slot.CurrentPublicationID)
 				}
 				if _, err := store.GetPublication(ctx, "pub_1"); err != nil {
 					t.Errorf("撤回之后发布记录不该消失: %v", err)
@@ -477,7 +481,7 @@ func TestStoreContract(t *testing.T) {
 				if _, err := store.GetProject(ctx, "prj_a"); !errors.Is(err, galaxy.ErrProjectNotFound) {
 					t.Errorf("工程仍在: %v", err)
 				}
-				if versions, err := store.ListVersions(ctx, "prj_a"); err != nil || len(versions) != 0 {
+				if versions, err := store.ListVersions(ctx, "prj_a", galaxy.SlotSite); err != nil || len(versions) != 0 {
 					t.Errorf("版本仍在: %v / %d 条", err, len(versions))
 				}
 				if assets, err := store.ListAssets(ctx, "prj_a", nil); err != nil || len(assets) != 0 {
@@ -489,7 +493,7 @@ func TestStoreContract(t *testing.T) {
 				if _, err := store.GetPublication(ctx, "pub_1"); !errors.Is(err, galaxy.ErrPublicationNotFound) {
 					t.Errorf("发布记录仍在: %v", err)
 				}
-				if _, err := store.GetDraft(ctx, "prj_a"); !errors.Is(err, galaxy.ErrDraftNotFound) {
+				if _, err := store.GetDraft(ctx, "prj_a", galaxy.SlotSite); !errors.Is(err, galaxy.ErrDraftNotFound) {
 					t.Errorf("草稿仍在: %v", err)
 				}
 				// 预览凭证也是工程的东西：这个工程的一条都不该留下。
@@ -511,13 +515,15 @@ func TestGormStorePersistsAcrossOpenings(t *testing.T) {
 
 	first := New(newGalaxyTestDB(t, path))
 	if err := first.CreateProject(ctx, galaxy.Project{
-		ID: "prj_persist", OwnerSubjectID: "usr_1", Name: "落盘", Form: galaxy.SiteFormDocs,
+		ID: "prj_persist", OwnerSubjectID: "usr_1", Name: "落盘",
+		Slots:     []galaxy.ProjectSlot{{Slot: galaxy.SlotDocs}},
 		CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatalf("写入工程失败: %v", err)
 	}
 	if _, err := first.CreateVersion(ctx, galaxy.Version{
-		ID: "ver_persist", ProjectID: "prj_persist", Manifest: testManifest("index.md", "aa"), SavedAt: now,
+		ID: "ver_persist", ProjectID: "prj_persist", Slot: galaxy.SlotDocs,
+		Manifest: testManifest("index.md", "aa"), SavedAt: now,
 	}); err != nil {
 		t.Fatalf("写入版本失败: %v", err)
 	}
@@ -527,10 +533,10 @@ func TestGormStorePersistsAcrossOpenings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("第二次打开之后读不到工程: %v", err)
 	}
-	if project.Name != "落盘" || project.Form != galaxy.SiteFormDocs {
+	if _, ok := project.FindSlot(galaxy.SlotDocs); project.Name != "落盘" || !ok {
 		t.Errorf("工程 = %+v", project)
 	}
-	version, err := second.GetVersion(ctx, "prj_persist", "ver_persist")
+	version, err := second.GetVersion(ctx, "prj_persist", galaxy.SlotDocs, "ver_persist")
 	if err != nil {
 		t.Fatalf("第二次打开之后读不到版本: %v", err)
 	}

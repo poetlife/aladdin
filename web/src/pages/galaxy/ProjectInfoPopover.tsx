@@ -4,6 +4,7 @@ import { Alert, Button, Divider, Flex, Form, Input, Popover, Typography } from '
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
 import type { Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { slotDescription, slotLabel } from './content-slot'
 
 interface ProjectFormValues {
   name?: string
@@ -96,7 +97,7 @@ export function ProjectInfoPopover({
           </Button>
         )}
       </Form>
-      {/* 工程标识是不可改的只读信息，跟名称与形态同属"这个工程是谁"——因此放这里，
+      {/* 工程标识是不可改的只读信息，跟名称与内容槽同属"这个工程是谁"——因此放这里，
           不占页面上的常驻版面（见 docs/design/galaxy/authoring.md）。 */}
       <Divider style={{ margin: '12px 0 0' }} />
       <Flex vertical gap={2} style={{ marginTop: 12 }}>
@@ -105,6 +106,37 @@ export function ProjectInfoPopover({
         </Typography.Text>
         <Typography.Text code copyable style={{ wordBreak: 'break-all' }}>
           {project.id}
+        </Typography.Text>
+      </Flex>
+
+      {/* 启用了哪些槽、每个槽是什么、已发布的地址——与工程标识同属只读的"这是谁"。
+          切换与"加一个槽"在顶栏（那是"我在哪里"），这里只陈述现状。 */}
+      <Divider style={{ margin: '12px 0 0' }} />
+      <Flex vertical gap={6} style={{ marginTop: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          内容槽
+        </Typography.Text>
+        {project.slots.length === 0 ? (
+          <Typography.Text style={{ fontSize: 12 }}>（一个都没有）</Typography.Text>
+        ) : (
+          project.slots.map((slot) => (
+            <Flex key={slot.slot} vertical gap={0}>
+              <Typography.Text strong style={{ fontSize: 12 }}>
+                {slotLabel(slot.slot)}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {slotDescription(slot.slot)}
+              </Typography.Text>
+              {slot.publishedUrl !== '' && (
+                <Typography.Text code copyable style={{ fontSize: 12, wordBreak: 'break-all' }}>
+                  {slot.publishedUrl}
+                </Typography.Text>
+              )}
+            </Flex>
+          ))
+        )}
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          槽只增不删，加一个在顶栏。
         </Typography.Text>
       </Flex>
     </div>

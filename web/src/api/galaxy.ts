@@ -1,4 +1,4 @@
-import type { SiteForm } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import type { ContentSlot } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { galaxyClient } from './transport'
 
 /**
@@ -28,9 +28,23 @@ export async function listProjects() {
   return galaxyClient().listProjects({})
 }
 
-/** 创建一个工程。标识由服务端分配，**形态在创建时定下、此后不可改**。 */
-export async function createProject(name: string, description: string, form: SiteForm) {
-  return galaxyClient().createProject({ name, description, form })
+/**
+ * 创建一个工程。标识由服务端分配。
+ *
+ * slots 是创建时要启用的**内容槽**（`site` / `docs`），**至少一个**：一个工程
+ * 可以既是站点又有文档，两者各有一套草稿、版本与发布地址，互不影响。
+ */
+export async function createProject(name: string, description: string, slots: ContentSlot[]) {
+  return galaxyClient().createProject({ name, description, slots })
+}
+
+/**
+ * 给一个已有工程加一个内容槽。
+ *
+ * **单向**：没有"删掉一个槽"的对应调用。加一个槽不改变另一个槽。
+ */
+export async function addProjectSlot(projectId: string, slot: ContentSlot) {
+  return galaxyClient().addProjectSlot({ projectId, slot })
 }
 
 /** 读取一个工程的元数据。不含草稿、版本与产物清单。 */
@@ -38,58 +52,58 @@ export async function getProject(projectId: string) {
   return galaxyClient().getProject({ projectId })
 }
 
-/** 修改工程的名称与简介。空串表示清空。**形态不在其中。** */
+/** 修改工程的名称与简介。空串表示清空。**内容槽不在其中**（槽只增不删）。 */
 export async function updateProject(projectId: string, name: string, description: string) {
   return galaxyClient().updateProject({ projectId, name, description })
 }
 
-/** 删除一个工程。连带删除它的全部版本、资产与发布记录。 */
+/** 删除一个工程。连带删除它的全部内容槽、版本、资产与发布记录。 */
 export async function deleteProject(projectId: string) {
   return galaxyClient().deleteProject({ projectId })
 }
 
-/** 读取工程的当前草稿清单，每一项带一条短时读取地址。 */
-export async function getDraft(projectId: string) {
-  return galaxyClient().getDraft({ projectId })
+/** 读取**某一个槽**的当前草稿清单，每一项带一条短时读取地址。 */
+export async function getDraft(projectId: string, slot: ContentSlot) {
+  return galaxyClient().getDraft({ projectId, slot })
 }
 
-/** 把草稿的当前清单保存成一个不可变版本。 */
-export async function saveVersion(projectId: string) {
-  return galaxyClient().saveVersion({ projectId })
+/** 把**某一个槽**草稿的当前清单保存成一个不可变版本。 */
+export async function saveVersion(projectId: string, slot: ContentSlot) {
+  return galaxyClient().saveVersion({ projectId, slot })
 }
 
-/** 列出工程的版本，按序号排序。清单随行，但不带读取地址。 */
-export async function listVersions(projectId: string) {
-  return galaxyClient().listVersions({ projectId })
+/** 列出**某一个槽**的版本，按序号排序。清单随行，但不带读取地址。 */
+export async function listVersions(projectId: string, slot: ContentSlot) {
+  return galaxyClient().listVersions({ projectId, slot })
 }
 
 /** 读取一个版本，含清单与每一项的短时读取地址。 */
-export async function getVersion(projectId: string, versionId: string) {
-  return galaxyClient().getVersion({ projectId, versionId })
+export async function getVersion(projectId: string, slot: ContentSlot, versionId: string) {
+  return galaxyClient().getVersion({ projectId, slot, versionId })
 }
 
-/** 删除一个版本。被当前发布指向的版本会被服务端拒绝。 */
-export async function deleteVersion(projectId: string, versionId: string) {
-  return galaxyClient().deleteVersion({ projectId, versionId })
+/** 删除一个版本。被**它所属槽**的发布指向时会被服务端拒绝。 */
+export async function deleteVersion(projectId: string, slot: ContentSlot, versionId: string) {
+  return galaxyClient().deleteVersion({ projectId, slot, versionId })
 }
 
-/** 校验**当前草稿的清单**能不能发布。界面提示与发布前置校验共用这一个入口。 */
-export async function validateDraft(projectId: string) {
-  return galaxyClient().validateDraft({ projectId })
+/** 校验**某一个槽当前草稿的清单**能不能发布。界面提示与发布前置校验共用这一个入口。 */
+export async function validateDraft(projectId: string, slot: ContentSlot) {
+  return galaxyClient().validateDraft({ projectId, slot })
 }
 
 /**
- * 把草稿渲染成一份可以放进沙箱 iframe 的 HTML。
+ * 给出某一个槽草稿的预览入口地址（带短时凭证）。
  *
- * **渲染在服务端**，与发布共用同一段实现：`docs` 形态的 markdown → HTML 只有
+ * **渲染在服务端**，与发布共用同一段实现：`docs` 槽的 markdown → HTML 只有
  * 一处实现，前端不再引第二个渲染器——两份实现迟早漂移，而用户看到的是"预览好好
  * 的、发布出来不一样"。
  *
- * path 是要预览的那一份（`static` 用它换一页）；为空表示入口。`docs` 的页面由服务端
- * 渲染，因此给它的产物路径也可以。
+ * path 是要预览的那一份（`site` 用它换一页）；为空表示入口。`docs` 槽的页面由
+ * 服务端渲染，因此给它的产物路径也可以。
  */
-export async function previewDraft(projectId: string, path = '') {
-  return galaxyClient().previewDraft({ projectId, path })
+export async function previewDraft(projectId: string, slot: ContentSlot, path = '') {
+  return galaxyClient().previewDraft({ projectId, slot, path })
 }
 
 /**
@@ -166,12 +180,12 @@ export async function deleteAsset(projectId: string, assetId: string) {
   return galaxyClient().deleteAsset({ projectId, assetId })
 }
 
-/** 发布一个版本。只能发布版本，不能发布草稿。 */
-export async function publish(projectId: string, versionId: string) {
-  return galaxyClient().publish({ projectId, versionId })
+/** 发布**某一个槽**的一个版本。只能发布版本，不能发布草稿。 */
+export async function publish(projectId: string, slot: ContentSlot, versionId: string) {
+  return galaxyClient().publish({ projectId, slot, versionId })
 }
 
-/** 撤回发布。地址立刻不可达；发布记录保留。 */
-export async function unpublish(projectId: string) {
-  return galaxyClient().unpublish({ projectId })
+/** 撤回**某一个槽**的发布。该槽地址立刻不可达；另一个槽不受影响；发布记录保留。 */
+export async function unpublish(projectId: string, slot: ContentSlot) {
+  return galaxyClient().unpublish({ projectId, slot })
 }

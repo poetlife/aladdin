@@ -15,11 +15,15 @@ import (
 )
 
 const (
-	// assetKeyPrefix 是私有区对象键的前缀。
+	// assetKeyPrefix 是 galaxy 对象键的前缀。
 	//
 	// 它是**常量，不是配置项**：做成配置项只会多出一种失败方式——改了前缀，
 	// 存量资产在一瞬间全部变成孤儿。它与头像的 avatars/ 前缀在同一个桶里
 	// 共存，两者互不干扰。
+	//
+	// 它下面既有私有区也有公开区，**两者靠逐对象的公开读区分，不靠这一段前缀**：
+	// `galaxy/<工程标识>/assets/` 与 `/text/` 是私有的，`/release/` 是公开的
+	// （见 promote.go）。前缀只回答"这块字节属于哪个模块"。
 	assetKeyPrefix = "galaxy/"
 
 	// ImageMaxBytes 是图片的字节上限。

@@ -22,6 +22,7 @@ const (
 	GalaxyService_GetCapabilities_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/GetCapabilities"
 	GalaxyService_ListProjects_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ListProjects"
 	GalaxyService_CreateProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/CreateProject"
+	GalaxyService_AddProjectSlot_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/AddProjectSlot"
 	GalaxyService_GetProject_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/GetProject"
 	GalaxyService_UpdateProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/UpdateProject"
 	GalaxyService_DeleteProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/DeleteProject"
@@ -75,19 +76,27 @@ type GalaxyServiceClient interface {
 	// 刻意没有"列出所有工程"或"列出某个主体的工程"的形状：工程标识不可猜
 	// 是发布态匿名可读的唯一防线，任何枚举入口都会把它降级成"打开就能逛"。
 	ListProjects(ctx context.Context, in *ListProjectsRequest, opts ...grpc.CallOption) (*ListProjectsResponse, error)
-	// 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
+	// 创建一个工程，并选一个或多个**内容槽**。标识由服务端分配，不可猜、不可改、
+	// 不复用。
 	//
-	// **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
-	// 历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+	// **至少选一个槽，此后只增不删**（见 AddProjectSlot）。每个槽各有自己的草稿、
+	// 版本、发布指针与地址（见 docs/design/galaxy/site-model.md）。
 	//
 	// 名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
 	// 一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
+	// 给一个已有工程加一个内容槽。
+	//
+	// **单向**：没有"删掉一个槽"的对应方法——槽的语义与地址是固定的，已有的版本
+	// 与地址都挂在它上面，因此删除要单独论证（见 site-model.md）。**加一个槽不
+	// 改变另一个槽**：那个槽的草稿、版本、发布指针与地址都原样。
+	AddProjectSlot(ctx context.Context, in *AddProjectSlotRequest, opts ...grpc.CallOption) (*AddProjectSlotResponse, error)
 	// 读取一个工程的元数据。不含草稿清单、版本清单与资产字节。
 	GetProject(ctx context.Context, in *GetProjectRequest, opts ...grpc.CallOption) (*GetProjectResponse, error)
 	// 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
 	//
-	// **不含形态**：形态改不了，因此它不在这个请求的形状里。
+	// **不含内容槽**：槽只增不删，且"有哪些槽"由 AddProjectSlot 回答，因此它不在
+	// 这个请求的形状里。
 	UpdateProject(ctx context.Context, in *UpdateProjectRequest, opts ...grpc.CallOption) (*UpdateProjectResponse, error)
 	// 删除一个工程。**连带删除它的全部版本、资产与发布记录**，因此已发布的
 	// 地址立刻变成"不存在"。公开区上已上架的字节不回收（见发布一节）。
@@ -149,7 +158,7 @@ type GalaxyServiceClient interface {
 	// 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
 	//
 	// 内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
-	// 路径与形态派生（不存在"声明"这一层）、不进公开区。
+	// 路径与内容槽派生（不存在"声明"这一层）、不进公开区。
 	//
 	// **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
 	// 否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
@@ -251,6 +260,16 @@ func (c *galaxyServiceClient) CreateProject(ctx context.Context, in *CreateProje
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateProjectResponse)
 	err := c.cc.Invoke(ctx, GalaxyService_CreateProject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) AddProjectSlot(ctx context.Context, in *AddProjectSlotRequest, opts ...grpc.CallOption) (*AddProjectSlotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddProjectSlotResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_AddProjectSlot_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -488,19 +507,27 @@ type GalaxyServiceServer interface {
 	// 刻意没有"列出所有工程"或"列出某个主体的工程"的形状：工程标识不可猜
 	// 是发布态匿名可读的唯一防线，任何枚举入口都会把它降级成"打开就能逛"。
 	ListProjects(context.Context, *ListProjectsRequest) (*ListProjectsResponse, error)
-	// 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
+	// 创建一个工程，并选一个或多个**内容槽**。标识由服务端分配，不可猜、不可改、
+	// 不复用。
 	//
-	// **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
-	// 历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+	// **至少选一个槽，此后只增不删**（见 AddProjectSlot）。每个槽各有自己的草稿、
+	// 版本、发布指针与地址（见 docs/design/galaxy/site-model.md）。
 	//
 	// 名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
 	// 一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
 	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
+	// 给一个已有工程加一个内容槽。
+	//
+	// **单向**：没有"删掉一个槽"的对应方法——槽的语义与地址是固定的，已有的版本
+	// 与地址都挂在它上面，因此删除要单独论证（见 site-model.md）。**加一个槽不
+	// 改变另一个槽**：那个槽的草稿、版本、发布指针与地址都原样。
+	AddProjectSlot(context.Context, *AddProjectSlotRequest) (*AddProjectSlotResponse, error)
 	// 读取一个工程的元数据。不含草稿清单、版本清单与资产字节。
 	GetProject(context.Context, *GetProjectRequest) (*GetProjectResponse, error)
 	// 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
 	//
-	// **不含形态**：形态改不了，因此它不在这个请求的形状里。
+	// **不含内容槽**：槽只增不删，且"有哪些槽"由 AddProjectSlot 回答，因此它不在
+	// 这个请求的形状里。
 	UpdateProject(context.Context, *UpdateProjectRequest) (*UpdateProjectResponse, error)
 	// 删除一个工程。**连带删除它的全部版本、资产与发布记录**，因此已发布的
 	// 地址立刻变成"不存在"。公开区上已上架的字节不回收（见发布一节）。
@@ -562,7 +589,7 @@ type GalaxyServiceServer interface {
 	// 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
 	//
 	// 内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
-	// 路径与形态派生（不存在"声明"这一层）、不进公开区。
+	// 路径与内容槽派生（不存在"声明"这一层）、不进公开区。
 	//
 	// **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
 	// 否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
@@ -648,6 +675,9 @@ func (UnimplementedGalaxyServiceServer) ListProjects(context.Context, *ListProje
 }
 func (UnimplementedGalaxyServiceServer) CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateProject not implemented")
+}
+func (UnimplementedGalaxyServiceServer) AddProjectSlot(context.Context, *AddProjectSlotRequest) (*AddProjectSlotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddProjectSlot not implemented")
 }
 func (UnimplementedGalaxyServiceServer) GetProject(context.Context, *GetProjectRequest) (*GetProjectResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetProject not implemented")
@@ -780,6 +810,24 @@ func _GalaxyService_CreateProject_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GalaxyServiceServer).CreateProject(ctx, req.(*CreateProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_AddProjectSlot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddProjectSlotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).AddProjectSlot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_AddProjectSlot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).AddProjectSlot(ctx, req.(*AddProjectSlotRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1162,6 +1210,10 @@ var GalaxyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateProject",
 			Handler:    _GalaxyService_CreateProject_Handler,
+		},
+		{
+			MethodName: "AddProjectSlot",
+			Handler:    _GalaxyService_AddProjectSlot_Handler,
 		},
 		{
 			MethodName: "GetProject",

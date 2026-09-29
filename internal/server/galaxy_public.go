@@ -21,7 +21,8 @@ const publicPageNotFound = "<!doctype html><title>404</title><p>页面不存在<
 // PublicProjectHandler 是发布地址这条**浏览器直连的非 RPC 入口**。
 //
 // 它对外地址形如 `<发布域>/g/<工程标识>/<路径>`，入口是 `<发布域>/g/<工程标识>`
-// （与 `.../index.html` 同一页）。同一段前缀下还有一条**预览通道**
+// （与 `.../index.html` 同一页；**不带结尾斜杠的入口先 301 到带斜杠的形式**，理由见
+// slotRootTarget）。同一段前缀下还有一条**预览通道**
 // （`<发布域>/g/p/<凭证>/<工程标识>/<路径>`，见 galaxy/preview.go）：两条路在
 // 这里分岔，各自解析形状，其余的取字节方式逐条对应。
 //
@@ -56,24 +57,38 @@ func PublicProjectHandler(service *galaxy.Service, logger *zap.Logger) http.Hand
 		// 预览通道的形状先判：它的第一段（`p`）在发布态的形状里也是一个合法的
 		// 工程标识位置，因此顺序反过来会让预览路径落进发布那条路（见
 		// galaxy/preview.go 的 PreviewPathSegment）。
-		if token, previewProjectID, previewPath, ok := galaxy.SplitPreviewPath(r.URL.Path); ok {
-			servePreview(w, r, token, previewProjectID, previewPath, service, logger)
+		if token, previewProjectID, previewSlot, previewPath, ok := galaxy.SplitPreviewPath(r.URL.Path); ok {
+			if target, redirect := slotRootTarget(r, previewPath, galaxy.PreviewRoot(previewProjectID, token, previewSlot)); redirect {
+				// 目标不是请求输入：它是 PreviewRoot 派生的**路径**（永远落在 `/g/` 下），
+				// 主机与协议不在其中，因此这里不存在开放重定向。
+				//nolint:gosec // 目标来自发布根的派生，不是请求输入
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+				return
+			}
+			servePreview(w, r, token, previewProjectID, previewSlot, previewPath, service, logger)
 			return
 		}
 
-		projectID, entryPath, ok := galaxy.SplitSitePath(r.URL.Path)
+		projectID, slot, entryPath, ok := galaxy.SplitSitePath(r.URL.Path)
 		if !ok {
 			writePublicNotFound(w)
 			return
 		}
-
-		form, entry, err := service.PublishedEntry(r.Context(), projectID, entryPath)
+		if target, redirect := slotRootTarget(r, entryPath, service.Origin().SiteRoot(projectID, slot)); redirect {
+			// 目标不是请求输入：它是 SiteRoot 派生的**路径**（永远落在 `/g/` 下），主机
+			// 与协议不在其中，因此这里不存在开放重定向。
+			//nolint:gosec // 目标来自发布根的派生，不是请求输入
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
+		entry, err := service.PublishedEntry(r.Context(), projectID, slot, entryPath)
 		if err != nil {
 			if !errors.Is(err, galaxy.ErrPublicationNotFound) {
 				// 存储故障不是"这个页面不存在"。但对访问者而言，两者都只能
 				// 看到"打不开"，因此响应相同、留痕不同。
 				logger.Warn("读取发布产物失败",
 					zap.String("project_id", projectID),
+					zap.String("slot", string(slot)),
 					zap.String("path", entryPath),
 					zap.Error(err))
 			}
@@ -120,7 +135,7 @@ func PublicProjectHandler(service *galaxy.Service, logger *zap.Logger) http.Hand
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		contentType, ok := galaxy.ArtifactContentType(form, entry.Path)
+		contentType, ok := galaxy.ArtifactContentType(slot, entry.Path)
 		if !ok {
 			// 产物清单里的每一条都来自文件组，而文件组的路径都过了白名单；走到
 			// 这里说明库里的数据不是这个版本写进去的。给一个中性类型而不是
@@ -148,6 +163,38 @@ func PublicProjectHandler(service *galaxy.Service, logger *zap.Logger) http.Hand
 		//nolint:gosec // 交付用户内容正是这个入口的职责
 		_, _ = w.Write(data)
 	})
+}
+
+// slotRootTarget 判定一次请求是不是**不带结尾斜杠的槽根**，并给出它该被转到的地址。
+//
+// 槽根是 `/g/<标识>`（`docs` 槽到 `/g/<标识>/docs`），而**站点根是它带斜杠的形式**
+// （见 galaxy.PublicOrigin.SiteRoot）：页内相对地址按文档所在的目录解析，因此页面上
+// 写 `style.css` 的产物只有落在带斜杠的地址上才解析得对——不带斜杠的槽根会让浏览器
+// 退一层目录去取 `/g/style.css`，而那一条不在集合里：表现为"发布成功了，但样式全丢、
+// 图片全裂"，而内容与上架其实都是好的（见 docs/design/galaxy/site-model.md 的
+// "取字节"）。
+//
+// **目标不由请求路径再拼一份**，而是取 `PublicOrigin.SiteRoot` / `PreviewRoot`——
+// 与 PageURL 那条"地址由服务端算好下发，客户端不拼"是同一条约定。本函数只补查询串。
+//
+// **它无条件重定向，不看这个工程存不存在。** 若只在发布过时才转，则"重定向还是
+// 404"本身就成了"这个标识是真的"这条信号，与否定结论只有一个的取向冲突（见
+// galaxy.Service.PublishedEntry）。
+//
+// **301 而不是 302。** 资产那条重定向用 302，因为它的目标是按内容摘要寻址的对象、
+// 会随重新发布而变（见下面那段说明）；这里的目标只由（工程标识，内容槽）决定，是一条
+// 稳定的地址，缓存它只会省掉一次往返。
+//
+// 只补槽根：子目录地址不做 `<路径>/index.html` 回落——集合成员测试保持"只查表"，
+// 不拼接路径（见 galaxy.Manifest.HasPath）。
+func slotRootTarget(r *http.Request, entryPath, root string) (string, bool) {
+	if entryPath != "" || strings.HasSuffix(r.URL.Path, "/") {
+		return "", false
+	}
+	if r.URL.RawQuery != "" {
+		return root + "?" + r.URL.RawQuery, true
+	}
+	return root, true
 }
 
 // etagMatches 判定 If-None-Match 是否命中一个内容摘要。
@@ -188,14 +235,15 @@ func writePublicNotFound(w http.ResponseWriter) {
 // 不是匿名、资产指向私有区而不是公开区。安全头逐条相同——**内容仍然跑在发布域
 // 上**，因此隔离靠的是这一条（与主应用不同源）加上 iframe 的沙箱属性（见
 // docs/design/galaxy/authoring.md）。
-func servePreview(w http.ResponseWriter, r *http.Request, token, projectID, entryPath string, service *galaxy.Service, logger *zap.Logger) {
-	target, err := service.OpenPreview(r.Context(), token, projectID, entryPath)
+func servePreview(w http.ResponseWriter, r *http.Request, token, projectID string, slot galaxy.ContentSlot, entryPath string, service *galaxy.Service, logger *zap.Logger) {
+	target, err := service.OpenPreview(r.Context(), token, projectID, slot, entryPath)
 	if err != nil {
 		if !errors.Is(err, galaxy.ErrPreviewNotFound) {
 			// 存储故障不是"这一页不存在"。但对浏览器而言两者都只能看到"打不开"，
 			// 因此响应相同、留痕不同。
 			logger.Warn("读取预览内容失败",
 				zap.String("project_id", projectID),
+				zap.String("slot", string(slot)),
 				zap.String("path", entryPath),
 				zap.Error(err))
 		}

@@ -3,6 +3,7 @@ package galaxy
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // 两个 LinkResolver 实现：发布态给站点绝对地址，预览态给文内锚点与短时地址。
@@ -17,11 +18,12 @@ import (
 // URL——产物里写的是站点内的路径，因此构建产物一个字节都不用改，工程标识也
 // 只出现在发布根一处。
 type SiteLinker struct {
-	// Form 是工程形态，决定 markdown 源被渲染成 `.html`。
-	Form SiteForm
+	// Slot 是内容槽，决定 markdown 源被渲染成 `.html`。
+	Slot ContentSlot
 	// Manifest 是该版本的文件组。
 	Manifest Manifest
-	// SiteRoot 是发布根路径，形如 `/g/<工程标识>/`。
+	// SiteRoot 是**该槽的**发布根路径，形如 `/g/<工程标识>/`（docs 槽到
+	// `docs/`）。
 	SiteRoot string
 }
 
@@ -34,13 +36,28 @@ func (l SiteLinker) Resolve(from, dest string, isResource bool) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return l.SiteRoot + ArtifactPath(l.Form, entry.Path), nil
+	// 位置解析出来了，把原样跟在后面的锚点或查询串接回去：`guide/intro.md#小节`
+	// 要指向**那一页的**那一节，而不是那一页的顶部。
+	_, suffix := splitDestination(dest)
+	return l.SiteRoot + ArtifactPath(l.Slot, entry.Path) + suffix, nil
+}
+
+// splitDestination 把一处引用拆成"位置"与"跟在位置后面的后缀"。
+//
+// `guide/intro.md#小节` 里的 `guide/intro.md` 是位置，`#小节` 是后缀；`?q=1` 同理。
+// **后缀不参与文件组查找**——它说的是"这个位置里的哪一部分"，而清单里记的是位置。
+// 把两者当成一个整体去找，表现就是每一处带锚点的引用都变成"引用了不存在的位置"。
+func splitDestination(dest string) (location, suffix string) {
+	if i := strings.IndexAny(dest, "#?"); i >= 0 {
+		return dest[:i], dest[i:]
+	}
+	return dest, ""
 }
 
 // entryFor 把一处引用解析成文件组里的条目（唯一入口）。
 //
-// 导航链接（外部地址）是一个特例：它**不落在任何条目上**，因此返回
-// errNavigationLink，由调用方原样保留这处地址。
+// 有两类引用**不落在任何条目上**，因此返回 errNavigationLink，由调用方原样保留：
+// 外部地址（别人的东西），以及只有后缀、没有位置的写法（**本页自己**的东西）。
 func (l SiteLinker) entryFor(from, dest string, isResource bool) (Entry, error) {
 	// 记号：必须是本文件组里的一条**资产条目**。
 	if assetID, ok := placeholderID(dest); ok {
@@ -51,14 +68,29 @@ func (l SiteLinker) entryFor(from, dest string, isResource bool) (Entry, error) 
 		}
 		return entry, nil
 	}
-	if isExternalDestination(dest) {
+
+	location, _ := splitDestination(dest)
+	// **只有后缀**：`#小节`、`?q=1`。目标是本页里某个元素，或本页换个查询参数，
+	// 两者都不落在文件组的任何条目上，因此与外部地址同路原样保留。
+	//
+	// 这一档必须排在下面之前：不先接住它，`#小节` 会被当成"站点内位置"拿去
+	// path.Join 再查清单，于是每一处页内跳转都变成一次"引用了不存在的位置"。
+	//
+	// 取资源的引用不作此论：`![图](#某处)` 不是一个地址，那处写法本身是错的。
+	if location == "" {
+		if isResource {
+			return Entry{}, fmt.Errorf("%s 里取资源的引用 %q 不是一个地址", from, dest)
+		}
+		return Entry{}, errNavigationLink
+	}
+	if isExternalDestination(location) {
 		if isResource {
 			return Entry{}, errExternalResource(from, dest)
 		}
 		// 导航链接可以是任意地址：用户链到外部网站是他的意图，不是资源引用。
 		return Entry{}, errNavigationLink
 	}
-	entryPath, ok := resolveEntryPath(l.SiteRoot, from, dest)
+	entryPath, ok := resolveEntryPath(l.SiteRoot, from, location)
 	if !ok {
 		return Entry{}, fmt.Errorf("%s 里的引用 %q 不是一处可用的站点内位置", from, dest)
 	}

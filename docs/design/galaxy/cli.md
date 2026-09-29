@@ -22,21 +22,32 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 命令 | 能力 | 权限码 |
 |------|------|--------|
 | `galaxy capabilities` | 读取本部署下创作能力的边界（能不能传素材、能不能发布、各项上限） | 只需认证 |
-| `galaxy project list` | 列出自己的工程 | `galaxy.project.read` |
-| `galaxy project create` / `update` / `delete` | 创建、改名与改简介、删除工程 | `galaxy.project.write` |
+| `galaxy project list` | 列出自己的工程（含启用了哪些内容槽） | `galaxy.project.read` |
+| `galaxy project create` | 创建工程，并选一个或多个**内容槽** | `galaxy.project.write` |
+| `galaxy project update` / `delete` | 改名与改简介、删除工程 | `galaxy.project.write` |
+| `galaxy project slot add` | 给已有工程加一个内容槽 | `galaxy.project.write` |
 | `galaxy project get` | 读取工程元数据 | `galaxy.project.read` |
-| `galaxy project base` | 输出该工程的**发布根**，供构建命令使用 | `galaxy.project.read` |
-| `galaxy draft list` | 列出草稿里的路径与条目类别（文本 / 资产） | `galaxy.project.read` |
-| `galaxy draft pull` / `push` | 把草稿整组写到本地目录 / 以本地目录替换整组草稿 | `galaxy.project.read` / `write` |
-| `galaxy version save` / `delete` | 把草稿存成不可变版本、删除版本 | `galaxy.project.write` |
-| `galaxy version list` / `get` / `pull` | 列出、读取版本（单份文件用 `--path`）、把某个版本整组写到本地目录 | `galaxy.project.read` |
-| `galaxy validate` | 校验当前草稿能不能发布 | `galaxy.project.read` |
+| `galaxy project base` | 输出某个槽的**发布根**，供构建命令使用 | `galaxy.project.read` |
+| `galaxy draft list` | 列出某个槽的草稿里的路径与条目类别（文本 / 资产） | `galaxy.project.read` |
+| `galaxy draft pull` / `push` | 把某个槽的草稿整组写到本地目录 / 以本地目录替换整组草稿 | `galaxy.project.read` / `write` |
+| `galaxy version save` / `delete` | 把某个槽的草稿存成不可变版本、删除版本 | `galaxy.project.write` |
+| `galaxy version list` / `get` / `pull` | 列出、读取某个槽的版本（单份文件用 `--path`）、把某个版本整组写到本地目录 | `galaxy.project.read` |
+| `galaxy validate` | 校验某个槽的当前草稿能不能发布 | `galaxy.project.read` |
 | `galaxy asset list` | 列出工程资产库（含短时读取地址、标题、标签与备注摘要），可按标签筛选 | `galaxy.asset.read` |
 | `galaxy asset upload` / `delete` | 上传、删除资产 | `galaxy.asset.write` |
 | `galaxy asset update` | 改资产的展示标题、标签与备注 | `galaxy.asset.write` |
-| `galaxy publish` / `unpublish` | 发布一个版本、撤回发布 | `galaxy.project.publish` |
+| `galaxy publish` / `unpublish` | 发布某个槽的一个版本、撤回该槽的发布 | `galaxy.project.publish` |
 
-工程、版本与资产的标识一律**显式给出**，都是命令的位置参数。
+工程、版本与资产的标识一律**显式给出**，都是命令的位置参数。**资产库里没有槽**：它是工程级的共享库，两个槽引用同一份资产。
+
+### 内容槽怎么给
+
+**除 `project create` 与 `project slot add` 外，凡是碰内容或发布状态的命令都针对一个槽**（`draft` / `version` / `validate` / `publish` / `unpublish` / `project base`），用 `--slot site|docs` 给出。
+
+- **工程只有一个槽时可以省略**：命令行从 `project get` 读回启用了哪些槽，只有一个就用它。**这是省事的缺省，不是判定权威**——服务端始终要求显式的槽，缺省只发生在命令行这一侧。
+- **工程有两个槽时必须显式给出**：省略即报用法错误。这与"工程标识每次都显式给出"是同一条取向（见下）——两个槽存在时，"我这条命令打到了哪个槽"不该靠一个默认值来回答。
+
+`project create --slot site --slot docs` 可重复；至少给一个。**槽只增不删**：没有"删掉一个槽"的命令，`project slot add` 是单向的（理由见 [site-model.md](site-model.md)）。
 
 ### 只有原子命令
 
@@ -60,7 +71,9 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 
 **判定"哪些是文本"的表必须与服务端那一个白名单逐条一致**，并由测试钉住（与下面资产那一节的扩展名表同一条要求）：两处各判一份的表现是"命令行以为这是文本，服务端拒了它"。
 
-**构建产物的发布根来自服务端。** `project base` 输出该工程的发布根（形如 `<发布域>/g/<工程标识>/`），命令行把它交给构建命令（vite 用 `--base`），使产物里的绝对路径成立。**命令行不自己拼这个地址**：它与发布态的地址、内容安全策略里的允许来源同源（见 [publication.md](publication.md)），多一处拼接就是多一处会漂的来源。
+**构建产物的发布根来自服务端。** `project base --slot site` 输出该槽的发布根（形如 `<发布域>/g/<工程标识>/`；`docs` 槽则是它下面的 `docs/`），命令行把它交给构建命令（vite 用 `--base`），使产物里的绝对路径成立。**命令行不自己拼这个地址**：它与发布态的地址、内容安全策略里的允许来源同源（见 [publication.md](publication.md)），多一处拼接就是多一处会漂的来源。
+
+**`push` 在本地就拦住保留段。** `docs` 是 `site` 槽的保留首段（见 [site-model.md](site-model.md) 的"地址"），因此目录里出现 `docs/...` 时，`push --slot site` 在**发送前**就报错并指出那个路径——服务端同样会拒，但本地这一步省一次往返，也让错误在人还记得自己刚动过什么的时候出现。
 
 **输出**：整组写到给定目录（`pull`）；`--output json` 时输出完整的响应消息；其余命令在 text 模式下输出人可读摘要，`--output json` 时输出完整消息。
 
@@ -135,7 +148,10 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 位置参数是用法错误 | 参数个数不对时退出码与其它用法错误同类，而不是落进"未分类失败"（`cmd/aladdin` 测试） |
 | 扩展名表与白名单一致 | 表中每个取值都能通过服务端那一个类型入口（`cmd/aladdin` 测试） |
 | 元数据只改显式项 | `asset update` 只给 `--title` 时标签与备注保持原值，给出空串才清空（`cmd/aladdin` 测试） |
-| 文件组输入 | `draft push` 一个目录、目录不存在、目录里含非文本文件三种情形各自的行为（`cmd/aladdin` 测试） || 文本与资产的分界一致 | 判定文本的扩展名表与资产类型表分别与服务端那一个入口逐条一致（`cmd/aladdin` 测试） |
+| 文件组输入 | `draft push` 一个目录、目录不存在、目录里含非文本文件三种情形各自的行为（`cmd/aladdin` 测试） |
+| 文本与资产的分界一致 | 判定文本的扩展名表与资产类型表分别与服务端那一个入口逐条一致（`cmd/aladdin` 测试） |
+| 保留段在本地就拦住 | `push --slot site` 一个含 `docs/...` 的目录时报错并指出那个路径，且不发出请求（`cmd/aladdin` 测试） |
+| 单槽省略、双槽必须给 | 单槽工程的 `draft push` 不带 `--slot` 成功；双槽工程不带 `--slot` 是用法错误（`cmd/aladdin` 测试） |
 | 整组往返一致 | `push` 一个目录再 `pull` 回来，路径集合与每个文件的内容逐字相同（`cmd/aladdin` 测试） |
 | 发布根不自己拼 | `project base` 的输出与服务端在发布地址里用的发布根一致（`cmd/aladdin` 测试 + 端到端测试） |
 | 发布地址匿名可达 | 用命令行子进程跑完建工程 → 存草稿 → 存版本 → 发布，再不携带任何凭证取发布地址（端到端测试） |
@@ -147,7 +163,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 依赖对象 | 交互方式 |
 |---------|---------|
 | 服务端 GalaxyService | 经 Connect 调用，消费其拒绝语义；命令与权限码的对应关系必须与 proto 注解一致 |
-| 站点形态与文件组 | 整组文件的形状、发布根与文本/资产的分界见 [site-model.md](site-model.md) |
+| 内容槽与文件组 | 整组文件的形状、两种内容槽与各自的地址、保留段、发布根与文本/资产的分界见 [site-model.md](site-model.md) |
 | RBAC | 权限码取自生成常量，命令只做静态声明，不做本地判定（见 [../rbac/cli-permissions.md](../rbac/cli-permissions.md)） |
 | 对象存储直传 | 资产与内容对象的字节都走公共直传链路；命令行侧的实现见下 |
 | proto | 方法与权限码在 `api/proto/aladdin/galaxy/v1/` 中声明，经 `buf generate` 派生客户端 |

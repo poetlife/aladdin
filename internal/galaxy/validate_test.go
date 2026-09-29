@@ -166,21 +166,21 @@ func TestTextSizeLimits(t *testing.T) {
 // docs 形态：**整站渲染**，导航只由 markdown 文件派生，站点文件不进导航。
 func TestDocsRenderAndNavigation(t *testing.T) {
 	f := newFixture(t)
-	project := f.createProjectForm(t, "文档站", SiteFormDocs)
+	project := f.createProjectSlots(t, "文档站", SlotDocs)
 	asset := f.uploadAsset(t, project.ID, "image/png", "logo.png", []byte("png"))
 
-	f.pushDraft(t, project.ID, []Entry{
+	f.pushDraftSlot(t, project.ID, SlotDocs, []Entry{
 		f.textEntry(t, project.ID, "index.md", "# 首页\n\n看[入门](guide/intro.md)。\n"),
 		f.textEntry(t, project.ID, "guide/intro.md", "# 入门\n\n![图](asset://"+asset.ID+")\n"),
 		f.textEntry(t, project.ID, "theme.css", "body{color:red}"),
 		{Path: "logo.png", Kind: EntryKindAsset, AssetID: asset.ID},
 	})
 
-	report := f.report(t, project.ID)
+	report := f.reportSlot(t, project.ID, SlotDocs)
 	if !report.OK() {
 		t.Fatalf("文档站被拒: %v", report.Messages())
 	}
-	artifacts := f.buildArtifacts(t, project.ID)
+	artifacts := f.buildArtifactsSlot(t, project.ID, SlotDocs)
 
 	// 每一份 markdown 渲染成一页 `.html`。
 	index, ok := artifacts["index.html"]
@@ -195,12 +195,13 @@ func TestDocsRenderAndNavigation(t *testing.T) {
 	if string(artifacts["theme.css"]) != "body{color:red}" {
 		t.Errorf("站点文件被改动了: %q", artifacts["theme.css"])
 	}
-	// 文档间链接被解析成站点内的绝对地址。
-	if !strings.Contains(string(index), "/g/"+project.ID+"/guide/intro.html") {
+	// 文档间链接被解析成**该槽的**站点内绝对地址——文档槽的根在 `docs/` 下，
+	// 这是"站点与文档并存"在地址上的样子。
+	if !strings.Contains(string(index), "/g/"+project.ID+"/docs/guide/intro.html") {
 		t.Errorf("文档间链接没有被解析成站点内地址：%s", index)
 	}
 	// 渲染器产出的地址一律是站点绝对路径；页面落在嵌套路径下时这一条才成立。
-	if !strings.Contains(string(intro), "/g/"+project.ID+"/") {
+	if !strings.Contains(string(intro), "/g/"+project.ID+"/docs/") {
 		t.Errorf("嵌套页里的地址不是站点绝对路径：%s", intro)
 	}
 	// **导航只由 markdown 派生**：站点文件不进导航，且每一项都对应一份文档。
@@ -224,12 +225,12 @@ func TestDocsRenderAndNavigation(t *testing.T) {
 // docs 形态：指向文件组里不存在的位置的文档间链接被拒，并指出是哪一份文件。
 func TestDocsBrokenDocLinkIsRejected(t *testing.T) {
 	f := newFixture(t)
-	project := f.createProjectForm(t, "文档站", SiteFormDocs)
-	f.pushDraft(t, project.ID, []Entry{
+	project := f.createProjectSlots(t, "文档站", SlotDocs)
+	f.pushDraftSlot(t, project.ID, SlotDocs, []Entry{
 		f.textEntry(t, project.ID, "index.md", "# 首页\n\n看[不存在](guide/missing.md)。\n"),
 	})
 
-	report := f.report(t, project.ID)
+	report := f.reportSlot(t, project.ID, SlotDocs)
 	if report.OK() {
 		t.Fatal("指向不存在位置的文档间链接被放过了")
 	}
@@ -244,15 +245,15 @@ func TestDocsBrokenDocLinkIsRejected(t *testing.T) {
 // 渲染是**确定性**的：同一份源渲染两次逐字相同（"重复发布不产生新对象"的前提）。
 func TestDocsRenderIsDeterministic(t *testing.T) {
 	f := newFixture(t)
-	project := f.createProjectForm(t, "文档站", SiteFormDocs)
-	f.pushDraft(t, project.ID, []Entry{
+	project := f.createProjectSlots(t, "文档站", SlotDocs)
+	f.pushDraftSlot(t, project.ID, SlotDocs, []Entry{
 		f.textEntry(t, project.ID, "index.md", "# 首页\n\n正文。\n"),
 		f.textEntry(t, project.ID, "b.md", "# 乙\n\n乙的正文。\n"),
 		f.textEntry(t, project.ID, "a.md", "# 甲\n\n甲的正文。\n"),
 	})
 
-	first := f.buildArtifacts(t, project.ID)
-	second := f.buildArtifacts(t, project.ID)
+	first := f.buildArtifactsSlot(t, project.ID, SlotDocs)
+	second := f.buildArtifactsSlot(t, project.ID, SlotDocs)
 	for artifactPath, data := range first {
 		if string(second[artifactPath]) != string(data) {
 			t.Errorf("%s 两次渲染结果不同", artifactPath)
@@ -263,12 +264,12 @@ func TestDocsRenderIsDeterministic(t *testing.T) {
 // docs 形态下 markdown 里的图片引用同样要落在文件组里。
 func TestDocsImageMustLandInFileSet(t *testing.T) {
 	f := newFixture(t)
-	project := f.createProjectForm(t, "文档站", SiteFormDocs)
-	f.pushDraft(t, project.ID, []Entry{
+	project := f.createProjectSlots(t, "文档站", SlotDocs)
+	f.pushDraftSlot(t, project.ID, SlotDocs, []Entry{
 		f.textEntry(t, project.ID, "index.md", "# 首页\n\n![图](images/x.png)\n"),
 	})
 
-	report := f.report(t, project.ID)
+	report := f.reportSlot(t, project.ID, SlotDocs)
 	if report.OK() {
 		t.Fatal("指向不存在图片的 markdown 被放过了")
 	}
@@ -282,15 +283,15 @@ func TestValidateDraftIsReadOnly(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
 	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>x</p>")})
-	before, _, err := f.service.GetDraft(context.Background(), testOwner, project.ID)
+	before, _, err := f.service.GetDraft(context.Background(), testOwner, project.ID, SlotSite)
 	if err != nil {
 		t.Fatalf("读草稿失败: %v", err)
 	}
 
-	if _, err := f.service.ValidateDraft(context.Background(), testOwner, project.ID); err != nil {
+	if _, err := f.service.ValidateDraft(context.Background(), testOwner, project.ID, SlotSite); err != nil {
 		t.Fatalf("校验失败: %v", err)
 	}
-	after, _, err := f.service.GetDraft(context.Background(), testOwner, project.ID)
+	after, _, err := f.service.GetDraft(context.Background(), testOwner, project.ID, SlotSite)
 	if err != nil {
 		t.Fatalf("读草稿失败: %v", err)
 	}

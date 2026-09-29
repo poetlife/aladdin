@@ -63,16 +63,17 @@ describe('创作与发布介绍页', () => {
     expect(text).toContain('网页端只读')
   })
 
-  // 形态创建时定下、此后不可改，这一章必须把两个取值与它们的差别讲清楚。
-  it('讲清两种形态的差别', async () => {
+  // 槽只增不删、两个槽并存，这一章必须把两个取值与它们的差别讲清楚。
+  it('讲清两种内容槽的差别', async () => {
     const container = await renderPage()
     const text = container.textContent ?? ''
 
-    expect(text).toContain('static')
+    expect(text).toContain('site')
     expect(text).toContain('docs')
     expect(text).toContain('index.html')
     expect(text).toContain('index.md')
     expect(text).toContain('不收 HTML')
+    expect(text).toContain('只增不删')
   })
 
   // 命令名与位置参数与 cmd/aladdin 一致；写成别的形状会让人复制到一条不存在的命令。
@@ -81,14 +82,15 @@ describe('创作与发布介绍页', () => {
     const text = container.textContent ?? ''
 
     for (const command of [
-      'aladdin galaxy project create --form',
-      'aladdin galaxy project base <工程标识>',
+      'aladdin galaxy project create --slot site',
+      'aladdin galaxy project base <工程标识> --slot site',
+      'aladdin galaxy project slot add <工程标识> --slot docs',
       'aladdin galaxy asset upload <工程标识>',
       'aladdin galaxy asset list <工程标识>',
-      'aladdin galaxy draft push <工程标识>',
-      'aladdin galaxy validate <工程标识>',
-      'aladdin galaxy version save <工程标识>',
-      'aladdin galaxy publish <工程标识> <版本标识> --yes',
+      'aladdin galaxy draft push <工程标识> ./dist --slot site',
+      'aladdin galaxy validate <工程标识> --slot site',
+      'aladdin galaxy version save <工程标识> --slot site',
+      'aladdin galaxy publish <工程标识> <版本标识> --slot site --yes',
     ]) {
       expect(text, `正文里少了 ${command}`).toContain(command)
     }

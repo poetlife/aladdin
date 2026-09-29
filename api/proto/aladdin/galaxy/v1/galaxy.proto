@@ -44,14 +44,25 @@ service GalaxyService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
-  // 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
+  // 创建一个工程，并选一个或多个**内容槽**。标识由服务端分配，不可猜、不可改、
+  // 不复用。
   //
-  // **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
-  // 历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+  // **至少选一个槽，此后只增不删**（见 AddProjectSlot）。每个槽各有自己的草稿、
+  // 版本、发布指针与地址（见 docs/design/galaxy/site-model.md）。
   //
   // 名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
   // 一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse) {
+    option (aladdin.rbac.v1.required_permission) = "galaxy.project.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 给一个已有工程加一个内容槽。
+  //
+  // **单向**：没有"删掉一个槽"的对应方法——槽的语义与地址是固定的，已有的版本
+  // 与地址都挂在它上面，因此删除要单独论证（见 site-model.md）。**加一个槽不
+  // 改变另一个槽**：那个槽的草稿、版本、发布指针与地址都原样。
+  rpc AddProjectSlot(AddProjectSlotRequest) returns (AddProjectSlotResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.write";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
@@ -65,7 +76,8 @@ service GalaxyService {
 
   // 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
   //
-  // **不含形态**：形态改不了，因此它不在这个请求的形状里。
+  // **不含内容槽**：槽只增不删，且"有哪些槽"由 AddProjectSlot 回答，因此它不在
+  // 这个请求的形状里。
   rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.write";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
@@ -170,7 +182,7 @@ service GalaxyService {
   // 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
   //
   // 内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
-  // 路径与形态派生（不存在"声明"这一层）、不进公开区。
+  // 路径与内容槽派生（不存在"声明"这一层）、不进公开区。
   //
   // **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
   // 否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
@@ -281,17 +293,21 @@ service GalaxyService {
   // 路径只负责往 `galaxy.project/<工程标识>` 这个主题上发一条事件。
 }
 
-// SiteForm 是工程的站点形态。
+// ContentSlot 是工程的一块独立内容。
 //
-// 它在**创建时**定下，此后不可改：形态决定已保存版本的发布语义，允许改形态
-// 等于让历史版本的产物无法复现。两种形态的差别落在入口、渲染与扩展名白名单
-// 三处（见 docs/design/galaxy/site-model.md），**没有一处在对象存储的键上**。
-enum SiteForm {
-  SITE_FORM_UNSPECIFIED = 0;
-  // 整站文件原样服务。覆盖手写单页与构建产物，入口是 index.html。
-  SITE_FORM_STATIC = 1;
-  // 一组 markdown 渲染成多页，站点文件原样带上。入口是 index.md。
-  SITE_FORM_DOCS = 2;
+// 一个工程有一到两个槽，**创建时至少选一个，此后只增不删**。每个槽各有自己的
+// 草稿、版本、发布指针与地址，**两个槽互不影响**：在一个槽上的任何动作都不改变
+// 另一个槽。两种槽的差别落在入口、渲染与扩展名白名单三处（见
+// docs/design/galaxy/site-model.md），**没有一处在对象存储的键上**。
+enum ContentSlot {
+  CONTENT_SLOT_UNSPECIFIED = 0;
+  // 整站文件原样服务。覆盖手写单页与构建产物，入口是 index.html，
+  // 地址是工程根 `/g/<工程标识>/`。
+  CONTENT_SLOT_SITE = 1;
+  // 一组 markdown 渲染成多页，站点文件原样带上。入口是 index.md，
+  // 地址是工程根下的 `docs/`。**`docs` 因此是保留首段**：site 槽的路径不得
+  // 以它开头，写入期拒绝。
+  CONTENT_SLOT_DOCS = 2;
 }
 
 // MediaKind 是资产按媒体分出的类别。
@@ -382,48 +398,70 @@ message Project {
   string description = 3;
   string created_at = 4;
   string updated_at = 5;
-  // 当前是否处于发布态。
-  bool published = 6;
-  // 当前发布指向的版本标识。未发布时为空。
-  string published_version_id = 7;
-  // 发布地址，形如 <发布域>/g/<工程标识>。未发布时为空。
+
+  // 6–11 原先是"一个形态 + 一份发布状态"。形态与发布状态现在都**按槽**给出，
+  // 见 slots，因此这几个字段号保留，不再复用。
+  reserved 6, 7, 8, 9, 10, 11;
+
+  // 启用的内容槽，每个带它自己的发布状态与地址。**至少一个**。
+  //
+  // 槽只增不删（见 AddProjectSlot），因此这个列表只会在后面追加。**每个槽的
+  // 发布状态都属于它自己**：发布或撤回一个槽不改变另一个槽的任何字段。
+  repeated ProjectSlot slots = 12;
+}
+
+// ProjectSlot 是工程的一个内容槽，以及它当前的发布状态。
+//
+// 一个槽一条。**行存在即槽启用**——"这个工程有哪些内容"只有这一处回答，
+// 工程行上不重复存一份。
+message ProjectSlot {
+  ContentSlot slot = 1;
+  // 这个槽当前是否处于发布态。
+  bool published = 2;
+  // 这个槽当前发布指向的版本标识。未发布时为空。
+  string published_version_id = 3;
+  // 这个槽的发布地址：site 槽形如 <发布域>/g/<工程标识>，docs 槽形如
+  // <发布域>/g/<工程标识>/docs。未发布时为空。
   //
   // **地址由服务端算好**，客户端不拼：记号解析生成的地址、内容安全策略里的
   // 允许来源与这个地址都从同一批配置值派生，客户端再拼一份就是又一个来源。
-  string published_url = 8;
-  // 当前发布的生效时间。未发布时为空。
-  string published_at = 9;
-  // 形态。创建时定下，此后不可改。
-  SiteForm form = 10;
-  // **发布根**，形如 <发布域>/g/<工程标识>/，供构建命令使用（vite 的 --base）。
+  string published_url = 4;
+  // 这个槽当前发布的生效时间。未发布时为空。
+  string published_at = 5;
+  // 这个槽的**发布根**，形如 <发布域>/g/<工程标识>/（docs 槽到 `docs/`），
+  // 供构建命令使用（vite 的 --base）。
   //
   // 配置了发布域时始终有值，与是否已发布无关：构建产物里的绝对路径要成立，
   // 靠的是它，而不是"页面已经发出去"。未配置发布域时为空。
-  string base_url = 11;
+  string base_url = 6;
 }
 
-// Draft 是工程当前正在编辑的文件清单。
+// Draft 是**某个内容槽**当前正在编辑的文件清单。
 //
 // 它不是版本：随时可改，改它不产生版本，不参与发布，也不保证可退回。
 message Draft {
   repeated FileEntry entries = 1;
   // 最后一次推送的时间。从未推送过草稿时为空。
   string updated_at = 2;
+  // 这是哪个槽的草稿。
+  ContentSlot slot = 3;
 }
 
 // Version 是文件清单的一次不可变快照。
 message Version {
   string id = 1;
-  // 在工程内递增的序号。**仅用于展示与排序，不是标识。**
+  // 在**本槽内**递增的序号。**仅用于展示与排序，不是标识。**
   // 删除一个版本会让后续序号出现空洞，这是可接受的。
   int64 seq = 2;
   string saved_at = 3;
   // 保存那一刻草稿的清单。**写入后不再修改。** 地址只有 GetVersion 填充。
   repeated FileEntry entries = 4;
-  // 保存时所处的渲染规则版本。只有 `docs` 形态使用它，重新发布时按它渲染
+  // 保存时所处的渲染规则版本。只有 `docs` 槽使用它，重新发布时按它渲染
   // 而不是按当前最新的——否则"撤回后重新发布同一版本，产物逐字相同"会在
   // 渲染器升级的那天悄悄失效。
   int32 render_rules_version = 5;
+  // 这个版本属于哪个槽。**版本按槽隔离**：它只在自己的槽里被列出与发布。
+  ContentSlot slot = 6;
 }
 
 // Asset 是工程资产库里的一个媒体文件。
@@ -486,8 +524,10 @@ message Publication {
   string project_id = 2;
   string version_id = 3;
   string published_at = 4;
-  // 发布地址，与 Project.published_url 同一处派生。
+  // 发布地址，与对应 ProjectSlot.published_url 同一处派生。
   string url = 5;
+  // 这次发布的是哪个内容槽。
+  ContentSlot slot = 6;
 }
 
 message GetCapabilitiesRequest {}
@@ -505,11 +545,24 @@ message ListProjectsResponse {
 message CreateProjectRequest {
   string name = 1;
   string description = 2;
-  // 形态。**必填**：它创建时定下、此后不可改，因此没有"以后再定"这个形状。
-  SiteForm form = 3;
+  // 3 原先是一个必填的 SiteForm（形态）。形态现在是内容槽，见 slots。
+  reserved 3;
+  // 创建时要启用的内容槽。**至少一个、不重复**，此后只增不删（见 AddProjectSlot）。
+  repeated ContentSlot slots = 4;
 }
 
 message CreateProjectResponse {
+  Project project = 1;
+}
+
+message AddProjectSlotRequest {
+  string project_id = 1;
+  // 要加的槽。**必填**：没有"随便加一个"这个形状。
+  ContentSlot slot = 2;
+}
+
+message AddProjectSlotResponse {
+  // 加完之后完整的工程状态（含两个槽各自的发布状态）。
   Project project = 1;
 }
 
@@ -540,6 +593,8 @@ message DeleteProjectResponse {}
 
 message GetDraftRequest {
   string project_id = 1;
+  // 要读哪个内容槽的草稿。
+  ContentSlot slot = 2;
 }
 
 message GetDraftResponse {
@@ -551,6 +606,8 @@ message PushDraftRequest {
   string project_id = 1;
   // 期望的完整清单。条目只引用已经上传好的对象，因此这里的 url 被忽略。
   repeated FileEntry entries = 2;
+  // 要替换哪个内容槽的整组草稿。
+  ContentSlot slot = 3;
 }
 
 // 返回推送之后的草稿，而不是一个成功标志：客户端刚做过一次会改变现状的
@@ -561,6 +618,8 @@ message PushDraftResponse {
 
 message SaveVersionRequest {
   string project_id = 1;
+  // 把哪个内容槽的草稿存成版本。
+  ContentSlot slot = 2;
 }
 
 message SaveVersionResponse {
@@ -569,6 +628,8 @@ message SaveVersionResponse {
 
 message ListVersionsRequest {
   string project_id = 1;
+  // 列出哪个内容槽的版本。
+  ContentSlot slot = 2;
 }
 
 message ListVersionsResponse {
@@ -578,6 +639,8 @@ message ListVersionsResponse {
 message GetVersionRequest {
   string project_id = 1;
   string version_id = 2;
+  // 该版本所属的内容槽。版本按槽隔离，因此要给。
+  ContentSlot slot = 3;
 }
 
 message GetVersionResponse {
@@ -587,12 +650,16 @@ message GetVersionResponse {
 message DeleteVersionRequest {
   string project_id = 1;
   string version_id = 2;
+  // 该版本所属的内容槽。版本按槽隔离，因此要给。
+  ContentSlot slot = 3;
 }
 
 message DeleteVersionResponse {}
 
 message ValidateDraftRequest {
   string project_id = 1;
+  // 校验哪个内容槽的草稿。
+  ContentSlot slot = 2;
 }
 
 // 问题为空表示这份草稿可以发布。**它是发布前置校验的同一份规则**，因此
@@ -603,9 +670,11 @@ message ValidateDraftResponse {
 
 message PreviewDraftRequest {
   string project_id = 1;
-  // 要预览的那一份文件；为空表示入口。两种形态都按文件组里的路径给——
-  // `docs` 的页面由服务端渲染，因此这里也可以给它的产物路径。
+  // 要预览的那一份文件；为空表示入口。按**该槽**文件组里的路径给——
+  // `docs` 槽的页面由服务端渲染，因此这里也可以给它的产物路径。
   string path = 2;
+  // 预览哪个内容槽的草稿。凭证绑在（工程，槽）上，换一个槽要重新开一次。
+  ContentSlot slot = 3;
 }
 
 message PreviewDraftResponse {
@@ -732,6 +801,8 @@ message PublishRequest {
   string project_id = 1;
   // 要发布的版本。**必填**：没有"发布当前草稿"这种形状。
   string version_id = 2;
+  // 发布哪个内容槽的版本。版本按槽隔离，因此要给。
+  ContentSlot slot = 3;
 }
 
 message PublishResponse {
@@ -742,6 +813,8 @@ message PublishResponse {
 
 message UnpublishRequest {
   string project_id = 1;
+  // 撤回哪个内容槽的发布。**另一个槽不受影响**。
+  ContentSlot slot = 2;
 }
 
 message UnpublishResponse {

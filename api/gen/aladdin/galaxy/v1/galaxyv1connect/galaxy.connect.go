@@ -42,6 +42,9 @@ const (
 	// GalaxyServiceCreateProjectProcedure is the fully-qualified name of the GalaxyService's
 	// CreateProject RPC.
 	GalaxyServiceCreateProjectProcedure = "/aladdin.galaxy.v1.GalaxyService/CreateProject"
+	// GalaxyServiceAddProjectSlotProcedure is the fully-qualified name of the GalaxyService's
+	// AddProjectSlot RPC.
+	GalaxyServiceAddProjectSlotProcedure = "/aladdin.galaxy.v1.GalaxyService/AddProjectSlot"
 	// GalaxyServiceGetProjectProcedure is the fully-qualified name of the GalaxyService's GetProject
 	// RPC.
 	GalaxyServiceGetProjectProcedure = "/aladdin.galaxy.v1.GalaxyService/GetProject"
@@ -113,19 +116,27 @@ type GalaxyServiceClient interface {
 	// 刻意没有"列出所有工程"或"列出某个主体的工程"的形状：工程标识不可猜
 	// 是发布态匿名可读的唯一防线，任何枚举入口都会把它降级成"打开就能逛"。
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
-	// 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
+	// 创建一个工程，并选一个或多个**内容槽**。标识由服务端分配，不可猜、不可改、
+	// 不复用。
 	//
-	// **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
-	// 历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+	// **至少选一个槽，此后只增不删**（见 AddProjectSlot）。每个槽各有自己的草稿、
+	// 版本、发布指针与地址（见 docs/design/galaxy/site-model.md）。
 	//
 	// 名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
 	// 一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
+	// 给一个已有工程加一个内容槽。
+	//
+	// **单向**：没有"删掉一个槽"的对应方法——槽的语义与地址是固定的，已有的版本
+	// 与地址都挂在它上面，因此删除要单独论证（见 site-model.md）。**加一个槽不
+	// 改变另一个槽**：那个槽的草稿、版本、发布指针与地址都原样。
+	AddProjectSlot(context.Context, *connect.Request[v1.AddProjectSlotRequest]) (*connect.Response[v1.AddProjectSlotResponse], error)
 	// 读取一个工程的元数据。不含草稿清单、版本清单与资产字节。
 	GetProject(context.Context, *connect.Request[v1.GetProjectRequest]) (*connect.Response[v1.GetProjectResponse], error)
 	// 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
 	//
-	// **不含形态**：形态改不了，因此它不在这个请求的形状里。
+	// **不含内容槽**：槽只增不删，且"有哪些槽"由 AddProjectSlot 回答，因此它不在
+	// 这个请求的形状里。
 	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.UpdateProjectResponse], error)
 	// 删除一个工程。**连带删除它的全部版本、资产与发布记录**，因此已发布的
 	// 地址立刻变成"不存在"。公开区上已上架的字节不回收（见发布一节）。
@@ -187,7 +198,7 @@ type GalaxyServiceClient interface {
 	// 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
 	//
 	// 内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
-	// 路径与形态派生（不存在"声明"这一层）、不进公开区。
+	// 路径与内容槽派生（不存在"声明"这一层）、不进公开区。
 	//
 	// **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
 	// 否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
@@ -286,6 +297,12 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+GalaxyServiceCreateProjectProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("CreateProject")),
+			connect.WithClientOptions(opts...),
+		),
+		addProjectSlot: connect.NewClient[v1.AddProjectSlotRequest, v1.AddProjectSlotResponse](
+			httpClient,
+			baseURL+GalaxyServiceAddProjectSlotProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("AddProjectSlot")),
 			connect.WithClientOptions(opts...),
 		),
 		getProject: connect.NewClient[v1.GetProjectRequest, v1.GetProjectResponse](
@@ -421,6 +438,7 @@ type galaxyServiceClient struct {
 	getCapabilities     *connect.Client[v1.GetCapabilitiesRequest, v1.GetCapabilitiesResponse]
 	listProjects        *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
 	createProject       *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
+	addProjectSlot      *connect.Client[v1.AddProjectSlotRequest, v1.AddProjectSlotResponse]
 	getProject          *connect.Client[v1.GetProjectRequest, v1.GetProjectResponse]
 	updateProject       *connect.Client[v1.UpdateProjectRequest, v1.UpdateProjectResponse]
 	deleteProject       *connect.Client[v1.DeleteProjectRequest, v1.DeleteProjectResponse]
@@ -456,6 +474,11 @@ func (c *galaxyServiceClient) ListProjects(ctx context.Context, req *connect.Req
 // CreateProject calls aladdin.galaxy.v1.GalaxyService.CreateProject.
 func (c *galaxyServiceClient) CreateProject(ctx context.Context, req *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error) {
 	return c.createProject.CallUnary(ctx, req)
+}
+
+// AddProjectSlot calls aladdin.galaxy.v1.GalaxyService.AddProjectSlot.
+func (c *galaxyServiceClient) AddProjectSlot(ctx context.Context, req *connect.Request[v1.AddProjectSlotRequest]) (*connect.Response[v1.AddProjectSlotResponse], error) {
+	return c.addProjectSlot.CallUnary(ctx, req)
 }
 
 // GetProject calls aladdin.galaxy.v1.GalaxyService.GetProject.
@@ -571,19 +594,27 @@ type GalaxyServiceHandler interface {
 	// 刻意没有"列出所有工程"或"列出某个主体的工程"的形状：工程标识不可猜
 	// 是发布态匿名可读的唯一防线，任何枚举入口都会把它降级成"打开就能逛"。
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
-	// 创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
+	// 创建一个工程，并选一个或多个**内容槽**。标识由服务端分配，不可猜、不可改、
+	// 不复用。
 	//
-	// **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
-	// 历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+	// **至少选一个槽，此后只增不删**（见 AddProjectSlot）。每个槽各有自己的草稿、
+	// 版本、发布指针与地址（见 docs/design/galaxy/site-model.md）。
 	//
 	// 名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
 	// 一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
+	// 给一个已有工程加一个内容槽。
+	//
+	// **单向**：没有"删掉一个槽"的对应方法——槽的语义与地址是固定的，已有的版本
+	// 与地址都挂在它上面，因此删除要单独论证（见 site-model.md）。**加一个槽不
+	// 改变另一个槽**：那个槽的草稿、版本、发布指针与地址都原样。
+	AddProjectSlot(context.Context, *connect.Request[v1.AddProjectSlotRequest]) (*connect.Response[v1.AddProjectSlotResponse], error)
 	// 读取一个工程的元数据。不含草稿清单、版本清单与资产字节。
 	GetProject(context.Context, *connect.Request[v1.GetProjectRequest]) (*connect.Response[v1.GetProjectResponse], error)
 	// 修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
 	//
-	// **不含形态**：形态改不了，因此它不在这个请求的形状里。
+	// **不含内容槽**：槽只增不删，且"有哪些槽"由 AddProjectSlot 回答，因此它不在
+	// 这个请求的形状里。
 	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.UpdateProjectResponse], error)
 	// 删除一个工程。**连带删除它的全部版本、资产与发布记录**，因此已发布的
 	// 地址立刻变成"不存在"。公开区上已上架的字节不回收（见发布一节）。
@@ -645,7 +676,7 @@ type GalaxyServiceHandler interface {
 	// 开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
 	//
 	// 内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
-	// 路径与形态派生（不存在"声明"这一层）、不进公开区。
+	// 路径与内容槽派生（不存在"声明"这一层）、不进公开区。
 	//
 	// **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
 	// 否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
@@ -740,6 +771,12 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		GalaxyServiceCreateProjectProcedure,
 		svc.CreateProject,
 		connect.WithSchema(galaxyServiceMethods.ByName("CreateProject")),
+		connect.WithHandlerOptions(opts...),
+	)
+	galaxyServiceAddProjectSlotHandler := connect.NewUnaryHandler(
+		GalaxyServiceAddProjectSlotProcedure,
+		svc.AddProjectSlot,
+		connect.WithSchema(galaxyServiceMethods.ByName("AddProjectSlot")),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceGetProjectHandler := connect.NewUnaryHandler(
@@ -875,6 +912,8 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 			galaxyServiceListProjectsHandler.ServeHTTP(w, r)
 		case GalaxyServiceCreateProjectProcedure:
 			galaxyServiceCreateProjectHandler.ServeHTTP(w, r)
+		case GalaxyServiceAddProjectSlotProcedure:
+			galaxyServiceAddProjectSlotHandler.ServeHTTP(w, r)
 		case GalaxyServiceGetProjectProcedure:
 			galaxyServiceGetProjectHandler.ServeHTTP(w, r)
 		case GalaxyServiceUpdateProjectProcedure:
@@ -934,6 +973,10 @@ func (UnimplementedGalaxyServiceHandler) ListProjects(context.Context, *connect.
 
 func (UnimplementedGalaxyServiceHandler) CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.CreateProject is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) AddProjectSlot(context.Context, *connect.Request[v1.AddProjectSlotRequest]) (*connect.Response[v1.AddProjectSlotResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.AddProjectSlot is not implemented"))
 }
 
 func (UnimplementedGalaxyServiceHandler) GetProject(context.Context, *connect.Request[v1.GetProjectRequest]) (*connect.Response[v1.GetProjectResponse], error) {

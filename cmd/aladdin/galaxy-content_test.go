@@ -18,7 +18,7 @@ func TestReadFileSetKeepsByteFaithful(t *testing.T) {
 	writeTestFile(t, dir, "index.html", want)
 	writeTestFile(t, dir, "assets/app.js", []byte("console.log(1)"))
 
-	files, err := readFileSet(dir, galaxy.SiteFormStatic)
+	files, err := readFileSet(dir, galaxy.SlotSite)
 	if err != nil {
 		t.Fatalf("读取目录失败：%v", err)
 	}
@@ -45,7 +45,7 @@ func TestReadFileSetSkipsHiddenFiles(t *testing.T) {
 	writeTestFile(t, dir, ".DS_Store", []byte("junk"))
 	writeTestFile(t, dir, ".git/config", []byte("junk"))
 
-	files, err := readFileSet(dir, galaxy.SiteFormStatic)
+	files, err := readFileSet(dir, galaxy.SlotSite)
 	if err != nil {
 		t.Fatalf("读取目录失败：%v", err)
 	}
@@ -62,7 +62,7 @@ func TestReadFileSetRejectsUnknownExtensions(t *testing.T) {
 	writeTestFile(t, dir, "notes.xyz", []byte("?"))
 	writeTestFile(t, dir, "app.js.map", []byte("{}"))
 
-	_, err := readFileSet(dir, galaxy.SiteFormStatic)
+	_, err := readFileSet(dir, galaxy.SlotSite)
 	if err == nil {
 		t.Fatal("白名单外的扩展名被接受了")
 	}
@@ -79,7 +79,7 @@ func TestReadFileSetUsesServerWhitelist(t *testing.T) {
 	writeTestFile(t, dir, "index.md", []byte("# 首页"))
 	writeTestFile(t, dir, "logo.png", []byte("png"))
 
-	files, err := readFileSet(dir, galaxy.SiteFormDocs)
+	files, err := readFileSet(dir, galaxy.SlotDocs)
 	if err != nil {
 		t.Fatalf("读取目录失败：%v", err)
 	}
@@ -87,7 +87,7 @@ func TestReadFileSetUsesServerWhitelist(t *testing.T) {
 		t.Fatalf("文件数 = %d，期望 2", len(files))
 	}
 	// docs 形态下 `.html` 不在白名单里，因此它不是文本条目。
-	if galaxy.IsTextPath(galaxy.SiteFormDocs, "page.html") {
+	if galaxy.IsTextPath(galaxy.SlotDocs, "page.html") {
 		t.Error("docs 形态把 .html 当成了文本")
 	}
 }
@@ -110,11 +110,11 @@ func TestReadFileSetFailuresAreUsageErrors(t *testing.T) {
 		"路径是文件": file,
 	}
 	for name, path := range cases {
-		if _, err := readFileSet(path, galaxy.SiteFormStatic); !isUsageError(err) {
+		if _, err := readFileSet(path, galaxy.SlotSite); !isUsageError(err) {
 			t.Errorf("%s：应当是用法错误，实际：%v", name, err)
 		}
 	}
-	if _, err := readFileSet(dirWithLink, galaxy.SiteFormStatic); !isUsageError(err) {
+	if _, err := readFileSet(dirWithLink, galaxy.SlotSite); !isUsageError(err) {
 		t.Errorf("符号链接：应当是用法错误，实际：%v", err)
 	}
 	_ = link
@@ -175,10 +175,10 @@ func TestAssetTypeTableMatchesServerWhitelist(t *testing.T) {
 // **判定文本的那张表就是服务端那一张**：这里只确认取值的来源是同一个入口，
 // 不另写一份对照表。
 func TestTextClassificationComesFromServer(t *testing.T) {
-	if !galaxy.IsTextPath(galaxy.SiteFormStatic, "index.html") {
+	if !galaxy.IsTextPath(galaxy.SlotSite, "index.html") {
 		t.Error("static 的 index.html 应当是文本")
 	}
-	if galaxy.IsTextPath(galaxy.SiteFormDocs, "index.html") {
+	if galaxy.IsTextPath(galaxy.SlotDocs, "index.html") {
 		t.Error("docs 的 .html 不该是文本")
 	}
 }

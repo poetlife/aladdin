@@ -72,8 +72,7 @@ func (s *GalaxyService) CreateProject(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	form := fromProtoSiteForm(req.Msg.GetForm())
-	project, err := s.galaxy.CreateProject(ctx, subject.ID, req.Msg.GetName(), req.Msg.GetDescription(), form)
+	project, err := s.galaxy.CreateProject(ctx, subject.ID, req.Msg.GetName(), req.Msg.GetDescription(), fromProtoSlots(req.Msg.GetSlots()))
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -85,8 +84,30 @@ func (s *GalaxyService) CreateProject(ctx context.Context, req *connect.Request[
 	s.logger.Info("已创建工程",
 		zap.String("project_id", project.ID),
 		zap.String("subject_id", subject.ID),
-		zap.String("form", string(form)))
+		zap.Strings("slots", slotNames(project.EnabledSlots())))
 	return connect.NewResponse(&galaxyv1.CreateProjectResponse{Project: toProtoProject(view)}), nil
+}
+
+// AddProjectSlot 实现 GalaxyService：给一个已有工程加一个内容槽。
+func (s *GalaxyService) AddProjectSlot(ctx context.Context, req *connect.Request[galaxyv1.AddProjectSlotRequest]) (*connect.Response[galaxyv1.AddProjectSlotResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	slot := fromProtoSlot(req.Msg.GetSlot())
+	project, err := s.galaxy.AddProjectSlot(ctx, subject.ID, req.Msg.GetProjectId(), slot)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	view, err := s.galaxy.View(ctx, project)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	s.logger.Info("已加入内容槽",
+		zap.String("project_id", project.ID),
+		zap.String("subject_id", subject.ID),
+		zap.String("slot", string(slot)))
+	return connect.NewResponse(&galaxyv1.AddProjectSlotResponse{Project: toProtoProject(view)}), nil
 }
 
 // GetProject 实现 GalaxyService。
@@ -147,7 +168,7 @@ func (s *GalaxyService) GetDraft(ctx context.Context, req *connect.Request[galax
 	if err != nil {
 		return nil, err
 	}
-	draft, entries, err := s.galaxy.GetDraft(ctx, subject.ID, req.Msg.GetProjectId())
+	draft, entries, err := s.galaxy.GetDraft(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()))
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -167,7 +188,7 @@ func (s *GalaxyService) PushDraft(ctx context.Context, req *connect.Request[gala
 	if err != nil {
 		return nil, err
 	}
-	draft, err := s.galaxy.PushDraft(ctx, subject.ID, req.Msg.GetProjectId(), entries)
+	draft, err := s.galaxy.PushDraft(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()), entries)
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -188,7 +209,7 @@ func (s *GalaxyService) SaveVersion(ctx context.Context, req *connect.Request[ga
 	if err != nil {
 		return nil, err
 	}
-	version, err := s.galaxy.SaveVersion(ctx, subject.ID, req.Msg.GetProjectId())
+	version, err := s.galaxy.SaveVersion(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()))
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -201,7 +222,7 @@ func (s *GalaxyService) ListVersions(ctx context.Context, req *connect.Request[g
 	if err != nil {
 		return nil, err
 	}
-	versions, err := s.galaxy.ListVersions(ctx, subject.ID, req.Msg.GetProjectId())
+	versions, err := s.galaxy.ListVersions(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()))
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -218,20 +239,20 @@ func (s *GalaxyService) GetVersion(ctx context.Context, req *connect.Request[gal
 	if err != nil {
 		return nil, err
 	}
-	version, entries, err := s.galaxy.GetVersion(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetVersionId())
+	version, entries, err := s.galaxy.GetVersion(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()), req.Msg.GetVersionId())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
 	return connect.NewResponse(&galaxyv1.GetVersionResponse{Version: toProtoVersion(version, entries)}), nil
 }
 
-// DeleteVersion 实现 GalaxyService。被当前发布指向的版本不可删。
+// DeleteVersion 实现 GalaxyService。被它所属槽的发布指向的版本不可删。
 func (s *GalaxyService) DeleteVersion(ctx context.Context, req *connect.Request[galaxyv1.DeleteVersionRequest]) (*connect.Response[galaxyv1.DeleteVersionResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	err = s.galaxy.DeleteVersion(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetVersionId())
+	err = s.galaxy.DeleteVersion(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()), req.Msg.GetVersionId())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -255,7 +276,7 @@ func (s *GalaxyService) ValidateDraft(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	report, err := s.galaxy.ValidateDraft(ctx, subject.ID, req.Msg.GetProjectId())
+	report, err := s.galaxy.ValidateDraft(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()))
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -279,7 +300,7 @@ func (s *GalaxyService) PreviewDraft(ctx context.Context, req *connect.Request[g
 	if err != nil {
 		return nil, err
 	}
-	url, err := s.galaxy.PreviewDraft(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetPath())
+	url, err := s.galaxy.PreviewDraft(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()), req.Msg.GetPath())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -445,7 +466,7 @@ func (s *GalaxyService) Publish(ctx context.Context, req *connect.Request[galaxy
 	if err != nil {
 		return nil, err
 	}
-	publication, err := s.galaxy.Publish(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetVersionId())
+	publication, err := s.galaxy.Publish(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()), req.Msg.GetVersionId())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -457,19 +478,22 @@ func (s *GalaxyService) Publish(ctx context.Context, req *connect.Request[galaxy
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
+	// 地址取自**这次发布的那个槽**：另一个槽的地址与这次发布无关。
+	slotView, _ := view.FindSlot(publication.Slot)
 	return connect.NewResponse(&galaxyv1.PublishResponse{
-		Publication: toProtoPublication(publication, view.PublishedURL),
+		Publication: toProtoPublication(publication, slotView.PublishedURL),
 		Project:     toProtoProject(view),
 	}), nil
 }
 
-// Unpublish 实现 GalaxyService：把发布指针置空，地址立刻不可达。
+// Unpublish 实现 GalaxyService：把**某一个槽**的发布指针置空，它的地址立刻不可达。
 func (s *GalaxyService) Unpublish(ctx context.Context, req *connect.Request[galaxyv1.UnpublishRequest]) (*connect.Response[galaxyv1.UnpublishResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.galaxy.Unpublish(ctx, subject.ID, req.Msg.GetProjectId()); err != nil {
+	slot := fromProtoSlot(req.Msg.GetSlot())
+	if err := s.galaxy.Unpublish(ctx, subject.ID, req.Msg.GetProjectId(), slot); err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
 	project, err := s.galaxy.GetProject(ctx, subject.ID, req.Msg.GetProjectId())
@@ -482,6 +506,7 @@ func (s *GalaxyService) Unpublish(ctx context.Context, req *connect.Request[gala
 	}
 	s.logger.Info("已撤回发布",
 		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("slot", string(slot)),
 		zap.String("subject_id", subject.ID))
 	return connect.NewResponse(&galaxyv1.UnpublishResponse{Project: toProtoProject(view)}), nil
 }
@@ -506,31 +531,50 @@ func toProtoCapabilities(capabilities galaxy.Capabilities) *galaxyv1.Capabilitie
 	}
 }
 
-// fromProtoSiteForm 把接口枚举翻译成领域取值。
+// fromProtoSlot 把接口枚举翻译成领域取值。
 //
-// **UNSPECIFIED 落到零值**，而零值不是一种合法形态——创建工程时因此会收到
-// "形态不合法"，而不是被静默地当成 static。
-func fromProtoSiteForm(form galaxyv1.SiteForm) galaxy.SiteForm {
-	switch form {
-	case galaxyv1.SiteForm_SITE_FORM_STATIC:
-		return galaxy.SiteFormStatic
-	case galaxyv1.SiteForm_SITE_FORM_DOCS:
-		return galaxy.SiteFormDocs
+// **UNSPECIFIED 落到零值**，而零值不是一个合法内容槽——上层因此会收到"内容槽
+// 不合法"，而不是被静默地当成 site。判定只在这一处之后发生（领域层），适配层
+// 再判一份的表现是"两条规则，迟早有一条漏掉"。
+func fromProtoSlot(slot galaxyv1.ContentSlot) galaxy.ContentSlot {
+	switch slot {
+	case galaxyv1.ContentSlot_CONTENT_SLOT_SITE:
+		return galaxy.SlotSite
+	case galaxyv1.ContentSlot_CONTENT_SLOT_DOCS:
+		return galaxy.SlotDocs
 	default:
 		return ""
 	}
 }
 
-// toProtoSiteForm 把领域取值翻译成接口枚举。
-func toProtoSiteForm(form galaxy.SiteForm) galaxyv1.SiteForm {
-	switch form {
-	case galaxy.SiteFormStatic:
-		return galaxyv1.SiteForm_SITE_FORM_STATIC
-	case galaxy.SiteFormDocs:
-		return galaxyv1.SiteForm_SITE_FORM_DOCS
-	default:
-		return galaxyv1.SiteForm_SITE_FORM_UNSPECIFIED
+// fromProtoSlots 翻译一组内容槽（创建工程时用）。
+func fromProtoSlots(slots []galaxyv1.ContentSlot) []galaxy.ContentSlot {
+	out := make([]galaxy.ContentSlot, 0, len(slots))
+	for _, slot := range slots {
+		out = append(out, fromProtoSlot(slot))
 	}
+	return out
+}
+
+// toProtoSlotValue 把领域取值翻译成接口枚举。
+func toProtoSlotValue(slot galaxy.ContentSlot) galaxyv1.ContentSlot {
+	switch slot {
+	case galaxy.SlotSite:
+		return galaxyv1.ContentSlot_CONTENT_SLOT_SITE
+	case galaxy.SlotDocs:
+		return galaxyv1.ContentSlot_CONTENT_SLOT_DOCS
+	default:
+		return galaxyv1.ContentSlot_CONTENT_SLOT_UNSPECIFIED
+	}
+}
+
+// slotNames 把内容槽转成留痕用的字符串。
+func slotNames(slots []galaxy.ContentSlot) []string {
+	out := make([]string, 0, len(slots))
+	for _, slot := range slots {
+		out = append(out, string(slot))
+	}
+	return out
 }
 
 // toProtoMediaKind 把类别翻译成接口枚举。
@@ -554,31 +598,42 @@ func toProtoMediaKind(kind galaxy.MediaKind) galaxyv1.MediaKind {
 
 // toProtoProject 把工程视图翻译成接口类型。
 //
-// published_url 只在发布态给出：未发布时它是空串，而**不是**一个"以后会可用"
-// 的地址——把地址提前显示出来会让人以为站点已经能打开了。base_url 相反：它是
-// 构建要用的，与"有没有发出去"无关。
+// **发布状态按槽给出**：每个槽有自己的 published / published_version_id /
+// published_url / published_at / base_url，一个槽的发布不改变另一个槽的任何
+// 字段。published_url 只在那个槽发布之后给出：未发布时它是空串，而**不是**一个
+// "以后会可用"的地址——把地址提前显示出来会让人以为站点已经能打开了。base_url
+// 相反：它是构建要用的，与"有没有发出去"无关。
 func toProtoProject(view galaxy.ProjectView) *galaxyv1.Project {
 	project := &galaxyv1.Project{
 		Id:          view.Project.ID,
 		Name:        view.Project.Name,
 		Description: view.Project.Description,
-		Form:        toProtoSiteForm(view.Project.Form),
 		CreatedAt:   view.Project.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:   view.Project.UpdatedAt.UTC().Format(time.RFC3339),
-		Published:   view.Published,
-		BaseUrl:     view.BaseURL,
+		Slots:       make([]*galaxyv1.ProjectSlot, 0, len(view.Slots)),
 	}
-	if view.Published {
-		project.PublishedVersionId = view.Publication.VersionID
-		project.PublishedAt = view.Publication.PublishedAt.UTC().Format(time.RFC3339)
-		project.PublishedUrl = view.PublishedURL
+	for _, slotView := range view.Slots {
+		slot := &galaxyv1.ProjectSlot{
+			Slot:      toProtoSlotValue(slotView.Slot),
+			Published: slotView.Published,
+			BaseUrl:   slotView.BaseURL,
+		}
+		if slotView.Published {
+			slot.PublishedVersionId = slotView.Publication.VersionID
+			slot.PublishedAt = slotView.Publication.PublishedAt.UTC().Format(time.RFC3339)
+			slot.PublishedUrl = slotView.PublishedURL
+		}
+		project.Slots = append(project.Slots, slot)
 	}
 	return project
 }
 
 // toProtoDraft 把草稿翻译成接口类型。
 func toProtoDraft(draft galaxy.Draft, entries []galaxy.EntryView) *galaxyv1.Draft {
-	out := &galaxyv1.Draft{Entries: toProtoEntries(entries, draft.Manifest)}
+	out := &galaxyv1.Draft{
+		Entries: toProtoEntries(entries, draft.Manifest),
+		Slot:    toProtoSlotValue(draft.Slot),
+	}
 	if !draft.UpdatedAt.IsZero() {
 		out.UpdatedAt = draft.UpdatedAt.UTC().Format(time.RFC3339)
 	}
@@ -596,6 +651,7 @@ func toProtoVersion(version galaxy.Version, entries []galaxy.EntryView) *galaxyv
 		SavedAt:            version.SavedAt.UTC().Format(time.RFC3339),
 		Entries:            toProtoEntries(entries, version.Manifest),
 		RenderRulesVersion: fitInt32(version.RenderRulesVersion),
+		Slot:               toProtoSlotValue(version.Slot),
 	}
 }
 
@@ -684,6 +740,7 @@ func toProtoPublication(publication galaxy.Publication, pageURL string) *galaxyv
 		VersionId:   publication.VersionID,
 		PublishedAt: publication.PublishedAt.UTC().Format(time.RFC3339),
 		Url:         pageURL,
+		Slot:        toProtoSlotValue(publication.Slot),
 	}
 }
 
@@ -717,8 +774,13 @@ func toGalaxyConnectError(err error) error {
 	case errors.Is(err, galaxy.ErrProjectDescriptionTooLong):
 		return connect.NewError(connect.CodeInvalidArgument,
 			fmt.Errorf("工程简介不能超过 %d 个字", galaxy.ProjectDescriptionMaxRunes))
-	case errors.Is(err, galaxy.ErrSiteFormInvalid):
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("工程形态必须是 static 或 docs"))
+	case errors.Is(err, galaxy.ErrContentSlotInvalid):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("内容槽必须是 site 或 docs"))
+	case errors.Is(err, galaxy.ErrSlotEnabled):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("这个内容槽已经启用了"))
+	case errors.Is(err, galaxy.ErrReservedPath):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("文件路径不合法：%s 是文档槽占用的保留段", galaxy.ReservedSegment))
 	case errors.Is(err, galaxy.ErrEntryPathInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("文件路径不合法：%s", err.Error()))
 	case errors.Is(err, galaxy.ErrEntrySetInvalid):

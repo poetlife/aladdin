@@ -45,7 +45,7 @@
 |--------|------|---------|
 | 头像 | `avatars/` | 只有本人，经短时预签名地址（见 [../profile/avatar-storage.md](../profile/avatar-storage.md)） |
 | galaxy 资产（私有区） | `galaxy/<工程标识>/` | 只有工程拥有者，经短时预签名地址（见 [../galaxy/asset-library.md](../galaxy/asset-library.md)） |
-| galaxy 发布物（公开区） | `galaxy/release/` | **所有人**，经公开读地址（同上） |
+| galaxy 发布物（公开区） | `galaxy/<工程标识>/release/` | **所有人**，经公开读地址（同上） |
 
 **这几处前缀都是常量，不是配置项**：做成配置项只会多出一种失败方式——改了前缀，存量对象在一瞬间全部变成孤儿。
 
@@ -294,7 +294,7 @@
 | 发布半套拒绝启动 | 给了发布域而桶为空时启动失败，错误信息指出缺的是桶（`internal/config` 测试） |
 | 发布域不同源强制 | 发布域与 `public_base_url` 同源、或同属一个注册域时启动失败，错误信息含两项（`internal/config` 测试） |
 | 发布配置是否被读到 | 启动日志里列出发布是否启用、桶地址与发布域，且不含任何密钥（启动冒烟） |
-| 对象前缀是常量 | 键集合里没有承载 `avatars/`、`galaxy/` 与 `galaxy/release/` 前缀的键（`internal/config` 测试：键集合与示例一致） |
+| 对象前缀是常量 | 键集合里没有承载 `avatars/`、`galaxy/` 与其中的 `release/` 段的前缀键（`internal/config` 测试：键集合与示例一致） |
 | 密钥不入日志 | 启动日志、错误信息与脱敏摘要中不出现 COS 密钥与 GitHub 客户端密钥（`internal/config` 测试 + 启动冒烟） |
 | 密钥不可由配置提供 | 配置文件的键集合里没有承载 COS 密钥或 GitHub 客户端密钥的键（`internal/config` 测试：键集合与示例一致） |
 | GitHub 登录半套拒绝启动 | 客户端标识与客户端密钥只给其一、或两者齐备而缺对外地址时启动失败，信息里指出缺的是哪一项（`internal/config` 测试） |

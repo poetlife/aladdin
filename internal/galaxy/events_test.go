@@ -75,7 +75,7 @@ func TestEachWritePublishesOnTheProjectTopic(t *testing.T) {
 				return stage{project: project, version: f.saveVersion(t, project.ID)}
 			},
 			act: func(t *testing.T, f *fixture, s stage) {
-				if err := f.service.DeleteVersion(context.Background(), testOwner, s.project.ID, s.version.ID); err != nil {
+				if err := f.service.DeleteVersion(context.Background(), testOwner, s.project.ID, SlotSite, s.version.ID); err != nil {
 					t.Fatalf("删除版本失败: %v", err)
 				}
 			},
@@ -114,7 +114,7 @@ func TestEachWritePublishesOnTheProjectTopic(t *testing.T) {
 				return stage{project: project, version: version}
 			},
 			act: func(t *testing.T, f *fixture, s stage) {
-				if err := f.service.Unpublish(context.Background(), testOwner, s.project.ID); err != nil {
+				if err := f.service.Unpublish(context.Background(), testOwner, s.project.ID, SlotSite); err != nil {
 					t.Fatalf("撤回发布失败: %v", err)
 				}
 			},
@@ -182,7 +182,7 @@ func TestWritesThatFailPublishNothing(t *testing.T) {
 			name: "推送一份缺入口文件的清单",
 			act: func(t *testing.T, f *fixture, project Project) {
 				entry := f.textEntry(t, project.ID, "other.html", "内容")
-				if _, err := f.service.PushDraft(context.Background(), testOwner, project.ID, []Entry{entry}); err == nil {
+				if _, err := f.service.PushDraft(context.Background(), testOwner, project.ID, SlotSite, []Entry{entry}); err == nil {
 					t.Fatal("static 形态缺 index.html 的清单应当被拒")
 				}
 			},
@@ -208,7 +208,7 @@ func TestWritesThatFailPublishNothing(t *testing.T) {
 			name: "撤回一个本来就没发布的工程",
 			act: func(t *testing.T, f *fixture, project Project) {
 				// 幂等，且**什么都没变**：没有变更就没有可通知的对象。
-				if err := f.service.Unpublish(context.Background(), testOwner, project.ID); err != nil {
+				if err := f.service.Unpublish(context.Background(), testOwner, project.ID, SlotSite); err != nil {
 					t.Fatalf("撤回未发布的工程应当成功（幂等）: %v", err)
 				}
 			},
