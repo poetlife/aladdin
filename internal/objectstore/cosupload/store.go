@@ -116,7 +116,7 @@ func New(cfg Config) (*Store, error) {
 //
 // 换取失败不重试：重试属于调用方的策略（用户再点一次上传），而在这里悄悄重试
 // 会把一次凭证服务的故障表现成一次"上传按钮没反应"。
-func (s *Store) IssueUpload(ctx context.Context, key string, rules []objectstore.TypeRule) (objectstore.Credential, error) {
+func (s *Store) IssueUpload(ctx context.Context, key string, rules []objectstore.TypeRule, forbidOverwrite bool) (objectstore.Credential, error) {
 	policy, err := buildPolicy(s.parts, key, rules)
 	if err != nil {
 		return objectstore.Credential{}, err
@@ -135,13 +135,14 @@ func (s *Store) IssueUpload(ctx context.Context, key string, rules []objectstore
 		return objectstore.Credential{}, fmt.Errorf("%w: 换到的直传凭证不完整", objectstore.ErrStoreUnavailable)
 	}
 	return objectstore.Credential{
-		Bucket:       s.parts.Bucket,
-		Region:       s.parts.Region,
-		Key:          key,
-		SecretID:     secretID,
-		SecretKey:    secretKey,
-		SessionToken: token,
-		ExpiresAt:    time.Now().Add(credentialTTL),
+		Bucket:          s.parts.Bucket,
+		Region:          s.parts.Region,
+		Key:             key,
+		SecretID:        secretID,
+		SecretKey:       secretKey,
+		SessionToken:    token,
+		ExpiresAt:       time.Now().Add(credentialTTL),
+		ForbidOverwrite: forbidOverwrite,
 	}, nil
 }
 
@@ -187,6 +188,20 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 			return nil
 		}
 		return fmt.Errorf("%w: 删除对象失败: %w", objectstore.ErrStoreUnavailable, err)
+	}
+	return nil
+}
+
+// Put 实现 objectstore.Store：把一个对象写进私有区。
+//
+// 它**不设置任何 ACL**，因此写下去的对象仍是私有的——桶默认私有读写，而"哪些
+// 对象是公开的"只由上架路径决定（见 PublicWriter.Put）。
+func (s *Store) Put(ctx context.Context, key, contentType string, data []byte) error {
+	_, err := s.client.Object.Put(ctx, key, bytes.NewReader(data), &cos.ObjectPutOptions{
+		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{ContentType: contentType},
+	})
+	if err != nil {
+		return fmt.Errorf("%w: 写入对象失败: %w", objectstore.ErrStoreUnavailable, err)
 	}
 	return nil
 }

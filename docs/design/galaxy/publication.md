@@ -277,7 +277,7 @@
 | 发布记录的清理 | 暂不做，保留每次发布的清单（**未定**） | 清单只有路径与摘要，库增长不再是压力；压力转移到私有区对象（内容寻址、可共享），它的回收见 [asset-library.md](asset-library.md) 的待定决策 |
 | 发布物直接由桶托管 | 暂不做，保持服务端返回（**未定**） | 省掉发布域与一条服务端入口，且天然不同源；代价是地址落在存储域上，换桶即换地址 |
 | 站点落在发布域根（每工程一个子域） | 暂不做，站点落在 `/g/<工程标识>/` 下（**未定**） | 地址更干净、构建产物不必注入发布根；代价是泛域名 DNS 与证书，且"发布域与主应用不同源"要在子域上重新论证 cookie 作用域 |
-| 允许发布物发起网络请求 | 暂不做，`connect-src 'none'`（**未定**） | 放开等于允许一个公开页面向任意地址发数据；至少要先把允许的目标收成一个白名单 |
+| 允许发布物向**外部**地址发请求 | 暂不做，`connect-src` 只含 `'self'`（**已定**，见"扫描不是边界，响应头才是"里的策略表） | 放开等于允许一个公开页面向任意地址发数据；至少要先把允许的目标收成一个白名单 |
 | 允许 `data:` 形式的图片 | 暂不做（**未定**） | 与"只引用资产库"直接冲突：它让内容绕开资产的类型与大小约束 |
 | 发布物按访问者裁剪（登录可见等） | 暂不做（**未定**） | 与"发布态不经过 RBAC"这条前提冲突，需要重新设计一整套可见性模型 |
 | 发布物上显示拥有者信息 | 暂不做（**未定**） | 引入身份暴露面；要重新论证"公开匿名的发布物可以显示谁做的" |
@@ -288,10 +288,10 @@
 | 职责 | 文件路径 |
 |------|---------|
 | 发布流程的四个阶段与检查点 | [internal/galaxy/publish.go](../../../internal/galaxy/publish.go) |
-| 文件组与路径约束的领域类型 | `internal/galaxy/content_set.go`（**待建**） |
-| 站点形态、入口解析与文本类型白名单 | `internal/galaxy/site.go`（**待建**） |
+| 文件组与路径约束的领域类型 | [internal/galaxy/content_set.go](../../../internal/galaxy/content_set.go) |
+| 站点形态、入口解析与文本类型白名单 | [internal/galaxy/site.go](../../../internal/galaxy/site.go) |
 | 校验规则集合（唯一入口）与解析 | [internal/galaxy/validate.go](../../../internal/galaxy/validate.go) |
-| markdown 渲染与文档间引用解析 | `internal/galaxy/doc_render.go`（**待建**） |
+| markdown 渲染与文档间引用解析 | [internal/galaxy/doc_render.go](../../../internal/galaxy/doc_render.go) |
 | 公开区地址的生成与允许来源的派生 | [internal/galaxy/public_origin.go](../../../internal/galaxy/public_origin.go) |
 | 媒体上架（按（内容摘要，类型）幂等） | [internal/galaxy/promote.go](../../../internal/galaxy/promote.go) |
 | 内容安全策略响应头 | [internal/galaxy/csp.go](../../../internal/galaxy/csp.go) |

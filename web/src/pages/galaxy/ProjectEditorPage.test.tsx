@@ -15,13 +15,16 @@ import {
 import {
   CapabilitiesSchema,
   DraftSchema,
+  FileEntrySchema,
   GetCapabilitiesResponseSchema,
   GetDraftResponseSchema,
   GetProjectResponseSchema,
   ListAssetsResponseSchema,
   ListVersionsResponseSchema,
+  PreviewDraftResponseSchema,
   ProjectSchema,
-  ValidateContentResponseSchema,
+  SiteForm,
+  ValidateDraftResponseSchema,
   ValidationProblemSchema,
   VersionSchema,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
@@ -48,12 +51,12 @@ vi.mock('../../api/galaxy', () => ({
   updateProject: vi.fn(),
   deleteProject: vi.fn(),
   getDraft: vi.fn(),
-  saveDraft: vi.fn(),
   saveVersion: vi.fn(),
   listVersions: vi.fn(),
   getVersion: vi.fn(),
   deleteVersion: vi.fn(),
-  validateContent: vi.fn(),
+  validateDraft: vi.fn(),
+  previewDraft: vi.fn(),
   listAssets: vi.fn(),
   beginAssetUpload: vi.fn(),
   commitAssetUpload: vi.fn(),
@@ -66,6 +69,13 @@ vi.mock('../../api/galaxy', () => ({
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let root: Root | null = null
+
+/** 一份能力下发：默认配了桶（内容可用），按需覆盖。 */
+function caps(overrides: { assetUploadEnabled?: boolean; publishEnabled?: boolean } = {}) {
+  return create(GetCapabilitiesResponseSchema, {
+    capabilities: create(CapabilitiesSchema, { assetUploadEnabled: true, ...overrides }),
+  })
+}
 
 /** 渲染工作台（路由里带一个 projectId）。 */
 async function renderEditor(): Promise<HTMLElement> {
@@ -143,18 +153,34 @@ beforeEach(() => {
 
   vi.mocked(galaxyApi.getProject).mockResolvedValue(
     create(GetProjectResponseSchema, {
-      project: create(ProjectSchema, { id: 'p1', name: '我的工程' }),
+      project: create(ProjectSchema, { id: 'p1', name: '我的工程', form: SiteForm.STATIC }),
     }),
   )
   vi.mocked(galaxyApi.getDraft).mockResolvedValue(
-    create(GetDraftResponseSchema, { draft: create(DraftSchema, { content: '<h1>hi</h1>' }) }),
+    create(GetDraftResponseSchema, {
+      draft: create(DraftSchema, {
+        entries: [
+          create(FileEntrySchema, {
+            path: 'index.html',
+            source: { case: 'digest', value: 'aa' },
+            url: 'https://cos.example/signed/aa',
+          }),
+          create(FileEntrySchema, {
+            path: 'style.css',
+            source: { case: 'digest', value: 'bb' },
+            url: 'https://cos.example/signed/bb',
+          }),
+        ],
+      }),
+    }),
   )
   vi.mocked(galaxyApi.listVersions).mockResolvedValue(create(ListVersionsResponseSchema, {}))
+  vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
+    create(PreviewDraftResponseSchema, { html: '<h1>hi</h1>' }),
+  )
   // 打开页面就会自动校验一次，因此每个用例都要有一个默认结论；
   // 不补的话 `vi.fn()` 返回 undefined，读 `response.problems` 直接抛。
-  vi.mocked(galaxyApi.validateContent).mockResolvedValue(
-    create(ValidateContentResponseSchema, {}),
-  )
+  vi.mocked(galaxyApi.validateDraft).mockResolvedValue(create(ValidateDraftResponseSchema, {}))
 })
 
 afterEach(async () => {
@@ -166,32 +192,38 @@ afterEach(async () => {
 })
 
 describe('工作台的形态', () => {
-  it('默认落在预览：看得到渲染结果，编辑区不占版面', async () => {
+  it('默认落在预览：看得到渲染结果，源码不占版面', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, { capabilities: create(CapabilitiesSchema, {}) }),
+      caps(),
     )
 
     const container = await renderEditor()
 
     expect(container.querySelector('iframe')).not.toBeNull()
+    // 预览渲染的是**服务端给的那份 HTML**。
+    expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toBe('<h1>hi</h1>')
     expect(container.querySelector('textarea')).toBeNull()
   })
 
-  it('切到源码才出现编辑区，与预览共用同一块面积', async () => {
+  it('切到源码出现的是文件列表与那一份的原文，且**只读**', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, { capabilities: create(CapabilitiesSchema, {}) }),
+      caps(),
     )
 
     const container = await renderEditor()
     await switchStage(container, '源码')
 
-    expect(container.querySelector('textarea')).not.toBeNull()
+    // 源码视图是"文件列表 + 选中的那一份"，不是"一份正文"。
+    expect(container.textContent).toContain('index.html')
+    expect(container.textContent).toContain('style.css')
     expect(container.querySelector('iframe')).toBeNull()
+    // **网页端不改内容**：这块面积上没有任何可编辑的控件。
+    expect(container.querySelector('textarea')).toBeNull()
   })
 
   it('预览侧给出"单独打开"，指向独立的那条路由', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, { capabilities: create(CapabilitiesSchema, {}) }),
+      caps(),
     )
 
     const container = await renderEditor()
@@ -203,12 +235,21 @@ describe('工作台的形态', () => {
     expect(link?.getAttribute('target')).toBe('_blank')
   })
 
+  // `static` 形态逐页预览，因此预览侧要能选看哪一页。
+  it('static 形态的预览侧有页面选择器，且默认落在入口页', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
+      caps(),
+    )
+
+    await renderEditor()
+
+    expect(galaxyApi.previewDraft).toHaveBeenCalledWith('p1', 'index.html')
+  })
+
   // 资产与版本是"一批东西"，与主区并排会让主区长期窄掉一截；改成从顶栏以弹层打开。
   it('资产与版本从顶栏以弹层打开，未打开时不占主区', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, {
-        capabilities: create(CapabilitiesSchema, { assetUploadEnabled: true }),
-      }),
+      caps(),
     )
     vi.mocked(galaxyApi.listAssets).mockResolvedValue(create(ListAssetsResponseSchema, {}))
 
@@ -223,31 +264,38 @@ describe('工作台的形态', () => {
   })
 })
 
-describe('编辑器的能力裁剪', () => {
+describe('工作台的能力裁剪', () => {
   // spec 明确要求：未配置发布存储时不渲染发布入口，而不是渲染一个点了报错的控件。
   it('publish_enabled 为假时不渲染发布入口，即便持有发布权限', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, {
-        capabilities: create(CapabilitiesSchema, {
-          assetUploadEnabled: false,
-          publishEnabled: false,
-        }),
-      }),
+      caps({ assetUploadEnabled: false, publishEnabled: false }),
     )
 
     const container = await renderEditor()
 
     expect(container.textContent).not.toContain('尚未发布')
     expect(findButton(container, '发布')).toBeUndefined()
-    // 资产标签同理：能力未启用时不渲染。
-    expect(container.textContent).not.toContain('资产')
+  })
+
+  // **桶是内容的前提**：没配置对象存储时，内容（草稿、版本与产物）整体不可用，
+  // 因此不渲染内容相关的入口，改给一句说明——而不是渲染一个点了报错的控件。
+  it('没配置对象存储时不渲染内容相关的入口，也不去问校验与预览', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps({ assetUploadEnabled: false }))
+
+    const container = await renderEditor()
+
+    expect(container.textContent).toContain('这个部署没有配置对象存储')
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(findButtonExact(container, '版本')).toBeUndefined()
+    expect(findButton(container, '存为版本')).toBeUndefined()
+    // 没配桶时校验与预览必然失败，因此不去问。
+    expect(galaxyApi.validateDraft).not.toHaveBeenCalled()
+    expect(galaxyApi.previewDraft).not.toHaveBeenCalled()
   })
 
   it('publish_enabled 为真时才渲染发布入口', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, {
-        capabilities: create(CapabilitiesSchema, { publishEnabled: true }),
-      }),
+      caps({ publishEnabled: true }),
     )
     vi.mocked(galaxyApi.listVersions).mockResolvedValue(
       create(ListVersionsResponseSchema, {
@@ -265,24 +313,29 @@ describe('编辑器的能力裁剪', () => {
 describe('校验结论自动产生', () => {
   it('打开页面就问服务端要结论，不需要先点任何按钮', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, { capabilities: create(CapabilitiesSchema, {}) }),
+      caps(),
     )
 
     const container = await renderEditor()
 
-    expect(galaxyApi.validateContent).toHaveBeenCalled()
+    // 校验的是**服务端的草稿**：请求里不带内容，写入只有命令行一条路。
+    expect(galaxyApi.validateDraft).toHaveBeenCalledWith('p1')
     expect(container.textContent).toContain('可以发布')
   })
 
-  it('把服务端返回的 problems 逐条列出，而不是前端自己判断', async () => {
+  it('把服务端返回的 problems 逐条列出（含文件与行号），而不是前端自己判断', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, { capabilities: create(CapabilitiesSchema, {}) }),
+      caps(),
     )
-    vi.mocked(galaxyApi.validateContent).mockResolvedValue(
-      create(ValidateContentResponseSchema, {
+    vi.mocked(galaxyApi.validateDraft).mockResolvedValue(
+      create(ValidateDraftResponseSchema, {
         problems: [
-          create(ValidationProblemSchema, { message: '第 3 行：引用指向不存在的资产「abc」' }),
-          create(ValidationProblemSchema, { message: '第 9 行：引用指向外部地址' }),
+          create(ValidationProblemSchema, {
+            message: '引用的资产不在本工程的资产库里',
+            path: 'index.html',
+            line: 3,
+          }),
+          create(ValidationProblemSchema, { message: '资源引用指向了本文件组之外' }),
         ],
       }),
     )
@@ -300,22 +353,53 @@ describe('校验结论自动产生', () => {
     })
 
     // 弹层挂在 document.body 上，因此断言看整份文档。
-    expect(document.body.textContent).toContain('正文有以下问题，发布会被拒绝')
-    expect(document.body.textContent).toContain('引用指向不存在的资产「abc」')
-    expect(document.body.textContent).toContain('引用指向外部地址')
+    expect(document.body.textContent).toContain('这份草稿有以下问题，发布会被拒绝')
+    expect(document.body.textContent).toContain('引用的资产不在本工程的资产库里')
+    // 位置（哪一份文件、哪一行）由服务端给出。
+    expect(document.body.textContent).toContain('index.html:3')
+    expect(document.body.textContent).toContain('资源引用指向了本文件组之外')
   })
 
-  // 「校验没跑成」与「正文有问题」是两件事：前者不是用户的工程坏了。
-  it('校验请求失败呈现为"未完成"，不冒充正文有问题，预览照常', async () => {
+  // 「校验没跑成」与「内容有问题」是两件事：前者不是用户的工程坏了。
+  it('校验请求失败呈现为"未完成"，不冒充内容有问题，预览照常', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
-      create(GetCapabilitiesResponseSchema, { capabilities: create(CapabilitiesSchema, {}) }),
+      caps(),
     )
-    vi.mocked(galaxyApi.validateContent).mockRejectedValue(new Error('网络断了'))
+    vi.mocked(galaxyApi.validateDraft).mockRejectedValue(new Error('网络断了'))
 
     const container = await renderEditor()
 
     expect(container.textContent).toContain('校验未完成')
-    expect(container.textContent).not.toContain('正文有以下问题')
+    expect(container.textContent).not.toContain('有以下问题')
     expect(container.querySelector('iframe')).not.toBeNull()
+  })
+
+  // 渲染取不到内容（比如这个部署没配桶）时，只有预览那一块呈现失败——
+  // 状态条、版本与资产照常可用，而不是整页变成一片失败。
+  it('预览渲染失败只影响那一块，不把整页打成失败', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
+      caps({ publishEnabled: true }),
+    )
+    vi.mocked(galaxyApi.previewDraft).mockRejectedValue(new Error('本部署未配置对象存储'))
+
+    const container = await renderEditor()
+
+    expect(container.textContent).toContain('预览暂时渲染不出来')
+    expect(container.textContent).toContain('本部署未配置对象存储')
+    // 校验结论与流程状态照常呈现。
+    expect(container.textContent).toContain('可以发布')
+  })
+})
+
+// spec 的核查项：**接口面上不存在从网页端写内容的调用**。
+//
+// 这条断言看的是**真实的模块**（绕开本文件的 mock）：写入只有命令行一条路，
+// 因此前端这一侧连可调用的入口都不该有。
+describe('网页端不改内容', () => {
+  it('前端 API 里没有写内容的入口', async () => {
+    const real = await vi.importActual<Record<string, unknown>>('../../api/galaxy')
+    for (const name of ['saveDraft', 'pushDraft', 'beginContentUpload', 'commitContentUpload']) {
+      expect(real[name], `前端不该有 ${name} 这个写入口`).toBeUndefined()
+    }
   })
 })

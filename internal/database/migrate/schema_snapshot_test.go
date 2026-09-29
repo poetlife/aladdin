@@ -31,28 +31,30 @@ const wantSchema = `table galaxy_assets
   size_bytes integer pk=false null=true
   uploaded_at datetime pk=false null=true
 table galaxy_drafts
-  content text pk=false null=true
+  manifest text pk=false null=true
   project_id text pk=true null=true
   updated_at datetime pk=false null=true
 table galaxy_projects
   created_at datetime pk=false null=true
   current_publication_id text pk=false null=true
   description text pk=false null=true
+  form text pk=false null=true
   id text pk=true null=true
   name text pk=false null=true
   owner_subject_id text pk=false null=true
   updated_at datetime pk=false null=true
 table galaxy_publications
-  content text pk=false null=true
   id text pk=true null=true
+  manifest text pk=false null=true
   project_id text pk=false null=true
   published_at datetime pk=false null=true
   published_by_subject_id text pk=false null=true
   version_id text pk=false null=true
 table galaxy_versions
-  content text pk=false null=true
   id text pk=true null=true
+  manifest text pk=false null=true
   project_id text pk=false null=true
+  render_rules_version integer pk=false null=true
   saved_at datetime pk=false null=true
   seq integer pk=false null=true
 table identities

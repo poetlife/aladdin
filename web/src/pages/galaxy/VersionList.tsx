@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Alert, Button, Empty, Popconfirm, Space, Table, Typography } from 'antd'
+import { Alert, Button, Empty, Popconfirm, Space, Table, Tag, Typography } from 'antd'
 import type { TableProps } from 'antd'
-import { Eye, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
@@ -13,8 +13,6 @@ interface VersionListProps {
   versions: readonly Version[]
   /** 是否持有写权限。无权限时不渲染删除入口。 */
   canWrite: boolean
-  /** 读回一个版本的正文，交由编辑器载入。 */
-  onReadBack: (content: string, seq: number) => void
   /** 删除成功之后重新拉取版本列表。 */
   onChanged: () => Promise<void>
 }
@@ -25,36 +23,23 @@ interface failure {
 }
 
 /**
- * 版本列表：序号 + 时间，可读回、可删除。
+ * 版本列表：序号 + 文件数 + 时间，可展开看清单、可删除。
+ *
+ * **清单随列表一起来**（它只有路径与摘要，几 KB 量级），因此"这一版有哪些文件"
+ * 不需要额外的一次调用——展开即见。网页端只读，所以这里没有"读回成草稿"这类
+ * 动作：把一版的内容重新变成可编辑的草稿属于内容的写入，那条路只有命令行。
  *
  * **被当前发布指向的版本不可删**——这条判断只有服务端有，前端不预判；点了
  * 删除之后把服务端的拒绝原因原样呈现出来（见 docs/design/galaxy/project-versioning.md）。
- * 列表接口不带正文，读回时才用 GetVersion 单独取。
  */
 export function VersionList({
   projectId,
   versions,
   canWrite,
-  onReadBack,
   onChanged,
 }: VersionListProps): React.ReactNode {
   const [failure, setFailure] = useState<failure | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-
-  async function handleReadBack(version: Version): Promise<void> {
-    setBusyId(version.id)
-    setFailure(null)
-    try {
-      const response = await galaxyApi.getVersion(projectId, version.id)
-      if (response.version !== undefined) {
-        onReadBack(response.version.content, Number(response.version.seq))
-      }
-    } catch (err) {
-      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
-    } finally {
-      setBusyId(null)
-    }
-  }
 
   async function handleDelete(versionId: string): Promise<void> {
     setBusyId(versionId)
@@ -78,6 +63,11 @@ export function VersionList({
       render: (seq: bigint) => <Typography.Text code>#{Number(seq)}</Typography.Text>,
     },
     {
+      title: '文件数',
+      key: 'files',
+      render: (_: unknown, version) => version.entries.length,
+    },
+    {
       title: '保存时间',
       dataIndex: 'savedAt',
       key: 'savedAt',
@@ -86,31 +76,20 @@ export function VersionList({
     {
       title: '操作',
       key: 'actions',
-      render: (_: unknown, version) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<Eye size={14} />}
-            loading={busyId === version.id}
-            onClick={() => void handleReadBack(version)}
+      render: (_: unknown, version) =>
+        canWrite && (
+          <Popconfirm
+            title="删除这个版本？"
+            description="被当前发布指向的版本不能删除，否则发布地址会指向一个不存在的版本。"
+            okText="删除"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => void handleDelete(version.id)}
           >
-            读回
-          </Button>
-          {canWrite && (
-            <Popconfirm
-              title="删除这个版本？"
-              description="被当前发布指向的版本不能删除，否则发布地址会指向一个不存在的版本。"
-              okText="删除"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => void handleDelete(version.id)}
-            >
-              <Button type="link" danger icon={<Trash2 size={14} />}>
-                删除
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+            <Button type="link" danger icon={<Trash2 size={14} />} loading={busyId === version.id}>
+              删除
+            </Button>
+          </Popconfirm>
+        ),
     },
   ]
 
@@ -136,6 +115,25 @@ export function VersionList({
         pagination={false}
         size="small"
         scroll={{ x: 'max-content' }}
+        expandable={{
+          // 展开即见清单：路径与条目类别，不取字节（读字节的地址是短时的，
+          // 列表不该下发一批会过期的字符串）。
+          expandedRowRender: (version) => (
+            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              {version.entries.map((entry) => (
+                <Space key={entry.path} size={8}>
+                  <Typography.Text style={{ fontSize: 12 }}>{entry.path}</Typography.Text>
+                  {entry.source.case === 'assetId' && (
+                    <Tag style={{ marginInlineEnd: 0 }} color="blue">
+                      资产
+                    </Tag>
+                  )}
+                </Space>
+              ))}
+            </Space>
+          ),
+          rowExpandable: (version) => version.entries.length > 0,
+        }}
         locale={{
           emptyText: (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有保存过版本" />

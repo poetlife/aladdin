@@ -99,11 +99,15 @@ func TestGalaxyPositionalArgsAreUsageErrors(t *testing.T) {
 // 必填的取值缺失时同样在发起请求之前以用法错误结束。
 //
 // 工程名称不在此列：它可以留空（与网页端一致），因此 create 不带任何标志是
-// 一次合法的调用——只是没有名字。
+// 一次合法的调用——只是没有名字。形态不在此列的原因相反：它由 **create 自己**
+// 要求（缺形态会以用法错误结束），而这里列的是"位置参数或标志缺失"。
 func TestGalaxyMissingRequiredInputAreUsageErrors(t *testing.T) {
 	cases := [][]string{
-		{"galaxy", "draft", "save", "prj_1"},
-		{"galaxy", "validate", "prj_1"},
+		// 文件组的输入输出单位是目录，因此缺目录是位置参数数量不对。
+		{"galaxy", "draft", "push", "prj_1"},
+		{"galaxy", "draft", "pull", "prj_1"},
+		{"galaxy", "version", "pull", "prj_1", "ver_1"},
+		// update 至少要给一项。
 		{"galaxy", "project", "update", "prj_1"},
 	}
 	for _, args := range cases {

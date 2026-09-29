@@ -70,12 +70,13 @@ func TestBuildPolicyConstrainsActionResourceAndConditions(t *testing.T) {
 	if policy.Version != "2.0" {
 		t.Errorf("策略版本 = %q，期望 2.0", policy.Version)
 	}
-	if len(policy.Statement) != len(rules) {
-		t.Fatalf("策略项 %d 条，期望每条类型规则一条（%d）", len(policy.Statement), len(rules))
+	if len(policy.Statement) != len(rules)+1 {
+		t.Fatalf("策略项 %d 条，期望每条类型规则一条（%d）加一条显式拒绝（1）", len(policy.Statement), len(rules))
 	}
 
 	wantResource := "qcs::cos:ap-guangzhou:uid/1250000000:aladdin-1250000000/" + key
-	for i, statement := range policy.Statement {
+	allows := policy.Statement[:len(rules)]
+	for i, statement := range allows {
 		if statement.Effect != "allow" {
 			t.Errorf("策略项 %d 的 effect = %q", i, statement.Effect)
 		}
@@ -92,6 +93,19 @@ func TestBuildPolicyConstrainsActionResourceAndConditions(t *testing.T) {
 		if gotLen := statement.Condition[opNumericLessThanEqual][condContentLength]; gotLen != rules[i].MaxBytes {
 			t.Errorf("策略项 %d 的长度条件 = %v，期望 %d", i, gotLen, rules[i].MaxBytes)
 		}
+	}
+
+	// 最后一条是**显式拒绝**：临时凭证不得能声明权限（设 ACL、打标签），
+	// 否则"公开权限只由上架路径设置"这句话不成立。
+	deny := policy.Statement[len(policy.Statement)-1]
+	if deny.Effect != "deny" {
+		t.Errorf("最后一条策略项的 effect = %q，期望 deny", deny.Effect)
+	}
+	if len(deny.Action) != len(deniedActions) {
+		t.Errorf("拒绝的动作 = %v，期望 %v", deny.Action, deniedActions)
+	}
+	if len(deny.Resource) != 1 || deny.Resource[0] != wantResource {
+		t.Errorf("拒绝项的资源和允许项一样，只落在同一个键上：%v", deny.Resource)
 	}
 
 	// 资源里不得出现通配符：那会把"一个键"放宽成"一批键"。

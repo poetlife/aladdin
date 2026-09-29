@@ -51,11 +51,20 @@ export function LifecycleStrip({
       ) : null}
       {validation.status === 'problems' ? (
         <Popover
-          title="正文有以下问题，发布会被拒绝"
+          title="这份草稿有以下问题，发布会被拒绝"
           content={
             <ul style={{ margin: 0, paddingInlineStart: 20, maxWidth: 420 }}>
               {validation.problems.map((problem, index) => (
-                <li key={index}>{problem.message}</li>
+                <li key={index}>
+                  {/* 位置（哪一份文件、哪一行）由服务端给出：只说"有引用不合法"
+                      会让用户在一组文件里自己找。 */}
+                  {problem.path !== '' && (
+                    <Typography.Text code style={{ fontSize: 12 }}>
+                      {problem.line > 0 ? `${problem.path}:${problem.line}` : problem.path}
+                    </Typography.Text>
+                  )}{' '}
+                  {problem.message}
+                </li>
               ))}
             </ul>
           }

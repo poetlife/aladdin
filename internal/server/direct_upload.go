@@ -48,6 +48,21 @@ func fitUint64(value int64) uint64 {
 	return uint64(value)
 }
 
+// fitInt32 把一个领域层的计数值转成接口类型。
+//
+// 取**饱和**而不是断言：行号与渲染规则版本都远在 int32 之内，而一个越界的取值
+// 应当表现为一个明确的上界，不是一个回绕成负数的数。
+func fitInt32(value int) int32 {
+	switch {
+	case value < math.MinInt32:
+		return math.MinInt32
+	case value > math.MaxInt32:
+		return math.MaxInt32
+	default:
+		return int32(value) //nolint:gosec // 上下界已在上面显式判定
+	}
+}
+
 // toProtoUpload 把一份直传凭证翻译成接口类型（唯一入口）。
 //
 // 头像与资产两处都下发同一个消息（见
@@ -58,12 +73,13 @@ func fitUint64(value int64) uint64 {
 // 的原因。但它同样**不得进日志**。
 func toProtoUpload(credential objectstore.Credential) *objectstorev1.DirectUploadCredential {
 	return &objectstorev1.DirectUploadCredential{
-		Bucket:       credential.Bucket,
-		Region:       credential.Region,
-		Key:          credential.Key,
-		SecretId:     credential.SecretID,
-		SecretKey:    credential.SecretKey,
-		SessionToken: credential.SessionToken,
-		ExpiresAt:    credential.ExpiresAt.UTC().Format(time.RFC3339),
+		Bucket:          credential.Bucket,
+		Region:          credential.Region,
+		Key:             credential.Key,
+		SecretId:        credential.SecretID,
+		SecretKey:       credential.SecretKey,
+		SessionToken:    credential.SessionToken,
+		ExpiresAt:       credential.ExpiresAt.UTC().Format(time.RFC3339),
+		ForbidOverwrite: credential.ForbidOverwrite,
 	}
 }

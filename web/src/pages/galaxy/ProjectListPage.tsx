@@ -8,6 +8,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Radio,
   Space,
   Table,
   Tag,
@@ -21,12 +22,13 @@ import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
 import { PermissionGate } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
-import type { Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { SiteForm, type Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { formatTime } from './format-time'
 
 interface ProjectFormValues {
   name?: string
   description?: string
+  form: SiteForm
 }
 
 interface failure {
@@ -75,11 +77,15 @@ export function ProjectListPage(): React.ReactNode {
     setCreating(true)
     setCreateError(null)
     try {
-      const response = await galaxyApi.createProject(values.name ?? '', values.description ?? '')
+      const response = await galaxyApi.createProject(
+        values.name ?? '',
+        values.description ?? '',
+        values.form,
+      )
       setCreateOpen(false)
       form.resetFields()
       if (response.project !== undefined) {
-        // 新建之后直接进编辑器：刚建好的工程是空的，下一步必然是去写正文。
+        // 新建之后直接进工作台：刚建好的工程是空的，下一步是去把内容推上来。
         void navigate(`/galaxy/${response.project.id}`)
       } else {
         await load()
@@ -121,6 +127,14 @@ export function ProjectListPage(): React.ReactNode {
       render: (value: string) => formatTime(value),
     },
     {
+      title: '形态',
+      key: 'form',
+      // 形态创建时定下、此后不可改，因此这里只是展示，没有切换入口。
+      render: (_: unknown, project) => (
+        <Tag>{project.form === SiteForm.DOCS ? 'docs' : 'static'}</Tag>
+      ),
+    },
+    {
       title: '状态',
       key: 'published',
       render: (_: unknown, project) =>
@@ -141,7 +155,7 @@ export function ProjectListPage(): React.ReactNode {
       render: (_: unknown, project) => (
         <Space>
           <Button type="link" onClick={() => void navigate(`/galaxy/${project.id}`)}>
-            编辑
+            打开
           </Button>
           <PermissionGate require={PermissionCodes.GalaxyProjectWrite}>
             <Popconfirm
@@ -230,7 +244,22 @@ export function ProjectListPage(): React.ReactNode {
         {createError !== null && (
           <Alert type="error" title={createError} style={{ marginBottom: 16 }} />
         )}
-        <Form<ProjectFormValues> form={form} layout="vertical" onFinish={(v) => void handleCreate(v)}>
+        <Form<ProjectFormValues>
+          form={form}
+          layout="vertical"
+          initialValues={{ form: SiteForm.STATIC }}
+          onFinish={(v) => void handleCreate(v)}
+        >
+          <Form.Item
+            name="form"
+            label="形态"
+            extra="创建时定下，此后不可改：它决定已保存版本的发布语义"
+          >
+            <Radio.Group>
+              <Radio.Button value={SiteForm.STATIC}>static · 整站文件原样服务</Radio.Button>
+              <Radio.Button value={SiteForm.DOCS}>docs · markdown 渲染成多页</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
           <Form.Item name="name" label="名称" extra="仅用于你自己识别，不是地址、不需要唯一">
             <Input maxLength={64} placeholder="比如：我的首页" autoComplete="off" />
           </Form.Item>

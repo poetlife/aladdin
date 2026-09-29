@@ -243,7 +243,7 @@ func uploadAvatar(t *testing.T, h harness, client profilev1connect.ProfileServic
 		return nil, err
 	}
 	upload := begin.Msg.GetUpload()
-	h.objects.Put(upload.GetKey(), data)
+	h.objects.SimulateUpload(upload.GetKey(), data)
 	commit, err := client.CommitAvatarUpload(ctx, connect.NewRequest(&profilev1.CommitAvatarUploadRequest{}))
 	if err != nil {
 		return nil, err
@@ -322,7 +322,7 @@ func TestAvatarRoundTripAndDeclaredType(t *testing.T) {
 		t.Error("凭证没有失效时刻")
 	}
 
-	h.objects.Put(upload.GetKey(), pngBytes)
+	h.objects.SimulateUpload(upload.GetKey(), pngBytes)
 	committed, err := client.CommitAvatarUpload(ctx, connect.NewRequest(&profilev1.CommitAvatarUploadRequest{}))
 	if err != nil {
 		t.Fatalf("提交失败: %v", err)
@@ -356,7 +356,7 @@ func TestAvatarCommitRejectsOversizedObject(t *testing.T) {
 		t.Fatalf("签发失败: %v", err)
 	}
 	key := begin.Msg.GetUpload().GetKey()
-	h.objects.Put(key, make([]byte, profile.AvatarMaxBytes+1))
+	h.objects.SimulateUpload(key, make([]byte, profile.AvatarMaxBytes+1))
 
 	if _, err := client.CommitAvatarUpload(ctx, connect.NewRequest(&profilev1.CommitAvatarUploadRequest{})); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("提交超限对象 = %v，期望 InvalidArgument", err)

@@ -12,33 +12,40 @@ import (
 var (
 	// ErrVersionPublished 表示这个版本正被当前发布指向，因此不能删。
 	//
-	// 删掉它会让发布地址指向一个不存在的版本（对外表现是"页面突然没了"，
+	// 删掉它会让发布地址指向一个不存在的版本（对外表现是"站点突然没了"，
 	// 而用户刚才看到的是"已发布"）。
 	ErrVersionPublished = errors.New("版本正在被发布")
 )
 
-// SaveVersion 把草稿的当前内容保存成一个不可变版本。
+// SaveVersion 把草稿的当前清单保存成一个不可变版本。
 //
 // 三条不可变性约定都由本函数的形状保证，不靠约定俗成：
 //
-//   - **版本的正文不可修改**：没有"编辑某个版本"这个动作——要改就改草稿、
+//   - **版本的清单不可修改**：没有"编辑某个版本"这个动作——要改就改草稿、
 //     再保存一个新版本。因此本包不存在 UpdateVersion。
-//   - **版本不因别的记录变化而变化**：写入的是正文的一份拷贝，此后改工程
-//     名称、改简介、删资产、删别的版本都不改变它读回的内容。
-//   - **版本不可覆盖**：连续保存两次相同内容产生两个版本，而不是"检测到
-//     重复就不新增"。判断"内容一样"需要比较正文，而两份看起来一样的正文
-//     对用户是两次不同的保存动作——把它们合成一个会让"我明明保存了两次"
-//     变成一个需要解释的问题。
+//   - **版本不因别的记录变化而变化**：写入的是清单的一份拷贝，此后改工程
+//     名称、改简介、删别的版本都不改变它读回的内容。
+//   - **版本不可覆盖**：连续保存两次相同清单产生两个版本，而不是"检测到
+//     重复就不新增"。两份看起来一样的清单对用户是两次不同的保存动作。
+//
+// 这一次冻结**不搬运任何字节**：字节本来就是按内容摘要寻址的不可变对象，由
+// 多个版本共享。
 func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string) (Version, error) {
-	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+	if err != nil {
 		return Version{}, err
 	}
-	// 草稿行不存在时按空正文处理：这与"保存过一次空草稿"在编辑上等价，
-	// 而把"还没写过"表现成一个错误会让新工程上的第一次保存先失败一次。
+	// 草稿行不存在时按空清单处理：这与"推送过一次空清单"在编辑上等价，
+	// 而把"还没推过"表现成一个错误会让新工程上的第一次保存先失败一次。
 	draft, err := s.store.GetDraft(ctx, projectID)
 	if errors.Is(err, ErrDraftNotFound) {
 		draft = Draft{ProjectID: projectID}
 	} else if err != nil {
+		return Version{}, err
+	}
+	// 一份没有入口文件的清单发出去是一个打不开的站点，因此这里挡住它——
+	// 与 PushDraft 是同一处判断。
+	if err := ValidateManifestForForm(project.Form, draft.Manifest); err != nil {
 		return Version{}, err
 	}
 	versionID, err := newVersionID()
@@ -46,10 +53,11 @@ func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string) 
 		return Version{}, err
 	}
 	saved, err := s.store.CreateVersion(ctx, Version{
-		ID:        versionID,
-		ProjectID: projectID,
-		Content:   draft.Content,
-		SavedAt:   s.now(),
+		ID:                 versionID,
+		ProjectID:          projectID,
+		Manifest:           draft.Manifest,
+		RenderRulesVersion: RenderRulesVersion,
+		SavedAt:            s.now(),
 	})
 	if err != nil {
 		return Version{}, err
@@ -60,12 +68,12 @@ func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string) 
 			zap.String("version_id", saved.ID),
 			zap.Int64("seq", saved.Seq),
 			zap.String("subject_id", subjectID),
-			zap.Int("bytes", len(saved.Content)))
+			zap.Int("files", len(saved.Manifest)))
 	}
 	return saved, nil
 }
 
-// ListVersions 列出工程的版本元数据，按序号升序（不带正文）。
+// ListVersions 列出工程的版本，按序号升序。清单随行返回，但不带读取地址。
 func (s *Service) ListVersions(ctx context.Context, subjectID, projectID string) ([]Version, error) {
 	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
 		return nil, err
@@ -73,12 +81,16 @@ func (s *Service) ListVersions(ctx context.Context, subjectID, projectID string)
 	return s.store.ListVersions(ctx, projectID)
 }
 
-// GetVersion 读取一个版本（含正文）。
-func (s *Service) GetVersion(ctx context.Context, subjectID, projectID, versionID string) (Version, error) {
+// GetVersion 读取一个版本，并给每一条条目附上短时读取地址。
+func (s *Service) GetVersion(ctx context.Context, subjectID, projectID, versionID string) (Version, []EntryView, error) {
 	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
-		return Version{}, err
+		return Version{}, nil, err
 	}
-	return s.store.GetVersion(ctx, projectID, versionID)
+	version, err := s.store.GetVersion(ctx, projectID, versionID)
+	if err != nil {
+		return Version{}, nil, err
+	}
+	return version, s.attachURLs(ctx, projectID, version.Manifest), nil
 }
 
 // DeleteVersion 删除一个版本。
@@ -133,19 +145,19 @@ func (s *Service) versionIsPublished(ctx context.Context, project Project, versi
 
 // referencingVersions 返回引用了某个资产的版本，按序号升序。
 //
-// **它的输入只有版本正文**：一个版本引用了哪些资产由正文里的占位符决定，
-// 不另存一份清单——清单与正文会漂移，而漂移的表现是"发布时校验通过但页面
-// 上一张图裂开"，或者反过来，把一个不再被引用的资产也搬上公开区。
+// **它的输入只有版本的文件清单**：一个版本引用了哪些资产由清单里的资产条目
+// 直接读出，不解析任何文本——清单与文本会漂移，而漂移的表现是"发布时校验通过
+// 但页面上一张图裂开"，或者反过来，把一个不再被引用的资产也搬上公开区。
 func (s *Service) referencingVersions(ctx context.Context, projectID, assetID string) ([]Version, error) {
-	versions, err := s.store.ListVersionContents(ctx, projectID)
+	versions, err := s.store.ListVersions(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 	var referencing []Version
 	for _, version := range versions {
-		for _, referenced := range ReferencedAssetIDs(version.Content) {
+		for _, referenced := range version.Manifest.AssetIDs() {
 			if referenced == assetID {
-				// 只留展示需要的字段：正文不该被带进错误信息与日志。
+				// 只留展示需要的字段：清单不该被带进错误信息与日志。
 				referencing = append(referencing, Version{
 					ID:        version.ID,
 					ProjectID: version.ProjectID,

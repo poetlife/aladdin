@@ -13,11 +13,8 @@ import {
   WhoAmIResponseSchema,
 } from '../../gen/proto/aladdin/identity/v1/identity_pb'
 import {
-  AssetSchema,
-  DraftSchema,
-  GetDraftResponseSchema,
   GetProjectResponseSchema,
-  ListAssetsResponseSchema,
+  PreviewDraftResponseSchema,
   ProjectSchema,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { PreviewPage } from './PreviewPage'
@@ -37,8 +34,7 @@ vi.mock('../../api/transport', () => ({
 
 vi.mock('../../api/galaxy', () => ({
   getProject: vi.fn(),
-  getDraft: vi.fn(),
-  listAssets: vi.fn(),
+  previewDraft: vi.fn(),
 }))
 
 // React 19 要求显式声明这是 act 环境，否则每次 render 都会打印警告。
@@ -81,7 +77,7 @@ beforeEach(() => {
   vi.mocked(identityApi.getSessionPermissions).mockResolvedValue(
     create(GetSessionPermissionsResponseSchema, {
       scope: '',
-      permissions: [PermissionCodes.GalaxyProjectRead, PermissionCodes.GalaxyAssetRead],
+      permissions: [PermissionCodes.GalaxyProjectRead],
     }),
   )
 
@@ -90,10 +86,9 @@ beforeEach(() => {
       project: create(ProjectSchema, { id: 'p1', name: '我的工程' }),
     }),
   )
-  vi.mocked(galaxyApi.getDraft).mockResolvedValue(
-    create(GetDraftResponseSchema, { draft: create(DraftSchema, { content: '<h1>hi</h1>' }) }),
+  vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
+    create(PreviewDraftResponseSchema, { html: '<h1>hi</h1>' }),
   )
-  vi.mocked(galaxyApi.listAssets).mockResolvedValue(create(ListAssetsResponseSchema, {}))
 })
 
 afterEach(async () => {
@@ -105,30 +100,23 @@ afterEach(async () => {
 })
 
 describe('单独打开的预览页', () => {
-  it('渲染的是草稿，且沙箱属性与内嵌时一致', async () => {
+  // 渲染在服务端、与发布共用同一段实现，因此这一页与工作台里的预览拿到的是
+  // 同一份 HTML；沙箱属性也必须与内嵌时一致。
+  it('渲染的是服务端给的草稿预览，且沙箱属性与内嵌时一致', async () => {
     const container = await renderPreviewPage()
 
     const sandbox = iframe(container).getAttribute('sandbox') ?? ''
     expect(sandbox).not.toContain('allow-same-origin')
     expect(sandbox).toContain('allow-scripts')
     expect(iframe(container).getAttribute('srcdoc')).toBe('<h1>hi</h1>')
+    // 它读的是**草稿**，因此调用的是预览入口，而不是发布地址。
+    expect(galaxyApi.previewDraft).toHaveBeenCalledWith('p1')
   })
 
-  it('资产记号换成短时地址，用的是同一份资产清单', async () => {
-    vi.mocked(galaxyApi.getDraft).mockResolvedValue(
-      create(GetDraftResponseSchema, {
-        draft: create(DraftSchema, { content: '<img src="asset://a1b2c3">' }),
-      }),
-    )
-    vi.mocked(galaxyApi.listAssets).mockResolvedValue(
-      create(ListAssetsResponseSchema, {
-        assets: [
-          create(AssetSchema, {
-            id: 'a1b2c3',
-            url: 'https://cos.example/signed/a1b2c3',
-            mediaType: 'image/png',
-          }),
-        ],
+  it('资产地址由服务端在渲染时补上，前端不再自己替换记号', async () => {
+    vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
+      create(PreviewDraftResponseSchema, {
+        html: '<img src="https://cos.example/signed/a1b2c3">',
       }),
     )
 

@@ -43,9 +43,18 @@ type DirectUploadCredential struct {
 	SecretKey    string `protobuf:"bytes,5,opt,name=secret_key,json=secretKey,proto3" json:"secret_key,omitempty"`
 	SessionToken string `protobuf:"bytes,6,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	// 凭证的失效时刻。它是**给客户端的提示值**，实际失效以对象存储的判断为准。
-	ExpiresAt     string `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ExpiresAt string `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// 写入是否**禁止覆盖已存在的对象**。
+	//
+	// 内容对象（galaxy 的文本条目）按**内容摘要**寻址，因此"仅当不存在时写入"
+	// 是它成立的前提：一个伪造的摘要若落到另一个版本已经在用的键上，会把那个
+	// 对象改写掉——而那是"版本不可变"的反面。为真时客户端在写入请求上带禁止
+	// 覆盖的条件，由对象存储执行。
+	//
+	// 头像与资产按标识寻址、一个标识一个对象，因此它是假。
+	ForbidOverwrite bool `protobuf:"varint,8,opt,name=forbid_overwrite,json=forbidOverwrite,proto3" json:"forbid_overwrite,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *DirectUploadCredential) Reset() {
@@ -127,11 +136,18 @@ func (x *DirectUploadCredential) GetExpiresAt() string {
 	return ""
 }
 
+func (x *DirectUploadCredential) GetForbidOverwrite() bool {
+	if x != nil {
+		return x.ForbidOverwrite
+	}
+	return false
+}
+
 var File_aladdin_objectstore_v1_upload_proto protoreflect.FileDescriptor
 
 const file_aladdin_objectstore_v1_upload_proto_rawDesc = "" +
 	"\n" +
-	"#aladdin/objectstore/v1/upload.proto\x12\x16aladdin.objectstore.v1\"\xda\x01\n" +
+	"#aladdin/objectstore/v1/upload.proto\x12\x16aladdin.objectstore.v1\"\x85\x02\n" +
 	"\x16DirectUploadCredential\x12\x16\n" +
 	"\x06bucket\x18\x01 \x01(\tR\x06bucket\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12\x10\n" +
@@ -141,7 +157,8 @@ const file_aladdin_objectstore_v1_upload_proto_rawDesc = "" +
 	"secret_key\x18\x05 \x01(\tR\tsecretKey\x12#\n" +
 	"\rsession_token\x18\x06 \x01(\tR\fsessionToken\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\a \x01(\tR\texpiresAtBJZHgithub.com/poetlife/aladdin/api/gen/aladdin/objectstore/v1;objectstorev1b\x06proto3"
+	"expires_at\x18\a \x01(\tR\texpiresAt\x12)\n" +
+	"\x10forbid_overwrite\x18\b \x01(\bR\x0fforbidOverwriteBJZHgithub.com/poetlife/aladdin/api/gen/aladdin/objectstore/v1;objectstorev1b\x06proto3"
 
 var (
 	file_aladdin_objectstore_v1_upload_proto_rawDescOnce sync.Once

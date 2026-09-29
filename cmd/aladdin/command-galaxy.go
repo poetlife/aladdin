@@ -15,10 +15,13 @@ func newGalaxyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "galaxy",
 		Short: "创作与发布",
-		Long: `创作一份 HTML 并把它发布成一个别人能打开的页面。
+		Long: `放下一组具名文件与素材，再把它们发布成一个别人能打开的站点。
 
 工程、草稿、版本、资产与发布各自成一条命令，没有"一条命令走完全流程"的形态：
 一次发布发的是某一版，而不是"文件现在的样子"（见 docs/design/galaxy/cli.md）。
+
+**目录是整组的输入与输出单位**：draft push 一个目录就是"草稿整组换成它"，目录
+里没有的路径就是删掉。**文件组的写入只有命令行这一条路**（网页端只读）。
 
 工程标识由服务端分配且不可猜，每次都显式给出——本地不保存"当前工程"。`,
 	}
@@ -79,8 +82,9 @@ func newGalaxyCapabilitiesCommand() *cobra.Command {
 			caps := resp.Msg.GetCapabilities()
 			printf(cmd.OutOrStdout(), "素材上传: %s\n", yesNo(caps.GetAssetUploadEnabled()))
 			printf(cmd.OutOrStdout(), "发布: %s\n", yesNo(caps.GetPublishEnabled()))
-			printf(cmd.OutOrStdout(), "正文上限: %d 字节\n", caps.GetMaxDocumentBytes())
-			printf(cmd.OutOrStdout(), "发布产物上限: %d 字节\n", caps.GetMaxArtifactBytes())
+			printf(cmd.OutOrStdout(), "单份文本上限: %d 字节\n", caps.GetMaxTextBytes())
+			printf(cmd.OutOrStdout(), "整组内容上限: %d 字节\n", caps.GetMaxFileSetBytes())
+			printf(cmd.OutOrStdout(), "文件数上限: %d 个\n", caps.GetMaxFiles())
 			for _, limit := range caps.GetAssetLimits() {
 				printf(cmd.OutOrStdout(), "%s上限: %d 字节\n",
 					mediaKindLabel(limit.GetKind()), limit.GetMaxBytes())
@@ -107,8 +111,22 @@ func mediaKindLabel(kind galaxyv1.MediaKind) string {
 		return "视频"
 	case galaxyv1.MediaKind_MEDIA_KIND_AUDIO:
 		return "音频"
+	case galaxyv1.MediaKind_MEDIA_KIND_FONT:
+		return "字体"
 	default:
 		return "未知类别"
+	}
+}
+
+// siteFormLabel 是工程形态在命令行上的展示文案。
+func siteFormLabel(form galaxyv1.SiteForm) string {
+	switch form {
+	case galaxyv1.SiteForm_SITE_FORM_STATIC:
+		return "static（整站文件原样服务）"
+	case galaxyv1.SiteForm_SITE_FORM_DOCS:
+		return "docs（markdown 渲染成多页）"
+	default:
+		return "未知形态"
 	}
 }
 
@@ -122,6 +140,10 @@ func printProject(cmd *cobra.Command, p *galaxyv1.Project) {
 	printf(cmd.OutOrStdout(), "%s  %s\n", p.GetId(), name)
 	if p.GetDescription() != "" {
 		printf(cmd.OutOrStdout(), "  简介: %s\n", p.GetDescription())
+	}
+	printf(cmd.OutOrStdout(), "  形态: %s\n", siteFormLabel(p.GetForm()))
+	if p.GetBaseUrl() != "" {
+		printf(cmd.OutOrStdout(), "  发布根: %s\n", p.GetBaseUrl())
 	}
 	if p.GetPublished() {
 		printf(cmd.OutOrStdout(), "  已发布: %s（%s）\n", p.GetPublishedUrl(), p.GetPublishedAt())

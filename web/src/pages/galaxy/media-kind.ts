@@ -18,5 +18,8 @@ export function mediaKindOfDeclaredType(declaredType: string): MediaKind | null 
   if (declaredType.startsWith('audio/')) {
     return MediaKind.AUDIO
   }
+  if (declaredType.startsWith('font/')) {
+    return MediaKind.FONT
+  }
   return null
 }

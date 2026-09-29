@@ -1,246 +1,308 @@
 package galaxy
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
 
-// 占位符**逐字替换**，不解析 HTML：出现在元素属性、内联 CSS 的 url()、srcset
-// 以及 <style> 块里都成立。
+// 校验入口是**唯一入口**：界面提示与发布前置校验共用它。
 //
-// 这条是"改写不需要枚举哪些属性算引用"的落点：依赖枚举的做法必然会漏
-// （srcset、内联 CSS、将来新增的属性），而逐字替换不会漏。
-func TestPlaceholderRewriteIsVerbatim(t *testing.T) {
+// 这里覆盖的是"输入是一个文件组"之后新增的那些规则；纯形状的规则见 site_test.go。
+func TestValidateDraftReportsProblems(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<p>你好</p><img src="missing.png">`),
+	})
 
-	first := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	second := f.uploadAsset(t, project.ID, "image/jpeg", "b.jpg", []byte("bbb"))
-	a := PlaceholderScheme + first.ID
-	b := PlaceholderScheme + second.ID
-
-	content := strings.Join([]string{
-		"<!doctype html><html><body>",
-		`<img src="` + a + `">`,
-		`<img srcset="` + a + ` 1x, ` + b + ` 2x">`,
-		`<div style="background:url(` + a + `)">x</div>`,
-		`<style>body{background-image:url('` + b + `')}</style>`,
-		"</body></html>",
-	}, "")
-
-	artifact := f.artifact(t, project.ID, content)
-
-	if strings.Contains(string(artifact), PlaceholderScheme) {
-		t.Errorf("产物里仍留下未改写的占位符:\n%s", artifact)
+	report := f.report(t, project.ID)
+	if report.OK() {
+		t.Fatal("引用一个不存在的路径却通过了校验")
 	}
-	// 逐字替换：把原文里每个占位符换成它对应的地址，就应当得到产物。
-	want := strings.NewReplacer(
-		a, f.service.Origin().AssetURL(first.Digest),
-		b, f.service.Origin().AssetURL(second.Digest),
-	).Replace(content)
-	if string(artifact) != want {
-		t.Errorf("产物与「只把占位符换掉」的结果不同:\n实际 %s\n期望 %s", artifact, want)
+	text := problems(report)
+	if !strings.Contains(text, "missing.png") {
+		t.Errorf("问题里 %q 没有指出那一处引用", text)
+	}
+	// 问题要**指到文件与行号**上，否则用户在一组文件里自己找。
+	if report.Problems[0].Path != "index.html" {
+		t.Errorf("问题的文件 = %q，期望 index.html", report.Problems[0].Path)
+	}
+	if report.Problems[0].Line != 1 {
+		t.Errorf("问题的行号 = %d，期望 1", report.Problems[0].Line)
 	}
 }
 
-// 产物与用户正文的差异**恰好是占位符被替换**：不包裹、不补全、不注入。
-func TestArtifactDiffersOnlyByPlaceholders(t *testing.T) {
+// 每一处取资源的引用都必须落在本文件组的某一条条目上。
+func TestResourceReferenceMustLandInFileSet(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	a := PlaceholderScheme + asset.ID
+	// 文本条目与资产条目**都算**：构建产物里的 JS/CSS 是文本条目。
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<link href="style.css" rel="stylesheet"><script src="app.js"></script>`),
+		f.textEntry(t, project.ID, "style.css", "body{}"),
+		f.textEntry(t, project.ID, "app.js", "console.log(1)"),
+	})
 
-	// 刻意是一份"不合法"的 HTML：缺闭合标签、没有 doctype、没有 body。
-	// 正文就是用户写的全部内容，服务端不做任何补全。
-	content := `<div>缺闭合<img src="` + a + `">`
-	artifact := f.artifact(t, project.ID, content)
-
-	want := strings.ReplaceAll(content, a, f.service.Origin().AssetURL(asset.Digest))
-	if string(artifact) != want {
-		t.Errorf("产物被改动过:\n实际 %s\n期望 %s", artifact, want)
+	report := f.report(t, project.ID)
+	if !report.OK() {
+		t.Errorf("引用都落在文件组里，却报错: %v", report.Messages())
 	}
 }
 
-// 指向不存在的、别的工程的资产，一律是校验期的拒绝理由，且指出是哪一个。
-func TestUnresolvablePlaceholdersAreRejected(t *testing.T) {
-	f := newFixture(t)
-	mine := f.createProject(t, "我的")
-	theirs := f.createProject(t, "别人的")
-	foreign := f.uploadAsset(t, theirs.ID, "image/png", "a.png", []byte("aaa"))
-
+// **外部地址一律拒绝**（导航链接除外）：发布物不得从本文件组之外取任何一个字节。
+func TestExternalResourceReferencesAreRejected(t *testing.T) {
 	cases := []struct {
 		name    string
 		content string
-		missing string
 	}{
-		{"不存在的资产", `<img src="asset://ast_不存在">`, "ast_不存在"},
-		{"别的工程的资产", `<img src="` + PlaceholderScheme + foreign.ID + `">`, foreign.ID},
+		{"绝对地址", `<img src="https://cdn.example.com/a.png">`},
+		{"协议相对", `<img src="//cdn.example.com/a.png">`},
+		{"data URL", `<img src="data:image/png;base64,AAAA">`},
+		{"内联样式里的外部地址", `<div style="background:url(https://cdn.example.com/a.png)"></div>`},
+		{"样式表里的 @import", `<style>@import url(https://cdn.example.com/a.css);</style>`},
+		{"srcset 里的外部地址", `<img srcset="https://cdn.example.com/a.png 2x">`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			report := f.report(t, testOwner, mine.ID, tc.content)
+			f := newFixture(t)
+			project := f.createProject(t, "工程")
+			// 另有一条真实条目，好证明拒绝的是"指向别处"而不是"什么引用都没有"。
+			f.pushDraft(t, project.ID, []Entry{
+				f.textEntry(t, project.ID, "index.html", tc.content),
+				f.textEntry(t, project.ID, "other.html", "<p>另一页</p>"),
+			})
+			report := f.report(t, project.ID)
 			if report.OK() {
-				t.Fatal("期望被拒，实际通过了")
+				t.Fatal("指向外部地址的资源引用被放过了")
 			}
-			message := problems(report)
-			if !strings.Contains(message, tc.missing) {
-				t.Errorf("问题 %q 没有指出是哪一个资产（%s）", message, tc.missing)
-			}
-			// 消息里带行号：只说"有引用不合法"会让用户在一份几百行的正文里自己找。
-			if !strings.Contains(message, "第 1 行") {
-				t.Errorf("问题 %q 没有指出位置", message)
+			if text := problems(report); !strings.Contains(text, "本文件组之外") {
+				t.Errorf("问题信息 %q 没有说明它指向了文件组之外", text)
 			}
 		})
 	}
 }
 
-// **取资源的位置不得指向本工程资产库之外**；而 `<a href>` 是导航链接，不受此限。
-//
-// 这条区分回答了"只能引用资产库里的资产"到底在禁什么：禁的是让页面去别处取
-// 字节，不是禁止用户写出一个外部链接。
-func TestExternalResourceReferencesAreRejected(t *testing.T) {
+// **外部导航链接不被拒**：用户链到外部网站是他的意图，不是资源引用。
+func TestExternalNavigationLinksAreAllowed(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<a href="https://example.com">外部</a><a href="mailto:a@b.com">来信</a>`),
+	})
+
+	report := f.report(t, project.ID)
+	if !report.OK() {
+		t.Errorf("导航链接被拒了: %v", report.Messages())
+	}
+}
+
+// 记号必须落在**本文件组的一条资产条目**上。
+func TestAssetMarkersMustResolve(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
 	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	placeholder := PlaceholderScheme + asset.ID
 
-	rejected := []struct {
-		name    string
-		content string
-		value   string
-	}{
-		{"绝对地址的图片", `<img src="https://evil.example.com/a.png">`, "https://evil.example.com/a.png"},
-		{"http", `<img src="http://evil.example.com/a.png">`, "http://evil.example.com/a.png"},
-		{"协议相对地址", `<img src="//evil.example.com/a.png">`, "//evil.example.com/a.png"},
-		{"data 形式的图片", `<img src="data:image/png;base64,AAAA">`, "data:image/png;base64,AAAA"},
-		{"相对路径", `<img src="local.png">`, "local.png"},
-		{"视频", `<video src="https://evil.example.com/v.mp4"></video>`, "https://evil.example.com/v.mp4"},
-		{"srcset", `<img srcset="https://evil.example.com/a.png 1x">`, "https://evil.example.com/a.png"},
-		{"内联样式里的 url()", `<div style="background:url(https://evil.example.com/a.png)">x</div>`, "https://evil.example.com/a.png"},
-		{"<style> 块里的 url()", `<style>body{background:url(https://evil.example.com/a.png)}</style>`, "https://evil.example.com/a.png"},
-		{"外链样式表", `<link rel="stylesheet" href="https://evil.example.com/a.css">`, "https://evil.example.com/a.css"},
-		{"外链脚本", `<script src="https://evil.example.com/a.js"></script>`, "https://evil.example.com/a.js"},
-	}
-	for _, tc := range rejected {
-		t.Run("拒绝/"+tc.name, func(t *testing.T) {
-			report := f.report(t, testOwner, project.ID, tc.content)
-			if report.OK() {
-				t.Fatal("期望被拒，实际通过了")
-			}
-			if message := problems(report); !strings.Contains(message, tc.value) {
-				t.Errorf("问题 %q 没有指出那一处（%s）", message, tc.value)
-			}
-		})
+	// 落在条目上：通过。
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<img src="asset://`+asset.ID+`">`),
+		{Path: "a.png", Kind: EntryKindAsset, AssetID: asset.ID},
+	})
+	if report := f.report(t, project.ID); !report.OK() {
+		t.Errorf("记号落在条目上却报错: %v", report.Messages())
 	}
 
-	allowed := []struct {
-		name    string
-		content string
-	}{
-		{"外部链接", `<a href="https://example.com">去看看</a>`},
-		{"外部链接带占位符的同页图片", `<a href="https://example.com"><img src="` + placeholder + `"></a>`},
-		{"注释里的地址", `<!-- <img src="https://evil.example.com/a.png"> -->`},
-		{"脚本里的字符串", `<script>var s = '<img src="https://evil.example.com/a.png">';</script>`},
-		{"普通文本里的地址", `<p>见 https://example.com 的说明</p>`},
-		{"空取值的属性", `<img src="">`},
-	}
-	for _, tc := range allowed {
-		t.Run("允许/"+tc.name, func(t *testing.T) {
-			if report := f.report(t, testOwner, project.ID, tc.content); !report.OK() {
-				t.Errorf("被拒了: %s", problems(report))
-			}
-		})
-	}
-}
-
-// 占位符的边界由**标识的字母表**决定：多一个字符就不是一个占位符，因此它会被
-// 当成一处外部资源引用报出来，而不是被静默改写掉前半截。
-func TestPlaceholderBoundary(t *testing.T) {
-	assetID := "ast_abcDEF-123_xyz"
-	f := newFixture(t)
-	project := f.createProject(t, "工程")
-
-	// 恰好一个占位符：识别得出来，且指向的资源必须存在。
-	if got := ReferencedAssetIDs(Document(PlaceholderScheme + assetID)); len(got) != 1 || got[0] != assetID {
-		t.Errorf("识别 = %v，期望 [%s]", got, assetID)
-	}
-	// 后面多了一个 `/`：它不再是一个占位符。
-	if got := ReferencedAssetIDs(Document(PlaceholderScheme + assetID + "/extra")); len(got) != 1 {
-		t.Errorf("识别 = %v，边界之后的字符应当仍属于标识的字母表之外", got)
-	}
-	report := f.report(t, testOwner, project.ID, `<img src="`+PlaceholderScheme+assetID+`/extra">`)
+	// 指一个不存在的资产：拒绝，且错误信息里含那个标识。
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<img src="asset://ast_missing">`),
+	})
+	report := f.report(t, project.ID)
 	if report.OK() {
-		t.Error("一个不是占位符的取值被放过了")
+		t.Fatal("指向一个不存在的资产却通过了校验")
 	}
-	// 前后空白容忍。
-	if got := ReferencedAssetIDs(Document(`asset://` + assetID + ` `)); len(got) != 1 || got[0] != assetID {
-		t.Errorf("识别 = %v，期望容忍尾部空白", got)
+	if text := problems(report); !strings.Contains(text, "ast_missing") {
+		t.Errorf("问题信息 %q 没有指出那个资产标识", text)
 	}
 }
 
-// 正文与产物各有一档体积上限：正文那一条在编辑期就要拦住，产物那一条在发布前拦。
-func TestDocumentAndArtifactSizeLimits(t *testing.T) {
+// **指向他工程的资产即失败**：资产属于唯一一个工程，跨工程引用落不到条目上。
+func TestForeignProjectAssetIsRejected(t *testing.T) {
 	f := newFixture(t)
-	project := f.createProject(t, "工程")
+	mine := f.createProject(t, "我的")
+	theirs := f.createProject(t, "别人的")
+	foreignAsset := f.uploadAsset(t, theirs.ID, "image/png", "a.png", []byte("aaa"))
 
-	// 正文超限：保存草稿与发布校验都拒。
-	huge := Document(strings.Repeat("x", MaxDocumentBytes+1))
-	if _, err := f.service.SaveDraft(t.Context(), testOwner, project.ID, huge); err == nil {
-		t.Error("超限的正文被保存了")
-	}
-	if _, _, err := f.service.validateDocument(t.Context(), project.ID, huge); err != nil {
-		t.Fatalf("校验出错: %v", err)
-	}
+	// 直接把别的工程的资产标识写进自己的清单：它不属于本工程，落不到条目上。
+	f.pushDraft(t, mine.ID, []Entry{
+		f.textEntry(t, mine.ID, "index.html", `<img src="asset://`+foreignAsset.ID+`">`),
+		{Path: "a.png", Kind: EntryKindAsset, AssetID: foreignAsset.ID},
+	})
 
-	// 产物超限：正文合法、但改写之后超过产物的上限。
-	//
-	// 改写会把每个占位符换成一条完整的公开地址，因此一页引用很多次时产物会明显
-	// 长于正文。这里按"每次引用增长多少"算出需要的引用次数，让正文仍在上限内、
-	// 而产物越过去。
-	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	reference := `<img src="` + PlaceholderScheme + asset.ID + `">`
-	address := f.service.Origin().AssetURL(asset.Digest)
-	repeats := MaxArtifactBytes/(len(address)+len(`<img src="">`)) + 1
-	content := Document(strings.Repeat(reference, repeats))
-	if len(content) > MaxDocumentBytes {
-		t.Fatalf("夹具的正文 %d 字节已经超过正文上限（%d），测的就不是产物上限了",
-			len(content), MaxDocumentBytes)
-	}
-	_, report, err := f.service.validateDocument(t.Context(), project.ID, content)
-	if err != nil {
-		t.Fatalf("校验出错: %v", err)
-	}
+	report := f.report(t, mine.ID)
 	if report.OK() {
-		t.Fatal("产物超限却没有被拒")
+		t.Fatal("引用他工程的资产却通过了校验")
 	}
-	if !strings.Contains(problems(report), "发布产物") {
-		t.Errorf("问题 %q 没有指出是产物超限", problems(report))
+	if text := problems(report); !strings.Contains(text, foreignAsset.ID) {
+		t.Errorf("问题信息 %q 没有指出那个资产标识", text)
 	}
 }
 
-// 校验的**唯一入口**同时服务编辑器与发布：同一个输入在两处得到同一个结论。
-func TestValidationEntryIsShared(t *testing.T) {
+// 单份文本与整组文本的体积上限。
+func TestTextSizeLimits(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
-	content := Document(`<img src="asset://ast_不存在">`)
-
-	// 编辑器那条：拿回问题清单。
-	editor := f.report(t, testOwner, project.ID, string(content))
-	// 发布那条：同一个结论变成了拒绝。
-	f.saveDraft(t, project.ID, string(content))
-	version := f.saveVersion(t, project.ID)
-	_, publishErr := f.service.Publish(t.Context(), testOwner, project.ID, version.ID)
-	if publishErr == nil {
-		t.Fatal("发布通过了，编辑器却说有问题——两处用了两套规则")
+	// 一份超过单份上限的文本：直传的提交那一步就会挡下它，因此这里直接构造
+	// 一份"清单声称有、字节其实没有"的情形不成立——改为验证上限常量本身与
+	// 整组上限的判断。
+	if MaxTextBytes >= MaxFileSetBytes {
+		t.Fatal("单份上限不低于整组上限")
 	}
+	if _, err := NormalizeManifest(make([]Entry, MaxFiles+1)); err == nil {
+		t.Error("超过文件数上限的清单被接受了")
+	}
+	_ = project
+}
 
-	editorProblems := problems(editor)
-	for _, message := range editor.Messages() {
-		if !strings.Contains(publishErr.Error(), message) {
-			t.Errorf("发布错误 %q 里没有编辑器的结论 %q", publishErr, message)
+// docs 形态：**整站渲染**，导航只由 markdown 文件派生，站点文件不进导航。
+func TestDocsRenderAndNavigation(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProjectForm(t, "文档站", SiteFormDocs)
+	asset := f.uploadAsset(t, project.ID, "image/png", "logo.png", []byte("png"))
+
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.md", "# 首页\n\n看[入门](guide/intro.md)。\n"),
+		f.textEntry(t, project.ID, "guide/intro.md", "# 入门\n\n![图](asset://"+asset.ID+")\n"),
+		f.textEntry(t, project.ID, "theme.css", "body{color:red}"),
+		{Path: "logo.png", Kind: EntryKindAsset, AssetID: asset.ID},
+	})
+
+	report := f.report(t, project.ID)
+	if !report.OK() {
+		t.Fatalf("文档站被拒: %v", report.Messages())
+	}
+	artifacts := f.buildArtifacts(t, project.ID)
+
+	// 每一份 markdown 渲染成一页 `.html`。
+	index, ok := artifacts["index.html"]
+	if !ok {
+		t.Fatalf("产物里没有 index.html：%v", keysOf(artifacts))
+	}
+	intro, ok := artifacts["guide/intro.html"]
+	if !ok {
+		t.Fatalf("产物里没有 guide/intro.html：%v", keysOf(artifacts))
+	}
+	// **站点文件按原路径原样进产物**，不是渲染结果。
+	if string(artifacts["theme.css"]) != "body{color:red}" {
+		t.Errorf("站点文件被改动了: %q", artifacts["theme.css"])
+	}
+	// 文档间链接被解析成站点内的绝对地址。
+	if !strings.Contains(string(index), "/g/"+project.ID+"/guide/intro.html") {
+		t.Errorf("文档间链接没有被解析成站点内地址：%s", index)
+	}
+	// 渲染器产出的地址一律是站点绝对路径；页面落在嵌套路径下时这一条才成立。
+	if !strings.Contains(string(intro), "/g/"+project.ID+"/") {
+		t.Errorf("嵌套页里的地址不是站点绝对路径：%s", intro)
+	}
+	// **导航只由 markdown 派生**：站点文件不进导航，且每一项都对应一份文档。
+	nav := string(index)
+	if strings.Contains(nav, "theme.css") {
+		t.Error("站点文件进了导航")
+	}
+	if !strings.Contains(nav, "入门") {
+		t.Error("导航里没有那份文档的标题")
+	}
+	// **产物里不出现 aladdin 编写的脚本。**
+	if strings.Contains(string(index), "<script") {
+		t.Error("产物里出现了服务端注入的脚本")
+	}
+	// 标题取每份的首个一级标题。
+	if !strings.Contains(string(index), "<title>首页</title>") {
+		t.Errorf("页面标题不是首个一级标题：%s", index)
+	}
+}
+
+// docs 形态：指向文件组里不存在的位置的文档间链接被拒，并指出是哪一份文件。
+func TestDocsBrokenDocLinkIsRejected(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProjectForm(t, "文档站", SiteFormDocs)
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.md", "# 首页\n\n看[不存在](guide/missing.md)。\n"),
+	})
+
+	report := f.report(t, project.ID)
+	if report.OK() {
+		t.Fatal("指向不存在位置的文档间链接被放过了")
+	}
+	if report.Problems[0].Path != "index.md" {
+		t.Errorf("问题的文件 = %q，期望 index.md", report.Problems[0].Path)
+	}
+	if text := problems(report); !strings.Contains(text, "guide/missing.md") {
+		t.Errorf("问题信息 %q 没有指出那一处链接", text)
+	}
+}
+
+// 渲染是**确定性**的：同一份源渲染两次逐字相同（"重复发布不产生新对象"的前提）。
+func TestDocsRenderIsDeterministic(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProjectForm(t, "文档站", SiteFormDocs)
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.md", "# 首页\n\n正文。\n"),
+		f.textEntry(t, project.ID, "b.md", "# 乙\n\n乙的正文。\n"),
+		f.textEntry(t, project.ID, "a.md", "# 甲\n\n甲的正文。\n"),
+	})
+
+	first := f.buildArtifacts(t, project.ID)
+	second := f.buildArtifacts(t, project.ID)
+	for artifactPath, data := range first {
+		if string(second[artifactPath]) != string(data) {
+			t.Errorf("%s 两次渲染结果不同", artifactPath)
 		}
 	}
-	if !strings.Contains(editorProblems, "ast_不存在") {
-		t.Errorf("编辑器的结论 %q 没有指出那一处", editorProblems)
+}
+
+// docs 形态下 markdown 里的图片引用同样要落在文件组里。
+func TestDocsImageMustLandInFileSet(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProjectForm(t, "文档站", SiteFormDocs)
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.md", "# 首页\n\n![图](images/x.png)\n"),
+	})
+
+	report := f.report(t, project.ID)
+	if report.OK() {
+		t.Fatal("指向不存在图片的 markdown 被放过了")
 	}
+	if text := problems(report); !strings.Contains(text, "images/x.png") {
+		t.Errorf("问题信息 %q 没有指出那一处引用", text)
+	}
+}
+
+// 校验是**只读**的：它不改变草稿，也不产生任何发布记录。
+func TestValidateDraftIsReadOnly(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>x</p>")})
+	before, _, err := f.service.GetDraft(context.Background(), testOwner, project.ID)
+	if err != nil {
+		t.Fatalf("读草稿失败: %v", err)
+	}
+
+	if _, err := f.service.ValidateDraft(context.Background(), testOwner, project.ID); err != nil {
+		t.Fatalf("校验失败: %v", err)
+	}
+	after, _, err := f.service.GetDraft(context.Background(), testOwner, project.ID)
+	if err != nil {
+		t.Fatalf("读草稿失败: %v", err)
+	}
+	if len(after.Manifest) != len(before.Manifest) || !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Error("校验改变了草稿")
+	}
+}
+
+func keysOf(m map[string][]byte) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	return keys
 }

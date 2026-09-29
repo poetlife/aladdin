@@ -37,6 +37,20 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
+// cloneManifest 复制一份清单。
+//
+// 每个读写点都过它：清单是**不可变**的（版本一旦保存，它读回的内容逐字不变），
+// 而切片是可变的——不复制的话，一次对返回值的 append 会写进已保存的版本里，
+// 而那正是"版本不可变"的反面。gormstore 那边由序列化天然隔开，这里必须显式做。
+func cloneManifest(manifest Manifest) Manifest {
+	if manifest == nil {
+		return nil
+	}
+	out := make(Manifest, len(manifest))
+	copy(out, manifest)
+	return out
+}
+
 // GetProject 实现 Store。
 func (s *MemoryStore) GetProject(_ context.Context, projectID string) (Project, error) {
 	s.mu.RLock()
@@ -78,6 +92,7 @@ func (s *MemoryStore) GetDraft(_ context.Context, projectID string) (Draft, erro
 	if !ok {
 		return Draft{}, ErrDraftNotFound
 	}
+	draft.Manifest = cloneManifest(draft.Manifest)
 	return draft, nil
 }
 
@@ -90,29 +105,19 @@ func (s *MemoryStore) GetVersion(_ context.Context, projectID, versionID string)
 	if !ok || version.ProjectID != projectID {
 		return Version{}, ErrVersionNotFound
 	}
+	version.Manifest = cloneManifest(version.Manifest)
 	return version, nil
 }
 
-// ListVersions 实现 Store（不带正文）。
-func (s *MemoryStore) ListVersions(ctx context.Context, projectID string) ([]Version, error) {
-	versions, err := s.ListVersionContents(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	for i := range versions {
-		versions[i].Content = ""
-	}
-	return versions, nil
-}
-
-// ListVersionContents 实现 Store（带正文）。
-func (s *MemoryStore) ListVersionContents(_ context.Context, projectID string) ([]Version, error) {
+// ListVersions 实现 Store。清单随行返回（它只有路径与摘要，几 KB 量级）。
+func (s *MemoryStore) ListVersions(_ context.Context, projectID string) ([]Version, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var versions []Version
 	for _, version := range s.versions {
 		if version.ProjectID == projectID {
+			version.Manifest = cloneManifest(version.Manifest)
 			versions = append(versions, version)
 		}
 	}
@@ -166,6 +171,7 @@ func (s *MemoryStore) GetPublication(_ context.Context, publicationID string) (P
 	if !ok {
 		return Publication{}, ErrPublicationNotFound
 	}
+	publication.Manifest = cloneManifest(publication.Manifest)
 	return publication, nil
 }
 
@@ -243,12 +249,12 @@ func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 	return nil
 }
 
-// PutDraft 实现 MutableStore。
-func (s *MemoryStore) PutDraft(_ context.Context, projectID string, content Document, at time.Time) error {
+// PutDraft 实现 MutableStore：整组替换。
+func (s *MemoryStore) PutDraft(_ context.Context, projectID string, manifest Manifest, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.drafts[projectID] = Draft{ProjectID: projectID, Content: content, UpdatedAt: at}
+	s.drafts[projectID] = Draft{ProjectID: projectID, Manifest: cloneManifest(manifest), UpdatedAt: at}
 	return nil
 }
 
@@ -267,6 +273,7 @@ func (s *MemoryStore) CreateVersion(_ context.Context, version Version) (Version
 		}
 	}
 	version.Seq = maxSeq + 1
+	version.Manifest = cloneManifest(version.Manifest)
 	s.versions[version.ID] = version
 	return version, nil
 }
@@ -313,6 +320,7 @@ func (s *MemoryStore) PutPublication(_ context.Context, publication Publication)
 
 	// 同一条发布记录重复写入不产生第二条，也不改标识——这正是"落库"这个
 	// 检查点可续跑的前提。
+	publication.Manifest = cloneManifest(publication.Manifest)
 	s.publications[publication.ID] = publication
 	return nil
 }

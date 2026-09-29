@@ -1,12 +1,18 @@
+import type { SiteForm } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { galaxyClient } from './transport'
 
 /**
  * galaxy 创作面的调用封装。
  *
  * 与 profile.ts 同构：这里只提供有名字的调用入口，类型全部来自 proto 生成，
- * **不做任何业务判断**。判断只有一处实现——"这段正文能不能发布"由服务端的
- * ValidateContent 回答（见 docs/design/galaxy/README.md 的"引用完整性的唯一
+ * **不做任何业务判断**。判断只有一处实现——"这份草稿能不能发布"由服务端的
+ * ValidateDraft 回答（见 docs/design/galaxy/README.md 的"引用完整性的唯一
  * 入口"），前端不复写引用解析。
+ *
+ * **这里没有任何写内容的入口。** 内容的写入只有命令行一条路（push 表达整组的
+ * 期望状态）；两个入口并存会引出"网页上刚改的一句被一次 push 静默盖掉"这类只在
+ * 两个入口之间发生的冲突，收成一条路径，那份冲突连同它需要的基线校验一起不存在
+ * （见 docs/design/galaxy/authoring.md）。
  *
  * 所有方法的目标工程都取自参数里的工程标识，而**归属由凭证决定**：接口面上
  * 没有"指定拥有者"这个形状，因此这里也没有接收拥有者的参数。
@@ -22,17 +28,17 @@ export async function listProjects() {
   return galaxyClient().listProjects({})
 }
 
-/** 创建一个工程。标识由服务端分配。 */
-export async function createProject(name: string, description: string) {
-  return galaxyClient().createProject({ name, description })
+/** 创建一个工程。标识由服务端分配，**形态在创建时定下、此后不可改**。 */
+export async function createProject(name: string, description: string, form: SiteForm) {
+  return galaxyClient().createProject({ name, description, form })
 }
 
-/** 读取一个工程的元数据。不含草稿与版本正文。 */
+/** 读取一个工程的元数据。不含草稿、版本与产物清单。 */
 export async function getProject(projectId: string) {
   return galaxyClient().getProject({ projectId })
 }
 
-/** 修改工程的名称与简介。空串表示清空。 */
+/** 修改工程的名称与简介。空串表示清空。**形态不在其中。** */
 export async function updateProject(projectId: string, name: string, description: string) {
   return galaxyClient().updateProject({ projectId, name, description })
 }
@@ -42,27 +48,22 @@ export async function deleteProject(projectId: string) {
   return galaxyClient().deleteProject({ projectId })
 }
 
-/** 读取工程的当前草稿。从未保存过时正文为空。 */
+/** 读取工程的当前草稿清单，每一项带一条短时读取地址。 */
 export async function getDraft(projectId: string) {
   return galaxyClient().getDraft({ projectId })
 }
 
-/** 保存工程的当前草稿。改草稿不产生版本。 */
-export async function saveDraft(projectId: string, content: string) {
-  return galaxyClient().saveDraft({ projectId, content })
-}
-
-/** 把草稿的当前内容保存成一个不可变版本。 */
+/** 把草稿的当前清单保存成一个不可变版本。 */
 export async function saveVersion(projectId: string) {
   return galaxyClient().saveVersion({ projectId })
 }
 
-/** 列出工程的版本。按序号排序，不含正文。 */
+/** 列出工程的版本，按序号排序。清单随行，但不带读取地址。 */
 export async function listVersions(projectId: string) {
   return galaxyClient().listVersions({ projectId })
 }
 
-/** 读取一个版本，含正文。 */
+/** 读取一个版本，含清单与每一项的短时读取地址。 */
 export async function getVersion(projectId: string, versionId: string) {
   return galaxyClient().getVersion({ projectId, versionId })
 }
@@ -72,9 +73,22 @@ export async function deleteVersion(projectId: string, versionId: string) {
   return galaxyClient().deleteVersion({ projectId, versionId })
 }
 
-/** 校验一段正文能不能发布。编辑器提示与发布前置校验共用这一个入口。 */
-export async function validateContent(projectId: string, content: string) {
-  return galaxyClient().validateContent({ projectId, content })
+/** 校验**当前草稿的清单**能不能发布。界面提示与发布前置校验共用这一个入口。 */
+export async function validateDraft(projectId: string) {
+  return galaxyClient().validateDraft({ projectId })
+}
+
+/**
+ * 把草稿渲染成一份可以放进沙箱 iframe 的 HTML。
+ *
+ * **渲染在服务端**，与发布共用同一段实现：`docs` 形态的 markdown → HTML 只有
+ * 一处实现，前端不再引第二个渲染器——两份实现迟早漂移，而用户看到的是"预览好好
+ * 的、发布出来不一样"。
+ *
+ * path 只在 `static` 形态下有作用（逐页预览）；`docs` 形态忽略它（整站拼成一份）。
+ */
+export async function previewDraft(projectId: string, path = '') {
+  return galaxyClient().previewDraft({ projectId, path })
 }
 
 /** 列出工程资产库里的资产，含短时有效的读取地址。 */

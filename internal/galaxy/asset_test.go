@@ -28,6 +28,10 @@ func TestNormalizeAssetType(t *testing.T) {
 		"audio/mpeg":                MediaKindAudio,
 		"audio/wave":                MediaKindAudio,
 		"application/ogg":           MediaKindAudio,
+		"font/woff2":                MediaKindFont,
+		"font/woff":                 MediaKindFont,
+		"font/ttf":                  MediaKindFont,
+		"font/otf":                  MediaKindFont,
 		"IMAGE/PNG":                 MediaKindImage,
 		"image/jpeg; charset=utf-8": MediaKindImage,
 	}
@@ -82,7 +86,8 @@ func TestAssetTypeRulesMatchWhitelist(t *testing.T) {
 func TestMaxBytesForIsTiered(t *testing.T) {
 	if MaxBytesFor(MediaKindImage) != ImageMaxBytes ||
 		MaxBytesFor(MediaKindVideo) != VideoMaxBytes ||
-		MaxBytesFor(MediaKindAudio) != AudioMaxBytes {
+		MaxBytesFor(MediaKindAudio) != AudioMaxBytes ||
+		MaxBytesFor(MediaKindFont) != FontMaxBytes {
 		t.Fatal("分类上限与常量不一致")
 	}
 	if ImageMaxBytes >= VideoMaxBytes {
@@ -157,10 +162,16 @@ func TestAssetFilenameStaysOutOfObjectKey(t *testing.T) {
 	nasty := "../../etc/passwd\x00 name.png"
 	asset := f.uploadAsset(t, project.ID, "image/png", nasty, []byte("aaa"))
 
-	want := assetKeyPrefix + project.ID + "/" + asset.ID
+	want := AssetObjectKey(project.ID, asset.MediaKind, asset.ID)
 	issued := f.objects.Issued()
 	if len(issued) != 1 || issued[0].Key != want {
 		t.Errorf("对象键 = %v，期望恰好 %q", issued, want)
+	}
+	// 文件名里的任何一段都不得出现在键里。
+	for _, piece := range []string{"passwd", "etc", "name.png", ".."} {
+		if strings.Contains(issued[0].Key, piece) {
+			t.Errorf("对象键 %q 里出现了文件名的一段 %q", issued[0].Key, piece)
+		}
 	}
 	// 文件名只作为一个标签保留下来。
 	if asset.Filename != nasty {
@@ -197,7 +208,7 @@ func TestCommitAssetUploadRejectsOversizedObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("签发失败: %v", err)
 	}
-	f.objects.Put(credential.Key, make([]byte, ImageMaxBytes+1))
+	f.objects.SimulateUpload(credential.Key, make([]byte, ImageMaxBytes+1))
 
 	digest := ContentDigest(make([]byte, ImageMaxBytes+1))
 	if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", digest, "big.png"); !errors.Is(err, ErrAssetTooLarge) {
@@ -227,10 +238,10 @@ func TestCommitAssetUploadChecksDigestShape(t *testing.T) {
 		if err != nil {
 			t.Fatalf("签发失败: %v", err)
 		}
-		f.objects.Put(credential.Key, []byte("aaa"))
+		f.objects.SimulateUpload(credential.Key, []byte("aaa"))
 
-		if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", digest, "a.png"); !errors.Is(err, ErrAssetDigestInvalid) {
-			t.Errorf("摘要 %q err = %v，期望 ErrAssetDigestInvalid", digest, err)
+		if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", digest, "a.png"); !errors.Is(err, ErrDigestInvalid) {
+			t.Errorf("摘要 %q err = %v，期望 ErrDigestInvalid", digest, err)
 		}
 	}
 	if !IsContentDigest(ContentDigest([]byte("aaa"))) {
@@ -316,8 +327,13 @@ func TestAssetLookupsAreProjectScoped(t *testing.T) {
 func TestReferencedAssetCannotBeDeleted(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
+	// 图片写进一条 HTML 的 src：HTML 里引用素材靠的是 asset:// 记号，而它进入
+	// 文件组时成为一条资产条目——拒绝删除的判据正是那份清单。
 	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("aaa"))
-	f.saveDraft(t, project.ID, "<img src=\""+PlaceholderScheme+asset.ID+"\">")
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<img src="asset://`+asset.ID+`">`),
+		{Path: "a.png", Kind: EntryKindAsset, AssetID: asset.ID},
+	})
 	version := f.saveVersion(t, project.ID)
 	ctx := context.Background()
 
@@ -336,7 +352,7 @@ func TestReferencedAssetCannotBeDeleted(t *testing.T) {
 	if err := f.service.DeleteAsset(ctx, testOwner, project.ID, asset.ID); err != nil {
 		t.Fatalf("删资产失败: %v", err)
 	}
-	if _, err := f.objects.Head(ctx, AssetObjectKey(project.ID, asset.ID)); !errors.Is(err, objectstore.ErrObjectNotFound) {
+	if _, err := f.objects.Head(ctx, AssetObjectKey(project.ID, asset.MediaKind, asset.ID)); !errors.Is(err, objectstore.ErrObjectNotFound) {
 		t.Error("私有区对象仍在")
 	}
 	if assets, err := f.store.ListAssets(ctx, project.ID); err != nil || len(assets) != 0 {
@@ -352,7 +368,7 @@ func TestDeleteAssetToleratesMissingObject(t *testing.T) {
 	ctx := context.Background()
 
 	// 桶上的对象先没了（对账、人工清理都会造成这种情形）。
-	if err := f.objects.Delete(ctx, AssetObjectKey(project.ID, asset.ID)); err != nil {
+	if err := f.objects.Delete(ctx, AssetObjectKey(project.ID, asset.MediaKind, asset.ID)); err != nil {
 		t.Fatalf("删除对象失败: %v", err)
 	}
 	if err := f.service.DeleteAsset(ctx, testOwner, project.ID, asset.ID); err != nil {
@@ -364,7 +380,7 @@ func TestDeleteAssetToleratesMissingObject(t *testing.T) {
 func TestAssetUnavailableWithoutStore(t *testing.T) {
 	f := newFixture(t)
 	project := f.createProject(t, "工程")
-	f.saveDraft(t, project.ID, "<p>x</p>")
+	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>x</p>")})
 	version := f.saveVersion(t, project.ID)
 
 	// 重装一个没有对象存储的部署：工程与版本照常，资产整体缺席。
@@ -384,7 +400,7 @@ func TestAssetUnavailableWithoutStore(t *testing.T) {
 		t.Errorf("列资产 err = %v，期望 ErrAssetUnavailable", err)
 	}
 	// 工程与版本照常可用。
-	if _, err := bare.GetVersion(ctx, testOwner, project.ID, version.ID); err != nil {
+	if _, _, err := bare.GetVersion(ctx, testOwner, project.ID, version.ID); err != nil {
 		t.Errorf("读版本失败: %v", err)
 	}
 	if _, err := bare.ListVersions(ctx, testOwner, project.ID); err != nil {

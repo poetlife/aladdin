@@ -140,7 +140,7 @@
 | 服务装配、协议启用、优雅退出 | [internal/server/server.go](../../../internal/server/server.go) |
 | 链路标识与认证中间件 | [internal/server/middleware.go](../../../internal/server/middleware.go) |
 | 鉴权拦截器（唯一实现） | [internal/server/interceptor/authz.go](../../../internal/server/interceptor/authz.go) |
-| 注解读取（唯一实现） | [internal/server/interceptor/annotation.go](../../../internal/server/interceptor/annotation.go) |
+| 注解读取（唯一实现） | [internal/rbac/annotation.go](../../../internal/rbac/annotation.go) |
 | 拒绝语义与错误码映射 | [internal/server/interceptor/rejection.go](../../../internal/server/interceptor/rejection.go) |
 | 主体与凭证提取 | [internal/server/interceptor/authn.go](../../../internal/server/interceptor/authn.go) |
 | 注解定义 | [api/proto/aladdin/rbac/v1/annotations.proto](../../../api/proto/aladdin/rbac/v1/annotations.proto) |

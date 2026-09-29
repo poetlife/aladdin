@@ -16,6 +16,12 @@ interface WorkbenchTopBarProps {
   canPublish: boolean
   /** 是否启用发布（capabilities.publishEnabled）。为假时不渲染任何发布入口。 */
   publishEnabled: boolean
+  /**
+   * 这个部署有没有配置对象存储。**它是内容的前提**：没配桶时字节没有地方放，
+   * 草稿、版本与产物整体不可用——那些入口因此不渲染，而不是渲染一个点了报错的
+   * 控件（见 docs/design/galaxy/asset-library.md 的"未配置时"）。
+   */
+  contentEnabled: boolean
   /** 资产面板是否可以打开（能力启用且持有读权限）。 */
   assetPanelEnabled: boolean
   versionBusy: boolean
@@ -53,6 +59,7 @@ export function WorkbenchTopBar({
   canWrite,
   canPublish,
   publishEnabled,
+  contentEnabled,
   assetPanelEnabled,
   versionBusy,
   publishBusy,
@@ -98,11 +105,13 @@ export function WorkbenchTopBar({
             资产
           </Button>
         )}
-        <Button icon={<History size={16} />} onClick={onOpenVersions}>
-          版本
-        </Button>
+        {contentEnabled && (
+          <Button icon={<History size={16} />} onClick={onOpenVersions}>
+            版本
+          </Button>
+        )}
 
-        {canWrite && (
+        {contentEnabled && canWrite && (
           <Button
             type={publishAvailable ? 'default' : 'primary'}
             icon={<Layers size={16} />}

@@ -51,6 +51,7 @@ func (s *Store) CreateProject(ctx context.Context, project galaxy.Project) error
 		OwnerSubjectID:       project.OwnerSubjectID,
 		Name:                 project.Name,
 		Description:          project.Description,
+		Form:                 string(project.Form),
 		CurrentPublicationID: project.CurrentPublicationID,
 		CreatedAt:            project.CreatedAt,
 		UpdatedAt:            project.UpdatedAt,
@@ -63,7 +64,8 @@ func (s *Store) CreateProject(ctx context.Context, project galaxy.Project) error
 
 // PutProjectMeta 实现 galaxy.MutableStore。
 //
-// 只覆盖名称、简介与更新时间：**它不动发布指针**，一次改名不该影响发布态。
+// 只覆盖名称、简介与更新时间：**它不动发布指针、也不动形态**，一次改名不该影响
+// 发布态，而形态本来就改不了。
 func (s *Store) PutProjectMeta(ctx context.Context, projectID, name, description string, at time.Time) error {
 	result := s.db.WithContext(ctx).
 		Model(&database.GalaxyProjectRecord{}).
@@ -98,7 +100,7 @@ func (s *Store) SetCurrentPublication(ctx context.Context, projectID, publicatio
 
 // DeleteProject 实现 galaxy.MutableStore：连同版本、草稿、资产与发布记录一并删除。
 //
-// 放在一个事务里：删到一半的工程是一个"工程还在、页面已经打不开"的中间状态，
+// 放在一个事务里：删到一半的工程是一个"工程还在、站点已经打不开"的中间状态，
 // 而它没有任何可解释的对外含义。
 func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -139,19 +141,23 @@ func (s *Store) GetDraft(ctx context.Context, projectID string) (galaxy.Draft, e
 		}
 		return galaxy.Draft{}, unavailable("读取草稿", err)
 	}
-	return toDraft(rec), nil
+	return toDraft(rec)
 }
 
-// PutDraft 实现 galaxy.MutableStore：行不存在时创建。
-func (s *Store) PutDraft(ctx context.Context, projectID string, content galaxy.Document, at time.Time) error {
+// PutDraft 实现 galaxy.MutableStore：整组替换，行不存在时创建。
+func (s *Store) PutDraft(ctx context.Context, projectID string, manifest galaxy.Manifest, at time.Time) error {
+	encoded, err := encodeManifest(manifest)
+	if err != nil {
+		return err
+	}
 	rec := database.GalaxyDraftRecord{
 		ProjectID: projectID,
-		Content:   string(content),
+		Manifest:  encoded,
 		UpdatedAt: at,
 	}
-	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	err = s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "project_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"content", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"manifest", "updated_at"}),
 	}).Create(&rec).Error
 	if err != nil {
 		return unavailable("写入草稿", err)
@@ -170,17 +176,14 @@ func (s *Store) GetVersion(ctx context.Context, projectID, versionID string) (ga
 		}
 		return galaxy.Version{}, unavailable("读取版本", err)
 	}
-	return toVersion(rec), nil
+	return toVersion(rec)
 }
 
-// ListVersions 实现 galaxy.Store。**不带正文。**
-//
-// Select 显式列出要读的列：不这么做的话，一次"列出版本"会把每个版本的正文都
-// 拉进内存，而列表接口根本不显示它们。
+// ListVersions 实现 galaxy.Store。**清单随行返回**：它只有路径与摘要，几 KB
+// 量级，而"哪些版本引用了这个资产"正是靠它回答的。
 func (s *Store) ListVersions(ctx context.Context, projectID string) ([]galaxy.Version, error) {
 	var recs []database.GalaxyVersionRecord
 	err := s.db.WithContext(ctx).
-		Select("id", "project_id", "seq", "saved_at").
 		Where("project_id = ?", projectID).
 		Order("seq ASC, id ASC").
 		Find(&recs).Error
@@ -189,25 +192,11 @@ func (s *Store) ListVersions(ctx context.Context, projectID string) ([]galaxy.Ve
 	}
 	versions := make([]galaxy.Version, 0, len(recs))
 	for _, rec := range recs {
-		versions = append(versions, toVersion(rec))
-	}
-	return versions, nil
-}
-
-// ListVersionContents 实现 galaxy.Store。**带正文**：只有"哪些版本引用了这个
-// 资产"这一个判断需要它。
-func (s *Store) ListVersionContents(ctx context.Context, projectID string) ([]galaxy.Version, error) {
-	var recs []database.GalaxyVersionRecord
-	err := s.db.WithContext(ctx).
-		Where("project_id = ?", projectID).
-		Order("seq ASC, id ASC").
-		Find(&recs).Error
-	if err != nil {
-		return nil, unavailable("列出版本正文", err)
-	}
-	versions := make([]galaxy.Version, 0, len(recs))
-	for _, rec := range recs {
-		versions = append(versions, toVersion(rec))
+		version, err := toVersion(rec)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, version)
 	}
 	return versions, nil
 }
@@ -219,8 +208,12 @@ func (s *Store) ListVersionContents(ctx context.Context, projectID string) ([]ga
 //
 // 序号以现存版本的最大值为基准，删除留下的空洞不填补。
 func (s *Store) CreateVersion(ctx context.Context, version galaxy.Version) (galaxy.Version, error) {
+	encoded, err := encodeManifest(version.Manifest)
+	if err != nil {
+		return galaxy.Version{}, err
+	}
 	var created galaxy.Version
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var maxSeq int64
 		row := tx.Model(&database.GalaxyVersionRecord{}).
 			Where("project_id = ?", version.ProjectID).
@@ -230,17 +223,19 @@ func (s *Store) CreateVersion(ctx context.Context, version galaxy.Version) (gala
 			return err
 		}
 		rec := database.GalaxyVersionRecord{
-			ID:        version.ID,
-			ProjectID: version.ProjectID,
-			Seq:       maxSeq + 1,
-			Content:   string(version.Content),
-			SavedAt:   version.SavedAt,
+			ID:                 version.ID,
+			ProjectID:          version.ProjectID,
+			Seq:                maxSeq + 1,
+			Manifest:           encoded,
+			RenderRulesVersion: version.RenderRulesVersion,
+			SavedAt:            version.SavedAt,
 		}
 		if err := tx.Create(&rec).Error; err != nil {
 			return err
 		}
-		created = toVersion(rec)
-		return nil
+		var err error
+		created, err = toVersion(rec)
+		return err
 	})
 	if err != nil {
 		return galaxy.Version{}, unavailable("保存版本", err)

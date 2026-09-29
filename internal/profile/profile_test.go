@@ -247,7 +247,7 @@ func uploadAvatar(t *testing.T, profiles *Profiles, objects *objectstore.MemoryS
 	if _, err := profiles.BeginAvatarUpload(ctx, subjectID, contentType, int64(len(data))); err != nil {
 		return View{}, err
 	}
-	objects.Put(AvatarKey(subjectID), data)
+	objects.SimulateUpload(AvatarKey(subjectID), data)
 	return profiles.CommitAvatarUpload(ctx, subjectID)
 }
 
@@ -383,7 +383,7 @@ func TestCommitAvatarUploadRejectsOversizedObject(t *testing.T) {
 	if _, err := profiles.BeginAvatarUpload(ctx, subjectA, "image/png", 1024); err != nil {
 		t.Fatalf("签发失败: %v", err)
 	}
-	avatars.Put(AvatarKey(subjectA), make([]byte, AvatarMaxBytes+1))
+	avatars.SimulateUpload(AvatarKey(subjectA), make([]byte, AvatarMaxBytes+1))
 
 	if _, err := profiles.CommitAvatarUpload(ctx, subjectA); !errors.Is(err, ErrAvatarTooLarge) {
 		t.Fatalf("err = %v，期望 ErrAvatarTooLarge", err)

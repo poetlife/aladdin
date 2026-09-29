@@ -77,15 +77,24 @@ func parseOrigin(what, raw string) (*url.URL, error) {
 // IsZero 表示没有配置发布域。零值不是一条可用的发布配置。
 func (o PublicOrigin) IsZero() bool { return o.assets == nil || o.page == nil }
 
-// AssetURL 返回一个公开区对象（按内容摘要寻址）的地址。
+// SiteRoot 返回一个工程的**发布根路径**，形如 `/g/<工程标识>/`。
 //
-// 路径来自**键规则**（ReleaseObjectKey），不在这里再拼一遍：公开区与私有区在
-// 同一个桶里，桶主机对两者是同一个，区分它们的正是这段路径。
-func (o PublicOrigin) AssetURL(digest string) string {
+// 它是站点内绝对地址的基准，也是构建产物里那些绝对路径的前缀（见 cli.md 的
+// `project base`）。返回**路径**而不是完整地址：产物里写完整地址会让站点绑死在
+// 当前这个发布域上，换一个域就要重新构建。
+func (o PublicOrigin) SiteRoot(projectID string) string {
+	return PublicPathPrefix + projectID + "/"
+}
+
+// AssetURL 返回一个公开区对象的地址。
+//
+// 键由**内容摘要与媒体类型**共同决定（见 promote.go 的 ReleaseObjectKey）：同一
+// 份字节以两种类型上架是两个对象，各自回给浏览器正确的类型。
+func (o PublicOrigin) AssetURL(digest, mediaType string) string {
 	if o.IsZero() {
 		return ""
 	}
-	return strings.TrimSuffix(o.assets.String(), "/") + "/" + ReleaseObjectKey(digest)
+	return strings.TrimSuffix(o.assets.String(), "/") + "/" + ReleaseObjectKey(digest, mediaType)
 }
 
 // AllowedSource 返回内容安全策略里允许的资源来源。
@@ -112,4 +121,28 @@ func (o PublicOrigin) PageURL(projectID string) string {
 		return ""
 	}
 	return strings.TrimSuffix(o.page.String(), "/") + PublicPathPrefix + projectID
+}
+
+// SplitSitePath 把一条发布地址拆成（工程标识，条目路径）（唯一入口）。
+//
+// 入口地址（`/g/<标识>` 与 `/g/<标识>/`）的条目路径为空——它等价于入口文件
+// （见 docs/design/galaxy/site-model.md 的"一文件一地址"）。
+//
+// 第二个返回值为假表示这条地址根本不是一次发布请求。**不做前缀之外的任何
+// 猜测**：多余的分段属于条目路径（那是发布态自己的事），而不属于工程标识。
+//
+// 它是**形状解析，不是判定**：真伪由集合成员测试回答（见 publish.go 的
+// PublishedEntry）。
+func SplitSitePath(requestPath string) (projectID, entryPath string, ok bool) {
+	if !strings.HasPrefix(requestPath, PublicPathPrefix) {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(requestPath, PublicPathPrefix)
+	if rest == "" {
+		return "", "", false
+	}
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+		return rest[:slash], rest[slash+1:], true
+	}
+	return rest, "", true
 }

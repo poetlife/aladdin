@@ -27,16 +27,30 @@ import (
 // 不查 Go 标准库的 mime.TypeByExtension：它给 .wav / .ogg 的取值不在白名单里
 // （audio/x-wav / audio/ogg），而服务端收的是 audio/wave 与 application/ogg。
 var assetTypeByExtension = map[string]string{
-	".png":  "image/png",
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".gif":  "image/gif",
-	".webp": "image/webp",
-	".mp4":  "video/mp4",
-	".webm": "video/webm",
-	".mp3":  "audio/mpeg",
-	".wav":  "audio/wave",
-	".ogg":  "application/ogg",
+	".png":   "image/png",
+	".jpg":   "image/jpeg",
+	".jpeg":  "image/jpeg",
+	".gif":   "image/gif",
+	".webp":  "image/webp",
+	".mp4":   "video/mp4",
+	".webm":  "video/webm",
+	".mp3":   "audio/mpeg",
+	".wav":   "audio/wave",
+	".ogg":   "application/ogg",
+	".woff2": "font/woff2",
+	".woff":  "font/woff",
+	".ttf":   "font/ttf",
+	".otf":   "font/otf",
+}
+
+// assetTypeForPath 由文件组路径查它的**声明类型**（唯一入口）。
+//
+// 判据只有扩展名：文件组的路径由目录层级给出来，而类型是它唯一的额外信息。
+// 第二个返回值为假表示这个扩展名不在表里——调用方据此报一句明确的话，而不是
+// 猜一个类型。
+func assetTypeForPath(entryPath string) (string, bool) {
+	mediaType, ok := assetTypeByExtension[strings.ToLower(filepath.Ext(entryPath))]
+	return mediaType, ok
 }
 
 // inferAssetType 由文件路径推断要声明的类型。
@@ -44,7 +58,7 @@ var assetTypeByExtension = map[string]string{
 // 推断不出来时**报用法错误**，不替用户猜一个：猜错的表现是"我传的是 PNG、
 // 服务端记成了别的"，而那时它可能已经发布出去了。
 func inferAssetType(path string) (string, error) {
-	if mediaType, ok := assetTypeByExtension[strings.ToLower(filepath.Ext(path))]; ok {
+	if mediaType, ok := assetTypeForPath(path); ok {
 		return mediaType, nil
 	}
 	return "", usageErrorf(

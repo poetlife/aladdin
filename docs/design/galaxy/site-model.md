@@ -228,10 +228,11 @@
 
 | 职责 | 文件路径 |
 |------|---------|
-| 文件组与路径约束的领域类型 | `internal/galaxy/content_set.go`（**待建**） |
-| 站点形态、入口解析与文本类型白名单 | `internal/galaxy/site.go`（**待建**） |
+| 文件组与路径约束的领域类型 | [internal/galaxy/content_set.go](../../../internal/galaxy/content_set.go) |
+| 站点形态、入口解析与文本类型白名单 | [internal/galaxy/site.go](../../../internal/galaxy/site.go) |
+| 一处引用解析成什么地址（发布态给站点绝对地址、预览态给文内锚点与短时地址） | [internal/galaxy/link_resolver.go](../../../internal/galaxy/link_resolver.go) |
 | 发布态按路径服务与资产条目重定向 | [internal/server/galaxy_public.go](../../../internal/server/galaxy_public.go) |
-| markdown 渲染与文档间引用解析 | `internal/galaxy/doc_render.go`（**待建**） |
+| markdown 渲染与文档间引用解析 | [internal/galaxy/doc_render.go](../../../internal/galaxy/doc_render.go) |
 | 命令行侧的目录上送与发布根注入 | [cmd/aladdin/galaxy-content.go](../../../cmd/aladdin/galaxy-content.go) |
 
 ---

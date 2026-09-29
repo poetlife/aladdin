@@ -177,7 +177,7 @@
 | 职责 | 文件路径 |
 |------|---------|
 | 源侧记号的形态、识别与解析 | [internal/galaxy/placeholder.go](../../../internal/galaxy/placeholder.go) |
-| 文件组与路径约束的领域类型 | `internal/galaxy/content_set.go`（**待建**） |
+| 文件组与路径约束的领域类型 | [internal/galaxy/content_set.go](../../../internal/galaxy/content_set.go) |
 | 工作台的编排（加载、状态、自动校验、预览/源码切换、分区组合） | [web/src/pages/galaxy/ProjectEditorPage.tsx](../../../web/src/pages/galaxy/ProjectEditorPage.tsx) |
 | 单独打开的预览页 | [web/src/pages/galaxy/PreviewPage.tsx](../../../web/src/pages/galaxy/PreviewPage.tsx) |
 | 预览 iframe 的沙箱属性 | [web/src/pages/galaxy/PreviewFrame.tsx](../../../web/src/pages/galaxy/PreviewFrame.tsx) |

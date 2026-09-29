@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/objectstore/v1/upload.proto.
  */
 export const file_aladdin_objectstore_v1_upload: GenFile = /*@__PURE__*/
-  fileDesc("CiNhbGFkZGluL29iamVjdHN0b3JlL3YxL3VwbG9hZC5wcm90bxIWYWxhZGRpbi5vYmplY3RzdG9yZS52MSKXAQoWRGlyZWN0VXBsb2FkQ3JlZGVudGlhbBIOCgZidWNrZXQYASABKAkSDgoGcmVnaW9uGAIgASgJEgsKA2tleRgDIAEoCRIRCglzZWNyZXRfaWQYBCABKAkSEgoKc2VjcmV0X2tleRgFIAEoCRIVCg1zZXNzaW9uX3Rva2VuGAYgASgJEhIKCmV4cGlyZXNfYXQYByABKAlCSlpIZ2l0aHViLmNvbS9wb2V0bGlmZS9hbGFkZGluL2FwaS9nZW4vYWxhZGRpbi9vYmplY3RzdG9yZS92MTtvYmplY3RzdG9yZXYxYgZwcm90bzM");
+  fileDesc("CiNhbGFkZGluL29iamVjdHN0b3JlL3YxL3VwbG9hZC5wcm90bxIWYWxhZGRpbi5vYmplY3RzdG9yZS52MSKxAQoWRGlyZWN0VXBsb2FkQ3JlZGVudGlhbBIOCgZidWNrZXQYASABKAkSDgoGcmVnaW9uGAIgASgJEgsKA2tleRgDIAEoCRIRCglzZWNyZXRfaWQYBCABKAkSEgoKc2VjcmV0X2tleRgFIAEoCRIVCg1zZXNzaW9uX3Rva2VuGAYgASgJEhIKCmV4cGlyZXNfYXQYByABKAkSGAoQZm9yYmlkX292ZXJ3cml0ZRgIIAEoCEJKWkhnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL29iamVjdHN0b3JlL3YxO29iamVjdHN0b3JldjFiBnByb3RvMw");
 
 /**
  * DirectUploadCredential 是一次直传所需的全部取值。
@@ -70,6 +70,20 @@ export type DirectUploadCredential = Message<"aladdin.objectstore.v1.DirectUploa
    * @generated from field: string expires_at = 7;
    */
   expiresAt: string;
+
+  /**
+   * 写入是否**禁止覆盖已存在的对象**。
+   *
+   * 内容对象（galaxy 的文本条目）按**内容摘要**寻址，因此"仅当不存在时写入"
+   * 是它成立的前提：一个伪造的摘要若落到另一个版本已经在用的键上，会把那个
+   * 对象改写掉——而那是"版本不可变"的反面。为真时客户端在写入请求上带禁止
+   * 覆盖的条件，由对象存储执行。
+   *
+   * 头像与资产按标识寻址、一个标识一个对象，因此它是假。
+   *
+   * @generated from field: bool forbid_overwrite = 8;
+   */
+  forbidOverwrite: boolean;
 };
 
 /**

@@ -111,6 +111,9 @@ paths:
 
         创建一个工程。标识由服务端分配，不可猜、不可改、不复用。
 
+         **形态在这里定下，此后不可改**：它决定已保存版本的发布语义，改它等于让
+         历史版本的产物无法复现（见 docs/design/galaxy/site-model.md）。
+
          名称**不参与任何查找**：不按名称查工程、不加唯一约束、不进发布地址。
          一旦名称成为查找键，它就成了一条可以被改名或抢注改写的路径。
       operationId: aladdin.galaxy.v1.GalaxyService.CreateProject
@@ -157,7 +160,7 @@ paths:
 
         **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
-        读取一个工程的元数据。不含草稿正文、版本正文与资产字节。
+        读取一个工程的元数据。不含草稿清单、版本清单与资产字节。
       operationId: aladdin.galaxy.v1.GalaxyService.GetProject
       parameters:
         - name: Connect-Protocol-Version
@@ -201,6 +204,8 @@ paths:
         **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
 
         修改工程的名称与简介。请求表达的是**期望的完整状态**，空串表示清空。
+
+         **不含形态**：形态改不了，因此它不在这个请求的形状里。
       operationId: aladdin.galaxy.v1.GalaxyService.UpdateProject
       parameters:
         - name: Connect-Protocol-Version
@@ -289,7 +294,10 @@ paths:
 
         **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
-        读取工程的当前草稿。草稿行是惰性创建的：从未保存过草稿时正文为空。
+        读取工程的当前草稿清单，每一项带一条短时读取地址。
+
+         草稿行是惰性创建的：从未推送过草稿时清单为空。地址由客户端直连取字节，
+         服务端不代理（见 docs/design/galaxy/asset-library.md）。
       operationId: aladdin.galaxy.v1.GalaxyService.GetDraft
       parameters:
         - name: Connect-Protocol-Version
@@ -320,7 +328,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.GetDraftResponse'
-  /aladdin.galaxy.v1.GalaxyService/SaveDraft:
+  /aladdin.galaxy.v1.GalaxyService/PushDraft:
     post:
       x-aladdin-auth:
         kind: requires
@@ -328,12 +336,22 @@ paths:
         scope-source: SCOPE_SOURCE_CREDENTIAL
       tags:
         - aladdin.galaxy.v1.GalaxyService
-      summary: SaveDraft
+      summary: PushDraft
       description: |-
         **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
 
-        保存工程的当前草稿。**改草稿不产生版本**——它是工作区，不是历史。
-      operationId: aladdin.galaxy.v1.GalaxyService.SaveDraft
+        以给定的清单**整组替换**草稿（它不产生版本）。
+
+         它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
+         否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
+
+         **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
+         "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+         收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+
+         请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
+         资产标识），因此本方法不带字节，也不触发任何上传。
+      operationId: aladdin.galaxy.v1.GalaxyService.PushDraft
       parameters:
         - name: Connect-Protocol-Version
           in: header
@@ -348,7 +366,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/aladdin.galaxy.v1.SaveDraftRequest'
+              $ref: '#/components/schemas/aladdin.galaxy.v1.PushDraftRequest'
         required: true
       responses:
         default:
@@ -362,7 +380,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/aladdin.galaxy.v1.SaveDraftResponse'
+                $ref: '#/components/schemas/aladdin.galaxy.v1.PushDraftResponse'
   /aladdin.galaxy.v1.GalaxyService/SaveVersion:
     post:
       x-aladdin-auth:
@@ -375,11 +393,11 @@ paths:
       description: |-
         **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
 
-        把草稿的当前内容保存成一个**不可变**版本。
+        把草稿的当前清单保存成一个**不可变**版本。
 
          保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
-         连续保存两次相同正文产生两个版本，而不是"检测到重复就不新增"——两份
-         看起来一样的正文对用户是两次不同的保存动作。
+         连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
+         看起来一样的清单对用户是两次不同的保存动作。
       operationId: aladdin.galaxy.v1.GalaxyService.SaveVersion
       parameters:
         - name: Connect-Protocol-Version
@@ -424,7 +442,7 @@ paths:
 
         **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
-        列出工程的版本。按序号排序。**列表不带正文**（正文由 GetVersion 取）。
+        列出工程的版本，按序号排序。清单很小，因此**列表也带清单**（不带地址）。
       operationId: aladdin.galaxy.v1.GalaxyService.ListVersions
       parameters:
         - name: Connect-Protocol-Version
@@ -469,7 +487,7 @@ paths:
 
         **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
-        读取一个版本，含正文。保存时的内容此后逐字不变。
+        读取一个版本，含清单与每一项的短时读取地址。保存时的内容此后逐字不变。
       operationId: aladdin.galaxy.v1.GalaxyService.GetVersion
       parameters:
         - name: Connect-Protocol-Version
@@ -544,7 +562,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteVersionResponse'
-  /aladdin.galaxy.v1.GalaxyService/ValidateContent:
+  /aladdin.galaxy.v1.GalaxyService/ValidateDraft:
     post:
       x-aladdin-auth:
         kind: requires
@@ -552,20 +570,24 @@ paths:
         scope-source: SCOPE_SOURCE_CREDENTIAL
       tags:
         - aladdin.galaxy.v1.GalaxyService
-      summary: ValidateContent
+      summary: ValidateDraft
       description: |-
         **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
 
-        校验一段正文能不能发布。**编辑器提示与发布前置校验共用这一个入口。**
+        校验**当前草稿的清单**能不能发布。**编辑器提示与发布前置校验共用这一个
+         入口。**
 
-         前端**不得**复写一套引用解析：两端各写一份的表现是"编辑器说没问题、
-         发布说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。
-         它返回的是一个**问题清单**而不是单个错误——编辑器要的是"哪几处有问题"。
-         存储不可用这类故障仍然以 RPC 错误返回，与"正文有问题"分开。
+         前端**不得**复写一套引用解析：两端各写一份的表现是"提示说没问题、发布
+         说不行"（或反过来），而用户无法从任何一个提示里知道哪句是真的。它返回的
+         是一个**问题清单**而不是单个错误——界面要的是"哪几处有问题"。
+         存储不可用这类故障仍然以 RPC 错误返回，与"内容有问题"分开。
 
-         它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而请求里
-         带着整篇正文，塞进查询串会超出 URL 长度限制，也绕开本服务的读上限。
-      operationId: aladdin.galaxy.v1.GalaxyService.ValidateContent
+         它校验的是**已保存的草稿**，请求里不带内容：写入只有一条路径（命令行
+         push 整组），因此"校验一份还没保存的内容"这个形状不存在。
+
+         它只读，但**不**标 idempotency_level：标了就等于同时接受 GET，而这条
+         路径要读对象存储、可能较慢，不适合被当作可缓存的安全方法。
+      operationId: aladdin.galaxy.v1.GalaxyService.ValidateDraft
       parameters:
         - name: Connect-Protocol-Version
           in: header
@@ -580,7 +602,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/aladdin.galaxy.v1.ValidateContentRequest'
+              $ref: '#/components/schemas/aladdin.galaxy.v1.ValidateDraftRequest'
         required: true
       responses:
         default:
@@ -594,7 +616,156 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/aladdin.galaxy.v1.ValidateContentResponse'
+                $ref: '#/components/schemas/aladdin.galaxy.v1.ValidateDraftResponse'
+  /aladdin.galaxy.v1.GalaxyService/PreviewDraft:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: PreviewDraft
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        把当前草稿渲染成一份可以放进沙箱 iframe 的 HTML，供**只有本人能看**的
+         预览使用。
+
+         **渲染在服务端，与发布共用同一段实现**：`docs` 形态的 markdown → HTML
+         只有一处实现，网页端不再引第二个渲染器——两份实现迟早漂移，而用户看到
+         的是"预览好好的、发布出来不一样"。
+
+         它复用**编辑态**的那套地址：`asset://` 记号被换成短时预签名地址，因此
+         预览里的图会随地址过期而显示不出来，刷新即得到新地址。预览不承诺与发布
+         态逐像素一致（见 docs/design/galaxy/authoring.md）。
+      operationId: aladdin.galaxy.v1.GalaxyService.PreviewDraft
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.PreviewDraftRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.PreviewDraftResponse'
+  /aladdin.galaxy.v1.GalaxyService/BeginContentUpload:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: BeginContentUpload
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        开始一次**内容对象**（文本条目）的上传：签发一份直传凭证。
+
+         内容对象与资产走**同一条直传链路**，差别只有三处：键按内容摘要、类型由
+         路径与形态派生（不存在"声明"这一层）、不进公开区。
+
+         **按内容摘要寻址对写入提了一条硬性约束：仅当对象不存在时才允许写入。**
+         否则一个伪造的摘要会落到另一个版本已经在用的键上，把那个对象改写掉——
+         而那是"版本不可变"的反面。凭证带"禁止覆盖"的写入条件，提交时服务端再
+         读回核对一次摘要。
+      operationId: aladdin.galaxy.v1.GalaxyService.BeginContentUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.BeginContentUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.BeginContentUploadResponse'
+  /aladdin.galaxy.v1.GalaxyService/CommitContentUpload:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: CommitContentUpload
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        提交一次内容对象上传：读回对象、核对摘要。
+
+         **摘要是寻址键，而服务端没有字节可以自己算它**——它由上传方声明。因此
+         写入之后必须读回核对一遍，不一致即删除该对象并拒绝。
+      operationId: aladdin.galaxy.v1.GalaxyService.CommitContentUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.CommitContentUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.CommitContentUploadResponse'
   /aladdin.galaxy.v1.GalaxyService/ListAssets:
     post:
       x-aladdin-auth:
@@ -751,7 +922,8 @@ paths:
       description: |-
         **鉴权**：需要权限 `galaxy.asset.write`；作用域取自凭证的默认作用域。
 
-        删除一个资产。**被任一版本引用时拒绝**，错误信息指出被哪些版本引用。
+        删除一个资产。**被任一版本的文件清单引用时拒绝**，错误信息指出被哪些
+         版本引用。
 
          拒绝的理由是版本不可变的含义包括"它此后永远可以发布"：一个引用了已删
          除资产的版本必然在校验阶段失败，而那时用户看到一句"资产不存在"，却无法
@@ -798,10 +970,10 @@ paths:
       description: |-
         **鉴权**：需要权限 `galaxy.project.publish`；作用域取自凭证的默认作用域。
 
-        发布一个版本：校验、把引用的资产上架到公开区、落库产物、切换发布指针。
+        发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 
          **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
-         没有意义。草稿内容不会被读取。
+         没有意义。草稿清单不会被读取。
 
          发布域未配置时这一项不可用（见 GetCapabilities）。
       operationId: aladdin.galaxy.v1.GalaxyService.Publish
@@ -891,11 +1063,26 @@ components:
         - MEDIA_KIND_IMAGE
         - MEDIA_KIND_VIDEO
         - MEDIA_KIND_AUDIO
+        - MEDIA_KIND_FONT
       description: |-
         MediaKind 是资产按媒体分出的类别。
 
          它决定的是**用哪一档大小上限**：一张图与一段视频的合理体积差两个数量级，
-         用同一个上限卡两者，要么放过一张过大的图，要么拒掉一段正常的视频。
+         用同一个上限卡两者，要么放过一张过大的图，要么拒掉一段正常的视频。它同时
+         是对象键里的一段（见 docs/design/galaxy/asset-library.md）。
+    aladdin.galaxy.v1.SiteForm:
+      type: string
+      title: SiteForm
+      enum:
+        - SITE_FORM_UNSPECIFIED
+        - SITE_FORM_STATIC
+        - SITE_FORM_DOCS
+      description: |-
+        SiteForm 是工程的站点形态。
+
+         它在**创建时**定下，此后不可改：形态决定已保存版本的发布语义，允许改形态
+         等于让历史版本的产物无法复现。两种形态的差别落在入口、渲染与扩展名白名单
+         三处（见 docs/design/galaxy/site-model.md），**没有一处在对象存储的键上**。
     aladdin.galaxy.v1.Asset:
       type: object
       properties:
@@ -908,6 +1095,11 @@ components:
           description: |-
             媒体类型。**上传方声明的**，服务端只校验它在白名单内，并把它作为此后
              下发时回给浏览器的内容类型。声明不等于验证（见 objectstore）。
+        kind:
+          allOf:
+            - title: kind
+              description: 类别。它决定大小上限，也是对象键里的一段。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.MediaKind'
         sizeBytes:
           oneOf:
             - type: integer
@@ -993,6 +1185,48 @@ components:
             - $ref: '#/components/schemas/aladdin.objectstore.v1.DirectUploadCredential'
       title: BeginAssetUploadResponse
       additionalProperties: false
+    aladdin.galaxy.v1.BeginContentUploadRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        digest:
+          type: string
+          title: digest
+          description: '**声明的**内容摘要（SHA-256 十六进制）。它同时是内容对象的键。'
+        sizeBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: size_bytes
+          description: |-
+            **声明的**字节数。服务端据此在签发前早退，避免让用户白传一遍；真正的
+             大小上限由存储侧按策略执行。
+      title: BeginContentUploadRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.BeginContentUploadResponse:
+      type: object
+      properties:
+        alreadyExists:
+          type: boolean
+          title: already_exists
+          description: |-
+            为真表示这个内容对象已经存在，客户端无需上传（也无需提交）。
+
+             这正是"同一份未改动的文件在多个版本之间共享一个对象"在接口上的样子：
+             改一个字只产生一个新对象，没改的文件一次上传都不用做。
+        upload:
+          allOf:
+            - title: upload
+              description: |-
+                直传凭证。**只允许写、只对这一个键有效、短时有效、且不允许覆盖已有
+                 对象。** already_exists 为真时为空。
+            - $ref: '#/components/schemas/aladdin.objectstore.v1.DirectUploadCredential'
+      title: BeginContentUploadResponse
+      additionalProperties: false
     aladdin.galaxy.v1.Capabilities:
       type: object
       properties:
@@ -1004,14 +1238,18 @@ components:
           type: boolean
           title: publish_enabled
           description: 是否可用发布。为假时不渲染发布入口。
-        maxDocumentBytes:
+        maxTextBytes:
           type: integer
-          title: max_document_bytes
-          description: 正文（草稿与版本）的字节上限。
-        maxArtifactBytes:
+          title: max_text_bytes
+          description: 单份文本条目的字节上限。
+        maxFileSetBytes:
           type: integer
-          title: max_artifact_bytes
-          description: 发布产物的字节上限。它比正文上限宽，因为改写会把占位符换成完整地址。
+          title: max_file_set_bytes
+          description: 整组文件（清单里所有文本条目之和）的字节上限。
+        maxFiles:
+          type: integer
+          title: max_files
+          description: 整组的文件数上限。
         assetLimits:
           type: array
           items:
@@ -1066,6 +1304,24 @@ components:
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Asset'
       title: CommitAssetUploadResponse
       additionalProperties: false
+    aladdin.galaxy.v1.CommitContentUploadRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        digest:
+          type: string
+          title: digest
+          description: |-
+            与服务端核对的那个摘要。**两次调用之间服务端不保留任何状态**（那正是
+             "未提交的上传不留痕迹"的实现方式），因此它在这里被再次声明。
+      title: CommitContentUploadRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.CommitContentUploadResponse:
+      type: object
+      title: CommitContentUploadResponse
+      additionalProperties: false
     aladdin.galaxy.v1.CreateProjectRequest:
       type: object
       properties:
@@ -1075,6 +1331,11 @@ components:
         description:
           type: string
           title: description
+        form:
+          allOf:
+            - title: form
+              description: 形态。**必填**：它创建时定下、此后不可改，因此没有"以后再定"这个形状。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.SiteForm'
       title: CreateProjectRequest
       additionalProperties: false
     aladdin.galaxy.v1.CreateProjectResponse:
@@ -1131,20 +1392,79 @@ components:
     aladdin.galaxy.v1.Draft:
       type: object
       properties:
-        content:
-          type: string
-          title: content
-          description: 一个完整的 HTML 文档（<!doctype html> 到 </html>），不包裹、不补全。
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.FileEntry'
+          title: entries
         updatedAt:
           type: string
           title: updated_at
-          description: 最后一次保存的时间。从未保存过草稿时为空。
+          description: 最后一次推送的时间。从未推送过草稿时为空。
       title: Draft
       additionalProperties: false
       description: |-
-        Draft 是工程当前正在编辑的正文。
+        Draft 是工程当前正在编辑的文件清单。
 
          它不是版本：随时可改，改它不产生版本，不参与发布，也不保证可退回。
+    aladdin.galaxy.v1.FileEntry:
+      type: object
+      allOf:
+        - anyOf:
+            - required:
+                - assetId
+            - required:
+                - digest
+            - not:
+                anyOf:
+                  - required:
+                      - assetId
+                  - required:
+                      - digest
+      anyOf:
+        - required:
+            - assetId
+        - required:
+            - digest
+        - not:
+            anyOf:
+              - required:
+                  - assetId
+              - required:
+                  - digest
+      properties:
+        path:
+          type: string
+          title: path
+          description: |-
+            相对路径。它是**公开地址的一部分**，因此字符集受 URL 安全字符集约束，
+             不含 `..`、不以 `/` 开头或结尾、不含空段。
+        digest:
+          type: string
+          title: digest
+          description: 文本条目：字节的内容摘要（SHA-256 十六进制）。它同时是内容对象的键。
+        assetId:
+          type: string
+          title: asset_id
+          description: 资产条目：资产库里的一个资产标识。
+        url:
+          type: string
+          title: url
+          description: |-
+            **短时有效**的读取地址，客户端直接取字节。只有列出清单的方法（GetDraft、
+             GetVersion）会填充它；写入路径（PushDraft）忽略它。
+
+             它是一份短期凭证，因此**未发布的资产里不得承载秘密**。过期后重新读取
+             清单即得到新地址。
+      title: FileEntry
+      additionalProperties: false
+      description: |-
+        FileEntry 是文件组里的一条条目：一个路径，加上它的字节从哪来。
+
+         两类条目恰好对应"字节在哪"的两种答案（见 docs/design/galaxy/site-model.md）：
+         文本条目的字节是按**内容摘要**寻址的内容对象；资产条目的字节是资产库里的
+         一个媒体文件。**清单里没有字节本身**，因此同一个路径下的一份未改动文件在
+         多个版本、多次发布之间共享同一个对象。
     aladdin.galaxy.v1.GetCapabilitiesRequest:
       type: object
       title: GetCapabilitiesRequest
@@ -1262,6 +1582,31 @@ components:
           title: versions
       title: ListVersionsResponse
       additionalProperties: false
+    aladdin.galaxy.v1.PreviewDraftRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        path:
+          type: string
+          title: path
+          description: |-
+            `static` 形态下要预览的那一页；为空表示入口页。`docs` 形态忽略它
+             ——整站被拼成一份，页间跳转靠文内锚点。
+      title: PreviewDraftRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.PreviewDraftResponse:
+      type: object
+      properties:
+        html:
+          type: string
+          title: html
+          description: |-
+            一份可以直接放进沙箱 iframe 的 HTML。**它不改用户内容**，只把 `asset://`
+             记号换成短时预签名地址，并按形态渲染 markdown。
+      title: PreviewDraftResponse
+      additionalProperties: false
     aladdin.galaxy.v1.Project:
       type: object
       properties:
@@ -1301,19 +1646,32 @@ components:
           description: |-
             发布地址，形如 <发布域>/g/<工程标识>。未发布时为空。
 
-             **地址由服务端算好**，客户端不拼：改写生成的地址与内容安全策略里的
-             允许来源都从同一个配置值派生，客户端再拼一份就是第三个来源。
+             **地址由服务端算好**，客户端不拼：记号解析生成的地址、内容安全策略里的
+             允许来源与这个地址都从同一批配置值派生，客户端再拼一份就是又一个来源。
         publishedAt:
           type: string
           title: published_at
           description: 当前发布的生效时间。未发布时为空。
+        form:
+          allOf:
+            - title: form
+              description: 形态。创建时定下，此后不可改。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.SiteForm'
+        baseUrl:
+          type: string
+          title: base_url
+          description: |-
+            **发布根**，形如 <发布域>/g/<工程标识>/，供构建命令使用（vite 的 --base）。
+
+             配置了发布域时始终有值，与是否已发布无关：构建产物里的绝对路径要成立，
+             靠的是它，而不是"页面已经发出去"。未配置发布域时为空。
       title: Project
       additionalProperties: false
       description: |-
         Project 是一个创作单元的元数据。
 
-         **不带草稿正文、版本正文与资产字节。** 列表接口会读这一行，把大字段挂上来
-         正是档案模块"头像字节不入库"要避免的同一件事。
+         **不带草稿清单、版本清单与资产字节。** 列表接口会读这一行，把清单挂上来
+         是一笔与列表无关的代价；整张表也不含任何字节。
     aladdin.galaxy.v1.Publication:
       type: object
       properties:
@@ -1338,7 +1696,8 @@ components:
       description: |-
         Publication 是一次发布的产物记录。
 
-         对外地址返回的是**产物正文**（改写好的 HTML），不是版本正文。
+         对外地址按**产物清单**分派：文本条目由服务端在它自己的路径上给出，资产
+         条目重定向到公开区。
     aladdin.galaxy.v1.PublishRequest:
       type: object
       properties:
@@ -1365,28 +1724,32 @@ components:
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
       title: PublishResponse
       additionalProperties: false
-    aladdin.galaxy.v1.SaveDraftRequest:
+    aladdin.galaxy.v1.PushDraftRequest:
       type: object
       properties:
         projectId:
           type: string
           title: project_id
-        content:
-          type: string
-          title: content
-      title: SaveDraftRequest
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.FileEntry'
+          title: entries
+          description: 期望的完整清单。条目只引用已经上传好的对象，因此这里的 url 被忽略。
+      title: PushDraftRequest
       additionalProperties: false
-    aladdin.galaxy.v1.SaveDraftResponse:
+      description: PushDraftRequest 表达的是草稿的**期望完整状态**，不是增量。
+    aladdin.galaxy.v1.PushDraftResponse:
       type: object
       properties:
         draft:
           allOf:
             - title: draft
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Draft'
-      title: SaveDraftResponse
+      title: PushDraftResponse
       additionalProperties: false
       description: |-
-        返回保存之后的草稿，而不是一个成功标志：客户端刚做过一次会改变现状的
+        返回推送之后的草稿，而不是一个成功标志：客户端刚做过一次会改变现状的
          操作，让它在同一次往返里拿到新现状，比再发一次查询更省事。
     aladdin.galaxy.v1.SaveVersionRequest:
       type: object
@@ -1446,19 +1809,15 @@ components:
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
       title: UpdateProjectResponse
       additionalProperties: false
-    aladdin.galaxy.v1.ValidateContentRequest:
+    aladdin.galaxy.v1.ValidateDraftRequest:
       type: object
       properties:
         projectId:
           type: string
           title: project_id
-        content:
-          type: string
-          title: content
-          description: 待校验的正文。它不必是已保存的草稿——编辑器要能校验"正在编辑的内容"。
-      title: ValidateContentRequest
+      title: ValidateDraftRequest
       additionalProperties: false
-    aladdin.galaxy.v1.ValidateContentResponse:
+    aladdin.galaxy.v1.ValidateDraftResponse:
       type: object
       properties:
         problems:
@@ -1466,10 +1825,10 @@ components:
           items:
             $ref: '#/components/schemas/aladdin.galaxy.v1.ValidationProblem'
           title: problems
-      title: ValidateContentResponse
+      title: ValidateDraftResponse
       additionalProperties: false
       description: |-
-        问题为空表示这段正文可以发布。**它是发布前置校验的同一份规则**，因此
+        问题为空表示这份草稿可以发布。**它是发布前置校验的同一份规则**，因此
          "这里通过"与"发布能成功"是同一个结论，不会漂移。
     aladdin.galaxy.v1.ValidationProblem:
       type: object
@@ -1477,13 +1836,22 @@ components:
         message:
           type: string
           title: message
+        path:
+          type: string
+          title: path
+          description: 出问题的文件路径。与行无关的问题（如整组超限）为空。
+        line:
+          type: integer
+          title: line
+          format: int32
+          description: 出问题的行号（从 1 开始）。0 表示与行无关。
       title: ValidationProblem
       additionalProperties: false
       description: |-
-        ValidationProblem 是正文里的一处问题。
+        ValidationProblem 是校验发现的一处问题。
 
-         message 里**带上位置**（行号）与出问题的取值：只说"有引用不合法"会让用户
-         在一份几百行的正文里自己找。
+         message 里**带上出问题的文件与位置**：只说"有引用不合法"会让用户在一组
+         文件里自己找。
     aladdin.galaxy.v1.Version:
       type: object
       properties:
@@ -1504,15 +1872,23 @@ components:
         savedAt:
           type: string
           title: saved_at
-        content:
-          type: string
-          title: content
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.FileEntry'
+          title: entries
+          description: 保存那一刻草稿的清单。**写入后不再修改。** 地址只有 GetVersion 填充。
+        renderRulesVersion:
+          type: integer
+          title: render_rules_version
+          format: int32
           description: |-
-            正文。**只有 GetVersion 会填充它**；列表接口留空，避免把每个版本的
-             正文一起读上来。
+            保存时所处的渲染规则版本。只有 `docs` 形态使用它，重新发布时按它渲染
+             而不是按当前最新的——否则"撤回后重新发布同一版本，产物逐字相同"会在
+             渲染器升级的那天悄悄失效。
       title: Version
       additionalProperties: false
-      description: Version 是正文的一次不可变快照。
+      description: Version 是文件清单的一次不可变快照。
     aladdin.objectstore.v1.DirectUploadCredential:
       type: object
       properties:
@@ -1542,6 +1918,18 @@ components:
           type: string
           title: expires_at
           description: 凭证的失效时刻。它是**给客户端的提示值**，实际失效以对象存储的判断为准。
+        forbidOverwrite:
+          type: boolean
+          title: forbid_overwrite
+          description: |-
+            写入是否**禁止覆盖已存在的对象**。
+
+             内容对象（galaxy 的文本条目）按**内容摘要**寻址，因此"仅当不存在时写入"
+             是它成立的前提：一个伪造的摘要若落到另一个版本已经在用的键上，会把那个
+             对象改写掉——而那是"版本不可变"的反面。为真时客户端在写入请求上带禁止
+             覆盖的条件，由对象存储执行。
+
+             头像与资产按标识寻址、一个标识一个对象，因此它是假。
       title: DirectUploadCredential
       additionalProperties: false
       description: |-
@@ -1614,8 +2002,8 @@ security: []
 tags:
   - name: aladdin.galaxy.v1.GalaxyService
     description: |-
-      GalaxyService 是创作面：用户写一份 HTML、放素材，然后把它发布成一个
-       别人能打开的页面。
+      GalaxyService 是创作面：用户放下一组具名文件与素材，然后把它发布成一个
+       别人能打开的站点。
 
        边界：它不回答"你是谁"（认证）也不回答"你能做什么"（RBAC）。**两把闸门
        各管一件事**：`galaxy.*` 权限码决定这个主体有没有资格创作，工程的拥有者

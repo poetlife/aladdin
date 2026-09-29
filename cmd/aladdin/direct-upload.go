@@ -58,12 +58,22 @@ func directUpload(credential *objectstorev1.DirectUploadCredential, data []byte,
 	ctx, cancel := context.WithTimeout(context.Background(), directUploadTimeout)
 	defer cancel()
 
+	headers := &cos.ObjectPutHeaderOptions{
+		ContentType:   contentType,
+		ContentLength: int64(len(data)),
+	}
+	// **仅当不存在时写入**：内容对象按内容摘要寻址，因此覆盖一个已存在的键就是
+	// 改写另一个版本正在用的字节——那是"版本不可变"的反面。凭证带这个条件时，
+	// 客户端在请求上带禁止覆盖的头，由对象存储执行（策略条件表达不了它）。
+	if credential.GetForbidOverwrite() {
+		extra := http.Header{}
+		extra.Set("x-cos-forbid-overwrite", "true")
+		headers.XOptionHeader = &extra
+	}
+
 	if _, err := client.Object.Put(ctx, credential.GetKey(), bytes.NewReader(data), &cos.ObjectPutOptions{
-		ACLHeaderOptions: &cos.ACLHeaderOptions{},
-		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{
-			ContentType:   contentType,
-			ContentLength: int64(len(data)),
-		},
+		ACLHeaderOptions:       &cos.ACLHeaderOptions{},
+		ObjectPutHeaderOptions: headers,
 	}); err != nil {
 		return fmt.Errorf("直传失败：%s", describeUploadFailure(err))
 	}

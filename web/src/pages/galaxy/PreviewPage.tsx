@@ -5,9 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
-import { usePermission } from '../../auth'
-import { PermissionCodes } from '../../gen/permission-codes'
-import type { Asset, Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import type { Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { PreviewFrame } from './PreviewFrame'
 
 interface failure {
@@ -18,15 +16,14 @@ interface failure {
 /**
  * 单独打开的预览页。
  *
- * 工作台里预览与源码共用一块面积、切换着看，因此**"改的时候看不见渲染结果"**。
- * 这一页就是那件事的出口：它把同一份草稿铺满整个内容区，用来和别处对照
- * （对着设计稿改、投到另一块屏）。见 docs/design/galaxy/authoring.md 的"编辑页的形态"。
+ * 工作台里预览与源码共用一块面积、切换着看，因此**"看渲染结果的时候看不了源
+ * 文件"**。这一页就是那件事的出口：它把同一份草稿铺满整个内容区，用来和别处对照。
+ * 见 docs/design/galaxy/authoring.md 的"这一页的形态"。
  *
- * 它读的是**草稿**，不是发布产物——与工作台里的预览是同一份内容、同一个渲染方式
- * （复用 `PreviewFrame`，沙箱属性因此不可能与内嵌时漂移）。
+ * 它读的是**草稿**，不是发布产物——与工作台里的预览是同一份内容、同一个渲染
+ * 入口（都走服务端的 previewDraft），因此沙箱属性与渲染结果不可能与内嵌时漂移。
  *
- * 资产地址是短时的，长时间挂着会过期；**刷新**按钮重新读取资产清单即得到新地址
- * （与"重新读取档案即得到新头像地址"同源）。
+ * 资产地址是短时的，长时间挂着会过期；**刷新**按钮重新渲染一次即得到新地址。
  *
  * 它不需要写权限，只要 `galaxy.project.read`——看一眼草稿不该要求能改它。
  */
@@ -34,11 +31,8 @@ export function PreviewPage(): React.ReactNode {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
 
-  const canReadAssets = usePermission(PermissionCodes.GalaxyAssetRead)
-
   const [project, setProject] = useState<Project | null>(null)
-  const [content, setContent] = useState('')
-  const [assets, setAssets] = useState<Asset[]>([])
+  const [html, setHtml] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<failure | null>(null)
@@ -47,22 +41,21 @@ export function PreviewPage(): React.ReactNode {
     if (projectId === undefined) {
       return
     }
-    const [projectResponse, draftResponse] = await Promise.all([
-      galaxyApi.getProject(projectId),
-      galaxyApi.getDraft(projectId),
-    ])
+    const projectResponse = await galaxyApi.getProject(projectId)
     if (projectResponse.project === undefined) {
       throw new Error('工程不存在或已被删除')
     }
     setProject(projectResponse.project)
-    setContent(draftResponse.draft?.content ?? '')
-    if (canReadAssets) {
-      const assetResponse = await galaxyApi.listAssets(projectId)
-      setAssets(assetResponse.assets)
-    } else {
-      setAssets([])
+    // 渲染与读工程分开：渲染失败只影响这一块，不把整页打成"工程不存在"。
+    try {
+      const previewResponse = await galaxyApi.previewDraft(projectId)
+      setHtml(previewResponse.html)
+      setFailure(null)
+    } catch (err) {
+      setHtml('')
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     }
-  }, [projectId, canReadAssets])
+  }, [projectId])
 
   useEffect(() => {
     let cancelled = false
@@ -128,12 +121,7 @@ export function PreviewPage(): React.ReactNode {
           </Typography.Text>
           <Typography.Text type="secondary">草稿预览</Typography.Text>
         </Space>
-        <Button
-          icon={<RefreshCw size={16} />}
-          loading={busy}
-          disabled={!canReadAssets}
-          onClick={() => void handleRefresh()}
-        >
+        <Button icon={<RefreshCw size={16} />} loading={busy} onClick={() => void handleRefresh()}>
           刷新
         </Button>
       </Flex>
@@ -155,7 +143,7 @@ export function PreviewPage(): React.ReactNode {
       )}
 
       <div style={{ flex: 1, minHeight: 320 }}>
-        <PreviewFrame content={content} assets={assets} height="100%" />
+        <PreviewFrame html={html} height="100%" />
       </div>
     </Flex>
   )
