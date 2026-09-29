@@ -221,13 +221,9 @@ export function SubjectBindingsPage(): React.ReactNode {
           {
             title: '操作',
             key: 'actions',
+            // 行内操作是一串文字按钮（link），与身份卡片的「解绑」同一套写法。
             render: (_: unknown, binding: RoleBinding) => (
-              <Button
-                danger
-                type="text"
-                disabled={revoking}
-                onClick={() => void handleRevoke(binding)}
-              >
+              <Button danger type="link" disabled={revoking} onClick={() => void handleRevoke(binding)}>
                 回收
               </Button>
             ),

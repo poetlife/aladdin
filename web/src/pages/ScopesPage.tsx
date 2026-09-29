@@ -13,7 +13,7 @@ import {
   Typography,
 } from 'antd'
 import type { TableProps } from 'antd'
-import { FolderTree, RefreshCw } from 'lucide-react'
+import { FolderTree, RefreshCw, Trash2 } from 'lucide-react'
 
 import * as rbacApi from '../api/rbac'
 import { messageOf, traceIdOf } from '../api/errors'
@@ -131,9 +131,11 @@ export function ScopesPage(): React.ReactNode {
             title: '操作',
             key: 'actions',
             render: (_: unknown, row: Scope) => (
+              // 行内操作是一串文字按钮（link），与角色页、工程列表页同一套写法：
+              // 表格里一排带边框的按钮会把这一列变成视觉主体，而它只是次要操作。
               <Space>
                 <Button
-                  type="text"
+                  type="link"
                   onClick={() => {
                     setRenaming(row)
                     setRenameValue(row.displayName)
@@ -149,7 +151,7 @@ export function ScopesPage(): React.ReactNode {
                   cancelText="取消"
                   onConfirm={() => void handleDelete(row.path)}
                 >
-                  <Button danger type="text">
+                  <Button type="link" danger icon={<Trash2 size={14} />}>
                     删除
                   </Button>
                 </Popconfirm>
