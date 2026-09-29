@@ -322,6 +322,9 @@ type Capabilities struct {
 	AssetUploadEnabled bool `protobuf:"varint,1,opt,name=asset_upload_enabled,json=assetUploadEnabled,proto3" json:"asset_upload_enabled,omitempty"`
 	// 是否可用发布。为假时不渲染发布入口。
 	PublishEnabled bool `protobuf:"varint,2,opt,name=publish_enabled,json=publishEnabled,proto3" json:"publish_enabled,omitempty"`
+	// 是否可用预览。为假时不渲染预览：预览走发布域上的一条通道，没有发布域的
+	// 部署就没有预览（如实缺席，而不是给一份解析不了自己引用的文档）。
+	PreviewEnabled bool `protobuf:"varint,7,opt,name=preview_enabled,json=previewEnabled,proto3" json:"preview_enabled,omitempty"`
 	// 单份文本条目的字节上限。
 	MaxTextBytes uint32 `protobuf:"varint,3,opt,name=max_text_bytes,json=maxTextBytes,proto3" json:"max_text_bytes,omitempty"`
 	// 整组文件（清单里所有文本条目之和）的字节上限。
@@ -374,6 +377,13 @@ func (x *Capabilities) GetAssetUploadEnabled() bool {
 func (x *Capabilities) GetPublishEnabled() bool {
 	if x != nil {
 		return x.PublishEnabled
+	}
+	return false
+}
+
+func (x *Capabilities) GetPreviewEnabled() bool {
+	if x != nil {
+		return x.PreviewEnabled
 	}
 	return false
 }
@@ -2159,8 +2169,8 @@ func (x *ValidateDraftResponse) GetProblems() []*ValidationProblem {
 type PreviewDraftRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// `static` 形态下要预览的那一页；为空表示入口页。`docs` 形态忽略它
-	// ——整站被拼成一份，页间跳转靠文内锚点。
+	// 要预览的那一份文件；为空表示入口。两种形态都按文件组里的路径给——
+	// `docs` 的页面由服务端渲染，因此这里也可以给它的产物路径。
 	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2212,9 +2222,11 @@ func (x *PreviewDraftRequest) GetPath() string {
 
 type PreviewDraftResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 一份可以直接放进沙箱 iframe 的 HTML。**它不改用户内容**，只把 `asset://`
-	// 记号换成短时预签名地址，并按形态渲染 markdown。
-	Html          string `protobuf:"bytes,1,opt,name=html,proto3" json:"html,omitempty"`
+	// 草稿整站在发布域上的入口地址，带短时凭证。**iframe 的 `src` 就是它**，
+	// 页内的其余文件由浏览器按同一个地址空间自己取。
+	//
+	// 为空表示**草稿里还没有可预览的入口**：那不是错误，而是"还没内容"。
+	Url           string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2249,9 +2261,9 @@ func (*PreviewDraftResponse) Descriptor() ([]byte, []int) {
 	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{36}
 }
 
-func (x *PreviewDraftResponse) GetHtml() string {
+func (x *PreviewDraftResponse) GetUrl() string {
 	if x != nil {
-		return x.Html
+		return x.Url
 	}
 	return ""
 }
@@ -3270,10 +3282,11 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x06source\"_\n" +
 	"\x0eAssetKindLimit\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.aladdin.galaxy.v1.MediaKindR\x04kind\x12\x1b\n" +
-	"\tmax_bytes\x18\x02 \x01(\rR\bmaxBytes\"\x9f\x02\n" +
+	"\tmax_bytes\x18\x02 \x01(\rR\bmaxBytes\"\xc8\x02\n" +
 	"\fCapabilities\x120\n" +
 	"\x14asset_upload_enabled\x18\x01 \x01(\bR\x12assetUploadEnabled\x12'\n" +
-	"\x0fpublish_enabled\x18\x02 \x01(\bR\x0epublishEnabled\x12$\n" +
+	"\x0fpublish_enabled\x18\x02 \x01(\bR\x0epublishEnabled\x12'\n" +
+	"\x0fpreview_enabled\x18\a \x01(\bR\x0epreviewEnabled\x12$\n" +
 	"\x0emax_text_bytes\x18\x03 \x01(\rR\fmaxTextBytes\x12+\n" +
 	"\x12max_file_set_bytes\x18\x04 \x01(\rR\x0fmaxFileSetBytes\x12\x1b\n" +
 	"\tmax_files\x18\x05 \x01(\rR\bmaxFiles\x12D\n" +
@@ -3400,9 +3413,9 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x13PreviewDraftRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"*\n" +
-	"\x14PreviewDraftResponse\x12\x12\n" +
-	"\x04html\x18\x01 \x01(\tR\x04html\"q\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"(\n" +
+	"\x14PreviewDraftResponse\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\"q\n" +
 	"\x19BeginContentUploadRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x16\n" +

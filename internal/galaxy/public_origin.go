@@ -120,7 +120,23 @@ func (o PublicOrigin) PageURL(projectID string) string {
 	if o.IsZero() {
 		return ""
 	}
-	return strings.TrimSuffix(o.page.String(), "/") + PublicPathPrefix + projectID
+	return o.pageBase() + PublicPathPrefix + projectID
+}
+
+// PreviewBase 返回发布域的根地址（不带结尾斜杠）。预览通道的地址也落在它下面
+// ——预览必须与发布同源，否则构建产物里那些指向发布域的绝对地址在预览里会取到
+// 已发布的那一版（见 docs/design/galaxy/site-model.md 的"预览"）。
+func (o PublicOrigin) PreviewBase() string { return o.pageBase() }
+
+// pageBase 是发布域的根地址（不带结尾斜杠），PageURL 与预览地址共用它。
+//
+// 两处共用而不是各拼一份：它们必须落在**同一个源**上，两处各写一份的表现是
+// "预览与发布差了一个主机名"，而那个差异只有在构建产物带绝对地址时才暴露。
+func (o PublicOrigin) pageBase() string {
+	if o.IsZero() {
+		return ""
+	}
+	return strings.TrimSuffix(o.page.String(), "/")
 }
 
 // SplitSitePath 把一条发布地址拆成（工程标识，条目路径）（唯一入口）。

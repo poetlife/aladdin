@@ -110,9 +110,9 @@ export function ProjectEditorPage(): React.ReactNode {
   const [mode, setMode] = useState<StageMode>('preview')
   const [panel, setPanel] = useState<Panel | null>(null)
 
-  // 预览的那一页（`static` 形态逐页预览，`docs` 形态整站拼成一份、忽略它）。
+  // 预览的那一页。地址由服务端给出（带短时凭证），前端不拼也不塞字节。
   const [previewPath, setPreviewPath] = useState('')
-  const [previewHtml, setPreviewHtml] = useState('')
+  const [previewUrl, setPreviewUrl] = useState('')
   // 预览失败与"这一页失败"是两件事：渲染取不到内容（比如这个部署没配桶）时，
   // 状态条、版本与资产面板照常可用——把一次取不到渲染结果渲染成一片失败，会让
   // 用户以为自己的工程坏了（见 docs/design/galaxy/authoring.md）。
@@ -155,10 +155,14 @@ export function ProjectEditorPage(): React.ReactNode {
   }, [projectId])
 
   /**
-   * 渲染一次预览。
+   * 取一次预览地址。
    *
-   * 渲染在服务端（与发布共用同一段实现），因此这里只负责把结果放进沙箱。
-   * 它同时刷新了内容里的短时资产地址——这正是「刷新」按钮存在的理由。
+   * 服务端签发一条短时凭证并把地址拼好（见 docs/design/galaxy/site-model.md 的
+   * "预览"），这里只把它交给沙箱 iframe。**重新取一次就是刷新**——凭证与内容里的
+   * 短时资产地址都会换新，这正是「刷新」按钮存在的理由。
+   *
+   * 手头那一份路径在草稿里已经不存在时（命令行刚 push 过），服务端会退回入口；
+   * 返回空地址表示草稿里还没有可预览的入口，那是空态而不是失败。
    */
   const renderPreview = useCallback(
     async (path: string): Promise<void> => {
@@ -171,14 +175,14 @@ export function ProjectEditorPage(): React.ReactNode {
         if (seq !== previewSeq.current) {
           return
         }
-        setPreviewHtml(response.html)
+        setPreviewUrl(response.url)
         setPreviewError(null)
       } catch (err) {
         if (seq !== previewSeq.current) {
           return
         }
         // 预览这一块自己呈现失败，不把整页打成失败。
-        setPreviewHtml('')
+        setPreviewUrl('')
         setPreviewError(messageOf(err))
       }
     },
@@ -294,6 +298,10 @@ export function ProjectEditorPage(): React.ReactNode {
       // 那时不去问校验与预览，改由下面渲染一句说明（见 spec 的"未配置时降级正确"）。
       if (capabilityResponse.capabilities?.assetUploadEnabled === true) {
         await validate()
+      }
+      // 预览另有一条前提：它落在发布域上，因此没有发布域时不去取地址（那条路整体
+      // 缺席，见 spec 的"没有发布域的部署没有预览"）。
+      if (capabilityResponse.capabilities?.previewEnabled === true) {
         await renderPreview(defaultPreviewPath(loadedProject, loadedEntries))
       }
     } catch (err) {
@@ -358,12 +366,17 @@ export function ProjectEditorPage(): React.ReactNode {
       setSelectedPath(nextSelected)
       setFailure(null)
 
-      if (contentEnabled) {
-        await validate()
+      // 预览走发布域上的一条通道：没有发布域时它整条缺席，不去取一条注定失败的
+      // 地址（见 docs/design/galaxy/site-model.md 的"预览"）。
+      if (previewEnabled) {
+        await renderPreview(nextPreview)
         if (seq !== refreshSeq.current) {
           return
         }
-        await renderPreview(nextPreview)
+      }
+
+      if (contentEnabled) {
+        await validate()
         if (seq !== refreshSeq.current) {
           return
         }
@@ -640,6 +653,11 @@ export function ProjectEditorPage(): React.ReactNode {
    * 两个模式各自的动作跟着各自的模式走：预览侧是"换一页 / 拿去别处看 / 刷新地址"，
    * 源码侧只是"这是哪一份、它写了什么"。放在同一行里会让当前不成立的动作一直亮着。
    */
+  // 预览走发布域上的一条通道，因此**没有发布域的部署就没有预览**：此时不渲染预览
+  // 这个模式，只留只读的源码视图（如实缺席，见 docs/design/galaxy/site-model.md）。
+  const previewEnabled = capabilities?.previewEnabled === true
+  const stageMode: StageMode = previewEnabled ? mode : 'source'
+
   const stage = contentEnabled && (
     <Flex
       vertical
@@ -647,15 +665,21 @@ export function ProjectEditorPage(): React.ReactNode {
       style={narrow ? undefined : { flex: 1, minWidth: 0, minHeight: STAGE_MIN_HEIGHT }}
     >
       <Flex align="center" justify="space-between" gap={12} wrap>
-        <Segmented<StageMode>
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: 'preview', label: '预览', icon: <Eye size={14} /> },
-            { value: 'source', label: '源码', icon: <FileCode size={14} /> },
-          ]}
-        />
-        {mode === 'preview' ? (
+        {previewEnabled ? (
+          <Segmented<StageMode>
+            value={stageMode}
+            onChange={setMode}
+            options={[
+              { value: 'preview', label: '预览', icon: <Eye size={14} /> },
+              { value: 'source', label: '源码', icon: <FileCode size={14} /> },
+            ]}
+          />
+        ) : (
+          <Typography.Text type="secondary">
+            这个部署没有发布域，预览不可用；源码照常可看。
+          </Typography.Text>
+        )}
+        {stageMode === 'preview' ? (
           <Space wrap>
             {!isDocs && textEntries.length > 0 && (
               <Select
@@ -690,7 +714,7 @@ export function ProjectEditorPage(): React.ReactNode {
         )}
       </Flex>
       <div style={narrow ? { height: NARROW_STAGE_HEIGHT } : { flex: 1, minHeight: 0 }}>
-        {mode === 'preview' ? (
+        {stageMode === 'preview' ? (
           previewError !== null ? (
             <Alert
               type="warning"
@@ -704,8 +728,14 @@ export function ProjectEditorPage(): React.ReactNode {
               }
               style={{ height: '100%', overflow: 'auto' }}
             />
+          ) : previewUrl === '' ? (
+            // 空地址表示草稿里还没有可预览的入口：这是"还没内容"，不是失败。
+            <Empty
+              description="草稿还是空的。用命令行 push 一组文件上来。"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
           ) : (
-            <PreviewFrame html={previewHtml} height="100%" />
+            <PreviewFrame url={previewUrl} height="100%" />
           )
         ) : (
           <Flex gap={8} style={{ height: '100%', minHeight: 0 }}>
@@ -847,7 +877,7 @@ export function ProjectEditorPage(): React.ReactNode {
 
 /**
  * 默认预览哪一页：`static` 取入口页（`index.html`），没有就取第一份文本。
- * `docs` 的预览是整站拼成一份，路径无意义。
+ * `docs` 的入口是渲染出来的那一页，由服务端决定，因此这里不给路径。
  */
 function defaultPreviewPath(project: Project | null, entries: readonly FileEntry[]): string {
   if (project?.form === SiteForm.DOCS) {

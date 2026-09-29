@@ -270,17 +270,20 @@ func (s *GalaxyService) ValidateDraft(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(resp), nil
 }
 
-// PreviewDraft 实现 GalaxyService：把草稿渲染成一份能给沙箱 iframe 的 HTML。
+// PreviewDraft 实现 GalaxyService：给出草稿整站的预览地址（带短时凭证）。
+//
+// 地址由用例层算好下发：客户端不拼，因为凭证只能在服务端产生（见 galaxy 的
+// preview.go）。
 func (s *GalaxyService) PreviewDraft(ctx context.Context, req *connect.Request[galaxyv1.PreviewDraftRequest]) (*connect.Response[galaxyv1.PreviewDraftResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	html, err := s.galaxy.PreviewDraft(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetPath())
+	url, err := s.galaxy.PreviewDraft(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetPath())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
-	return connect.NewResponse(&galaxyv1.PreviewDraftResponse{Html: string(html)}), nil
+	return connect.NewResponse(&galaxyv1.PreviewDraftResponse{Url: url}), nil
 }
 
 // BeginContentUpload 实现 GalaxyService：签发一份内容对象的直传凭证。
@@ -495,6 +498,7 @@ func toProtoCapabilities(capabilities galaxy.Capabilities) *galaxyv1.Capabilitie
 	return &galaxyv1.Capabilities{
 		AssetUploadEnabled: capabilities.AssetUploadEnabled,
 		PublishEnabled:     capabilities.PublishEnabled,
+		PreviewEnabled:     capabilities.PreviewEnabled,
 		MaxTextBytes:       fitUint32(capabilities.MaxTextBytes),
 		MaxFileSetBytes:    fitUint32(capabilities.MaxFileSetBytes),
 		MaxFiles:           fitUint32(capabilities.MaxFiles),
@@ -756,6 +760,11 @@ func toGalaxyConnectError(err error) error {
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("本部署未配置对象存储"))
 	case errors.Is(err, galaxy.ErrPublishUnavailable):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("本部署未启用发布功能"))
+	case errors.Is(err, galaxy.ErrPreviewUnavailable):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("本部署未启用预览：它走发布域上的一条通道"))
+	case errors.Is(err, galaxy.ErrPreviewNotFound):
+		// 走到这里说明凭证在签发的那一刻之后失效了（过期，或草稿被删）。
+		return connect.NewError(connect.CodeNotFound, errors.New("预览地址已失效，重新打开预览即可"))
 	case errors.Is(err, galaxy.ErrVersionPublished):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("这个版本正在被发布，先撤回或改发布别的版本"))
 	case errors.Is(err, galaxy.ErrAssetReferenced):

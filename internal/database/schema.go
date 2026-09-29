@@ -392,3 +392,31 @@ type GalaxyPublicationRecord struct {
 
 // TableName 实现 gorm 的表名解析。
 func (GalaxyPublicationRecord) TableName() string { return "galaxy_publications" }
+
+// GalaxyPreviewGrantRecord 是一条**预览凭证**在库里的一行。
+//
+// 凭证是预览地址的一部分，拿到它的人能看到这个工程的草稿（见
+// docs/design/galaxy/authoring.md）。因此它**只按工程授权、只短时有效**，且不
+// 承载任何别的能力：读不了别的工程，写不了，也发不了布。
+//
+// **不放在工程行上**：工程行会被列表与详情接口读取，把一条凭证挂上去等于让它
+// 随每一次工程读取被带出来；凭证只在两处被读写——签发的那一刻，与一次预览请求。
+//
+// **过期由这一列的时间判定，不由"行还在不在"判定。** 删除只是清理：判定只比
+// 较时间，因此一条没被清掉的行也不会多给一秒钟的访问权。
+type GalaxyPreviewGrantRecord struct {
+	// Token 是凭证本体，主键。随机、不可猜——它是预览地址里唯一保密的那一段。
+	Token string `gorm:"primaryKey;size:191"`
+	// ProjectID 是它授权的工程。建索引是为了"清理这个工程的过期凭证"能按它查。
+	ProjectID string `gorm:"size:191;index"`
+	// SubjectID 是签发时的主体。**留痕用**：判定不看它，因为工程本身只有拥有者
+	// 读得到（见 OwnedProject）。
+	SubjectID string `gorm:"size:191"`
+	// ExpiresAt 是失效时刻。
+	ExpiresAt time.Time
+	// CreatedAt 是签发时刻。留痕用。
+	CreatedAt time.Time
+}
+
+// TableName 实现 gorm 的表名解析。
+func (GalaxyPreviewGrantRecord) TableName() string { return "galaxy_preview_grants" }

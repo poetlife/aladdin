@@ -19,6 +19,9 @@ import {
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { PreviewPage } from './PreviewPage'
 
+// 服务端给的那条预览地址：它落在发布域上、带短时凭证，前端原样使用。
+const previewURL = 'https://pub.example.com/g/p/tok/prj_x/index.html'
+
 vi.mock('../../api/identity', () => ({
   AuthSource: { Google: 'google', Github: 'github' },
   getAuthMethods: vi.fn(),
@@ -87,7 +90,7 @@ beforeEach(() => {
     }),
   )
   vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
-    create(PreviewDraftResponseSchema, { html: '<h1>hi</h1>' }),
+    create(PreviewDraftResponseSchema, { url: previewURL }),
   )
 })
 
@@ -100,29 +103,39 @@ afterEach(async () => {
 })
 
 describe('单独打开的预览页', () => {
-  // 渲染在服务端、与发布共用同一段实现，因此这一页与工作台里的预览拿到的是
-  // 同一份 HTML；沙箱属性也必须与内嵌时一致。
-  it('渲染的是服务端给的草稿预览，且沙箱属性与内嵌时一致', async () => {
+  // 这一页与工作台里的预览是同一条通道：服务端给一条带短时凭证的地址，前端原样
+  // 放进 iframe；沙箱属性也必须与内嵌时一致。
+  it('加载的是服务端给的草稿地址，且沙箱属性与内嵌时一致', async () => {
     const container = await renderPreviewPage()
 
     const sandbox = iframe(container).getAttribute('sandbox') ?? ''
     expect(sandbox).not.toContain('allow-same-origin')
     expect(sandbox).toContain('allow-scripts')
-    expect(iframe(container).getAttribute('srcdoc')).toBe('<h1>hi</h1>')
+    expect(iframe(container).getAttribute('src')).toBe(previewURL)
     // 它读的是**草稿**，因此调用的是预览入口，而不是发布地址。
     expect(galaxyApi.previewDraft).toHaveBeenCalledWith('p1')
   })
 
-  it('资产地址由服务端在渲染时补上，前端不再自己替换记号', async () => {
+  it('地址原样使用：前端不拼路径，也不往里塞字节', async () => {
     vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
-      create(PreviewDraftResponseSchema, {
-        html: '<img src="https://cos.example/signed/a1b2c3">',
-      }),
+      create(PreviewDraftResponseSchema, { url: 'https://pub.example.com/g/p/tok2/prj_x/style.css' }),
     )
 
     const container = await renderPreviewPage()
 
-    expect(iframe(container).getAttribute('srcdoc')).toContain('https://cos.example/signed/a1b2c3')
+    const element = iframe(container)
+    expect(element.getAttribute('src')).toBe('https://pub.example.com/g/p/tok2/prj_x/style.css')
+    expect(element.getAttribute('srcdoc')).toBeNull()
+  })
+
+  // 草稿里还没有入口时服务端给空地址：那是**空态**，不是一个打不开的 iframe。
+  it('草稿为空时给空态，而不是加载一个空地址', async () => {
+    vi.mocked(galaxyApi.previewDraft).mockResolvedValue(create(PreviewDraftResponseSchema, {}))
+
+    const container = await renderPreviewPage()
+
+    expect(container.textContent).toContain('草稿还是空的')
+    expect(container.querySelector('iframe')).toBeNull()
   })
 
   it('工程读不到时给出失败与重试，而不是一张空页', async () => {

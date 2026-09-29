@@ -21,7 +21,9 @@ const publicPageNotFound = "<!doctype html><title>404</title><p>页面不存在<
 // PublicProjectHandler 是发布地址这条**浏览器直连的非 RPC 入口**。
 //
 // 它对外地址形如 `<发布域>/g/<工程标识>/<路径>`，入口是 `<发布域>/g/<工程标识>`
-// （与 `.../index.html` 同一页）。
+// （与 `.../index.html` 同一页）。同一段前缀下还有一条**预览通道**
+// （`<发布域>/g/p/<凭证>/<工程标识>/<路径>`，见 galaxy/preview.go）：两条路在
+// 这里分岔，各自解析形状，其余的取字节方式逐条对应。
 //
 // 三点必须说清楚，因为它们与仓库里其它入口都不同：
 //
@@ -48,6 +50,14 @@ func PublicProjectHandler(service *galaxy.Service, logger *zap.Logger) http.Hand
 		default:
 			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "方法不允许", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 预览通道的形状先判：它的第一段（`p`）在发布态的形状里也是一个合法的
+		// 工程标识位置，因此顺序反过来会让预览路径落进发布那条路（见
+		// galaxy/preview.go 的 PreviewPathSegment）。
+		if token, previewProjectID, previewPath, ok := galaxy.SplitPreviewPath(r.URL.Path); ok {
+			servePreview(w, r, token, previewProjectID, previewPath, service, logger)
 			return
 		}
 
@@ -170,4 +180,54 @@ func writePublicNotFound(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNotFound)
 	_, _ = w.Write([]byte(publicPageNotFound))
+}
+
+// servePreview 交付一次预览请求：草稿里的文本由服务端给出，资产给一个短时私有地址。
+//
+// 与发布态那条路逐条对应，差别只有三处：取草稿而不是取当前发布的那一版、凭证而
+// 不是匿名、资产指向私有区而不是公开区。安全头逐条相同——**内容仍然跑在发布域
+// 上**，因此隔离靠的是这一条（与主应用不同源）加上 iframe 的沙箱属性（见
+// docs/design/galaxy/authoring.md）。
+func servePreview(w http.ResponseWriter, r *http.Request, token, projectID, entryPath string, service *galaxy.Service, logger *zap.Logger) {
+	target, err := service.OpenPreview(r.Context(), token, projectID, entryPath)
+	if err != nil {
+		if !errors.Is(err, galaxy.ErrPreviewNotFound) {
+			// 存储故障不是"这一页不存在"。但对浏览器而言两者都只能看到"打不开"，
+			// 因此响应相同、留痕不同。
+			logger.Warn("读取预览内容失败",
+				zap.String("project_id", projectID),
+				zap.String("path", entryPath),
+				zap.Error(err))
+		}
+		writePublicNotFound(w)
+		return
+	}
+
+	w.Header().Set(galaxy.CSPHeaderName, galaxy.ContentSecurityPolicy(service.Origin()))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// 预览物也不该带着来源信息跳走（地址里就有凭证）。
+	w.Header().Set("Referrer-Policy", "no-referrer")
+
+	if target.RedirectURL != "" {
+		// 与发布态那条一样用 302：凭证过期之后这个地址就不再给出，而一个被永久
+		// 缓存的重定向会把浏览器继续送到公开区那个对象上。
+		//
+		// 目标不是请求输入：它由桶地址、资产标识与短时签名派生。
+		//nolint:gosec // 目标来自服务端派生，不是请求输入
+		http.Redirect(w, r, target.RedirectURL, http.StatusFound)
+		return
+	}
+
+	// **`no-store`，不是 `no-cache`。** 发布态那次校验式缓存靠的是 `ETag` 等于
+	// 内容摘要，而草稿是会变的：同一个路径的字节下一刻就可能不同，摘要因此不是
+	// 一个可以拿来做校验的稳定值。草稿不进任何缓存。
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", target.ContentType)
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	// 交付的正是用户自己的内容：预览的意义就是把草稿原样交给浏览器。
+	//nolint:gosec // 交付用户内容正是这条入口的职责
+	_, _ = w.Write(target.Data)
 }

@@ -400,6 +400,57 @@ func TestStoreContract(t *testing.T) {
 				// 冲突写不进去，而不是悄悄多出一行）。
 			})
 
+			t.Run("预览凭证按键读回且写入时清理过期", func(t *testing.T) {
+				// 时间基准取**墙钟**：失效时刻由调用方算好传给存储（见
+				// galaxy.MutableStore 的 PutPreviewGrant），因此这里不借夹具的假时钟。
+				wall := time.Now()
+				// 一条已经失效、但**当时还没失效**的凭证：用两小时前的 cutoff 写入，
+				// 因此这一步的清理放过它。
+				if err := store.PutPreviewGrant(ctx, galaxy.PreviewGrant{
+					Token: "pv_old", ProjectID: "prj_a", ExpiresAt: wall.Add(-time.Minute), CreatedAt: wall.Add(-2 * time.Hour),
+				}, wall.Add(-2*time.Hour)); err != nil {
+					t.Fatalf("写入预览凭证失败: %v", err)
+				}
+				if _, err := store.GetPreviewGrant(ctx, "pv_old"); err != nil {
+					t.Fatalf("刚写入的凭证应读得回来: %v", err)
+				}
+
+				// 别的工程的一条已失效凭证：用两小时前的 cutoff 写入，因此它也留着。
+				if err := store.PutPreviewGrant(ctx, galaxy.PreviewGrant{
+					Token: "pv_other", ProjectID: "prj_b", ExpiresAt: wall.Add(-time.Minute), CreatedAt: wall.Add(-2 * time.Hour),
+				}, wall.Add(-2*time.Hour)); err != nil {
+					t.Fatalf("写入别的工程的凭证失败: %v", err)
+				}
+
+				live := galaxy.PreviewGrant{
+					Token: "pv_live", ProjectID: "prj_a", SubjectID: "usr_1",
+					ExpiresAt: wall.Add(time.Hour), CreatedAt: wall,
+				}
+				if err := store.PutPreviewGrant(ctx, live, wall); err != nil {
+					t.Fatalf("写入第二张凭证失败: %v", err)
+				}
+				got, err := store.GetPreviewGrant(ctx, "pv_live")
+				if err != nil {
+					t.Fatalf("读取预览凭证失败: %v", err)
+				}
+				if got.ProjectID != "prj_a" || got.SubjectID != "usr_1" || !got.ExpiresAt.Equal(live.ExpiresAt) {
+					t.Errorf("预览凭证 = %+v，期望与写入的一致", got)
+				}
+				// 这一次写入把**同一个工程**里已经失效的那一条清掉了。
+				if _, err := store.GetPreviewGrant(ctx, "pv_old"); !errors.Is(err, galaxy.ErrPreviewGrantNotFound) {
+					t.Errorf("已失效的凭证应被清掉，实际是 %v", err)
+				}
+				// 别的工程的凭证不动：清理由工程标识划定范围。
+				if _, err := store.GetPreviewGrant(ctx, "pv_other"); err != nil {
+					t.Errorf("别的工程的凭证不该被这次写入清掉: %v", err)
+				}
+
+				// 没写过的凭证：与"这一条不存在"同一个结论。
+				if _, err := store.GetPreviewGrant(ctx, "pv_missing"); !errors.Is(err, galaxy.ErrPreviewGrantNotFound) {
+					t.Errorf("没写过的凭证应得 ErrPreviewGrantNotFound，实际是 %v", err)
+				}
+			})
+
 			t.Run("撤回不删发布记录", func(t *testing.T) {
 				if err := store.SetCurrentPublication(ctx, "prj_a", "pub_1", now); err != nil {
 					t.Fatalf("切换发布指针失败: %v", err)
@@ -440,6 +491,10 @@ func TestStoreContract(t *testing.T) {
 				}
 				if _, err := store.GetDraft(ctx, "prj_a"); !errors.Is(err, galaxy.ErrDraftNotFound) {
 					t.Errorf("草稿仍在: %v", err)
+				}
+				// 预览凭证也是工程的东西：这个工程的一条都不该留下。
+				if _, err := store.GetPreviewGrant(ctx, "pv_live"); !errors.Is(err, galaxy.ErrPreviewGrantNotFound) {
+					t.Errorf("预览凭证仍在: %v", err)
 				}
 			})
 		})

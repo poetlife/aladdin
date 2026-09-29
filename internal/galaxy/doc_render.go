@@ -6,7 +6,6 @@ import (
 	"html"
 	"path"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -302,52 +301,4 @@ func RenderDocsArtifacts(docs []Doc, siteRoot string) map[string][]byte {
 		pages[doc.ArtifactPath] = renderSitePage(doc.Title, nav, doc.Body)
 	}
 	return pages
-}
-
-// previewAnchor 返回一份文档在预览文档里的锚点。
-//
-// 用**序号**而不是路径变形：路径到锚点的字符串变换（把 `/` 换成 `-`）会让
-// `a/b` 与 `a-b` 撞车，而碰撞的表现是"点一个链接跳到另一页"。
-func previewAnchor(index int) string { return "doc-" + strconv.Itoa(index) }
-
-// RenderPreviewDocument 把整站拼成**一份**文档，用文内锚点导航。
-//
-// 这是 docs 形态在预览里的形状：沙箱文档没有自己的源，页间跳转只能靠锚点。
-// 它与发布态的产物**形状不同**（一份 vs 一页一个地址），因此预览不承诺与发布态
-// 逐像素一致——内容一致由资产不可变保证。
-func RenderPreviewDocument(docs []Doc, siteRoot string) []byte {
-	var out bytes.Buffer
-	out.WriteString("<!doctype html>\n<html lang=\"zh\">\n<head>\n")
-	out.WriteString("<meta charset=\"utf-8\">\n")
-	out.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
-	out.WriteString("<title>预览</title>\n</head>\n<body>\n<nav>\n<ul>\n")
-	for i, doc := range docs {
-		out.WriteString("<li><a href=\"#")
-		out.WriteString(previewAnchor(i))
-		out.WriteString("\">")
-		out.WriteString(html.EscapeString(doc.Title))
-		out.WriteString("</a></li>\n")
-	}
-	out.WriteString("</ul>\n</nav>\n")
-	for i, doc := range docs {
-		out.WriteString("<hr>\n<section id=\"")
-		out.WriteString(previewAnchor(i))
-		out.WriteString("\">\n<main>\n")
-		out.Write(doc.Body)
-		out.WriteString("</main>\n</section>\n")
-	}
-	out.WriteString("</body>\n</html>\n")
-	return out.Bytes()
-}
-
-// PreviewAnchorFor 返回一份源路径在预览文档里的锚点。
-//
-// 预览的链接解析器用它把文档间链接变成文内锚点（见 preview_link.go 的使用处）。
-func PreviewAnchorFor(docs []Doc, sourcePath string) (string, bool) {
-	for i, doc := range docs {
-		if doc.SourcePath == sourcePath {
-			return "#" + previewAnchor(i), true
-		}
-	}
-	return "", false
 }

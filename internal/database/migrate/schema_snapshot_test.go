@@ -40,6 +40,12 @@ table galaxy_drafts
   manifest text pk=false null=true
   project_id text pk=true null=true
   updated_at datetime pk=false null=true
+table galaxy_preview_grants
+  created_at datetime pk=false null=true
+  expires_at datetime pk=false null=true
+  project_id text pk=false null=true
+  subject_id text pk=false null=true
+  token text pk=true null=true
 table galaxy_projects
   created_at datetime pk=false null=true
   current_publication_id text pk=false null=true
