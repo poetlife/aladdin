@@ -204,6 +204,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | 对象存储直传 | 资产的字节走公共直传链路（签发凭证、直传、提交核对），见 [../objectstore/README.md](../objectstore/README.md) |
 | 对象存储 | 私有区与公开区在**同一个桶**里（不同前缀），公开区靠逐对象的公开读区分，见 [asset-library.md](asset-library.md) 与 [publication.md](publication.md) |
 | 服务端配置 | 桶地址（沿用 `cos_bucket_url`）与发布域由配置给出（**各项上限是常量，不是配置项**，见 [../config/server-config.md](../config/server-config.md)） |
+| 事件通道 | 工程的每一次成功写入各产生一个事件；工作台订阅它来看见别处（命令行、另一标签页）的改动（见 [../events/README.md](../events/README.md)） |
 | proto | 方法与权限码在 `api/proto/aladdin/galaxy/v1/` 中声明，经 `buf generate` 派生两端代码 |
 | 前端权限 | galaxy 页面的入口按 `galaxy.*` 权限码裁剪（见 [../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)） |
 | Web 界面 | 呈现机制见 [../web/README.md](../web/README.md)；取舍见 [../uiux/README.md](../uiux/README.md) |

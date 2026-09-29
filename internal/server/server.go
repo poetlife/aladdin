@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -25,6 +26,7 @@ import (
 	"connectrpc.com/grpcreflect"
 	"go.uber.org/zap"
 
+	eventsv1connect "github.com/poetlife/aladdin/api/gen/aladdin/events/v1/eventsv1connect"
 	galaxyv1connect "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1/galaxyv1connect"
 	identityv1connect "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
 	profilev1connect "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1/profilev1connect"
@@ -37,6 +39,7 @@ import (
 	"github.com/poetlife/aladdin/internal/profile"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
+	"github.com/poetlife/aladdin/internal/watch"
 )
 
 // shutdownGrace 是收到停止信号后等待在途请求完成的上限。
@@ -213,6 +216,16 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	profilePath, profileHandler := profilev1connect.NewProfileServiceHandler(profileSrv, opts...)
 	register(profilePath, profileHandler)
 
+	// 事件通道的地基：一条连接级的总线（谁订了什么、往谁推）加一张主题类型
+	// 注册表（哪些资源可订阅、订阅它要什么权限、谁算属主）。**两者都是进程内
+	// 的**，因此 P0 是单副本形态（见 docs/design/events/README.md 的待定决策）。
+	bus := watch.NewHub()
+	topics := watch.NewRegistry()
+
+	// 订阅是长连接，而 http.Server.Shutdown **不会取消在途请求的 context**：
+	// 给它一个明确的收摊信号，否则每次停服都要等满 shutdownGrace 才把它掐掉。
+	shuttingDown := make(chan struct{})
+
 	// 创作服务：正文由客户端决定大小（草稿与校验请求），因此显式设了读上限
 	// （见 galaxyReadMaxBytes）。头像那种"字节在请求体里"的入口已经没有了——
 	// 两条上传链路都改成了直传。
@@ -221,6 +234,7 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		Assets: gal.Assets,
 		Public: gal.Public,
 		Origin: gal.Origin,
+		Events: bus,
 		Logger: logger,
 	})
 	galaxySrv := NewGalaxyService(galaxyCore, logger)
@@ -229,6 +243,30 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	}, opts...)
 	galaxyPath, galaxyHandler := galaxyv1connect.NewGalaxyServiceHandler(galaxySrv, galaxyOpts...)
 	register(galaxyPath, galaxyHandler)
+
+	// galaxy 往事件通道里注册它的主题类型。**属主自己给权限码与归属判定**，
+	// 通道不认识"工程"：权限码取自权限目录，归属判定复用读工程的那一处入口
+	// （`GetProject`），因此"不是他的"与"不存在"在订阅上也是同一个结论。
+	topics.Register(galaxy.ProjectTopicKind, watch.Kind{
+		Permission: rbac.PermissionGalaxyProjectRead,
+		Authorize: func(ctx context.Context, subject rbac.Subject, projectID string) error {
+			if _, err := galaxyCore.GetProject(ctx, subject.ID, projectID); err != nil {
+				return toGalaxyConnectError(err)
+			}
+			return nil
+		},
+	})
+
+	// 事件通道。**它是唯一一条服务端流**，且不属于任何一个业务服务——下一个
+	// 要推送的业务只往 topics 里注册一个类型，通道本身不动。
+	eventsSrv := NewEventsService(WatchDeps{
+		Hub:      bus,
+		Registry: topics,
+		Engine:   engine,
+		Shutdown: shuttingDown,
+	}, logger)
+	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(eventsSrv, opts...)
+	register(eventsPath, eventsHandler)
 
 	// 发布地址：浏览器直连的非 RPC 入口。它**不经过鉴权**（发布态公开匿名，
 	// 地址即凭据），因此必须登记在 middleware 的浏览器直连清单里，否则会在
@@ -244,6 +282,7 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		identityv1connect.IdentityServiceName,
 		profilev1connect.ProfileServiceName,
 		galaxyv1connect.GalaxyServiceName,
+		eventsv1connect.EventsServiceName,
 	}
 	healthPath, healthHandler := grpchealth.NewHandler(grpchealth.NewStaticChecker(serviceNames...))
 	register(healthPath, healthHandler)
@@ -281,6 +320,15 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+
+	// 订阅是长连接，而 http.Server.Shutdown **不会取消在途请求的 context**：
+	// 给它一个明确的收摊信号，否则每次停服都要等满 shutdownGrace 才把它掐掉。
+	// sync.Once 是因为这个回调随每次 Shutdown 各跑一次，而重复 close 会 panic
+	// ——在一个关停路径上 panic 是最坏的时机。
+	var stopWatchOnce sync.Once
+	httpServer.RegisterOnShutdown(func() {
+		stopWatchOnce.Do(func() { close(shuttingDown) })
+	})
 
 	return &Server{
 		cfg:        cfg,

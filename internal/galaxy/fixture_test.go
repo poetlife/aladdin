@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/objectstore"
+	"github.com/poetlife/aladdin/internal/watch"
 )
 
 const (
@@ -30,6 +31,7 @@ type fixture struct {
 	store   *MemoryStore
 	objects *objectstore.MemoryStore
 	public  *MemoryPublicStore
+	events  *watch.Hub
 	now     time.Time
 }
 
@@ -40,6 +42,7 @@ func newFixture(t *testing.T) *fixture {
 		store:   NewMemoryStore(),
 		objects: objectstore.NewMemoryStore(),
 		public:  NewMemoryPublicStore(),
+		events:  watch.NewHub(),
 		now:     time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC),
 	}
 	f.service = NewService(Deps{
@@ -47,6 +50,7 @@ func newFixture(t *testing.T) *fixture {
 		Assets: f.objects,
 		Public: f.public,
 		Origin: mustOrigin(t),
+		Events: f.events,
 		Logger: zap.NewNop(),
 		Now:    func() time.Time { return f.now },
 	})

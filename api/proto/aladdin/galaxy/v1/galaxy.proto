@@ -254,6 +254,11 @@ service GalaxyService {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.publish";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
+
+  // **工程状态变化的订阅不在本服务上。** 事件通道是**连接级**的（一条流承载多个
+  // 主题，下一个要推送的业务只加主题），因此它不属于任何一个业务服务，见
+  // aladdin.events.v1.EventsService 与 docs/design/events/README.md。本服务的写
+  // 路径只负责往 `galaxy.project/<工程标识>` 这个主题上发一条事件。
 }
 
 // SiteForm 是工程的站点形态。

@@ -9,7 +9,8 @@ import type { ValidationProblem } from '../../gen/proto/aladdin/galaxy/v1/galaxy
  * （见 docs/design/galaxy/authoring.md 的"能不能发布是一个自动产生的状态"）。
  *
  * 网页端不改内容，因此没有「本地改过、结论描述的是另一份字节」这一档。命令行
- * 在页面开着时 push 了新草稿，靠页面重新可见时重拉草稿并重新问服务端来更新结论。
+ * 在页面开着时 push 了新草稿，会推一条事件过来，本页随即重拉草稿并重新问服务端
+ * （页面在后台时靠重新可见兜底）来更新结论。
  */
 export interface ValidationState {
   status: 'pending' | 'ok' | 'problems' | 'failed'

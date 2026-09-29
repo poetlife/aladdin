@@ -121,6 +121,8 @@ sudo ln -sf /etc/nginx/sites-available/<域名> /etc/nginx/sites-enabled/
 
 > **不要把这两条改成 `grpc_pass`。** nginx 转发 gRPC 时会丢掉空正文响应的 trailers——也就是**所有错误响应**，现象是调用没成功却只拿到一个空的 Unknown。命令行因此不走原生 gRPC，依据见 [debugging registry](debugging/registry.md)。
 
+`/aladdin.` 那一条还带两个与**服务端推送**有关的参数，模板里已写好（见 [design/events/README.md](design/events/README.md)）：`proxy_buffering off`，以及默认的 `proxy_read_timeout`（60 秒）要大于上游心跳周期（25 秒）。缺前者时事件被攒在 nginx 里、晚来一大批；缺后者时空闲连接会被判死。两者都只在部署形态上复现——本地 vite 的开发代理不缓冲，也不按空闲超时掐连接。
+
 ### 4. 申请证书
 
 ```bash

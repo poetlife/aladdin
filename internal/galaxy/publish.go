@@ -169,6 +169,7 @@ func (s *Service) Publish(ctx context.Context, subjectID, projectID, versionID s
 	if err := s.store.SetCurrentPublication(ctx, projectID, publicationID, s.now()); err != nil {
 		return Publication{}, err
 	}
+	s.publish(projectID)
 	s.logStage(ctx, "info", stageSwitch,
 		zap.String("publication_id", publicationID),
 		zap.String("project_id", projectID),
@@ -253,10 +254,15 @@ func (s *Service) Unpublish(ctx context.Context, subjectID, projectID string) er
 		return err
 	}
 	if project.CurrentPublicationID == "" {
-		// 已经未发布：撤回是幂等的。
+		// 已经未发布：撤回是幂等的。**什么都没变就不发事件**——订阅者为一次
+		// 没有发生的变更重拉一遍是白费的。
 		return nil
 	}
-	return s.store.SetCurrentPublication(ctx, projectID, "", s.now())
+	if err := s.store.SetCurrentPublication(ctx, projectID, "", s.now()); err != nil {
+		return err
+	}
+	s.publish(projectID)
+	return nil
 }
 
 // ProjectView 是工程元数据加上它的发布状态。

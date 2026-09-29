@@ -13,6 +13,14 @@ version: v2
 # 不加 allow-get：只读方法（idempotency_level = NO_SIDE_EFFECTS）在服务端确实
 # 同时接受 GET 与 POST，但文档只给一种形状——两条并列的同名条目只会让侧栏看起来
 # 重复。这一事实由 openapigen 写进方法说明，不靠多一个动词表达。
+#
+# 加 with-streaming：**不加的话流式方法的路径会是一个空条目。** 插件对
+# `isStreaming && !WithStreaming` 直接返回 nil，只留下 `/…/Watch: {}`，
+# 于是一份对外文档里出现一条既没有 operation、也没有鉴权信息的路径——比缺席更坏，
+# 因为它看起来"有这个方法"。加上之后它按流式内容的形状给出 operation，
+# openapigen 的注入因此照常生效（见 docs/design/api-docs/README.md）。
 plugins:
   - local: protoc-gen-connect-openapi
     out: api/openapi
+    opt:
+      - with-streaming

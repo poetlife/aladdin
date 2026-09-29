@@ -12,7 +12,11 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 
-	// 触发 proto 文件描述符的注册。
+	// 触发 proto 文件描述符的注册。**本文件检查哪些方法的注解，就必须导入哪些
+	// 生成包**：eachMethod 遍历的是全局描述符注册表，没导入的文件里的方法
+	// 根本不在其中，而"什么都没检查到"只会表现为这些用例静默通过。
+	_ "github.com/poetlife/aladdin/api/gen/aladdin/events/v1"
+	_ "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/internal/rbac"
@@ -155,6 +159,40 @@ func TestPublicMethodsAreAllowlisted(t *testing.T) {
 		if !got[method] {
 			t.Errorf("公开方法 %s 不再被标记为 public", method)
 		}
+	}
+}
+
+// TestStreamingMethodsDoNotTakeScopeFromRequestField 收敛流式方法的作用域来源。
+//
+// 流式拦截器**拿不到请求消息**：框架在被包装的那个函数之后才去读流上那一条消息
+// （先读走它，handler 就读不到了，见 internal/server/interceptor/authz.go）。
+// 因此"作用域从请求字段取"在流式方法上不可表达——声明了它的表现是**开流即被
+// 拒**，而那要等到线上真去开一条流才发现。这条测试把它提前到构建期。
+func TestStreamingMethodsDoNotTakeScopeFromRequestField(t *testing.T) {
+	streamed := 0
+	eachMethod(t, func(fullMethod string, _ *descriptorpb.MethodOptions) {
+		desc, err := rbac.MethodDescriptor(fullMethod)
+		if err != nil {
+			t.Errorf("方法 %s 取描述符失败: %v", fullMethod, err)
+			return
+		}
+		if !desc.IsStreamingClient() && !desc.IsStreamingServer() {
+			return
+		}
+		streamed++
+		rule, err := rbac.Resolve(fullMethod)
+		if err != nil {
+			return // 分类本身的问题由 TestEveryMethodIsClassified 报出
+		}
+		if rule.ScopeFrom == rbacv1.ScopeSource_SCOPE_SOURCE_REQUEST_FIELD {
+			t.Errorf("流式方法 %s 把作用域声明为从请求字段取：流式拦截器读不到那条请求消息，"+
+				"流式方法只能从凭证或请求头取作用域（见 docs/design/events/README.md）", fullMethod)
+		}
+	})
+	// 一个流式方法都没有时，这条规则无从检验——而那通常说明 proto 描述符没被
+	// 注册，用例已经失效。报出来，别让它静默通过。
+	if streamed == 0 {
+		t.Fatal("未检查到任何流式方法：proto 描述符可能未注册")
 	}
 }
 

@@ -87,6 +87,15 @@ go run ./internal/tools/openapigen             # 补鉴权扩展
 
 两种都要。标准渲染器只渲染 `description`：自定义扩展要么根本不显示，要么以原始 JSON 显示——对读文档的人，`{"kind":"requires","permission":"rbac.role.read"}` 等于没说。扩展留给机器，文字留给人，两者由同一次生成产出，不会不一致。
 
+### 流式方法：文档里唯一一条内容类型不止 json 的路径
+
+事件通道（`EventsService.Watch`，见 [../events/README.md](../events/README.md)）是本仓库唯一一条**流式**方法。它在文档里的形状与其余方法有两处不同，两处都来自生成器、不是手写的：
+
+- **模板必须打开 `with-streaming`**（[buf.gen.openapi.yaml](../../../buf.gen.openapi.yaml)）。不打开时生成器对 `isStreaming` 的方法直接返回 nil，只在 paths 下留一个**空条目**（`/…/Watch: {}`）——一条既没有 operation、也没有鉴权信息的路径。它比"缺席"更坏：看起来像是有这个方法，而 CI 拦不住（openapigen 遍历的是文档里已有的 operation，空条目它无从发现）。打开之后 operation 照常产出，`x-aladdin-auth` 与描述行照常注入。
+- **请求与响应会列出多组内容类型**（`application/connect+json`、`application/grpc`、`application/grpc-web` …），而不是其余方法那样的单一 `application/json`。这是生成器的行为：为流式方法挑内容类型时它不过滤白名单。**它说的也是真话**——同一个端口确实同时讲这三种协议（见 [AGENTS.md 的"传输方式的既定选择"](../../../AGENTS.md)）。这一处的不一致是"更啰嗦"，不是"更不准"。
+
+**它的鉴权信息也是特例**：方法本身只声明"需要认证"，而订阅某个具体主题要什么权限是**数据相关**的（取决于请求里订的是哪条主题），注解表达不了——因此文档里这条方法的 `x-aladdin-auth` 只说"需认证"，逐主题的判定不在文档里（理由与代价见 [../events/README.md](../events/README.md) 的"一条明确的例外"）。
+
 ### 产物管理
 
 产物有两处，都**进版本库**——与 `api/gen` 同模式：文档变更随 PR 可评审。

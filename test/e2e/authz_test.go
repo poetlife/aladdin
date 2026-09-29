@@ -231,6 +231,8 @@ func (h harness) dial(t *testing.T, token, scope string) *grpcClient {
 	conn, err := grpc.NewClient(h.address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(credentialInterceptor(token, scope)),
+		// 流式调用要单独装一个：unary 那个不覆盖它，而订阅通道是流式的。
+		grpc.WithChainStreamInterceptor(credentialStreamInterceptor(token, scope)),
 	)
 	if err != nil {
 		t.Fatalf("建立 gRPC 连接失败: %v", err)
@@ -258,14 +260,30 @@ func (c *grpcClient) Context() (context.Context, context.CancelFunc) {
 // 头名取自服务端的常量（那是唯一来源），不在这里手写字符串。
 func credentialInterceptor(token, scope string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if token != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, interceptor.HeaderAuthorization, "Bearer "+token)
-		}
-		if scope != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, interceptor.HeaderScope, scope)
-		}
-		return invoker(ctx, method, req, reply, cc, opts...)
+		return invoker(withCredentials(ctx, token, scope), method, req, reply, cc, opts...)
 	}
+}
+
+// credentialStreamInterceptor 与上面那个同源：流式调用要单独装一个，因为
+// WithChainUnaryInterceptor 不覆盖它们。
+//
+// 少了它的表现是"开了流却没有凭证"——一次看不出原因的 Unauthenticated。订阅
+// 事件通道的 Watch 正是流式的，因此这条不是可有可无的补充。
+func credentialStreamInterceptor(token, scope string) grpc.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		return streamer(withCredentials(ctx, token, scope), desc, cc, method, opts...)
+	}
+}
+
+// withCredentials 是这两处**唯一**注入凭证与作用域的地方。
+func withCredentials(ctx context.Context, token, scope string) context.Context {
+	if token != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, interceptor.HeaderAuthorization, "Bearer "+token)
+	}
+	if scope != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, interceptor.HeaderScope, scope)
+	}
+	return ctx
 }
 
 func TestWhoAmI(t *testing.T) {
