@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -57,27 +56,44 @@ func TestNormalizeAssetType(t *testing.T) {
 	}
 }
 
-// 签发给存储的类型规则**由白名单与分档上限派生**：每种类型一条，各带自己那一档。
+// 签发给存储的规则**只有本次声明的那一条**：类型与它那一档的上限绑在一起。
 //
-// 两处各写一份的表现是"服务端接受了、存储侧拒绝"（或反过来），而用户看到的是
-// 一句无法归因的失败。
-func TestAssetTypeRulesMatchWhitelist(t *testing.T) {
-	rules := AssetTypeRules()
-	if len(rules) != len(assetAllowedTypes) {
-		t.Fatalf("规则 %d 条，期望与白名单一样多（%d）", len(rules), len(assetAllowedTypes))
+// 不把整份白名单摊进策略有两个原因，第二个是实测踩过的：摊进去会让凭证允许
+// "用一个类型声明、拿另一个类型的上限"写同一个键；而策略文档会随白名单线性
+// 变长，STS 对 Policy 有长度上限，越过它换证就失败。这条测试钉住"恰好一条"。
+func TestBeginAssetUploadIssuesRuleForDeclaredTypeOnly(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+
+	if _, _, err := f.service.BeginAssetUpload(context.Background(), testOwner, project.ID, "image/png", 1024); err != nil {
+		t.Fatalf("签发失败: %v", err)
 	}
-	// 顺序固定，好让"同一份白名单派生出同一份策略"这件事可比较。
-	if !sort.SliceIsSorted(rules, func(i, j int) bool { return rules[i].ContentType < rules[j].ContentType }) {
-		t.Error("规则顺序不稳定")
+	issued := f.objects.Issued()
+	if len(issued) != 1 {
+		t.Fatalf("签发了 %d 次，期望恰好一次", len(issued))
 	}
-	for _, rule := range rules {
-		kind, ok := assetAllowedTypes[rule.ContentType]
-		if !ok {
-			t.Errorf("规则里的类型 %q 不在白名单里", rule.ContentType)
-			continue
+	want := []objectstore.TypeRule{{ContentType: "image/png", MaxBytes: ImageMaxBytes}}
+	if !reflect.DeepEqual(issued[0].Rules, want) {
+		t.Errorf("规则 = %+v，期望恰好 %+v", issued[0].Rules, want)
+	}
+}
+
+// 规则由**声明的类型**派生，不由白名单派生：每种类型派生出它自己那一档的上限。
+func TestAssetTypeRuleBindsTypeToItsTier(t *testing.T) {
+	for declared, want := range map[string]objectstore.TypeRule{
+		"image/webp":      {ContentType: "image/webp", MaxBytes: ImageMaxBytes},
+		"video/webm":      {ContentType: "video/webm", MaxBytes: VideoMaxBytes},
+		"audio/wave":      {ContentType: "audio/wave", MaxBytes: AudioMaxBytes},
+		"application/ogg": {ContentType: "application/ogg", MaxBytes: AudioMaxBytes},
+		"font/woff2":      {ContentType: "font/woff2", MaxBytes: FontMaxBytes},
+		"FONT/TTF":        {ContentType: "font/ttf", MaxBytes: FontMaxBytes},
+	} {
+		mediaType, kind, err := NormalizeAssetType(declared)
+		if err != nil {
+			t.Fatalf("%q 应当被接受: %v", declared, err)
 		}
-		if rule.MaxBytes != MaxBytesFor(kind) {
-			t.Errorf("%s 的上限 = %d，期望该坎的 %d", rule.ContentType, rule.MaxBytes, MaxBytesFor(kind))
+		if got := AssetTypeRule(mediaType, kind); got != want {
+			t.Errorf("%q 的规则 = %+v，期望 %+v", declared, got, want)
 		}
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"go.uber.org/zap"
@@ -137,7 +136,7 @@ type AssetView struct {
 // assetAllowedTypes 是可接受的资产类型白名单，映射到它所属的类别。
 //
 // 键是**声明的**内容类型（归一化之后的形式）。它有两个用途，且必须是同一份：
-// 服务端的检查，以及签发给存储的类型条件（见 AssetTypeRules）。
+// 服务端的检查，以及签发给存储的类型条件（见 AssetTypeRule）。
 //
 // 两处需要说明：
 //
@@ -236,25 +235,21 @@ func NormalizeAssetType(declared string) (string, MediaKind, error) {
 	return mediaType, kind, nil
 }
 
-// AssetTypeRules 返回签发直传凭证用的类型规则（唯一入口）。
+// AssetTypeRule 返回签发直传凭证用的**那一条**类型规则（唯一入口）。
 //
-// 规则**由白名单与分档上限派生**，不另写一份：两处各写一份的表现是"服务端
-// 接受了、存储侧拒绝"（或反过来），而用户看到的是一句无法归因的失败。
+// 规则**由声明的类型与它那一档的上限派生**，不另写一份：两处各写一份的表现是
+// "服务端接受了、存储侧拒绝"（或反过来），而用户看到的是一句无法归因的失败。
+// 类型与上限在同一条里，因此"用视频的上限去卡图片"在策略层面写不出来。
 //
-// 每条规则把一种类型与它那一档的上限绑在一起，因此"用视频的上限去卡图片"在
-// 策略层面写不出来。
-func AssetTypeRules() []objectstore.TypeRule {
-	rules := make([]objectstore.TypeRule, 0, len(assetAllowedTypes))
-	for mediaType, kind := range assetAllowedTypes {
-		rules = append(rules, objectstore.TypeRule{
-			ContentType: mediaType,
-			MaxBytes:    MaxBytesFor(kind),
-		})
-	}
-	// 顺序固定，好让"同一份白名单在两台部署上派生出同一份策略"可比较——
-	// map 的遍历顺序在 Go 里是随机的。
-	sort.Slice(rules, func(i, j int) bool { return rules[i].ContentType < rules[j].ContentType })
-	return rules
+// 一次上传只有一个声明类型，因此策略里**只放它这一条，不把整份白名单摊进去**。
+// 摊进去有两个后果，第二个是实测踩过的：
+//
+//   - 签发的凭证允许"用一个类型声明、拿另一个类型的上限"写同一个键——比这次
+//     上传需要的宽；
+//   - 策略文档随白名单**线性变长**。STS 对 Policy 有长度上限，白名单从 9 类加到
+//     13 类时就越过了它，换证失败，而那条路径只回一句"服务暂时不可用"。
+func AssetTypeRule(mediaType string, kind MediaKind) objectstore.TypeRule {
+	return objectstore.TypeRule{ContentType: mediaType, MaxBytes: MaxBytesFor(kind)}
 }
 
 // requireAssetStore 在私有桶缺席时给出统一结论。
@@ -285,7 +280,7 @@ func (s *Service) assetOfProject(ctx context.Context, projectID, assetID string)
 //
 // **字节不经过服务端**（见 docs/design/objectstore/README.md）。这里做四件事：
 // 校验工程归属、校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写
-// 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+// 这一个键、且只许声明**这一个**类型、大小受它那一档约束"的策略交给对象存储执行。
 //
 // 一次上传分配一个**新键**：资产不可变，而"替换已有对象"在存储层就不成立。
 func (s *Service) BeginAssetUpload(ctx context.Context, subjectID, projectID, declaredType string, declaredSize int64) (string, objectstore.Credential, error) {
@@ -295,7 +290,7 @@ func (s *Service) BeginAssetUpload(ctx context.Context, subjectID, projectID, de
 	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
 		return "", objectstore.Credential{}, err
 	}
-	_, kind, err := NormalizeAssetType(declaredType)
+	mediaType, kind, err := NormalizeAssetType(declaredType)
 	if err != nil {
 		return "", objectstore.Credential{}, err
 	}
@@ -311,7 +306,8 @@ func (s *Service) BeginAssetUpload(ctx context.Context, subjectID, projectID, de
 	}
 	// 资产按标识寻址、一个标识一个对象，覆盖写不是它的语义——但仍然不允许：
 	// 一次上传就是这个键的第一次也是唯一一次写入。
-	credential, err := s.assets.IssueUpload(ctx, AssetObjectKey(projectID, kind, assetID), AssetTypeRules(), false)
+	credential, err := s.assets.IssueUpload(ctx, AssetObjectKey(projectID, kind, assetID),
+		[]objectstore.TypeRule{AssetTypeRule(mediaType, kind)}, false)
 	if err != nil {
 		return "", objectstore.Credential{}, err
 	}
