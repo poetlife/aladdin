@@ -31,6 +31,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"go.uber.org/zap"
@@ -106,27 +107,62 @@ type Project struct {
 	OwnerSubjectID string
 	Name           string
 	Description    string
-	// Form 是站点形态。**创建时定下，此后不可改**：它决定已保存版本的发布
-	// 语义，允许改形态等于让历史版本的产物无法复现。
-	Form      SiteForm
+	// Slots 是启用的内容槽，**至少一个**。
+	//
+	// **槽只增不删**（见 Service.AddProjectSlot）：让历史版本无法复现的从来不是
+	// "多了一个槽"，而是"同一个槽换了语义"，因此槽的语义不可变而槽可加。每个槽
+	// 各有自己的草稿、版本、发布指针与地址，**两槽互不影响**。
+	Slots     []ProjectSlot
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	// CurrentPublicationID 是**可空的发布指针**：空表示未发布。
+}
+
+// ProjectSlot 是工程的一个内容槽，以及它当前的发布状态。
+//
+// **它存在即这个槽启用**——"这个工程有哪些内容"只有这一处回答。每个槽的指针
+// 各归各的：发布或撤回一个槽不改变另一个槽的任何字段。
+type ProjectSlot struct {
+	Slot ContentSlot
+	// CurrentPublicationID 是**可空的发布指针**：空表示这个槽未发布。
 	//
-	// 它指向 publication 表里的一条记录，对外地址按那条记录里的**产物清单**
-	// 分派。指针放在工程行上（而不是让发布记录反过来标记"我是当前的"），
-	// 因为"当前发布的是哪一个"是工程的一个属性，只有一个写者。
+	// 它指向 publication 表里的一条记录，该槽的对外地址按那条记录里的**产物
+	// 清单**分派。指针放在槽上（而不是让发布记录反过来标记"我是当前的"），
+	// 因为"这个槽当前发布的是哪一个"是槽的一个属性，只有一个写者。
 	CurrentPublicationID string
 }
 
-// Draft 是工程当前正在编辑的文件清单。
+// EnabledSlots 按固定顺序返回启用的内容槽。
+func (p Project) EnabledSlots() []ContentSlot {
+	slots := make([]ContentSlot, 0, len(p.Slots))
+	for _, slot := range p.Slots {
+		slots = append(slots, slot.Slot)
+	}
+	sort.Slice(slots, func(i, j int) bool { return slots[i].Order() < slots[j].Order() })
+	return slots
+}
+
+// FindSlot 取一个槽及其发布状态，未启用时第二个返回值为假。
+//
+// **"这个槽没启用"与"这个槽未发布"是两件事**，但对外都表现为"这条地址什么都不
+// 给"（见 publish.go 的否定结论）。
+func (p Project) FindSlot(slot ContentSlot) (ProjectSlot, bool) {
+	for _, candidate := range p.Slots {
+		if candidate.Slot == slot {
+			return candidate, true
+		}
+	}
+	return ProjectSlot{}, false
+}
+
+// Draft 是**某个内容槽**当前正在编辑的文件清单。
 //
 // 它不是版本：随时可改，改它不产生版本，不参与发布，也不保证可退回。
 type Draft struct {
 	ProjectID string
+	Slot      ContentSlot
 	// Manifest 只在 GetDraft 里非空。**库里只有清单，没有字节。**
 	Manifest Manifest
-	// UpdatedAt 为零值表示这个工程还没有草稿行（惰性创建）。
+	// UpdatedAt 为零值表示这个槽还没有草稿行（惰性创建）。
 	UpdatedAt time.Time
 }
 
@@ -136,7 +172,9 @@ type Version struct {
 	ID string
 	// ProjectID 是所属工程：一个版本属于唯一一个工程。
 	ProjectID string
-	// Seq 是工程内递增的序号，**仅用于展示与排序，不是标识**。
+	// Slot 是所属内容槽。**版本按槽隔离**：它只在自己的槽里被列出、发布与撤回。
+	Slot ContentSlot
+	// Seq 是**槽内**递增的序号，**仅用于展示与排序，不是标识**。
 	//
 	// 删除一个版本会让后续序号出现空洞，这是可接受的：把序号当标识意味着
 	// 删除会波及所有更大的序号，而标识别名化正是这类 bug 的来源。
@@ -145,7 +183,7 @@ type Version struct {
 	//
 	// **字节不随清单走**：它们是按内容摘要寻址的不可变对象，由多个版本共享。
 	Manifest Manifest
-	// RenderRulesVersion 是保存时所处的渲染规则版本。只有 `docs` 形态使用它，
+	// RenderRulesVersion 是保存时所处的渲染规则版本。只有 `docs` 槽使用它，
 	// 重新发布时按它渲染而不是按当前最新的（见 doc_render.go）。
 	RenderRulesVersion int
 	SavedAt            time.Time
@@ -159,7 +197,9 @@ type Publication struct {
 	// ProjectID 与 VersionID 记录这次发布的是哪一个工程的哪一个版本。
 	ProjectID string
 	VersionID string
-	// Manifest 是**产物清单**：路径 → 内容摘要。对外地址按它分派。
+	// Slot 是这次发布属于哪个内容槽。
+	Slot ContentSlot
+	// Manifest 是**产物清单**：路径 → 内容摘要。该槽的对外地址按它分派。
 	//
 	// 落库而不是每次请求现算：库里存着"当前发布的是什么"这一事实，取用者
 	// 只读它，不必重新读文件组、重新查资产、重新渲染。**而清单只有路径与
@@ -186,25 +226,27 @@ type EntryView struct {
 // 完整性、删除拦阻的唯一入口都在本包的上层。把校验放进存储，内存实现与 SQL
 // 实现就会各写一遍，而两份判断迟早会有一份漏掉。
 type Store interface {
-	// GetProject 返回该工程，不存在时返回 ErrProjectNotFound。
+	// GetProject 返回该工程（含它启用的内容槽），不存在时返回 ErrProjectNotFound。
 	GetProject(ctx context.Context, projectID string) (Project, error)
 
-	// ListProjectsByOwner 返回该主体创建的工程，按更新时间倒序。
+	// ListProjectsByOwner 返回该主体创建的工程（含各自的启用槽），按更新时间
+	// 倒序。
 	//
 	// 这是**唯一**的工程列表入口，范围由拥有者而不是由请求给定：不存在
-	// "列出所有工程"的形状。
+	// "列出所有工程"的形状。**槽随工程一起返回**，列表因此是一次查询的事，
+	// 不是每个工程再查一次。
 	ListProjectsByOwner(ctx context.Context, ownerSubjectID string) ([]Project, error)
 
-	// GetDraft 返回该工程的草稿清单，没有草稿行时返回 ErrDraftNotFound。
-	GetDraft(ctx context.Context, projectID string) (Draft, error)
+	// GetDraft 返回该槽的草稿清单，没有草稿行时返回 ErrDraftNotFound。
+	GetDraft(ctx context.Context, projectID string, slot ContentSlot) (Draft, error)
 
-	// GetVersion 返回该工程下的一个版本（含清单），不存在时返回
+	// GetVersion 返回该工程该槽下的一个版本（含清单），不存在时返回
 	// ErrVersionNotFound。
-	GetVersion(ctx context.Context, projectID, versionID string) (Version, error)
+	GetVersion(ctx context.Context, projectID string, slot ContentSlot, versionID string) (Version, error)
 
-	// ListVersions 返回该工程的版本，按序号升序。**清单随行返回**：它只有
-	// 路径与摘要，几 KB 量级，而"哪些版本引用了这个资产"正是靠它回答的。
-	ListVersions(ctx context.Context, projectID string) ([]Version, error)
+	// ListVersions 返回该工程**该槽**的版本，按序号升序。**清单随行返回**：
+	// 它只有路径与摘要，几 KB 量级，而"哪些版本引用了这个资产"正是靠它回答的。
+	ListVersions(ctx context.Context, projectID string, slot ContentSlot) ([]Version, error)
 
 	// GetAsset 返回该工程下的一个资产，不存在时返回 ErrAssetNotFound。
 	GetAsset(ctx context.Context, projectID, assetID string) (Asset, error)
@@ -240,37 +282,49 @@ type Store interface {
 type MutableStore interface {
 	Store
 
-	// CreateProject 写入一个新工程（标识、拥有者与形态由调用方给定）。
+	// CreateProject 写入一个新工程，**连同它启用的内容槽**（标识、拥有者与槽
+	// 由调用方给定）。
+	//
+	// 工程行与槽行在同一个事务里落库：先写工程再补槽会留下一个"没有内容的工程"
+	// 的中间状态，而"至少一个槽"是工程能成立的前提。
 	CreateProject(ctx context.Context, project Project) error
 
 	// PutProjectMeta 覆盖工程的名称与简介，并更新更新时间。
-	// 它**不动**发布指针，也**不动形态**：一次改名不该影响发布态。
+	// 它**不动**发布指针，也**不动内容槽**：一次改名不该影响发布态。
 	PutProjectMeta(ctx context.Context, projectID, name, description string, at time.Time) error
 
-	// SetCurrentPublication 写入或清除发布指针。publicationID 为空表示撤回。
+	// AddProjectSlot 给工程加一个槽。**槽已经启用时返回 ErrSlotEnabled**。
+	//
+	// 它只写槽行，不碰另一个槽的任何东西（也没有"删槽"的对应方法）。
+	AddProjectSlot(ctx context.Context, projectID string, slot ContentSlot) error
+
+	// SetCurrentPublication 写入或清除**某一个槽**的发布指针。publicationID
+	// 为空表示撤回。
 	//
 	// 切换是幂等的：把指针指向同一条发布记录不改变任何对外可见的结果。
-	SetCurrentPublication(ctx context.Context, projectID, publicationID string, at time.Time) error
+	// **它只碰这一个槽**，另一个槽的指针原样。
+	SetCurrentPublication(ctx context.Context, projectID string, slot ContentSlot, publicationID string, at time.Time) error
 
-	// DeleteProject 删除工程**连同它的全部版本、资产与发布记录**。
+	// DeleteProject 删除工程**连同它的全部内容槽、版本、资产与发布记录**。
 	//
 	// 它只删库内的行。私有区与公开区的对象由上层分别处理：私有的要删（否则
 	// 成为无从被引用的孤儿），公开的不回收（见 publish.go）。
 	DeleteProject(ctx context.Context, projectID string) error
 
-	// PutDraft 整组替换草稿，行不存在时创建。
+	// PutDraft 整组替换**某一个槽**的草稿，行不存在时创建。
 	//
 	// **它整组读写**：保存草稿表达的是完整状态，不是增量。
-	PutDraft(ctx context.Context, projectID string, manifest Manifest, at time.Time) error
+	PutDraft(ctx context.Context, projectID string, slot ContentSlot, manifest Manifest, at time.Time) error
 
-	// CreateVersion 写入一个版本，并**在工程内分配序号**后返回落库的版本。
+	// CreateVersion 写入一个版本，并**在该槽内分配序号**后返回落库的版本。
 	//
 	// 序号由存储分配而不是由调用方计算：先查最大值再写入在并发下会得到两个
-	// 相同的序号，而"查到了什么"与"写进去了什么"必须在同一处发生。
+	// 相同的序号，而"查到了什么"与"写进去了什么"必须在同一处发生。**序号在
+	// 槽内递增**：两个槽各自的第一个版本序号都是 1。
 	CreateVersion(ctx context.Context, version Version) (Version, error)
 
-	// DeleteVersion 删除一个版本。
-	DeleteVersion(ctx context.Context, projectID, versionID string) error
+	// DeleteVersion 删除**某一个槽**的一个版本。
+	DeleteVersion(ctx context.Context, projectID string, slot ContentSlot, versionID string) error
 
 	// CreateAsset 写入一个资产（标识、摘要与媒体类型由调用方给定）。
 	//
@@ -446,12 +500,15 @@ func (s *Service) publishEnabled() bool {
 }
 
 // CreateProject 创建一个工程（工程标识的分配入口）。
-func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, description string, form SiteForm) (Project, error) {
+//
+// slots 是创建时要启用的内容槽，**至少一个、不重复**。
+func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, description string, slots []ContentSlot) (Project, error) {
 	if err := validateProjectMeta(name, description); err != nil {
 		return Project{}, err
 	}
-	if !form.IsValid() {
-		return Project{}, fmt.Errorf("%w: %q", ErrSiteFormInvalid, form)
+	enabled, err := normalizeSlots(slots)
+	if err != nil {
+		return Project{}, err
 	}
 	id, err := NewProjectID()
 	if err != nil {
@@ -463,7 +520,7 @@ func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, descr
 		OwnerSubjectID: ownerSubjectID,
 		Name:           name,
 		Description:    description,
-		Form:           form,
+		Slots:          enabled,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -476,7 +533,121 @@ func (s *Service) CreateProject(ctx context.Context, ownerSubjectID, name, descr
 		s.logger.Info("已创建工程",
 			zap.String("project_id", project.ID),
 			zap.String("subject_id", ownerSubjectID),
-			zap.String("form", string(form)))
+			zap.Strings("slots", slotStrings(project.EnabledSlots())))
+	}
+	return project, nil
+}
+
+// AddProjectSlot 给一个已有工程加一个内容槽。
+//
+// **单向**：没有"删掉一个槽"的对应方法——槽的语义与地址是固定的，已有的版本与
+// 地址都挂在它上面（见 docs/design/galaxy/site-model.md）。
+//
+// **加一个槽不改变另一个槽**：那个槽的草稿、版本与发布指针都原样。但有一条要
+// 先挡住——文档槽占住 `docs` 这个首段，因此**站点槽里已经存在这类路径时不允许
+// 加文档槽**：否则那些路径会从"site 槽里的一份文件"变成"文档槽的地址"，而它们
+// 已经发布出去了。这里如实拒绝并指出是哪一条，而不是静默让它们失效。
+func (s *Service) AddProjectSlot(ctx context.Context, subjectID, projectID string, slot ContentSlot) (Project, error) {
+	if !slot.IsValid() {
+		return Project{}, fmt.Errorf("%w: %q", ErrContentSlotInvalid, slot)
+	}
+	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+	if err != nil {
+		return Project{}, err
+	}
+	if _, ok := project.FindSlot(slot); ok {
+		return Project{}, fmt.Errorf("%w: %q", ErrSlotEnabled, slot)
+	}
+	if slot == SlotDocs {
+		if err := s.ensureNoReservedPaths(ctx, projectID); err != nil {
+			return Project{}, err
+		}
+	}
+	if err := s.store.AddProjectSlot(ctx, projectID, slot); err != nil {
+		return Project{}, err
+	}
+	s.publish(projectID)
+	if s.logger != nil {
+		s.logger.Info("已加入内容槽",
+			zap.String("project_id", projectID),
+			zap.String("subject_id", subjectID),
+			zap.String("slot", string(slot)))
+	}
+	return s.store.GetProject(ctx, projectID)
+}
+
+// ensureNoReservedPaths 检查站点槽的草稿与全部版本里有没有占用保留段的路径。
+//
+// 它是"加文档槽"的前置：站点槽里的一份 `docs/...` 一旦发布过，加上文档槽就会
+// 让那条地址改指别处。查的范围是**草稿与每一个版本**——版本是不可变的历史，
+// 它同样挂着地址。
+func (s *Service) ensureNoReservedPaths(ctx context.Context, projectID string) error {
+	manifests := make([]Manifest, 0, 1)
+	if draft, err := s.store.GetDraft(ctx, projectID, SlotSite); err == nil {
+		manifests = append(manifests, draft.Manifest)
+	} else if !errors.Is(err, ErrDraftNotFound) {
+		return err
+	}
+	versions, err := s.store.ListVersions(ctx, projectID, SlotSite)
+	if err != nil {
+		return err
+	}
+	for _, version := range versions {
+		manifests = append(manifests, version.Manifest)
+	}
+	for _, manifest := range manifests {
+		for _, entry := range manifest {
+			if err := ValidateSlotPath(SlotSite, entry.Path); err != nil {
+				return fmt.Errorf("%w: 站点槽里已有 %q，它会让文档槽的地址改指别处",
+					ErrReservedPath, entry.Path)
+			}
+		}
+	}
+	return nil
+}
+
+// normalizeSlots 校验并规范化创建时给出的内容槽（唯一入口）。
+func normalizeSlots(slots []ContentSlot) ([]ProjectSlot, error) {
+	if len(slots) == 0 {
+		return nil, fmt.Errorf("%w: 至少选一个内容槽", ErrContentSlotInvalid)
+	}
+	seen := make(map[ContentSlot]bool, len(slots))
+	enabled := make([]ProjectSlot, 0, len(slots))
+	for _, slot := range slots {
+		if !slot.IsValid() {
+			return nil, fmt.Errorf("%w: %q", ErrContentSlotInvalid, slot)
+		}
+		if seen[slot] {
+			return nil, fmt.Errorf("%w: %q 重复", ErrContentSlotInvalid, slot)
+		}
+		seen[slot] = true
+		enabled = append(enabled, ProjectSlot{Slot: slot})
+	}
+	sort.Slice(enabled, func(i, j int) bool { return enabled[i].Slot.Order() < enabled[j].Slot.Order() })
+	return enabled, nil
+}
+
+// slotStrings 把内容槽转成留痕用的字符串。
+func slotStrings(slots []ContentSlot) []string {
+	out := make([]string, 0, len(slots))
+	for _, slot := range slots {
+		out = append(out, string(slot))
+	}
+	return out
+}
+
+// ownedProjectSlot 取一个工程，要求调用者是拥有者、**且该槽已启用**（唯一入口）。
+//
+// **"这个槽没启用"与"这个工程不是你的"给同一个结论**：区分它们等于告诉调用者
+// "这个工程是真的，只是没有这个槽"——与"不是你的与不存在同结论"是同一条取向
+// （见 ownership.go）。
+func (s *Service) ownedProjectSlot(ctx context.Context, subjectID, projectID string, slot ContentSlot) (Project, error) {
+	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+	if err != nil {
+		return Project{}, err
+	}
+	if _, ok := project.FindSlot(slot); !ok {
+		return Project{}, ErrProjectNotFound
 	}
 	return project, nil
 }
@@ -533,24 +704,24 @@ func (s *Service) DeleteProject(ctx context.Context, subjectID, projectID string
 		s.logger.Info("已删除工程",
 			zap.String("project_id", projectID),
 			zap.String("subject_id", subjectID),
-			zap.String("form", string(project.Form)),
+			zap.Strings("slots", slotStrings(project.EnabledSlots())),
 			zap.Int("assets", len(assets)))
 	}
 	return nil
 }
 
-// GetDraft 读取当前草稿清单，并给每一项附上短时读取地址。
+// GetDraft 读取**某一个槽**的当前草稿清单，并给每一项附上短时读取地址。
 //
 // 没有草稿行时返回一份空清单，而不是错误：惰性创建的行与"推送过一次空清单"
 // 在编辑上完全等价，而把"还没推过"表现成一个错误会让编辑器在每个新工程上先
 // 显示一次失败。
-func (s *Service) GetDraft(ctx context.Context, subjectID, projectID string) (Draft, []EntryView, error) {
-	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+func (s *Service) GetDraft(ctx context.Context, subjectID, projectID string, slot ContentSlot) (Draft, []EntryView, error) {
+	if _, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot); err != nil {
 		return Draft{}, nil, err
 	}
-	draft, err := s.store.GetDraft(ctx, projectID)
+	draft, err := s.store.GetDraft(ctx, projectID, slot)
 	if errors.Is(err, ErrDraftNotFound) {
-		return Draft{ProjectID: projectID}, nil, nil
+		return Draft{ProjectID: projectID, Slot: slot}, nil, nil
 	}
 	if err != nil {
 		return Draft{}, nil, err
@@ -558,25 +729,26 @@ func (s *Service) GetDraft(ctx context.Context, subjectID, projectID string) (Dr
 	return draft, s.attachURLs(ctx, projectID, draft.Manifest), nil
 }
 
-// PushDraft 以给定的清单**整组替换**草稿（它不产生版本）。
+// PushDraft 以给定的清单**整组替换某一个槽的草稿**（它不产生版本）。
 //
 // 请求表达的是完整状态而不是增量：清单里没有的路径就是"删掉"。因此写入形状
 // 只有"整组"一种，两个入口并存会引出的那类覆盖冲突（网页上刚改的一句被一次
 // push 静默盖掉）连同它需要的基线校验一起不存在。
-func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, entries []Entry) (Draft, error) {
-	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
-	if err != nil {
+//
+// **它只碰这一个槽**：另一个槽的草稿与版本不受影响。
+func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, slot ContentSlot, entries []Entry) (Draft, error) {
+	if _, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot); err != nil {
 		return Draft{}, err
 	}
 	manifest, err := NormalizeManifest(entries)
 	if err != nil {
 		return Draft{}, err
 	}
-	if err := ValidateManifestForForm(project.Form, manifest); err != nil {
+	if err := ValidateManifestForSlot(slot, manifest); err != nil {
 		return Draft{}, err
 	}
 	now := s.now()
-	if err := s.store.PutDraft(ctx, projectID, manifest, now); err != nil {
+	if err := s.store.PutDraft(ctx, projectID, slot, manifest, now); err != nil {
 		return Draft{}, err
 	}
 	s.publish(projectID)
@@ -584,9 +756,10 @@ func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, en
 		s.logger.Info("已整组替换草稿",
 			zap.String("project_id", projectID),
 			zap.String("subject_id", subjectID),
+			zap.String("slot", string(slot)),
 			zap.Int("files", len(manifest)))
 	}
-	return Draft{ProjectID: projectID, Manifest: manifest, UpdatedAt: now}, nil
+	return Draft{ProjectID: projectID, Slot: slot, Manifest: manifest, UpdatedAt: now}, nil
 }
 
 // attachURLs 给清单的每一项附上编辑态的短时读取地址。

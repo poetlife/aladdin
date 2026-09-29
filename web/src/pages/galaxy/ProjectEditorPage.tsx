@@ -8,7 +8,7 @@ import { messageOf, traceIdOf } from '../../api/errors'
 import { usePermission } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
 import {
-  SiteForm,
+  ContentSlot,
   type Asset,
   type Capabilities,
   type FileEntry,
@@ -97,6 +97,10 @@ export function ProjectEditorPage(): React.ReactNode {
 
   const [project, setProject] = useState<Project | null>(null)
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null)
+  // 当前看哪个内容槽。**一个工程可以两个槽都有，而这一页一次只看一个**：草稿、
+  // 版本、状态条与预览都属于它（见 docs/design/galaxy/authoring.md）。槽只增不删，
+  // 因此这里的切换只是"看哪一块"，不是改工程。
+  const [slot, setSlot] = useState<ContentSlot>(ContentSlot.UNSPECIFIED)
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [draftUpdatedAt, setDraftUpdatedAt] = useState('')
   const [versions, setVersions] = useState<Version[]>([])
@@ -137,14 +141,19 @@ export function ProjectEditorPage(): React.ReactNode {
   const refreshSeq = useRef(0)
   const sourceSeq = useRef(0)
 
-  const validate = useCallback(async (): Promise<void> => {
+  // 当前看哪个槽，以及它的发布状态。**这一页的一切都挂在 activeSlot 上**：
+  // 草稿、版本、校验结论、预览与状态条说的都是它。
+  const activeSlot = pickSlot(project, slot)
+  const activeSlotState = project?.slots.find((candidate) => candidate.slot === activeSlot)
+
+  const validate = useCallback(async (target: ContentSlot): Promise<void> => {
     if (projectId === undefined) {
       return
     }
     const seq = ++validateSeq.current
     setValidation(VALIDATION_PENDING)
     try {
-      const response = await galaxyApi.validateDraft(projectId)
+      const response = await galaxyApi.validateDraft(projectId, target)
       if (seq !== validateSeq.current) {
         return
       }
@@ -173,13 +182,13 @@ export function ProjectEditorPage(): React.ReactNode {
    * 返回空地址表示草稿里还没有可预览的入口，那是空态而不是失败。
    */
   const renderPreview = useCallback(
-    async (path: string): Promise<void> => {
+    async (target: ContentSlot, path: string): Promise<void> => {
       if (projectId === undefined) {
         return
       }
       const seq = ++previewSeq.current
       try {
-        const response = await galaxyApi.previewDraft(projectId, path)
+        const response = await galaxyApi.previewDraft(projectId, target, path)
         if (seq !== previewSeq.current) {
           return
         }
@@ -253,11 +262,11 @@ export function ProjectEditorPage(): React.ReactNode {
     void loadAssets(tags)
   }
 
-  const reloadVersions = useCallback(async (): Promise<void> => {
+  const reloadVersions = useCallback(async (target: ContentSlot): Promise<void> => {
     if (projectId === undefined) {
       return
     }
-    const response = await galaxyApi.listVersions(projectId)
+    const response = await galaxyApi.listVersions(projectId, target)
     setVersions(response.versions)
   }, [projectId])
 
@@ -276,16 +285,21 @@ export function ProjectEditorPage(): React.ReactNode {
       setProject(loadedProject)
       setCapabilities(capabilityResponse.capabilities ?? null)
 
+      // 看哪个槽：打开这一页总是从第一个启用的槽开始；切槽走 handleSwitchSlot，
+      // 它不重新拉工程、也不起加载骨架。
+      const loadedSlot = pickSlot(loadedProject, ContentSlot.UNSPECIFIED)
+      setSlot(loadedSlot)
+
       const [draftResponse, versionResponse] = await Promise.all([
-        galaxyApi.getDraft(projectId),
-        galaxyApi.listVersions(projectId),
+        galaxyApi.getDraft(projectId, loadedSlot),
+        galaxyApi.listVersions(projectId, loadedSlot),
       ])
       const loadedEntries = draftResponse.draft?.entries ?? []
       setEntries(loadedEntries)
       setDraftUpdatedAt(draftResponse.draft?.updatedAt ?? '')
       setVersions(versionResponse.versions)
       // 默认落在入口文件与它的同目录首项上：那是"打开就看到内容"的位置。
-      setPreviewPath(defaultPreviewPath(loadedProject, loadedEntries))
+      setPreviewPath(defaultPreviewPath(loadedSlot, loadedEntries))
       setSelectedPath(loadedEntries[0]?.path ?? '')
 
       // 资产区只在"能力启用且持有读权限"时才请求：未配置私有桶时服务端拿不到
@@ -305,12 +319,12 @@ export function ProjectEditorPage(): React.ReactNode {
       // **桶是内容的前提**：没配置桶时字节没有地方放，也就不存在草稿与版本——
       // 那时不去问校验与预览，改由下面渲染一句说明（见 spec 的"未配置时降级正确"）。
       if (capabilityResponse.capabilities?.assetUploadEnabled === true) {
-        await validate()
+        await validate(loadedSlot)
       }
       // 预览另有一条前提：它落在发布域上，因此没有发布域时不去取地址（那条路整体
       // 缺席，见 spec 的"没有发布域的部署没有预览"）。
       if (capabilityResponse.capabilities?.previewEnabled === true) {
-        await renderPreview(defaultPreviewPath(loadedProject, loadedEntries))
+        await renderPreview(loadedSlot, defaultPreviewPath(loadedSlot, loadedEntries))
       }
       trackEditorOpen(Result.OK)
     } catch (err) {
@@ -349,8 +363,8 @@ export function ProjectEditorPage(): React.ReactNode {
           : null
       const [projectResponse, draftResponse, versionResponse] = await Promise.all([
         galaxyApi.getProject(projectId),
-        galaxyApi.getDraft(projectId),
-        galaxyApi.listVersions(projectId),
+        galaxyApi.getDraft(projectId, activeSlot),
+        galaxyApi.listVersions(projectId, activeSlot),
       ])
       if (seq !== refreshSeq.current) {
         return
@@ -361,14 +375,18 @@ export function ProjectEditorPage(): React.ReactNode {
         setFailure({ message: '工程不存在或已被删除', traceId: null })
         return
       }
+      // 槽只增不删，因此重拉之后 activeSlot 仍然有效；但工程换过（或这个槽被
+      // 别处加进来之前的那一帧）时退回第一个启用的槽，免得读一个不存在的槽。
+      const nextSlot = pickSlot(loadedProject, activeSlot)
       const loadedEntries = draftResponse.draft?.entries ?? []
       const nextPreview = loadedEntries.some((entry) => entry.path === previewPath)
         ? previewPath
-        : defaultPreviewPath(loadedProject, loadedEntries)
+        : defaultPreviewPath(nextSlot, loadedEntries)
       const nextSelected = loadedEntries.some((entry) => entry.path === selectedPath)
         ? selectedPath
         : (loadedEntries[0]?.path ?? '')
       setProject(loadedProject)
+      setSlot(nextSlot)
       setEntries(loadedEntries)
       setDraftUpdatedAt(draftResponse.draft?.updatedAt ?? '')
       setVersions(versionResponse.versions)
@@ -379,14 +397,14 @@ export function ProjectEditorPage(): React.ReactNode {
       // 预览走发布域上的一条通道：没有发布域时它整条缺席，不去取一条注定失败的
       // 地址（见 docs/design/galaxy/site-model.md 的"预览"）。
       if (previewEnabled) {
-        await renderPreview(nextPreview)
+        await renderPreview(nextSlot, nextPreview)
         if (seq !== refreshSeq.current) {
           return
         }
       }
 
       if (contentEnabled) {
-        await validate()
+        await validate(nextSlot)
         if (seq !== refreshSeq.current) {
           return
         }
@@ -421,6 +439,7 @@ export function ProjectEditorPage(): React.ReactNode {
     projectId,
     capabilities,
     canReadAssets,
+    activeSlot,
     previewPath,
     selectedPath,
     mode,
@@ -456,11 +475,81 @@ export function ProjectEditorPage(): React.ReactNode {
     setFailure(null)
     try {
       await loadAssets(assetFilter)
-      await renderPreview(previewPath)
+      await renderPreview(activeSlot, previewPath)
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
       setPreviewBusy(false)
+    }
+  }
+
+  /**
+   * 换一个内容槽看。
+   *
+   * **不重新拉工程，也不起加载骨架**：换的只是"这一页在看哪一块内容"，工程本身
+   * 没变。因此先把上一槽的内容清干净（否则会有一帧显示着另一个槽的草稿），再按
+   * 新槽把草稿、版本、预览与校验拉一遍。
+   */
+  async function handleSwitchSlot(next: ContentSlot): Promise<void> {
+    if (projectId === undefined || next === activeSlot) {
+      return
+    }
+    setSlot(next)
+    setEntries([])
+    setVersions([])
+    setDraftUpdatedAt('')
+    setSelectedPath('')
+    setSourceText('')
+    setPreviewUrl('')
+    setPreviewError(null)
+    setValidation(VALIDATION_PENDING)
+    setFailure(null)
+    try {
+      const [draftResponse, versionResponse] = await Promise.all([
+        galaxyApi.getDraft(projectId, next),
+        galaxyApi.listVersions(projectId, next),
+      ])
+      const loadedEntries = draftResponse.draft?.entries ?? []
+      const nextPreview = defaultPreviewPath(next, loadedEntries)
+      setEntries(loadedEntries)
+      setDraftUpdatedAt(draftResponse.draft?.updatedAt ?? '')
+      setVersions(versionResponse.versions)
+      setPreviewPath(nextPreview)
+      setSelectedPath(loadedEntries[0]?.path ?? '')
+      if (capabilities?.assetUploadEnabled === true) {
+        await validate(next)
+      }
+      if (capabilities?.previewEnabled === true) {
+        await renderPreview(next, nextPreview)
+      }
+    } catch (err) {
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+    }
+  }
+
+  /**
+   * 给这个工程加一个内容槽。
+   *
+   * **单向操作**：槽只增不删（见 docs/design/galaxy/site-model.md）。加完直接把
+   * 这一页切到新槽上——用户点这个动作就是想在那里放内容。**另一个槽的一切不动**，
+   * 因此这里不重拉它。
+   */
+  async function handleAddSlot(next: ContentSlot): Promise<void> {
+    if (projectId === undefined) {
+      return
+    }
+    setContentBusy(true)
+    setFailure(null)
+    try {
+      const response = await galaxyApi.addProjectSlot(projectId, next)
+      if (response.project !== undefined) {
+        setProject(response.project)
+      }
+      await handleSwitchSlot(next)
+    } catch (err) {
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+    } finally {
+      setContentBusy(false)
     }
   }
 
@@ -478,10 +567,10 @@ export function ProjectEditorPage(): React.ReactNode {
     setContentBusy(true)
     setFailure(null)
     try {
-      // 保存版本冻结的是**服务端的草稿清单**。网页端不改内容，因此这里不需要
+      // 保存版本冻结的是**服务端该槽的草稿清单**。网页端不改内容，因此这里不需要
       // 先保存草稿——草稿正是命令行刚 push 上来的那一份。
-      await galaxyApi.saveVersion(projectId)
-      await reloadVersions()
+      await galaxyApi.saveVersion(projectId, activeSlot)
+      await reloadVersions(activeSlot)
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
@@ -497,7 +586,7 @@ export function ProjectEditorPage(): React.ReactNode {
     setPublishBusy(true)
     setFailure(null)
     try {
-      const response = await galaxyApi.publish(projectId, versionId)
+      const response = await galaxyApi.publish(projectId, activeSlot, versionId)
       if (response.project !== undefined) {
         setProject(response.project)
       }
@@ -516,7 +605,7 @@ export function ProjectEditorPage(): React.ReactNode {
     setPublishBusy(true)
     setFailure(null)
     try {
-      const response = await galaxyApi.unpublish(projectId)
+      const response = await galaxyApi.unpublish(projectId, activeSlot)
       if (response.project !== undefined) {
         setProject(response.project)
       }
@@ -550,7 +639,7 @@ export function ProjectEditorPage(): React.ReactNode {
     )
   }
 
-  const isDocs = project.form === SiteForm.DOCS
+  const isDocs = activeSlot === ContentSlot.DOCS
   // **桶是内容的前提**：没配置对象存储时，内容（草稿与版本）整体不可用，
   // 只有工程元数据可写。此时不渲染内容相关的入口与结论，改给一句说明。
   const contentEnabled = capabilities?.assetUploadEnabled === true
@@ -565,6 +654,11 @@ export function ProjectEditorPage(): React.ReactNode {
     <WorkbenchTopBar
       project={project}
       versions={versions}
+      slot={activeSlotState}
+      slots={project.slots}
+      slotBusy={contentBusy}
+      onSwitchSlot={(next) => void handleSwitchSlot(next)}
+      onAddSlot={(next) => void handleAddSlot(next)}
       canWrite={canWrite}
       canPublish={canPublish}
       publishEnabled={capabilities?.publishEnabled === true}
@@ -596,7 +690,7 @@ export function ProjectEditorPage(): React.ReactNode {
       type="info"
       showIcon
       title="这个部署没有配置对象存储"
-      description="内容的字节没有地方放，因此草稿、版本、预览与发布都不可用。工程信息与形态照常可读写。"
+      description="内容的字节没有地方放，因此草稿、版本、预览与发布都不可用。工程信息与内容槽照常可读写。"
     />
   )
 
@@ -604,11 +698,11 @@ export function ProjectEditorPage(): React.ReactNode {
     <LifecycleStrip
       validation={validation}
       versions={versions}
-      project={project}
+      slot={activeSlotState}
       publishEnabled={capabilities?.publishEnabled === true}
       canPublish={canPublish}
       publishBusy={publishBusy}
-      onRetryValidate={() => void validate()}
+      onRetryValidate={() => void validate(activeSlot)}
       onUnpublish={() => void handleUnpublish()}
     />
   )
@@ -656,9 +750,10 @@ export function ProjectEditorPage(): React.ReactNode {
       >
         <VersionList
           projectId={project.id}
+          slot={activeSlot}
           versions={versions}
           canWrite={canWrite}
-          onChanged={reloadVersions}
+          onChanged={() => reloadVersions(activeSlot)}
         />
       </Modal>
     </>
@@ -711,13 +806,13 @@ export function ProjectEditorPage(): React.ReactNode {
                 style={{ minWidth: 180 }}
                 onChange={(value: string) => {
                   setPreviewPath(value)
-                  void renderPreview(value)
+                  void renderPreview(activeSlot, value)
                 }}
                 options={textEntries.map((entry) => ({ value: entry.path, label: entry.path }))}
               />
             )}
             <Button
-              href={`/galaxy/${project.id}/preview`}
+              href={`/galaxy/${project.id}/preview?slot=${activeSlot === ContentSlot.DOCS ? 'docs' : 'site'}`}
               target="_blank"
               rel="noopener"
               icon={<ExternalLink size={16} />}
@@ -887,14 +982,14 @@ export function ProjectEditorPage(): React.ReactNode {
 }
 
 /**
- * 默认预览哪一页：`static` 取入口页（`index.html`），没有就取第一份文本。
- * `docs` 的入口是渲染出来的那一页，由服务端决定，因此这里不给路径。
+ * 默认预览哪一页：`site` 槽取入口页（`index.html`），没有就取第一份文本。
+ * `docs` 槽的入口是渲染出来的那一页，由服务端决定，因此这里不给路径。
  */
-function defaultPreviewPath(project: Project | null, entries: readonly FileEntry[]): string {
-  if (project?.form === SiteForm.DOCS) {
+function defaultPreviewPath(slot: ContentSlot, entries: readonly FileEntry[]): string {
+  if (slot === ContentSlot.DOCS) {
     return ''
   }
-  const entryPath = project?.form === SiteForm.STATIC ? 'index.html' : ''
+  const entryPath = slot === ContentSlot.SITE ? 'index.html' : ''
   if (entryPath !== '' && entries.some((entry) => entry.path === entryPath)) {
     return entryPath
   }
@@ -924,4 +1019,19 @@ function trackBlocked(surface: Surface, action: Action): void {
 /** 上报一次"打开弹层"（资产库 / 版本）。 */
 function trackPanelOpen(action: Action): void {
   track({ surface: Surface.WEB_EDITOR, action, result: Result.OK })
+}
+
+/**
+ * 定出这一页看哪个槽：优先用用户选的那个（工程换了或还没选时退回第一个启用的
+ * 槽）。一个工程至少有一个槽，因此只要工程存在就定得下来；工程为空（还没加载
+ * 完）时返回零值，调用方那时也不该拿它去发请求。
+ */
+function pickSlot(project: Project | null, preferred: ContentSlot): ContentSlot {
+  if (project === null || project.slots.length === 0) {
+    return ContentSlot.UNSPECIFIED
+  }
+  if (project.slots.some((candidate) => candidate.slot === preferred)) {
+    return preferred
+  }
+  return project.slots[0]?.slot ?? ContentSlot.UNSPECIFIED
 }

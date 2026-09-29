@@ -90,6 +90,26 @@ func hasAllTags(assetTags, want []string) bool {
 	return true
 }
 
+// draftKey 是草稿行的键：**一个槽一行**。
+//
+// 草稿是"每个内容槽各一份"的，因此键必须含槽——只按工程标识存的表现是"推了
+// 文档槽的草稿，站点槽的草稿被覆盖了"。
+func draftKey(projectID string, slot ContentSlot) string {
+	return projectID + "\x00" + string(slot)
+}
+
+// cloneSlots 复制一份内容槽。
+//
+// 理由与 cloneManifest 相同：切片是可变的值，而读到的工程会离开这个存储。
+func cloneSlots(slots []ProjectSlot) []ProjectSlot {
+	if slots == nil {
+		return nil
+	}
+	out := make([]ProjectSlot, len(slots))
+	copy(out, slots)
+	return out
+}
+
 // GetProject 实现 Store。
 func (s *MemoryStore) GetProject(_ context.Context, projectID string) (Project, error) {
 	s.mu.RLock()
@@ -99,10 +119,11 @@ func (s *MemoryStore) GetProject(_ context.Context, projectID string) (Project, 
 	if !ok {
 		return Project{}, ErrProjectNotFound
 	}
+	project.Slots = cloneSlots(project.Slots)
 	return project, nil
 }
 
-// ListProjectsByOwner 实现 Store。
+// ListProjectsByOwner 实现 Store。**槽随工程一起返回**。
 func (s *MemoryStore) ListProjectsByOwner(_ context.Context, ownerSubjectID string) ([]Project, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -110,6 +131,7 @@ func (s *MemoryStore) ListProjectsByOwner(_ context.Context, ownerSubjectID stri
 	var projects []Project
 	for _, project := range s.projects {
 		if project.OwnerSubjectID == ownerSubjectID {
+			project.Slots = cloneSlots(project.Slots)
 			projects = append(projects, project)
 		}
 	}
@@ -123,11 +145,11 @@ func (s *MemoryStore) ListProjectsByOwner(_ context.Context, ownerSubjectID stri
 }
 
 // GetDraft 实现 Store。
-func (s *MemoryStore) GetDraft(_ context.Context, projectID string) (Draft, error) {
+func (s *MemoryStore) GetDraft(_ context.Context, projectID string, slot ContentSlot) (Draft, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	draft, ok := s.drafts[projectID]
+	draft, ok := s.drafts[draftKey(projectID, slot)]
 	if !ok {
 		return Draft{}, ErrDraftNotFound
 	}
@@ -136,12 +158,12 @@ func (s *MemoryStore) GetDraft(_ context.Context, projectID string) (Draft, erro
 }
 
 // GetVersion 实现 Store。
-func (s *MemoryStore) GetVersion(_ context.Context, projectID, versionID string) (Version, error) {
+func (s *MemoryStore) GetVersion(_ context.Context, projectID string, slot ContentSlot, versionID string) (Version, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	version, ok := s.versions[versionID]
-	if !ok || version.ProjectID != projectID {
+	if !ok || version.ProjectID != projectID || version.Slot != slot {
 		return Version{}, ErrVersionNotFound
 	}
 	version.Manifest = cloneManifest(version.Manifest)
@@ -149,13 +171,13 @@ func (s *MemoryStore) GetVersion(_ context.Context, projectID, versionID string)
 }
 
 // ListVersions 实现 Store。清单随行返回（它只有路径与摘要，几 KB 量级）。
-func (s *MemoryStore) ListVersions(_ context.Context, projectID string) ([]Version, error) {
+func (s *MemoryStore) ListVersions(_ context.Context, projectID string, slot ContentSlot) ([]Version, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var versions []Version
 	for _, version := range s.versions {
-		if version.ProjectID == projectID {
+		if version.ProjectID == projectID && version.Slot == slot {
 			version.Manifest = cloneManifest(version.Manifest)
 			versions = append(versions, version)
 		}
@@ -252,6 +274,7 @@ func (s *MemoryStore) CreateProject(_ context.Context, project Project) error {
 	if _, exists := s.projects[project.ID]; exists {
 		return fmt.Errorf("写入工程失败: 标识 %s 已存在", project.ID)
 	}
+	project.Slots = cloneSlots(project.Slots)
 	s.projects[project.ID] = project
 	return nil
 }
@@ -272,12 +295,10 @@ func (s *MemoryStore) PutProjectMeta(_ context.Context, projectID, name, descrip
 	return nil
 }
 
-// SetCurrentPublication 实现 MutableStore。
+// AddProjectSlot 实现 MutableStore。
 //
-// **它不动工程的更新时间**：发布时间与元数据变更时间是两件事，把发布算进
-// "更新时间"会让工程列表在每次发布后重排，而列表要回答的是"我最近改的是哪个
-// 工程"。
-func (s *MemoryStore) SetCurrentPublication(_ context.Context, projectID, publicationID string, _ time.Time) error {
+// **槽只增不删**：它只追加一行，也没有对应的删除方法。
+func (s *MemoryStore) AddProjectSlot(_ context.Context, projectID string, slot ContentSlot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -285,12 +306,40 @@ func (s *MemoryStore) SetCurrentPublication(_ context.Context, projectID, public
 	if !ok {
 		return ErrProjectNotFound
 	}
-	project.CurrentPublicationID = publicationID
+	if _, exists := project.FindSlot(slot); exists {
+		return ErrSlotEnabled
+	}
+	project.Slots = append(cloneSlots(project.Slots), ProjectSlot{Slot: slot})
 	s.projects[projectID] = project
 	return nil
 }
 
-// DeleteProject 实现 MutableStore：连同版本、资产与发布记录一并删除。
+// SetCurrentPublication 实现 MutableStore：**只改这一个槽的指针**。
+//
+// **它不动工程的更新时间**：发布时间与元数据变更时间是两件事，把发布算进
+// "更新时间"会让工程列表在每次发布后重排，而列表要回答的是"我最近改的是哪个
+// 工程"。它也不动另一个槽。
+func (s *MemoryStore) SetCurrentPublication(_ context.Context, projectID string, slot ContentSlot, publicationID string, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	project, ok := s.projects[projectID]
+	if !ok {
+		return ErrProjectNotFound
+	}
+	slots := cloneSlots(project.Slots)
+	for i := range slots {
+		if slots[i].Slot == slot {
+			slots[i].CurrentPublicationID = publicationID
+			project.Slots = slots
+			s.projects[projectID] = project
+			return nil
+		}
+	}
+	return ErrProjectNotFound
+}
+
+// DeleteProject 实现 MutableStore：连同内容槽、版本、资产与发布记录一并删除。
 func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -299,7 +348,13 @@ func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 		return ErrProjectNotFound
 	}
 	delete(s.projects, projectID)
-	delete(s.drafts, projectID)
+	// 草稿按（工程，槽）分行，因此按前缀清掉这个工程的全部草稿行。
+	prefix := projectID + "\x00"
+	for key := range s.drafts {
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			delete(s.drafts, key)
+		}
+	}
 	for id, version := range s.versions {
 		if version.ProjectID == projectID {
 			delete(s.versions, id)
@@ -324,26 +379,31 @@ func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 	return nil
 }
 
-// PutDraft 实现 MutableStore：整组替换。
-func (s *MemoryStore) PutDraft(_ context.Context, projectID string, manifest Manifest, at time.Time) error {
+// PutDraft 实现 MutableStore：整组替换**某一个槽**的草稿。
+func (s *MemoryStore) PutDraft(_ context.Context, projectID string, slot ContentSlot, manifest Manifest, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.drafts[projectID] = Draft{ProjectID: projectID, Manifest: cloneManifest(manifest), UpdatedAt: at}
+	s.drafts[draftKey(projectID, slot)] = Draft{
+		ProjectID: projectID,
+		Slot:      slot,
+		Manifest:  cloneManifest(manifest),
+		UpdatedAt: at,
+	}
 	return nil
 }
 
-// CreateVersion 实现 MutableStore：在工程内分配序号。
+// CreateVersion 实现 MutableStore：**在槽内**分配序号。
 func (s *MemoryStore) CreateVersion(_ context.Context, version Version) (Version, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var maxSeq int64
-	// 只以**现存**版本的最大值为基准：删除一个版本会让序号出现空洞，而空洞
-	// 是可接受的（见 Version 的注释）。重排会把一次删除变成对所有更大序号的
-	// 改动，那正是"序号不是标识"要避免的事。
+	// 只以**同一工程、同一个槽**的现存版本的最大值为基准：删除一个版本会让
+	// 序号出现空洞，而空洞是可接受的（见 Version 的注释）。重排会把一次删除变成
+	// 对所有更大序号的改动，那正是"序号不是标识"要避免的事。**两个槽各数各的**。
 	for _, existing := range s.versions {
-		if existing.ProjectID == version.ProjectID && existing.Seq > maxSeq {
+		if existing.ProjectID == version.ProjectID && existing.Slot == version.Slot && existing.Seq > maxSeq {
 			maxSeq = existing.Seq
 		}
 	}
@@ -354,12 +414,12 @@ func (s *MemoryStore) CreateVersion(_ context.Context, version Version) (Version
 }
 
 // DeleteVersion 实现 MutableStore。
-func (s *MemoryStore) DeleteVersion(_ context.Context, projectID, versionID string) error {
+func (s *MemoryStore) DeleteVersion(_ context.Context, projectID string, slot ContentSlot, versionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	version, ok := s.versions[versionID]
-	if !ok || version.ProjectID != projectID {
+	if !ok || version.ProjectID != projectID || version.Slot != slot {
 		return ErrVersionNotFound
 	}
 	delete(s.versions, versionID)

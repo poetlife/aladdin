@@ -173,22 +173,24 @@ func TestGalaxyCLIAuthoringRoundTrip(t *testing.T) {
 
 	const description = "命令行建的"
 	created := mustRunCLI(t, binary, h,
-		"galaxy", "project", "create", "--name", "命令行建的站点", "--description", description, "--form", "static")
+		"galaxy", "project", "create", "--name", "命令行建的站点", "--description", description, "--slot", "site")
 	projectID := jsonField(t, created, "project", "id")
 	if projectID == "" {
 		t.Fatal("建工程没有返回标识")
 	}
-	// 形态是 proto 枚举，JSON 线格式下发的是数值：1 就是 SITE_FORM_STATIC。
+	// 内容槽是 proto 枚举，JSON 线格式下发的是数值：1 就是 CONTENT_SLOT_SITE。
 	var createdForm struct {
 		Project struct {
-			Form int `json:"form"`
+			Slots []struct {
+				Slot int `json:"slot"`
+			} `json:"slots"`
 		} `json:"project"`
 	}
 	if err := json.Unmarshal([]byte(created), &createdForm); err != nil {
 		t.Fatalf("解析建工程的输出失败: %v\n%s", err, created)
 	}
-	if createdForm.Project.Form != 1 {
-		t.Fatalf("形态 = %d，期望 1（SITE_FORM_STATIC）", createdForm.Project.Form)
+	if len(createdForm.Project.Slots) != 1 || createdForm.Project.Slots[0].Slot != 1 {
+		t.Fatalf("内容槽 = %+v，期望恰好一个 site（枚举值 1）", createdForm.Project.Slots)
 	}
 
 	// 改名只改给出来的那一项：更新请求表达的是完整状态，命令行为此先读当前值，
@@ -237,7 +239,7 @@ func TestGalaxyCLIAuthoringRoundTrip(t *testing.T) {
 	}
 
 	published := mustRunCLI(t, binary, h, "galaxy", "publish", projectID, versionID)
-	address := jsonField(t, published, "project", "published_url")
+	address := jsonField(t, published, "publication", "url")
 	if !strings.HasPrefix(address, h.publishBase) {
 		t.Fatalf("发布地址 = %q，期望落在发布域下", address)
 	}
@@ -290,7 +292,7 @@ func TestGalaxyCLIPushRejectsUnknownFilesLocally(t *testing.T) {
 	binary := buildCLI(t)
 
 	created := mustRunCLI(t, binary, h,
-		"galaxy", "project", "create", "--name", "本地校验", "--form", "static")
+		"galaxy", "project", "create", "--name", "本地校验", "--slot", "site")
 	projectID := jsonField(t, created, "project", "id")
 
 	dir := writeSite(t, map[string]string{

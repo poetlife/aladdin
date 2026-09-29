@@ -233,10 +233,10 @@ func (SubjectProfileRecord) TableName() string { return "subject_profiles" }
 
 // GalaxyProjectRecord 是 galaxy 工程在库里的一行。
 //
-// 工程是创作单元：元数据 + 一种形态 + 一份草稿 + 若干版本 + 一个资产库，但它
-// 自己这一行只有元数据。**工程表上不放清单**（草稿、版本与发布的清单都不在这张
-// 表上）：工程列表接口会读这一行，把每个工程的清单一起读上来是一笔与列表无关
-// 的代价。整张表也不含任何字节。
+// 工程是创作单元：元数据 + 一组内容槽 + 一个资产库，但它自己这一行只有元数据。
+// **工程表上不放清单**（草稿、版本与发布的清单都不在这张表上），也**不放发布指针
+// 与形态**（那两样住在 galaxy_project_slots 上）：工程列表接口会读这一行，把每个
+// 工程的清单一起读上来是一笔与列表无关的代价。整张表也不含任何字节。
 type GalaxyProjectRecord struct {
 	// ID 是工程标识，主键。由 aladdin 分配，**不可猜、不可改、不复用**——
 	// 它是发布地址的一部分，而发布态是公开匿名的。
@@ -253,16 +253,10 @@ type GalaxyProjectRecord struct {
 	Name string
 	// Description 是简介。空表示未填写。
 	Description string
-	// Form 是站点形态（static / docs）。**创建时定下，此后不可改**：它决定已
-	// 保存版本的发布语义，允许改形态等于让历史版本的产物无法复现。
-	Form string
-	// CurrentPublicationID 是**可空的发布指针**：空表示未发布，非空指向
-	// galaxy_publications 里的一条记录。
-	//
-	// 指针放在工程行上，而不是让发布记录反过来标记"我是当前的"：这是工程的
-	// 一个属性，只有一个写者。
-	CurrentPublicationID string `gorm:"size:191"`
 	// CreatedAt 与 UpdatedAt 是展示与排障用，不参与判定。
+	//
+	// **这张表上没有形态，也没有发布指针**：一个工程有哪几种内容由
+	// galaxy_project_slots 回答，发布指针也住在那一张表上（每个槽一个）。
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -270,14 +264,36 @@ type GalaxyProjectRecord struct {
 // TableName 实现 gorm 的表名解析。
 func (GalaxyProjectRecord) TableName() string { return "galaxy_projects" }
 
-// GalaxyDraftRecord 是工程当前草稿在库里的一行。一个工程最多一条。
+// GalaxySlotRecord 是工程启用的一个内容槽在库里的一行。一个槽一条。
+//
+// **行存在即槽启用**："这个工程有哪些内容"只有这一处定义，工程表上不重复存
+// 一份——那会是同一事实的第二个来源，两者不一致时无从判断谁对。**槽只增不删**
+// （见 docs/design/galaxy/site-model.md），因此这张表不会出现"某一行曾经存在
+// 过"的历史。
+//
+// **发布指针按槽分开是这一层最要紧的一条**：两个槽各有各的指针，发布与撤回都
+// 只碰自己那一行——站点发出去不影响文档，撤回一个也不影响另一个。
+type GalaxySlotRecord struct {
+	// ProjectID 与 Slot 是联合主键。槽取 `site` 或 `docs`。
+	ProjectID string `gorm:"primaryKey;size:191"`
+	Slot      string `gorm:"primaryKey;size:16"`
+	// CurrentPublicationID 是**可空的发布指针**：空表示这个槽未发布，非空指向
+	// galaxy_publications 里的一条记录。
+	CurrentPublicationID string `gorm:"size:191"`
+}
+
+// TableName 实现 gorm 的表名解析。
+func (GalaxySlotRecord) TableName() string { return "galaxy_project_slots" }
+
+// GalaxyDraftRecord 是**一个内容槽**当前草稿在库里的一行。一个槽最多一条。
 //
 // **与版本表分开，而不是在工程行上放一列。** 草稿是可变的、随时被覆盖写的；
 // 版本是不可变的。放在一起会让"这一行到底是不是历史"取决于一个额外的标志位，
 // 而两张表让不可变性由表的存在方式表达。
 type GalaxyDraftRecord struct {
-	// ProjectID 是工程标识，主键。一个工程最多一份草稿。
+	// ProjectID 与 Slot 是联合主键。一个工程**每个槽**最多一份草稿。
 	ProjectID string `gorm:"primaryKey;size:191"`
+	Slot      string `gorm:"primaryKey;size:16"`
 	// Manifest 是文件清单的序列化形式：一组「路径 → 内容摘要或资产标识」。
 	//
 	// **它是整组读写的**：保存草稿表达的是完整状态，不是增量。**清单里没有
@@ -296,17 +312,21 @@ type GalaxyVersionRecord struct {
 	ID string `gorm:"primaryKey;size:191"`
 	// ProjectID 是该版本所属工程。建索引是因为唯一的读取路径按它查。
 	ProjectID string `gorm:"size:191;index"`
-	// Seq 是在工程内递增的序号。**仅用于展示与排序，不是标识。**
+	// Slot 是该版本所属内容槽。**版本按槽隔离**：它只在自己的槽里被列出、
+	// 发布与撤回，序号也在槽内递增。
+	Slot string `gorm:"size:16;index"`
+	// Seq 是在**槽内**递增的序号。**仅用于展示与排序，不是标识。**
 	//
-	// 刻意不加 (project_id, seq) 的唯一约束：那会把序号变成一个必须被维护的
-	// 结构，而"删除一个版本会让序号出现空洞"是可接受的。序号可空洞，标识不可。
+	// 刻意不加 (project_id, slot, seq) 的唯一约束：那会把序号变成一个必须被
+	// 维护的结构，而"删除一个版本会让序号出现空洞"是可接受的。序号可空洞，
+	// 标识不可。
 	Seq int64
 	// Manifest 是保存那一刻草稿的清单。**写入后不再修改。**
 	//
 	// **版本引用了哪些资产由这一列直接读出**：清单的每一条写明它是文本条目
 	// 还是资产条目，因此这件事不必解析任何文本，也没有第二处集合。
 	Manifest string
-	// RenderRulesVersion 是保存时所处的渲染规则版本。只有 `docs` 形态使用它，
+	// RenderRulesVersion 是保存时所处的渲染规则版本。只有 `docs` 槽使用它，
 	// 重新发布时按它渲染而不是按当前最新的（见 doc_render.go）。
 	RenderRulesVersion int
 	// SavedAt 是保存时间。排障与展示用。
@@ -380,6 +400,8 @@ type GalaxyPublicationRecord struct {
 	ID string `gorm:"primaryKey;size:191"`
 	// ProjectID 建索引的理由与版本表相同。
 	ProjectID string `gorm:"size:191"`
+	// Slot 是这次发布属于哪个内容槽。地址按槽分派，因此指针切换时也要对上它。
+	Slot string `gorm:"size:16"`
 	// VersionID 是这次发布的是哪个版本。
 	VersionID string `gorm:"size:191"`
 	// Manifest 是**产物清单**：一组「路径 → 内容摘要」或资产条目。对外地址按
@@ -409,6 +431,9 @@ type GalaxyPreviewGrantRecord struct {
 	Token string `gorm:"primaryKey;size:191"`
 	// ProjectID 是它授权的工程。建索引是为了"清理这个工程的过期凭证"能按它查。
 	ProjectID string `gorm:"size:191;index"`
+	// Slot 是它授权的**内容槽**。**凭证绑在（工程，槽）上**：拿站点槽的票去取
+	// 文档槽的路径，与"这一页不存在"没有区别。
+	Slot string `gorm:"size:16"`
 	// SubjectID 是签发时的主体。**留痕用**：判定不看它，因为工程本身只有拥有者
 	// 读得到（见 OwnedProject）。
 	SubjectID string `gorm:"size:191"`

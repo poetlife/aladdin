@@ -67,12 +67,12 @@ func TestPublishedEntriesAreAllReachable(t *testing.T) {
 	ctx := context.Background()
 
 	for _, entryPath := range []string{"index.html", "guide/one.html", "style.css"} {
-		if _, _, err := f.service.PublishedEntry(ctx, project.ID, entryPath); err != nil {
+		if _, err := f.service.PublishedEntry(ctx, project.ID, SlotSite, entryPath); err != nil {
 			t.Errorf("%s 不可达: %v", entryPath, err)
 		}
 	}
 	// 入口地址（空路径）与 `index.html` 是**同一页**。
-	_, entry, err := f.service.PublishedEntry(ctx, project.ID, "")
+	entry, err := f.service.PublishedEntry(ctx, project.ID, SlotSite, "")
 	if err != nil {
 		t.Fatalf("入口不可达: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestAssetEntryIsDispatchedAsRedirect(t *testing.T) {
 	version := f.saveVersion(t, project.ID)
 	f.publish(t, project.ID, version.ID)
 
-	_, entry, err := f.service.PublishedEntry(context.Background(), project.ID, "logo.png")
+	entry, err := f.service.PublishedEntry(context.Background(), project.ID, SlotSite, "logo.png")
 	if err != nil {
 		t.Fatalf("资产条目不可达: %v", err)
 	}
@@ -175,12 +175,12 @@ func TestUnpublishThenRepublishIsIdentical(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	if err := f.service.Unpublish(ctx, testOwner, project.ID); err != nil {
+	if err := f.service.Unpublish(ctx, testOwner, project.ID, SlotSite); err != nil {
 		t.Fatalf("撤回失败: %v", err)
 	}
 	// **每一条路径都是**，不只是入口。
 	for _, entryPath := range []string{"", "index.html", "style.css"} {
-		if _, _, err := f.service.PublishedEntry(ctx, project.ID, entryPath); !errors.Is(err, ErrPublicationNotFound) {
+		if _, err := f.service.PublishedEntry(ctx, project.ID, SlotSite, entryPath); !errors.Is(err, ErrPublicationNotFound) {
 			t.Errorf("撤回之后 %q 仍可达: %v", entryPath, err)
 		}
 	}
@@ -221,7 +221,7 @@ func TestFailureBeforeRecordLeavesNothingVisible(t *testing.T) {
 	next := f.saveVersion(t, project.ID)
 
 	f.public.PutErr = errors.New("上架失败（注入）")
-	if _, err := f.service.Publish(context.Background(), testOwner, project.ID, next.ID); err == nil {
+	if _, err := f.service.Publish(context.Background(), testOwner, project.ID, SlotSite, next.ID); err == nil {
 		t.Fatal("上架失败却报告发布成功")
 	}
 	f.public.PutErr = nil
@@ -231,10 +231,10 @@ func TestFailureBeforeRecordLeavesNothingVisible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读工程失败: %v", err)
 	}
-	if stored.CurrentPublicationID != PublicationID(project.ID, version.ID) {
+	if slot, _ := stored.FindSlot(SlotSite); slot.CurrentPublicationID != PublicationID(project.ID, version.ID) {
 		t.Error("失败的发布动了发布指针")
 	}
-	_, entry, err := f.service.PublishedEntry(context.Background(), project.ID, "index.html")
+	entry, err := f.service.PublishedEntry(context.Background(), project.ID, SlotSite, "index.html")
 	if err != nil {
 		t.Fatalf("上一次的产物不可达: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestPublishUnavailableWithoutConfiguration(t *testing.T) {
 		Logger: f.service.logger,
 		Now:    func() time.Time { return f.now },
 	})
-	if _, err := noPublic.Publish(context.Background(), testOwner, project.ID, version.ID); !errors.Is(err, ErrPublishUnavailable) {
+	if _, err := noPublic.Publish(context.Background(), testOwner, project.ID, SlotSite, version.ID); !errors.Is(err, ErrPublishUnavailable) {
 		t.Errorf("err = %v，期望 ErrPublishUnavailable", err)
 	}
 	if noPublic.Capabilities().PublishEnabled {
@@ -295,7 +295,7 @@ func TestNegativeConclusionsAreIndistinguishable(t *testing.T) {
 	f := newFixture(t)
 	project, _, _ := f.publishSite(t, map[string]string{"index.html": "<p>首页</p>"})
 	withdrawn, _, _ := f.publishSite(t, map[string]string{"index.html": "<p>另一个</p>"})
-	if err := f.service.Unpublish(context.Background(), testOwner, withdrawn.ID); err != nil {
+	if err := f.service.Unpublish(context.Background(), testOwner, withdrawn.ID, SlotSite); err != nil {
 		t.Fatalf("撤回失败: %v", err)
 	}
 
@@ -311,7 +311,7 @@ func TestNegativeConclusionsAreIndistinguishable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := f.service.PublishedEntry(context.Background(), tc.projectID, tc.entryPath); !errors.Is(err, ErrPublicationNotFound) {
+			if _, err := f.service.PublishedEntry(context.Background(), tc.projectID, SlotSite, tc.entryPath); !errors.Is(err, ErrPublicationNotFound) {
 				t.Errorf("err = %v，期望 ErrPublicationNotFound", err)
 			}
 		})
@@ -321,14 +321,14 @@ func TestNegativeConclusionsAreIndistinguishable(t *testing.T) {
 // **渲染规则按版本钉住**：重新发布用的是版本记录里的那一版规则。
 func TestRenderRulesVersionIsFrozenWithTheVersion(t *testing.T) {
 	f := newFixture(t)
-	project := f.createProjectForm(t, "文档站", SiteFormDocs)
-	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.md", "# 首页\n")})
-	version := f.saveVersion(t, project.ID)
+	project := f.createProjectSlots(t, "文档站", SlotDocs)
+	f.pushDraftSlot(t, project.ID, SlotDocs, []Entry{f.textEntry(t, project.ID, "index.md", "# 首页\n")})
+	version := f.saveVersionSlot(t, project.ID, SlotDocs)
 
 	if version.RenderRulesVersion != RenderRulesVersion {
 		t.Fatalf("版本记录的渲染规则版本 = %d，期望 %d", version.RenderRulesVersion, RenderRulesVersion)
 	}
-	got, _, err := f.service.GetVersion(context.Background(), testOwner, project.ID, version.ID)
+	got, _, err := f.service.GetVersion(context.Background(), testOwner, project.ID, SlotDocs, version.ID)
 	if err != nil {
 		t.Fatalf("读取版本失败: %v", err)
 	}

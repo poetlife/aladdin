@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Empty, Flex, Skeleton, Space, Typography } from 'antd'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
-import type { Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { ContentSlot, type Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../../telemetry/track'
+import { slotDescription, slotFromName, slotLabel } from './content-slot'
 import { PreviewFrame } from './PreviewFrame'
 
 interface failure {
@@ -22,8 +23,10 @@ interface failure {
  * 文件"**。这一页就是那件事的出口：它把同一份草稿铺满整个内容区，用来和别处对照。
  * 见 docs/design/galaxy/authoring.md 的"这一页的形态"。
  *
- * 它给的是**草稿整站的地址**（与工作台里的预览是同一条通道、同一个入口），因此
- * 沙箱属性与内容不可能与内嵌时漂移。地址带短时凭证，过期即打不开。
+ * 它给的是**某一个内容槽草稿整站的地址**（与工作台里的预览是同一条通道、同一个
+ * 入口），因此沙箱属性与内容不可能与内嵌时漂移。看哪个槽由地址里的 `?slot=` 给出
+ * ——工作台的「单独打开」会带上当前那个槽；没带时落在第一个启用的槽上。地址带短时
+ * 凭证，过期即打不开。
  *
  * 地址是短时的，长时间挂着会过期；**刷新**按钮重新取一次即得到新地址。
  *
@@ -31,9 +34,12 @@ interface failure {
  */
 export function PreviewPage(): React.ReactNode {
   const { projectId } = useParams<{ projectId: string }>()
+  const [searchParams] = useSearchParams()
+  const requestedSlot = searchParams.get('slot')
   const navigate = useNavigate()
 
   const [project, setProject] = useState<Project | null>(null)
+  const [slot, setSlot] = useState<ContentSlot>(ContentSlot.UNSPECIFIED)
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -44,20 +50,24 @@ export function PreviewPage(): React.ReactNode {
       return
     }
     const projectResponse = await galaxyApi.getProject(projectId)
-    if (projectResponse.project === undefined) {
+    const loadedProject = projectResponse.project
+    if (loadedProject === undefined) {
       throw new Error('工程不存在或已被删除')
     }
-    setProject(projectResponse.project)
+    setProject(loadedProject)
+    // 地址里的槽要在**这个工程启用的那些**里取：没带或认不出来时退回第一个。
+    const target = previewSlot(loadedProject, requestedSlot)
+    setSlot(target)
     // 取地址与读工程分开：取地址失败只影响这一块，不把整页打成"工程不存在"。
     try {
-      const previewResponse = await galaxyApi.previewDraft(projectId)
+      const previewResponse = await galaxyApi.previewDraft(projectId, target)
       setUrl(previewResponse.url)
       setFailure(null)
     } catch (err) {
       setUrl('')
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     }
-  }, [projectId])
+  }, [projectId, requestedSlot])
 
   useEffect(() => {
     let cancelled = false
@@ -134,7 +144,9 @@ export function PreviewPage(): React.ReactNode {
           <Typography.Text strong>
             {project.name === '' ? '(未命名)' : project.name}
           </Typography.Text>
-          <Typography.Text type="secondary">草稿预览</Typography.Text>
+          <Typography.Text type="secondary">
+            {slotLabel(slot)}草稿预览 · {slotDescription(slot)}
+          </Typography.Text>
         </Space>
         <Button icon={<RefreshCw size={16} />} loading={busy} onClick={() => void handleRefresh()}>
           刷新
@@ -171,4 +183,19 @@ export function PreviewPage(): React.ReactNode {
       </div>
     </Flex>
   )
+}
+
+/**
+ * 定出这一页预览哪个槽：地址里给了、且这个工程确实启用了它，就用它；否则退回
+ * 第一个启用的槽。
+ *
+ * **"启用了它"这件事由工程本身回答**，不由地址回答——地址可以是任何字符串。
+ * 槽只增不删，因此一个工程至少有一个槽，退回去的方向总是存在的。
+ */
+function previewSlot(project: Project, requested: string | null): ContentSlot {
+  const wanted = slotFromName(requested)
+  if (wanted !== undefined && project.slots.some((candidate) => candidate.slot === wanted)) {
+    return wanted
+  }
+  return project.slots[0]?.slot ?? ContentSlot.UNSPECIFIED
 }

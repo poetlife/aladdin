@@ -372,7 +372,7 @@ func TestReferencedAssetCannotBeDeleted(t *testing.T) {
 	}
 
 	// 删掉引用它的那个版本之后，资产可以删，且元数据与私有区对象一并消失。
-	if err := f.service.DeleteVersion(ctx, testOwner, project.ID, version.ID); err != nil {
+	if err := f.service.DeleteVersion(ctx, testOwner, project.ID, SlotSite, version.ID); err != nil {
 		t.Fatalf("删版本失败: %v", err)
 	}
 	if err := f.service.DeleteAsset(ctx, testOwner, project.ID, asset.ID); err != nil {
@@ -429,10 +429,10 @@ func TestAssetUnavailableWithoutStore(t *testing.T) {
 		t.Errorf("改元数据 err = %v，期望 ErrAssetUnavailable", err)
 	}
 	// 工程与版本照常可用。
-	if _, _, err := bare.GetVersion(ctx, testOwner, project.ID, version.ID); err != nil {
+	if _, _, err := bare.GetVersion(ctx, testOwner, project.ID, SlotSite, version.ID); err != nil {
 		t.Errorf("读版本失败: %v", err)
 	}
-	if _, err := bare.ListVersions(ctx, testOwner, project.ID); err != nil {
+	if _, err := bare.ListVersions(ctx, testOwner, project.ID, SlotSite); err != nil {
 		t.Errorf("列版本失败: %v", err)
 	}
 	// 能力下发如实反映这一项缺席。

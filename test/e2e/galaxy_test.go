@@ -118,22 +118,29 @@ func pushAssetOverRPC(t *testing.T, h harness, client galaxyv1connect.GalaxyServ
 	}
 }
 
-// pushDraft 整组替换草稿。
+// pushDraft 整组替换**站点槽**的草稿。
 func pushDraft(t *testing.T, client galaxyv1connect.GalaxyServiceClient, projectID string, entries ...*galaxyv1.FileEntry) {
+	t.Helper()
+	pushDraftSlot(t, client, projectID, galaxyv1.ContentSlot_CONTENT_SLOT_SITE, entries...)
+}
+
+// pushDraftSlot 整组替换某一个内容槽的草稿。
+func pushDraftSlot(t *testing.T, client galaxyv1connect.GalaxyServiceClient, projectID string, slot galaxyv1.ContentSlot, entries ...*galaxyv1.FileEntry) {
 	t.Helper()
 	if _, err := client.PushDraft(context.Background(), connect.NewRequest(&galaxyv1.PushDraftRequest{
 		ProjectId: projectID,
 		Entries:   entries,
+		Slot:      slot,
 	})); err != nil {
 		t.Fatalf("推送草稿失败: %v", err)
 	}
 }
 
-// createProject 建一个指定形态的工程。
-func createProject(t *testing.T, client galaxyv1connect.GalaxyServiceClient, name string, form galaxyv1.SiteForm) string {
+// createProject 建一个**只启用一个内容槽**的工程。
+func createProject(t *testing.T, client galaxyv1connect.GalaxyServiceClient, name string, slot galaxyv1.ContentSlot) string {
 	t.Helper()
 	project, err := client.CreateProject(context.Background(), connect.NewRequest(&galaxyv1.CreateProjectRequest{
-		Name: name, Form: form,
+		Name: name, Slots: []galaxyv1.ContentSlot{slot},
 	}))
 	if err != nil {
 		t.Fatalf("建工程失败: %v", err)
@@ -141,21 +148,29 @@ func createProject(t *testing.T, client galaxyv1connect.GalaxyServiceClient, nam
 	return project.Msg.GetProject().GetId()
 }
 
-// publishDraft 把当前草稿存成版本并发布，返回发布地址。
+// publishDraft 把**站点槽**的草稿存成版本并发布，返回发布地址。
 func publishDraft(t *testing.T, client galaxyv1connect.GalaxyServiceClient, projectID string) string {
 	t.Helper()
+	return publishDraftSlot(t, client, projectID, galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
+}
+
+// publishDraftSlot 把某一个内容槽的草稿存成版本并发布，返回该槽的发布地址。
+func publishDraftSlot(t *testing.T, client galaxyv1connect.GalaxyServiceClient, projectID string, slot galaxyv1.ContentSlot) string {
+	t.Helper()
 	ctx := context.Background()
-	version, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID}))
+	version, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{
+		ProjectId: projectID, Slot: slot,
+	}))
 	if err != nil {
 		t.Fatalf("保存版本失败: %v", err)
 	}
 	published, err := client.Publish(ctx, connect.NewRequest(&galaxyv1.PublishRequest{
-		ProjectId: projectID, VersionId: version.Msg.GetVersion().GetId(),
+		ProjectId: projectID, VersionId: version.Msg.GetVersion().GetId(), Slot: slot,
 	}))
 	if err != nil {
 		t.Fatalf("发布失败: %v", err)
 	}
-	return published.Msg.GetProject().GetPublishedUrl()
+	return published.Msg.GetPublication().GetUrl()
 }
 
 // fetchPublished 取发布地址上的一个路径（**不带任何凭证**）。
@@ -205,7 +220,7 @@ func TestGalaxyPublishedSiteIsPubliclyReachable(t *testing.T) {
 	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 	client := connectGalaxy(t, h, testToken)
 
-	projectID := createProject(t, client, "我的站点", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, client, "我的站点", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 	const page = "<!doctype html><p>你好</p>"
 	pushDraft(t, client, projectID,
 		pushContentOverRPC(t, h, client, projectID, "index.html", page),
@@ -299,7 +314,7 @@ func TestGalaxyPreviewServesDraftSiteByPath(t *testing.T) {
 	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 	client := connectGalaxy(t, h, testToken)
 
-	projectID := createProject(t, client, "预览的站点", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, client, "预览的站点", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 	pushDraft(t, client, projectID,
 		pushContentOverRPC(t, h, client, projectID, "index.html",
 			`<link rel="stylesheet" href="style.css"><span>你好</span><img src="img/pov-01.png"><script src="app.js"></script>`),
@@ -310,6 +325,7 @@ func TestGalaxyPreviewServesDraftSiteByPath(t *testing.T) {
 
 	preview, err := client.PreviewDraft(context.Background(), connect.NewRequest(&galaxyv1.PreviewDraftRequest{
 		ProjectId: projectID,
+		Slot:      galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
 	}))
 	if err != nil {
 		t.Fatalf("取预览地址失败: %v", err)
@@ -387,13 +403,13 @@ func TestGalaxyDocsSiteIsRenderedPerPage(t *testing.T) {
 	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 	client := connectGalaxy(t, h, testToken)
 
-	projectID := createProject(t, client, "文档站", galaxyv1.SiteForm_SITE_FORM_DOCS)
-	pushDraft(t, client, projectID,
+	projectID := createProject(t, client, "文档站", galaxyv1.ContentSlot_CONTENT_SLOT_DOCS)
+	pushDraftSlot(t, client, projectID, galaxyv1.ContentSlot_CONTENT_SLOT_DOCS,
 		pushContentOverRPC(t, h, client, projectID, "index.md", "# 首页\n\n看[入门](guide/intro.md)。\n"),
 		pushContentOverRPC(t, h, client, projectID, "guide/intro.md", "# 入门\n\n正文。\n"),
 		pushContentOverRPC(t, h, client, projectID, "theme.css", "body{color:red}"),
 	)
-	address := publishDraft(t, client, projectID)
+	address := publishDraftSlot(t, client, projectID, galaxyv1.ContentSlot_CONTENT_SLOT_DOCS)
 
 	// 每一章有自己的地址，深链可以直接分享。
 	status, body, header := fetchPublished(t, h, address, "guide/intro.html", nil)
@@ -426,7 +442,7 @@ func TestGalaxyNegativeConclusionsAreTheSame(t *testing.T) {
 	client := connectGalaxy(t, h, testToken)
 	ctx := context.Background()
 
-	projectID := createProject(t, client, "工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 
 	unpublished := h.publishBase + galaxy.PublicPathPrefix + projectID
 	if status, _, _ := fetchPublished(t, h, unpublished, "", nil); status != http.StatusNotFound {
@@ -448,7 +464,7 @@ func TestGalaxyNegativeConclusionsAreTheSame(t *testing.T) {
 	}
 
 	// 撤回**立刻**生效：下一次请求就不可达，且**每一条路径都是**。
-	if _, err := client.Unpublish(ctx, connect.NewRequest(&galaxyv1.UnpublishRequest{ProjectId: projectID})); err != nil {
+	if _, err := client.Unpublish(ctx, connect.NewRequest(&galaxyv1.UnpublishRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE})); err != nil {
 		t.Fatalf("撤回失败: %v", err)
 	}
 	for _, entryPath := range []string{"", "index.html"} {
@@ -463,13 +479,13 @@ func TestGalaxyDraftChangeDoesNotAffectPublishedSite(t *testing.T) {
 	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 	client := connectGalaxy(t, h, testToken)
 
-	projectID := createProject(t, client, "工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html", "<p>发布时那一刻</p>"))
 	address := publishDraft(t, client, projectID)
 
 	// 改草稿并存成第二个版本，但不发布。
 	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html", "<p>改过之后</p>"))
-	if _, err := client.SaveVersion(context.Background(), connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID})); err != nil {
+	if _, err := client.SaveVersion(context.Background(), connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE})); err != nil {
 		t.Fatalf("保存版本失败: %v", err)
 	}
 
@@ -489,7 +505,7 @@ func TestGalaxyOwnershipCannotBeBypassed(t *testing.T) {
 	owner := connectGalaxy(t, h, testToken)
 	ctx := context.Background()
 
-	projectID := createProject(t, owner, "别人的工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, owner, "别人的工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 
 	// 注入第二个主体，并给它同一个角色：它能创作，但只能碰自己的东西。
 	const otherToken = "e2e-other-token"
@@ -530,11 +546,11 @@ func TestGalaxyOwnershipCannotBeBypassed(t *testing.T) {
 			return err
 		}},
 		{"校验草稿", func() error {
-			_, err := intruder.ValidateDraft(ctx, connect.NewRequest(&galaxyv1.ValidateDraftRequest{ProjectId: projectID}))
+			_, err := intruder.ValidateDraft(ctx, connect.NewRequest(&galaxyv1.ValidateDraftRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE}))
 			return err
 		}},
 		{"预览草稿", func() error {
-			_, err := intruder.PreviewDraft(ctx, connect.NewRequest(&galaxyv1.PreviewDraftRequest{ProjectId: projectID}))
+			_, err := intruder.PreviewDraft(ctx, connect.NewRequest(&galaxyv1.PreviewDraftRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE}))
 			return err
 		}},
 		{"签发内容对象", func() error {
@@ -546,6 +562,7 @@ func TestGalaxyOwnershipCannotBeBypassed(t *testing.T) {
 		{"发布", func() error {
 			_, err := intruder.Publish(ctx, connect.NewRequest(&galaxyv1.PublishRequest{
 				ProjectId: projectID, VersionId: "ver_随便",
+				Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
 			}))
 			return err
 		}},
@@ -603,12 +620,12 @@ func TestGalaxyRejectsExternalResourceReferences(t *testing.T) {
 	client := connectGalaxy(t, h, testToken)
 	ctx := context.Background()
 
-	projectID := createProject(t, client, "工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 
 	// 校验那条入口拿回的是问题清单，而不是一个失败。
 	const external = `<img src="https://evil.example.com/a.png">`
 	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html", external))
-	report, err := client.ValidateDraft(ctx, connect.NewRequest(&galaxyv1.ValidateDraftRequest{ProjectId: projectID}))
+	report, err := client.ValidateDraft(ctx, connect.NewRequest(&galaxyv1.ValidateDraftRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE}))
 	if err != nil {
 		t.Fatalf("校验失败: %v", err)
 	}
@@ -627,12 +644,13 @@ func TestGalaxyRejectsExternalResourceReferences(t *testing.T) {
 	}
 
 	// 发布那条入口用同一个结论拒绝。
-	version, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID}))
+	version, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE}))
 	if err != nil {
 		t.Fatalf("保存版本失败: %v", err)
 	}
 	_, err = client.Publish(ctx, connect.NewRequest(&galaxyv1.PublishRequest{
 		ProjectId: projectID, VersionId: version.Msg.GetVersion().GetId(),
+		Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
 	}))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("发布一个含外部引用的版本 = %v，期望 InvalidArgument", err)
@@ -644,7 +662,7 @@ func TestGalaxyRejectsExternalResourceReferences(t *testing.T) {
 	// 导航链接不受此限：外链是用户的意图，不是资源引用。
 	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html",
 		`<a href="https://example.com">去看看</a>`))
-	if _, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID})); err != nil {
+	if _, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE})); err != nil {
 		t.Fatalf("保存版本失败: %v", err)
 	}
 }
@@ -654,7 +672,7 @@ func TestGalaxyPromotesOnlyReferencedAssets(t *testing.T) {
 	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
 	client := connectGalaxy(t, h, testToken)
 
-	projectID := createProject(t, client, "工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 	// 一个被引用的资产，一个只躺在库里的资产——后者不进文件组，因此不进产物。
 	used := uploadAssetOverRPC(t, h, client, projectID, "image/png", pngBytes)
 	uploadAssetOverRPC(t, h, client, projectID, "image/gif", gifBytes)
@@ -690,32 +708,32 @@ func TestGalaxyRepublishAfterUnpublish(t *testing.T) {
 	client := connectGalaxy(t, h, testToken)
 	ctx := context.Background()
 
-	projectID := createProject(t, client, "工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 	pushDraft(t, client, projectID,
 		pushContentOverRPC(t, h, client, projectID, "index.html", "<p>首页</p>"),
 		pushContentOverRPC(t, h, client, projectID, "style.css", "body{}"),
 	)
-	version, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID}))
+	version, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE}))
 	if err != nil {
 		t.Fatalf("保存版本失败: %v", err)
 	}
 	versionID := version.Msg.GetVersion().GetId()
 
-	first, err := client.Publish(ctx, connect.NewRequest(&galaxyv1.PublishRequest{ProjectId: projectID, VersionId: versionID}))
+	first, err := client.Publish(ctx, connect.NewRequest(&galaxyv1.PublishRequest{ProjectId: projectID, VersionId: versionID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE}))
 	if err != nil {
 		t.Fatalf("发布失败: %v", err)
 	}
-	address := first.Msg.GetProject().GetPublishedUrl()
+	address := first.Msg.GetPublication().GetUrl()
 	_, firstCSS, _ := fetchPublished(t, h, address, "style.css", nil)
 
-	if _, err := client.Unpublish(ctx, connect.NewRequest(&galaxyv1.UnpublishRequest{ProjectId: projectID})); err != nil {
+	if _, err := client.Unpublish(ctx, connect.NewRequest(&galaxyv1.UnpublishRequest{ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE})); err != nil {
 		t.Fatalf("撤回失败: %v", err)
 	}
 	if status, _, _ := fetchPublished(t, h, address, "style.css", nil); status != http.StatusNotFound {
 		t.Fatalf("撤回之后 = %d，期望 404", status)
 	}
 
-	second, err := client.Publish(ctx, connect.NewRequest(&galaxyv1.PublishRequest{ProjectId: projectID, VersionId: versionID}))
+	second, err := client.Publish(ctx, connect.NewRequest(&galaxyv1.PublishRequest{ProjectId: projectID, VersionId: versionID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE}))
 	if err != nil {
 		t.Fatalf("重新发布失败: %v", err)
 	}
@@ -771,7 +789,7 @@ func TestGalaxyAssetMetadataIsEditableWithoutTouchingBytes(t *testing.T) {
 	client := connectGalaxy(t, h, testToken)
 	ctx := context.Background()
 
-	projectID := createProject(t, client, "工程", galaxyv1.SiteForm_SITE_FORM_STATIC)
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 	// 标签故意写成大写并带空白：归一化是这条链路的一部分，不是调用方的事。
 	cover := uploadAssetWithMetaOverRPC(t, h, client, projectID, "image/png", "cover.png",
 		"首页封面", "给首页用", []string{" Cover ", "HERO"}, pngBytes)

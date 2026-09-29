@@ -61,18 +61,18 @@ func (p Problem) Describe() string {
 // 返回的是一个**问题清单**而不是单个错误：界面要的是"哪几处有问题"。存储
 // 不可用这类故障仍然以 error 返回，与"内容有问题"分开——混在一起会让一次
 // 数据库抖动表现成"你的内容写错了"。
-func (s *Service) ValidateDraft(ctx context.Context, subjectID, projectID string) (Report, error) {
-	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+func (s *Service) ValidateDraft(ctx context.Context, subjectID, projectID string, slot ContentSlot) (Report, error) {
+	project, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot)
 	if err != nil {
 		return Report{}, err
 	}
-	draft, err := s.store.GetDraft(ctx, projectID)
+	draft, err := s.store.GetDraft(ctx, projectID, slot)
 	if errors.Is(err, ErrDraftNotFound) {
-		draft = Draft{ProjectID: projectID}
+		draft = Draft{ProjectID: projectID, Slot: slot}
 	} else if err != nil {
 		return Report{}, err
 	}
-	_, report, err := s.buildArtifacts(ctx, project, draft.Manifest, false)
+	_, report, err := s.buildArtifacts(ctx, project, slot, draft.Manifest, false)
 	return report, err
 }
 
@@ -84,7 +84,7 @@ func (s *Service) ValidateDraft(ctx context.Context, subjectID, projectID string
 //  2. 每一条资产条目都指向本工程现存的一个资产；
 //  3. 每一处取字节的引用都落在本文件组的**某一条条目**上（文本或资产），且
 //     不接受任何指向文件组之外的资源引用（导航链接不受此限）；
-//  4. `docs` 形态下每一处文档间链接都落在文件组里；
+//  4. `docs` 槽下每一处文档间链接都落在文件组里；
 //  5. 单份文本、整组文本与文件数都不超上限。
 //
 // 产物在这里算出来而不是在发布阶段另算一次：改写与渲染是纯计算，而"产物会不会
@@ -97,12 +97,12 @@ func (s *Service) ValidateDraft(ctx context.Context, subjectID, projectID string
 // tolerant 为真时是**预览要的那一档**：产物照给，坏引用原样留着（见
 // buildPreviewArtifacts）。两档共用这一处实现，是因为"一处引用落在哪一条条目上"
 // 只有一个判断入口——两处各写一份的表现是"预览说这处没问题、发布说不行"。
-func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest Manifest, tolerant bool) (map[string][]byte, Report, error) {
+func (s *Service) buildArtifacts(ctx context.Context, project Project, slot ContentSlot, manifest Manifest, tolerant bool) (map[string][]byte, Report, error) {
 	var problems []Problem
 
-	if _, ok := manifest.Find(project.Form.EntryPath()); !ok {
+	if _, ok := manifest.Find(slot.EntryPath()); !ok {
 		problems = append(problems, Problem{
-			Message: fmt.Sprintf("缺少入口文件 %s", project.Form.EntryPath()),
+			Message: fmt.Sprintf("缺少入口文件 %s", slot.EntryPath()),
 		})
 	}
 
@@ -127,21 +127,21 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest 
 	}
 	problems = append(problems, sizeProblems...)
 
-	siteRoot := s.origin.SiteRoot(project.ID)
+	siteRoot := s.origin.SiteRoot(project.ID, slot)
 	artifacts := make(map[string][]byte, len(manifest))
 
 	// 引用解析器按模式二选一：发布与校验要"坏引用即失败"，预览要"坏引用原样
 	// 留着"。两者共用同一处"引用落在哪一条条目上"的判断（见 link_resolver.go），
 	// 地址也同形——预览根那次替换在交付那一步逐字完成。
-	var linker LinkResolver = SiteLinker{Form: project.Form, Manifest: manifest, SiteRoot: siteRoot}
+	var linker LinkResolver = SiteLinker{Slot: slot, Manifest: manifest, SiteRoot: siteRoot}
 	if tolerant {
-		linker = PreviewLinker{Site: SiteLinker{Form: project.Form, Manifest: manifest, SiteRoot: siteRoot}}
+		linker = PreviewLinker{Site: SiteLinker{Slot: slot, Manifest: manifest, SiteRoot: siteRoot}}
 	}
 
 	// markdown 需要先把整组渲染出来才能谈导航与文档间链接，因此分两趟：
 	// 第一趟只渲染 markdown（逐份，好把问题定位到具体文件），第二趟拼产物。
 	var docs []Doc
-	if project.Form == SiteFormDocs {
+	if slot == SlotDocs {
 		for _, entry := range manifest {
 			if !IsMarkdownPath(entry.Path) {
 				continue
@@ -164,20 +164,20 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest 
 	}
 
 	// 第二趟：拼产物。
-	if project.Form == SiteFormDocs && len(docs) > 0 {
+	if slot == SlotDocs && len(docs) > 0 {
 		for artifactPath, data := range RenderDocsArtifacts(docs, siteRoot) {
 			artifacts[artifactPath] = data
 		}
 	}
 	for _, entry := range manifest {
-		if project.Form == SiteFormDocs && IsMarkdownPath(entry.Path) {
+		if slot == SlotDocs && IsMarkdownPath(entry.Path) {
 			continue // 已由渲染产出
 		}
 		source, ok := textBytes[entry.Path]
 		if !ok {
 			continue
 		}
-		artifactPath := ArtifactPath(project.Form, entry.Path)
+		artifactPath := ArtifactPath(slot, entry.Path)
 
 		// 记号替换对**每一份文本**生效（HTML、CSS、站点文件一视同仁）。
 		substituted, err := SubstituteAssetMarkers(source, func(assetID string) (string, error) {
@@ -193,7 +193,7 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest 
 		}
 
 		// 取资源的引用：每一处都必须落在本文件组的一条条目上。
-		problems = append(problems, checkResourceReferences(project.Form, siteRoot, manifest, artifactPath, substituted)...)
+		problems = append(problems, checkResourceReferences(siteRoot, manifest, artifactPath, substituted)...)
 		artifacts[artifactPath] = substituted
 	}
 
@@ -229,8 +229,8 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, manifest 
 // 坏引用要不要中止。这一条差别是刻意的——预览是"看看现在长什么样"，把它做成一个
 // 会因为一处坏引用而整体拒绝的东西，用户就看不到修复它之后剩下的部分（见
 // docs/design/galaxy/authoring.md）。
-func (s *Service) buildPreviewArtifacts(ctx context.Context, project Project, manifest Manifest) (map[string][]byte, error) {
-	artifacts, _, err := s.buildArtifacts(ctx, project, manifest, true)
+func (s *Service) buildPreviewArtifacts(ctx context.Context, project Project, slot ContentSlot, manifest Manifest) (map[string][]byte, error) {
+	artifacts, _, err := s.buildArtifacts(ctx, project, slot, manifest, true)
 	return artifacts, err
 }
 
@@ -290,7 +290,7 @@ func (s *Service) loadTextEntries(ctx context.Context, projectID string, manifes
 //
 // 两类写法必须分开（这是设计里最容易搞混的一处）：取资源的引用不得指向本文件
 // 组之外；`<a href>` 一类导航链接可以是任意地址。
-func checkResourceReferences(form SiteForm, siteRoot string, manifest Manifest, entryPath string, content []byte) []Problem {
+func checkResourceReferences(siteRoot string, manifest Manifest, entryPath string, content []byte) []Problem {
 	refs := scanResourceReferences(string(content))
 	if strings.EqualFold(pathExt(entryPath), ".css") {
 		refs = append(refs, scanCSS(string(content), 0)...)

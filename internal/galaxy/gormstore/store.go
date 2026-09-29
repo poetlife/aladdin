@@ -73,17 +73,16 @@ func decodeManifest(encoded string) (galaxy.Manifest, error) {
 // toProject 把记录翻译成领域类型。
 //
 // 转换只在这一处：记录里加一列不会悄悄改变上层看到的东西，除非这里也跟着改
-// ——而那时改动是显式的。
+// ——而那时改动是显式的。**槽不在这里翻译**：它在另一张表上，由调用方合并
+// （见 project.go 的 loadSlots）。
 func toProject(rec database.GalaxyProjectRecord) galaxy.Project {
 	return galaxy.Project{
-		ID:                   rec.ID,
-		OwnerSubjectID:       rec.OwnerSubjectID,
-		Name:                 rec.Name,
-		Description:          rec.Description,
-		Form:                 galaxy.SiteForm(rec.Form),
-		CurrentPublicationID: rec.CurrentPublicationID,
-		CreatedAt:            rec.CreatedAt,
-		UpdatedAt:            rec.UpdatedAt,
+		ID:             rec.ID,
+		OwnerSubjectID: rec.OwnerSubjectID,
+		Name:           rec.Name,
+		Description:    rec.Description,
+		CreatedAt:      rec.CreatedAt,
+		UpdatedAt:      rec.UpdatedAt,
 	}
 }
 
@@ -94,6 +93,7 @@ func toDraft(rec database.GalaxyDraftRecord) (galaxy.Draft, error) {
 	}
 	return galaxy.Draft{
 		ProjectID: rec.ProjectID,
+		Slot:      galaxy.ContentSlot(rec.Slot),
 		Manifest:  manifest,
 		UpdatedAt: rec.UpdatedAt,
 	}, nil
@@ -107,6 +107,7 @@ func toVersion(rec database.GalaxyVersionRecord) (galaxy.Version, error) {
 	return galaxy.Version{
 		ID:                 rec.ID,
 		ProjectID:          rec.ProjectID,
+		Slot:               galaxy.ContentSlot(rec.Slot),
 		Seq:                rec.Seq,
 		Manifest:           manifest,
 		RenderRulesVersion: rec.RenderRulesVersion,
@@ -140,6 +141,7 @@ func toPublication(rec database.GalaxyPublicationRecord) (galaxy.Publication, er
 		ID:                   rec.ID,
 		ProjectID:            rec.ProjectID,
 		VersionID:            rec.VersionID,
+		Slot:                 galaxy.ContentSlot(rec.Slot),
 		Manifest:             manifest,
 		PublishedBySubjectID: rec.PublishedBySubjectID,
 		PublishedAt:          rec.PublishedAt,

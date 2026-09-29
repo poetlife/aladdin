@@ -37,6 +37,7 @@ func (s *Store) PutPublication(ctx context.Context, publication galaxy.Publicati
 	rec := database.GalaxyPublicationRecord{
 		ID:                   publication.ID,
 		ProjectID:            publication.ProjectID,
+		Slot:                 string(publication.Slot),
 		VersionID:            publication.VersionID,
 		Manifest:             encoded,
 		PublishedBySubjectID: publication.PublishedBySubjectID,
@@ -45,7 +46,7 @@ func (s *Store) PutPublication(ctx context.Context, publication galaxy.Publicati
 	err = s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"project_id", "version_id", "manifest", "published_by_subject_id", "published_at",
+			"project_id", "slot", "version_id", "manifest", "published_by_subject_id", "published_at",
 		}),
 	}).Create(&rec).Error
 	if err != nil {

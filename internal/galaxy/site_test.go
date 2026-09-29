@@ -1,6 +1,9 @@
 package galaxy
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // 路径约束是**地址的约束**，不是风格偏好：路径会成为公开地址的一部分。
 func TestValidEntryPath(t *testing.T) {
@@ -41,19 +44,19 @@ func TestValidEntryPath(t *testing.T) {
 // **白名单按形态给出**：两种形态的差别之一就是它。
 func TestTextWhitelistIsPerForm(t *testing.T) {
 	cases := []struct {
-		form      SiteForm
+		form      ContentSlot
 		entryPath string
 		want      bool
 	}{
-		{SiteFormStatic, "index.html", true},
-		{SiteFormStatic, "app.js", true},
-		{SiteFormStatic, "logo.svg", true},
-		{SiteFormStatic, "photo.png", false},
-		{SiteFormDocs, "index.md", true},
-		{SiteFormDocs, "theme.css", true},
+		{SlotSite, "index.html", true},
+		{SlotSite, "app.js", true},
+		{SlotSite, "logo.svg", true},
+		{SlotSite, "photo.png", false},
+		{SlotDocs, "index.md", true},
+		{SlotDocs, "theme.css", true},
 		// **docs 不收 HTML**：它的页面是渲染出来的，不是写出来的。
-		{SiteFormDocs, "index.html", false},
-		{SiteFormDocs, "photo.png", false},
+		{SlotDocs, "index.html", false},
+		{SlotDocs, "photo.png", false},
 	}
 	for _, tc := range cases {
 		if got := IsTextPath(tc.form, tc.entryPath); got != tc.want {
@@ -65,15 +68,15 @@ func TestTextWhitelistIsPerForm(t *testing.T) {
 // 产物路径：只有 docs 的 markdown 会变（`.md` → `.html`），其余原路径进产物。
 func TestArtifactPath(t *testing.T) {
 	cases := []struct {
-		form      SiteForm
+		form      ContentSlot
 		entryPath string
 		want      string
 	}{
-		{SiteFormDocs, "index.md", "index.html"},
-		{SiteFormDocs, "guide/intro.md", "guide/intro.html"},
-		{SiteFormDocs, "theme.css", "theme.css"},
-		{SiteFormStatic, "index.html", "index.html"},
-		{SiteFormStatic, "assets/app.js", "assets/app.js"},
+		{SlotDocs, "index.md", "index.html"},
+		{SlotDocs, "guide/intro.md", "guide/intro.html"},
+		{SlotDocs, "theme.css", "theme.css"},
+		{SlotSite, "index.html", "index.html"},
+		{SlotSite, "assets/app.js", "assets/app.js"},
 	}
 	for _, tc := range cases {
 		if got := ArtifactPath(tc.form, tc.entryPath); got != tc.want {
@@ -84,36 +87,190 @@ func TestArtifactPath(t *testing.T) {
 
 // 渲染出来的页是 `.html`，而它**不在 docs 的写入白名单里**——两者不是同一个判断。
 func TestArtifactContentTypeServesRenderedPages(t *testing.T) {
-	contentType, ok := ArtifactContentType(SiteFormDocs, "guide/intro.html")
+	contentType, ok := ArtifactContentType(SlotDocs, "guide/intro.html")
 	if !ok || contentType != renderedContentType {
 		t.Errorf("ArtifactContentType(docs, guide/intro.html) = %q/%v，期望 %q/true",
 			contentType, ok, renderedContentType)
 	}
-	if _, ok := TextContentType(SiteFormDocs, "guide/intro.html"); ok {
+	if _, ok := TextContentType(SlotDocs, "guide/intro.html"); ok {
 		t.Error("写进来的 .html 不该被当成合法文本条目")
 	}
 }
 
+// 用户写 markdown 时的预期是 GitHub 那一套：表格、删除线、任务列表都要真的渲染。
+//
+// 裸的 CommonMark 里这些都没有，而它们的缺席**不报错**——一张 pipe 表会静默变成
+// 一段带管道符的正文，正是这个测试要挡住的那种失败。
+func TestDocsRenderingIsGFM(t *testing.T) {
+	const src = "# 标题\n\n## 成品概览\n\n" +
+		"| 项 | 值 |\n|----|-----|\n| 蓝本 | 乙 |\n\n" +
+		"~~删掉~~\n\n- [ ] 未做\n\n```go\nfunc main() {}\n```\n"
+
+	doc, err := RenderDoc(
+		DocSource{Path: "index.md", Body: []byte(src)},
+		SiteLinker{Slot: SlotDocs},
+	)
+	if err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	body := string(doc.Body)
+	for what, want := range map[string]string{
+		"表格":   "<table>",
+		"表头":   "<th>项</th>",
+		"单元格":  "<td>蓝本</td>",
+		"删除线":  "<del>删掉</del>",
+		"任务项":  "type=\"checkbox\"",
+		"标题锚点": "class=\"header-anchor\" href=\"#成品概览\"",
+		"语言标签": "<span class=\"lang\">go</span>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s没渲染出来：正文里找不到 %q\n正文：%s", what, want, body)
+		}
+	}
+	// 表格是块级元素，落进段落里就说明它被当成普通文本了。
+	if strings.Contains(body, "<p>| 项 | 值 |") {
+		t.Errorf("表格被当成了正文：%s", body)
+	}
+	if doc.Title != "标题" {
+		t.Errorf("标题 = %q，期望 %q", doc.Title, "标题")
+	}
+	// 目录与正文的锚点同源：目录里那一行指的就是正文里那个 id。
+	if len(doc.Headings) != 1 {
+		t.Fatalf("目录条目 = %v，期望只有二级标题一条", doc.Headings)
+	}
+	if got := doc.Headings[0]; got.ID != "成品概览" || got.Level != 2 || got.Text != "成品概览" {
+		t.Errorf("目录条目 = %+v，期望 {成品概览 2 成品概览}", got)
+	}
+	if !strings.Contains(body, "<h2 id=\"成品概览\">") {
+		t.Errorf("二级标题没有拿到目录里那个 id：%s", body)
+	}
+}
+
+// 锚点标识自己算，不用 goldmark 的自动标识：后者只留 ASCII，一份中文文档会得到
+// 一串 `heading-1`、`heading-2`——目录里每一行都指向一个说不出口的名字。
+func TestHeadingSlug(t *testing.T) {
+	cases := map[string]string{
+		"成品概览":          "成品概览",
+		"道士下山 · 制作过程":   "道士下山-制作过程",
+		"Hello, World!": "hello-world",
+		"《道士下山》":        "道士下山",
+		"v1.2 发布":       "v1-2-发布",
+		"   ":           "",
+		"---":           "",
+	}
+	for text, want := range cases {
+		if got := headingSlug(text); got != want {
+			t.Errorf("headingSlug(%q) = %q，期望 %q", text, got, want)
+		}
+	}
+	// 重名标题：第一个原样，其后依次加序号。
+	seen := make(map[string]int)
+	for i, want := range []string{"甲", "甲-1", "甲-2"} {
+		if got := uniqueSlug(seen, "甲"); got != want {
+			t.Errorf("第 %d 次同名标题 = %q，期望 %q", i+1, got, want)
+		}
+	}
+	// 整条标题都是标点时留不下任何字符，退到 section——它同样要去重。
+	if got := uniqueSlug(seen, headingSlug("   ")); got != "section" {
+		t.Errorf("空标题的标识 = %q，期望 section", got)
+	}
+}
+
+// 侧栏列出全部文档，当前这一页高亮——判据是"只有一条带 active"。
+func TestRenderSidebarMarksCurrentPage(t *testing.T) {
+	docs := []Doc{
+		{ArtifactPath: "index.html", Title: "首页"},
+		{ArtifactPath: "guide/intro.html", Title: "入门"},
+	}
+	hrefFor := func(doc Doc) string { return "/g/prj_x/" + doc.ArtifactPath }
+
+	sidebar := RenderSidebar(docs, hrefFor, "guide/intro.html")
+	if !strings.Contains(sidebar, `href="/g/prj_x/guide/intro.html" class="active" aria-current="page">入门</a>`) {
+		t.Errorf("当前页没有被标出来：%s", sidebar)
+	}
+	if !strings.Contains(sidebar, `href="/g/prj_x/index.html">首页</a>`) {
+		t.Errorf("另一页不该带标记：%s", sidebar)
+	}
+	if n := strings.Count(sidebar, "active"); n != 1 {
+		t.Errorf("带标记的条目 = %d 条，期望 1 条：%s", n, sidebar)
+	}
+}
+
+// 没有二三级标题时目录整块不出现：一份只有一个标题的文档不该在右边留一列空白。
+func TestRenderTOC(t *testing.T) {
+	if toc := RenderTOC(nil); toc != "" {
+		t.Errorf("没有标题时目录 = %q，期望空串", toc)
+	}
+	toc := RenderTOC([]Heading{{ID: "甲", Level: 2, Text: "甲"}, {ID: "乙", Level: 3, Text: "乙"}})
+	for _, want := range []string{`class="lvl-2"`, `class="lvl-3"`, `href="#甲"`, `href="#乙"`, `>乙</a>`} {
+		if !strings.Contains(toc, want) {
+			t.Errorf("目录里找不到 %q：%s", want, toc)
+		}
+	}
+}
+
+// 页面外壳自带一份排版：在 <head> 里、正文之前，且明暗两套取值都在同一处。
+func TestSitePageCarriesStyleSheet(t *testing.T) {
+	page := string(renderSitePage(sitePage{
+		Title:     "标题",
+		SiteTitle: "站点",
+		HomeHref:  "/g/prj_x/index.html",
+		Sidebar:   "<aside class=\"sidebar\"></aside>\n",
+		TOC:       "<aside class=\"toc\"></aside>\n",
+		Body:      []byte("<table><tr><td>乙</td></tr></table>"),
+	}))
+
+	open := strings.Index(page, "<style>")
+	closeIdx := strings.Index(page, "</style>")
+	content := strings.Index(page, "<main")
+	sidebar := strings.Index(page, "class=\"sidebar\"")
+	if open < 0 || closeIdx < 0 {
+		t.Fatalf("外壳里没有内联样式：%s", page)
+	}
+	// 样式要在正文与侧栏之前：放到后面会让浏览器先按默认样式排一遍再重排。
+	if open >= closeIdx || closeIdx >= content || closeIdx >= sidebar {
+		t.Errorf("样式的落点不对：<style> %d、</style> %d、<main> %d、侧栏 %d", open, closeIdx, content, sidebar)
+	}
+	style := page[open:closeIdx]
+	for what, want := range map[string]string{
+		"表格边线": "border-collapse",
+		"斑马纹":  "nth-child(2n)",
+		"暗色取值": "prefers-color-scheme:dark",
+		"正文宽度": "688px",
+		"顶栏规则": ".nav-title{",
+	} {
+		if !strings.Contains(style, want) {
+			t.Errorf("样式里缺少%s（%q）", what, want)
+		}
+	}
+	if !strings.Contains(page, "<title>标题 | 站点</title>") {
+		t.Errorf("页面标题不是「页名 | 站名」：%s", page[:min(len(page), 400)])
+	}
+	if !strings.Contains(page, `href="/g/prj_x/index.html"`) {
+		t.Error("顶栏标题没有链到入口那一页")
+	}
+}
+
 // 一份清单与形态是否相称：入口、白名单、条目的类别三处。
-func TestValidateManifestForForm(t *testing.T) {
+func TestValidateManifestForSlot(t *testing.T) {
 	text := Entry{Path: "index.html", Kind: EntryKindText, Digest: ContentDigest([]byte("x"))}
 	asset := Entry{Path: "a.png", Kind: EntryKindAsset, AssetID: "ast_x"}
 
-	if err := ValidateManifestForForm(SiteFormStatic, Manifest{text, asset}); err != nil {
+	if err := ValidateManifestForSlot(SlotSite, Manifest{text, asset}); err != nil {
 		t.Errorf("相称的清单被拒: %v", err)
 	}
 	// 缺入口。
-	if err := ValidateManifestForForm(SiteFormStatic, Manifest{asset}); err == nil {
+	if err := ValidateManifestForSlot(SlotSite, Manifest{asset}); err == nil {
 		t.Error("缺入口文件的清单被接受了")
 	}
 	// docs 收 HTML 是错的。
 	docsHTML := Entry{Path: "index.html", Kind: EntryKindText, Digest: ContentDigest([]byte("x"))}
-	if err := ValidateManifestForForm(SiteFormDocs, Manifest{docsHTML}); err == nil {
+	if err := ValidateManifestForSlot(SlotDocs, Manifest{docsHTML}); err == nil {
 		t.Error("docs 形态接受了 .html 文本条目")
 	}
 	// 同一个路径不能既是文本又是资产。
 	conflict := Entry{Path: "index.html", Kind: EntryKindAsset, AssetID: "ast_x"}
-	if err := ValidateManifestForForm(SiteFormStatic, Manifest{conflict}); err == nil {
+	if err := ValidateManifestForSlot(SlotSite, Manifest{conflict}); err == nil {
 		t.Error("文本路径被当成了资产条目")
 	}
 }

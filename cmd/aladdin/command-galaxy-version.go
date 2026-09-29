@@ -17,7 +17,10 @@ func newGalaxyVersionCommand() *cobra.Command {
 		Long: `文件清单的一次不可变快照。
 
 保存即冻结：此后改草稿、改工程名称、删资产都不改变一个版本读回的清单。
-因此"发布过的页面内容变了"这件事不会发生。发布只能发布版本，不能发布草稿。`,
+因此"发布过的页面内容变了"这件事不会发生。发布只能发布版本，不能发布草稿。
+
+**版本按内容槽隔离**：每个槽各有自己的一串版本，序号在槽内递增。--slot 在单槽
+工程上可以省略；两个槽都有时必须给出。`,
 	}
 	cmd.AddCommand(
 		newGalaxyVersionSaveCommand(),
@@ -30,16 +33,18 @@ func newGalaxyVersionCommand() *cobra.Command {
 }
 
 func newGalaxyVersionSaveCommand() *cobra.Command {
-	return requirePermission(&cobra.Command{
+	var slot string
+
+	cmd := &cobra.Command{
 		Use:   "save <工程标识>",
-		Short: "把当前草稿保存成一个版本",
-		Long: `把当前草稿的清单冻结成一个不可变版本。
+		Short: "把某个槽的当前草稿保存成一个版本",
+		Long: `把某个内容槽当前草稿的清单冻结成一个不可变版本。
 
 连续保存两次相同清单会产生两个版本，而不是"检测到重复就不新增"：两次保存
 是两个不同的动作。
 
 这一次冻结**不搬运任何字节**：字节本来就是按内容摘要寻址的不可变对象，由多个
-版本共享。`,
+版本共享。**它也不碰另一个槽**。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, svc, done, err := galaxyCall()
@@ -48,8 +53,13 @@ func newGalaxyVersionSaveCommand() *cobra.Command {
 			}
 			defer done()
 
+			_, resolved, err := projectForSlot(ctx, svc, cmd, args[0])
+			if err != nil {
+				return err
+			}
 			resp, err := svc.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{
 				ProjectId: args[0],
+				Slot:      resolved,
 			}))
 			if err != nil {
 				return err
@@ -62,16 +72,22 @@ func newGalaxyVersionSaveCommand() *cobra.Command {
 				v.GetSeq(), v.GetId(), len(v.GetEntries()))
 			return nil
 		},
-	}, rbac.PermissionGalaxyProjectWrite)
+	}
+	addSlotFlag(cmd, &slot, "要保存哪个内容槽的草稿：site 或 docs（单槽工程可省略）")
+	requirePermission(cmd, rbac.PermissionGalaxyProjectWrite)
+	return cmd
 }
 
 func newGalaxyVersionListCommand() *cobra.Command {
-	return requirePermission(&cobra.Command{
-		Use:   "list <工程标识>",
-		Short: "列出版本",
-		Long: `列出工程的版本，按序号排序。
+	var slot string
 
-序号只用于展示与排序：删除一个版本会让后续序号出现空洞，这不是错误。`,
+	cmd := &cobra.Command{
+		Use:   "list <工程标识>",
+		Short: "列出某个内容槽的版本",
+		Long: `列出某个内容槽的版本，按序号排序。
+
+序号只用于展示与排序：删除一个版本会让后续序号出现空洞，这不是错误。两个槽
+各数各的，因此它们各自的第一个版本序号都是 1。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, svc, done, err := galaxyCall()
@@ -80,8 +96,13 @@ func newGalaxyVersionListCommand() *cobra.Command {
 			}
 			defer done()
 
+			_, resolved, err := projectForSlot(ctx, svc, cmd, args[0])
+			if err != nil {
+				return err
+			}
 			resp, err := svc.ListVersions(ctx, connect.NewRequest(&galaxyv1.ListVersionsRequest{
 				ProjectId: args[0],
+				Slot:      resolved,
 			}))
 			if err != nil {
 				return err
@@ -100,11 +121,14 @@ func newGalaxyVersionListCommand() *cobra.Command {
 			}
 			return nil
 		},
-	}, rbac.PermissionGalaxyProjectRead)
+	}
+	addSlotFlag(cmd, &slot, "要列出哪个内容槽的版本：site 或 docs（单槽工程可省略）")
+	requirePermission(cmd, rbac.PermissionGalaxyProjectRead)
+	return cmd
 }
 
 func newGalaxyVersionGetCommand() *cobra.Command {
-	var entryPath string
+	var slot, entryPath string
 
 	cmd := &cobra.Command{
 		Use:   "get <工程标识> <版本标识>",
@@ -123,9 +147,14 @@ func newGalaxyVersionGetCommand() *cobra.Command {
 			}
 			defer done()
 
+			_, resolved, err := projectForSlot(ctx, svc, cmd, args[0])
+			if err != nil {
+				return err
+			}
 			resp, err := svc.GetVersion(ctx, connect.NewRequest(&galaxyv1.GetVersionRequest{
 				ProjectId: args[0],
 				VersionId: args[1],
+				Slot:      resolved,
 			}))
 			if err != nil {
 				return err
@@ -153,13 +182,16 @@ func newGalaxyVersionGetCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&entryPath, "path", "", "要读的文件在文件组里的路径")
+	addSlotFlag(cmd, &slot, "这个版本属于哪个内容槽：site 或 docs（单槽工程可省略）")
 
 	requirePermission(cmd, rbac.PermissionGalaxyProjectRead)
 	return cmd
 }
 
 func newGalaxyVersionPullCommand() *cobra.Command {
-	return requirePermission(&cobra.Command{
+	var slot string
+
+	cmd := &cobra.Command{
 		Use:   "pull <工程标识> <版本标识> <目录>",
 		Short: "把某个版本整组写到本地目录",
 		Long: `把某个版本整组写到本地目录，路径与内容都与该版本一致。
@@ -173,9 +205,14 @@ func newGalaxyVersionPullCommand() *cobra.Command {
 			}
 			defer done()
 
+			_, resolved, err := projectForSlot(ctx, svc, cmd, args[0])
+			if err != nil {
+				return err
+			}
 			resp, err := svc.GetVersion(ctx, connect.NewRequest(&galaxyv1.GetVersionRequest{
 				ProjectId: args[0],
 				VersionId: args[1],
+				Slot:      resolved,
 			}))
 			if err != nil {
 				return err
@@ -187,7 +224,10 @@ func newGalaxyVersionPullCommand() *cobra.Command {
 			printf(cmd.OutOrStdout(), "已写出 %d 个文件到 %s\n", len(entries), args[2])
 			return nil
 		},
-	}, rbac.PermissionGalaxyProjectRead)
+	}
+	addSlotFlag(cmd, &slot, "这个版本属于哪个内容槽：site 或 docs（单槽工程可省略）")
+	requirePermission(cmd, rbac.PermissionGalaxyProjectRead)
+	return cmd
 }
 
 // findEntry 按路径在清单里找一条条目。
@@ -201,12 +241,15 @@ func findEntry(entries []*galaxyv1.FileEntry, entryPath string) (*galaxyv1.FileE
 }
 
 func newGalaxyVersionDeleteCommand() *cobra.Command {
+	var slot string
+
 	cmd := &cobra.Command{
 		Use:   "delete <工程标识> <版本标识>",
 		Short: "删除一个版本",
 		Long: `删除一个版本。
 
-被当前发布指向的版本不可删——那会让发布地址指向一个不存在的版本。
+被**它所属槽的**发布指向的版本不可删——那会让那条发布地址指向一个不存在的
+版本。另一个槽的发布指针不影响这个判定。
 这是危险操作：交互式下需要二次确认，非交互式环境下必须显式传入 --yes。`,
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -223,9 +266,14 @@ func newGalaxyVersionDeleteCommand() *cobra.Command {
 			}
 			defer done()
 
+			_, resolved, err := projectForSlot(ctx, svc, cmd, projectID)
+			if err != nil {
+				return err
+			}
 			resp, err := svc.DeleteVersion(ctx, connect.NewRequest(&galaxyv1.DeleteVersionRequest{
 				ProjectId: projectID,
 				VersionId: versionID,
+				Slot:      resolved,
 			}))
 			if err != nil {
 				return err
@@ -237,20 +285,23 @@ func newGalaxyVersionDeleteCommand() *cobra.Command {
 			return nil
 		},
 	}
+	addSlotFlag(cmd, &slot, "这个版本属于哪个内容槽：site 或 docs（单槽工程可省略）")
 	requirePermission(cmd, rbac.PermissionGalaxyProjectWrite)
 	return markDangerous(cmd)
 }
 
-// newGalaxyValidateCommand 校验**已保存的草稿**能不能发布。
+// newGalaxyValidateCommand 校验**某一个槽已保存的草稿**能不能发布。
 //
 // 它校验的是草稿而不是"你手上这一份"：内容的写入只有命令行一条路径（push 整组
 // 表达期望状态），因此"校验一份还没保存的内容"这个形状不存在。事实上的用法是
 // `push && validate && publish`，每一步的失败都能被单独处理。
 func newGalaxyValidateCommand() *cobra.Command {
+	var slot string
+
 	cmd := &cobra.Command{
 		Use:   "validate <工程标识>",
-		Short: "校验当前草稿能不能发布",
-		Long: `校验当前草稿能不能发布。
+		Short: "校验某个槽的当前草稿能不能发布",
+		Long: `校验某个内容槽的当前草稿能不能发布。
 
 它与服务端的发布前置校验是同一份规则，因此"这里通过"与"发布能成功"是同一个
 结论。
@@ -265,8 +316,13 @@ func newGalaxyValidateCommand() *cobra.Command {
 			}
 			defer done()
 
+			_, resolved, err := projectForSlot(ctx, svc, cmd, args[0])
+			if err != nil {
+				return err
+			}
 			resp, err := svc.ValidateDraft(ctx, connect.NewRequest(&galaxyv1.ValidateDraftRequest{
 				ProjectId: args[0],
+				Slot:      resolved,
 			}))
 			if err != nil {
 				return err
@@ -291,6 +347,7 @@ func newGalaxyValidateCommand() *cobra.Command {
 			return nil
 		},
 	}
+	addSlotFlag(cmd, &slot, "要校验哪个内容槽的草稿：site 或 docs（单槽工程可省略）")
 
 	requirePermission(cmd, rbac.PermissionGalaxyProjectRead)
 	return cmd

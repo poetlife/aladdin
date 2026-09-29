@@ -5,11 +5,13 @@ import { Trash2 } from 'lucide-react'
 
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
-import type { Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import type { ContentSlot, Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { formatTime } from './format-time'
 
 interface VersionListProps {
   projectId: string
+  /** 这个列表是**哪个内容槽**的。版本按槽隔离，删除也要指名道姓。 */
+  slot: ContentSlot
   versions: readonly Version[]
   /** 是否持有写权限。无权限时不渲染删除入口。 */
   canWrite: boolean
@@ -34,6 +36,7 @@ interface failure {
  */
 export function VersionList({
   projectId,
+  slot,
   versions,
   canWrite,
   onChanged,
@@ -45,7 +48,7 @@ export function VersionList({
     setBusyId(versionId)
     setFailure(null)
     try {
-      await galaxyApi.deleteVersion(projectId, versionId)
+      await galaxyApi.deleteVersion(projectId, slot, versionId)
       await onChanged()
     } catch (err) {
       // 删除被拒的典型原因是"这个版本正在发布中"，服务端的错误信息会说明。

@@ -72,40 +72,63 @@ func TestProjectMetaLimits(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	if _, err := f.service.CreateProject(ctx, testOwner, strings.Repeat("名", ProjectNameMaxRunes+1), "", SiteFormStatic); !errors.Is(err, ErrProjectNameTooLong) {
+	if _, err := f.service.CreateProject(ctx, testOwner, strings.Repeat("名", ProjectNameMaxRunes+1), "", []ContentSlot{SlotSite}); !errors.Is(err, ErrProjectNameTooLong) {
 		t.Errorf("超长名称 err = %v，期望 ErrProjectNameTooLong", err)
 	}
-	if _, err := f.service.CreateProject(ctx, testOwner, "名", strings.Repeat("简", ProjectDescriptionMaxRunes+1), SiteFormStatic); !errors.Is(err, ErrProjectDescriptionTooLong) {
+	if _, err := f.service.CreateProject(ctx, testOwner, "名", strings.Repeat("简", ProjectDescriptionMaxRunes+1), []ContentSlot{SlotSite}); !errors.Is(err, ErrProjectDescriptionTooLong) {
 		t.Errorf("超长简介 err = %v，期望 ErrProjectDescriptionTooLong", err)
 	}
 	// 中文按字数算：ProjectNameMaxRunes 个汉字必须能通过。
-	if _, err := f.service.CreateProject(ctx, testOwner, strings.Repeat("名", ProjectNameMaxRunes), "", SiteFormStatic); err != nil {
+	if _, err := f.service.CreateProject(ctx, testOwner, strings.Repeat("名", ProjectNameMaxRunes), "", []ContentSlot{SlotSite}); err != nil {
 		t.Errorf("恰好到上限的中文名称被拒: %v", err)
 	}
 }
 
-// **形态创建时定下，此后不可改**：缺形态（UNSPECIFIED 落到零值）也拒绝。
+// **内容槽创建时至少选一个，此后只增不删。**
 //
-// 允许改形态等于让历史版本的产物无法复现——同一个 `.md` 在两种形态下的产物
-// 完全不同。
-func TestSiteFormIsFixedAtCreation(t *testing.T) {
+// 让历史版本无法复现的从来不是"多了一个槽"，而是"同一个槽换了语义"，因此槽的
+// 语义不可变、而槽可以加——这也是"文档是站点的补充"能成立的地方。
+func TestContentSlotsAreAddOnly(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	if _, err := f.service.CreateProject(ctx, testOwner, "没形态", "", ""); !errors.Is(err, ErrSiteFormInvalid) {
-		t.Errorf("缺形态 err = %v，期望 ErrSiteFormInvalid", err)
+	if _, err := f.service.CreateProject(ctx, testOwner, "没内容槽", "", nil); !errors.Is(err, ErrContentSlotInvalid) {
+		t.Errorf("一个槽都不给 err = %v，期望 ErrContentSlotInvalid", err)
 	}
-	project := f.createProjectForm(t, "文档站", SiteFormDocs)
-	if project.Form != SiteFormDocs {
-		t.Errorf("形态 = %q，期望 docs", project.Form)
+	if _, err := f.service.CreateProject(ctx, testOwner, "重复槽", "", []ContentSlot{SlotSite, SlotSite}); !errors.Is(err, ErrContentSlotInvalid) {
+		t.Errorf("重复的槽 err = %v，期望 ErrContentSlotInvalid", err)
 	}
-	// 改元数据**不动形态**。
+	project := f.createProjectSlots(t, "站点", SlotSite)
+	if slots := project.EnabledSlots(); len(slots) != 1 || slots[0] != SlotSite {
+		t.Fatalf("内容槽 = %v，期望恰好一个 site", slots)
+	}
+
+	// 改元数据**不动内容槽**。
 	updated, err := f.service.UpdateProject(ctx, testOwner, project.ID, "改名", "新简介")
 	if err != nil {
 		t.Fatalf("改元数据失败: %v", err)
 	}
-	if updated.Form != SiteFormDocs {
-		t.Errorf("改元数据之后形态 = %q，期望不变", updated.Form)
+	if slots := updated.EnabledSlots(); len(slots) != 1 || slots[0] != SlotSite {
+		t.Errorf("改元数据之后内容槽 = %v，期望不变", slots)
+	}
+
+	// 加一个文档槽，并让另一个槽先有内容：加完之后它的一切原样。
+	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>首页</p>")})
+	version := f.saveVersion(t, project.ID)
+	f.publish(t, project.ID, version.ID)
+	added, err := f.service.AddProjectSlot(ctx, testOwner, project.ID, SlotDocs)
+	if err != nil {
+		t.Fatalf("加内容槽失败: %v", err)
+	}
+	if slots := added.EnabledSlots(); len(slots) != 2 || slots[1] != SlotDocs {
+		t.Fatalf("加完之后内容槽 = %v，期望 site 与 docs 各一个", slots)
+	}
+	kept, _ := added.FindSlot(SlotSite)
+	if kept.CurrentPublicationID == "" {
+		t.Error("加一个槽之后，站点槽的发布指针被清掉了")
+	}
+	if _, err := f.service.AddProjectSlot(ctx, testOwner, project.ID, SlotDocs); !errors.Is(err, ErrSlotEnabled) {
+		t.Errorf("重复加同一个槽 err = %v，期望 ErrSlotEnabled", err)
 	}
 }
 
@@ -115,7 +138,7 @@ func TestDraftIsLazilyCreated(t *testing.T) {
 	project := f.createProject(t, "新工程")
 	ctx := context.Background()
 
-	draft, entries, err := f.service.GetDraft(ctx, testOwner, project.ID)
+	draft, entries, err := f.service.GetDraft(ctx, testOwner, project.ID, SlotSite)
 	if err != nil {
 		t.Fatalf("读取空草稿失败: %v", err)
 	}
@@ -124,7 +147,7 @@ func TestDraftIsLazilyCreated(t *testing.T) {
 	}
 	// 推送之后再读回。
 	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>你好</p>")})
-	draft, entries, err = f.service.GetDraft(ctx, testOwner, project.ID)
+	draft, entries, err = f.service.GetDraft(ctx, testOwner, project.ID, SlotSite)
 	if err != nil {
 		t.Fatalf("读取草稿失败: %v", err)
 	}
@@ -150,7 +173,7 @@ func TestPushDraftReplacesWholeSet(t *testing.T) {
 		f.textEntry(t, project.ID, "index.html", "<p>一</p>"),
 	})
 
-	draft, _, err := f.service.GetDraft(context.Background(), testOwner, project.ID)
+	draft, _, err := f.service.GetDraft(context.Background(), testOwner, project.ID, SlotSite)
 	if err != nil {
 		t.Fatalf("读取草稿失败: %v", err)
 	}
@@ -165,7 +188,7 @@ func TestPushDraftRequiresEntryFile(t *testing.T) {
 	project := f.createProject(t, "工程")
 	ctx := context.Background()
 
-	_, err := f.service.PushDraft(ctx, testOwner, project.ID, []Entry{
+	_, err := f.service.PushDraft(ctx, testOwner, project.ID, SlotSite, []Entry{
 		f.textEntry(t, project.ID, "about.html", "<p>关于</p>"),
 	})
 	if !errors.Is(err, ErrEntrySetInvalid) {
@@ -190,7 +213,7 @@ func TestVersionIsImmutable(t *testing.T) {
 		t.Fatalf("改元数据失败: %v", err)
 	}
 
-	got, _, err := f.service.GetVersion(context.Background(), testOwner, project.ID, version.ID)
+	got, _, err := f.service.GetVersion(context.Background(), testOwner, project.ID, SlotSite, version.ID)
 	if err != nil {
 		t.Fatalf("读取版本失败: %v", err)
 	}
@@ -215,11 +238,11 @@ func TestVersionUnaffectedByOtherDeletions(t *testing.T) {
 	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>三</p>")})
 	third := f.saveVersion(t, project.ID)
 
-	if err := f.service.DeleteVersion(ctx, testOwner, project.ID, second.ID); err != nil {
+	if err := f.service.DeleteVersion(ctx, testOwner, project.ID, SlotSite, second.ID); err != nil {
 		t.Fatalf("删除中间版本失败: %v", err)
 	}
 	for _, want := range []Version{first, third} {
-		got, _, err := f.service.GetVersion(ctx, testOwner, project.ID, want.ID)
+		got, _, err := f.service.GetVersion(ctx, testOwner, project.ID, SlotSite, want.ID)
 		if err != nil {
 			t.Fatalf("读取版本 %s 失败: %v", want.ID, err)
 		}
@@ -249,7 +272,7 @@ func TestSavingTwiceCreatesTwoVersions(t *testing.T) {
 		t.Errorf("第二个版本的序号 = %d，期望 %d", second.Seq, first.Seq+1)
 	}
 	// 两份清单一样，但它们是两条记录——把"我明明保存了两次"合成一次是需要解释的。
-	versions, err := f.service.ListVersions(context.Background(), testOwner, project.ID)
+	versions, err := f.service.ListVersions(context.Background(), testOwner, project.ID, SlotSite)
 	if err != nil {
 		t.Fatalf("列出版本失败: %v", err)
 	}
@@ -273,18 +296,18 @@ func TestSequenceIsNotAnIdentifier(t *testing.T) {
 	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>二</p>")})
 	second := f.saveVersion(t, project.ID)
 
-	if err := f.service.DeleteVersion(ctx, testOwner, project.ID, first.ID); err != nil {
+	if err := f.service.DeleteVersion(ctx, testOwner, project.ID, SlotSite, first.ID); err != nil {
 		t.Fatalf("删除失败: %v", err)
 	}
 	// 序号 1 空了，但序号 2 的那个版本仍然按**它自己的标识**读得到。
-	got, _, err := f.service.GetVersion(ctx, testOwner, project.ID, second.ID)
+	got, _, err := f.service.GetVersion(ctx, testOwner, project.ID, SlotSite, second.ID)
 	if err != nil {
 		t.Fatalf("读取版本失败: %v", err)
 	}
 	if got.Seq != 2 {
 		t.Errorf("序号 = %d，期望保持 2（空洞是允许的）", got.Seq)
 	}
-	if _, _, err := f.service.GetVersion(ctx, testOwner, project.ID, "ver_不存在"); !errors.Is(err, ErrVersionNotFound) {
+	if _, _, err := f.service.GetVersion(ctx, testOwner, project.ID, SlotSite, "ver_不存在"); !errors.Is(err, ErrVersionNotFound) {
 		t.Errorf("err = %v，期望 ErrVersionNotFound", err)
 	}
 }
@@ -295,7 +318,7 @@ func TestDraftCannotBePublished(t *testing.T) {
 	project := f.createProject(t, "工程")
 	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>只有草稿</p>")})
 
-	if _, err := f.service.Publish(context.Background(), testOwner, project.ID, "ver_不存在"); !errors.Is(err, ErrVersionNotFound) {
+	if _, err := f.service.Publish(context.Background(), testOwner, project.ID, SlotSite, "ver_不存在"); !errors.Is(err, ErrVersionNotFound) {
 		t.Errorf("err = %v，期望 ErrVersionNotFound", err)
 	}
 	// 发布没有被记录，指针也没有动。
@@ -303,7 +326,7 @@ func TestDraftCannotBePublished(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取工程失败: %v", err)
 	}
-	if stored.CurrentPublicationID != "" {
+	if slot, _ := stored.FindSlot(SlotSite); slot.CurrentPublicationID != "" {
 		t.Error("被拒的发布动了发布指针")
 	}
 }
@@ -331,7 +354,7 @@ func TestReferencesComeFromManifest(t *testing.T) {
 		f.textEntry(t, project.ID, "index.html", `<img src="asset://`+second.ID+`">`),
 		{Path: "b.png", Kind: EntryKindAsset, AssetID: second.ID},
 	})
-	reloaded, _, err := f.service.GetVersion(context.Background(), testOwner, project.ID, version.ID)
+	reloaded, _, err := f.service.GetVersion(context.Background(), testOwner, project.ID, SlotSite, version.ID)
 	if err != nil {
 		t.Fatalf("读取版本失败: %v", err)
 	}
@@ -360,19 +383,19 @@ func TestOwnershipCannotBeBypassed(t *testing.T) {
 			return err
 		}},
 		{"列工程里的版本", func() error {
-			_, err := f.service.ListVersions(ctx, testOther, project.ID)
+			_, err := f.service.ListVersions(ctx, testOther, project.ID, SlotSite)
 			return err
 		}},
 		{"读草稿", func() error {
-			_, _, err := f.service.GetDraft(ctx, testOther, project.ID)
+			_, _, err := f.service.GetDraft(ctx, testOther, project.ID, SlotSite)
 			return err
 		}},
 		{"推送草稿", func() error {
-			_, err := f.service.PushDraft(ctx, testOther, project.ID, nil)
+			_, err := f.service.PushDraft(ctx, testOther, project.ID, SlotSite, nil)
 			return err
 		}},
 		{"读版本", func() error {
-			_, _, err := f.service.GetVersion(ctx, testOther, project.ID, version.ID)
+			_, _, err := f.service.GetVersion(ctx, testOther, project.ID, SlotSite, version.ID)
 			return err
 		}},
 		{"改元数据", func() error {
@@ -380,7 +403,7 @@ func TestOwnershipCannotBeBypassed(t *testing.T) {
 			return err
 		}},
 		{"删版本", func() error {
-			return f.service.DeleteVersion(ctx, testOther, project.ID, version.ID)
+			return f.service.DeleteVersion(ctx, testOther, project.ID, SlotSite, version.ID)
 		}},
 		{"列资产", func() error {
 			_, _, err := f.service.ListAssets(ctx, testOther, project.ID, nil)
@@ -394,11 +417,11 @@ func TestOwnershipCannotBeBypassed(t *testing.T) {
 			return f.service.DeleteAsset(ctx, testOther, project.ID, asset.ID)
 		}},
 		{"校验草稿", func() error {
-			_, err := f.service.ValidateDraft(ctx, testOther, project.ID)
+			_, err := f.service.ValidateDraft(ctx, testOther, project.ID, SlotSite)
 			return err
 		}},
 		{"预览草稿", func() error {
-			_, err := f.service.PreviewDraft(ctx, testOther, project.ID, "")
+			_, err := f.service.PreviewDraft(ctx, testOther, project.ID, SlotSite, "")
 			return err
 		}},
 		{"上传内容对象", func() error {
@@ -406,11 +429,11 @@ func TestOwnershipCannotBeBypassed(t *testing.T) {
 			return err
 		}},
 		{"发布", func() error {
-			_, err := f.service.Publish(ctx, testOther, project.ID, version.ID)
+			_, err := f.service.Publish(ctx, testOther, project.ID, SlotSite, version.ID)
 			return err
 		}},
 		{"撤回", func() error {
-			return f.service.Unpublish(ctx, testOther, project.ID)
+			return f.service.Unpublish(ctx, testOther, project.ID, SlotSite)
 		}},
 		{"删工程", func() error {
 			return f.service.DeleteProject(ctx, testOther, project.ID)
@@ -449,7 +472,9 @@ func TestForeignAndMissingProjectsAreIndistinguishable(t *testing.T) {
 	if errForeign.Error() != errMissing.Error() {
 		t.Errorf("错误信息不同：%q / %q", errForeign, errMissing)
 	}
-	if foreign != missing {
+	// 工程带上了内容槽（一个切片），因此不能整值比较——比的是"两边给出的是不是
+	// 同一个东西"，而零值工程的标识都是空的。
+	if foreign.ID != missing.ID {
 		t.Error("两种情形返回的工程不同")
 	}
 }
@@ -468,7 +493,7 @@ func TestDeleteProjectRemovesEverything(t *testing.T) {
 	ctx := context.Background()
 
 	// 删除之前：私有区有对象、公开区有副本、地址可达。
-	if _, _, err := f.service.PublishedEntry(ctx, project.ID, ""); err != nil {
+	if _, err := f.service.PublishedEntry(ctx, project.ID, SlotSite, ""); err != nil {
 		t.Fatalf("删除之前应当可达: %v", err)
 	}
 	promotedBefore := f.public.Count()
@@ -481,7 +506,7 @@ func TestDeleteProjectRemovesEverything(t *testing.T) {
 	if _, err := f.store.GetProject(ctx, project.ID); !errors.Is(err, ErrProjectNotFound) {
 		t.Errorf("工程仍在: %v", err)
 	}
-	if versions, err := f.store.ListVersions(ctx, project.ID); err != nil || len(versions) != 0 {
+	if versions, err := f.store.ListVersions(ctx, project.ID, SlotSite); err != nil || len(versions) != 0 {
 		t.Errorf("版本仍在: %v / %d 条", err, len(versions))
 	}
 	if assets, err := f.store.ListAssets(ctx, project.ID, nil); err != nil || len(assets) != 0 {
@@ -496,7 +521,7 @@ func TestDeleteProjectRemovesEverything(t *testing.T) {
 		t.Error("公开区的副本被删掉了——那需要一次对账，不属于删除语义")
 	}
 	// 发布地址变成"不存在"。
-	if _, _, err := f.service.PublishedEntry(ctx, project.ID, ""); !errors.Is(err, ErrPublicationNotFound) {
+	if _, err := f.service.PublishedEntry(ctx, project.ID, SlotSite, ""); !errors.Is(err, ErrPublicationNotFound) {
 		t.Errorf("删除之后仍能取到产物: %v", err)
 	}
 }

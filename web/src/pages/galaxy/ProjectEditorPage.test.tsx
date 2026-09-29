@@ -23,8 +23,8 @@ import {
   ListAssetsResponseSchema,
   ListVersionsResponseSchema,
   PreviewDraftResponseSchema,
+  ContentSlot,
   ProjectSchema,
-  SiteForm,
   UpdateAssetResponseSchema,
   ValidateDraftResponseSchema,
   ValidationProblemSchema,
@@ -200,7 +200,11 @@ beforeEach(() => {
 
   vi.mocked(galaxyApi.getProject).mockResolvedValue(
     create(GetProjectResponseSchema, {
-      project: create(ProjectSchema, { id: 'p1', name: '我的工程', form: SiteForm.STATIC }),
+      project: create(ProjectSchema, {
+        id: 'p1',
+        name: '我的工程',
+        slots: [{ slot: ContentSlot.SITE }],
+      }),
     }),
   )
   vi.mocked(galaxyApi.getDraft).mockResolvedValue(
@@ -282,19 +286,19 @@ describe('工作台的形态', () => {
       candidate.textContent?.includes('单独打开'),
     )
 
-    expect(link?.getAttribute('href')).toBe('/galaxy/p1/preview')
+    expect(link?.getAttribute('href')).toBe('/galaxy/p1/preview?slot=site')
     expect(link?.getAttribute('target')).toBe('_blank')
   })
 
-  // `static` 形态逐页预览，因此预览侧要能选看哪一页。
-  it('static 形态的预览侧有页面选择器，且默认落在入口页', async () => {
+  // `site` 槽逐页预览，因此预览侧要能选看哪一页。
+  it('站点槽的预览侧有页面选择器，且默认落在入口页', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
       caps(),
     )
 
     await renderEditor()
 
-    expect(galaxyApi.previewDraft).toHaveBeenCalledWith('p1', 'index.html')
+    expect(galaxyApi.previewDraft).toHaveBeenCalledWith('p1', ContentSlot.SITE, 'index.html')
   })
 
   // 资产与版本是"一批东西"，与主区并排会让主区长期窄掉一截；改成从顶栏以弹层打开。
@@ -387,7 +391,7 @@ describe('校验结论自动产生', () => {
     const container = await renderEditor()
 
     // 校验的是**服务端的草稿**：请求里不带内容，写入只有命令行一条路。
-    expect(galaxyApi.validateDraft).toHaveBeenCalledWith('p1')
+    expect(galaxyApi.validateDraft).toHaveBeenCalledWith('p1', ContentSlot.SITE)
     expect(container.textContent).toContain('可以发布')
   })
 

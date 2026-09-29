@@ -10,14 +10,14 @@ import (
 )
 
 var (
-	// ErrVersionPublished 表示这个版本正被当前发布指向，因此不能删。
+	// ErrVersionPublished 表示这个版本正被**它所属槽的**发布指向，因此不能删。
 	//
-	// 删掉它会让发布地址指向一个不存在的版本（对外表现是"站点突然没了"，
+	// 删掉它会让那条发布地址指向一个不存在的版本（对外表现是"站点突然没了"，
 	// 而用户刚才看到的是"已发布"）。
 	ErrVersionPublished = errors.New("版本正在被发布")
 )
 
-// SaveVersion 把草稿的当前清单保存成一个不可变版本。
+// SaveVersion 把**某一个槽**的草稿当前清单保存成一个不可变版本。
 //
 // 三条不可变性约定都由本函数的形状保证，不靠约定俗成：
 //
@@ -29,23 +29,22 @@ var (
 //     重复就不新增"。两份看起来一样的清单对用户是两次不同的保存动作。
 //
 // 这一次冻结**不搬运任何字节**：字节本来就是按内容摘要寻址的不可变对象，由
-// 多个版本共享。
-func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string) (Version, error) {
-	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
-	if err != nil {
+// 多个版本共享。**它也不碰另一个槽**。
+func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string, slot ContentSlot) (Version, error) {
+	if _, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot); err != nil {
 		return Version{}, err
 	}
 	// 草稿行不存在时按空清单处理：这与"推送过一次空清单"在编辑上等价，
 	// 而把"还没推过"表现成一个错误会让新工程上的第一次保存先失败一次。
-	draft, err := s.store.GetDraft(ctx, projectID)
+	draft, err := s.store.GetDraft(ctx, projectID, slot)
 	if errors.Is(err, ErrDraftNotFound) {
-		draft = Draft{ProjectID: projectID}
+		draft = Draft{ProjectID: projectID, Slot: slot}
 	} else if err != nil {
 		return Version{}, err
 	}
 	// 一份没有入口文件的清单发出去是一个打不开的站点，因此这里挡住它——
 	// 与 PushDraft 是同一处判断。
-	if err := ValidateManifestForForm(project.Form, draft.Manifest); err != nil {
+	if err := ValidateManifestForSlot(slot, draft.Manifest); err != nil {
 		return Version{}, err
 	}
 	versionID, err := newVersionID()
@@ -55,6 +54,7 @@ func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string) 
 	saved, err := s.store.CreateVersion(ctx, Version{
 		ID:                 versionID,
 		ProjectID:          projectID,
+		Slot:               slot,
 		Manifest:           draft.Manifest,
 		RenderRulesVersion: RenderRulesVersion,
 		SavedAt:            s.now(),
@@ -66,6 +66,7 @@ func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string) 
 	if s.logger != nil {
 		s.logger.Info("已保存版本",
 			zap.String("project_id", projectID),
+			zap.String("slot", string(slot)),
 			zap.String("version_id", saved.ID),
 			zap.Int64("seq", saved.Seq),
 			zap.String("subject_id", subjectID),
@@ -74,67 +75,71 @@ func (s *Service) SaveVersion(ctx context.Context, subjectID, projectID string) 
 	return saved, nil
 }
 
-// ListVersions 列出工程的版本，按序号升序。清单随行返回，但不带读取地址。
-func (s *Service) ListVersions(ctx context.Context, subjectID, projectID string) ([]Version, error) {
-	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+// ListVersions 列出**某一个槽**的版本，按序号升序。清单随行返回，但不带读取地址。
+func (s *Service) ListVersions(ctx context.Context, subjectID, projectID string, slot ContentSlot) ([]Version, error) {
+	if _, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot); err != nil {
 		return nil, err
 	}
-	return s.store.ListVersions(ctx, projectID)
+	return s.store.ListVersions(ctx, projectID, slot)
 }
 
 // GetVersion 读取一个版本，并给每一条条目附上短时读取地址。
-func (s *Service) GetVersion(ctx context.Context, subjectID, projectID, versionID string) (Version, []EntryView, error) {
-	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
+func (s *Service) GetVersion(ctx context.Context, subjectID, projectID string, slot ContentSlot, versionID string) (Version, []EntryView, error) {
+	if _, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot); err != nil {
 		return Version{}, nil, err
 	}
-	version, err := s.store.GetVersion(ctx, projectID, versionID)
+	version, err := s.store.GetVersion(ctx, projectID, slot, versionID)
 	if err != nil {
 		return Version{}, nil, err
 	}
 	return version, s.attachURLs(ctx, projectID, version.Manifest), nil
 }
 
-// DeleteVersion 删除一个版本。
+// DeleteVersion 删除**某一个槽**的一个版本。
 //
-// **被当前发布指向的版本不可删**：那会让发布地址指向一个不存在的版本。删别
-// 的版本时，草稿与其它版本不受影响，序号也不重排（因此会留下空洞）。
-func (s *Service) DeleteVersion(ctx context.Context, subjectID, projectID, versionID string) error {
-	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+// **被它所属槽的发布指向的版本不可删**：那会让那条发布地址指向一个不存在的
+// 版本。删别的版本时，草稿与其它版本不受影响，序号也不重排（因此会留下空洞）。
+// **另一个槽的发布指针不影响这个判定**。
+func (s *Service) DeleteVersion(ctx context.Context, subjectID, projectID string, slot ContentSlot, versionID string) error {
+	project, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot)
 	if err != nil {
 		return err
 	}
-	if _, err := s.store.GetVersion(ctx, projectID, versionID); err != nil {
+	if _, err := s.store.GetVersion(ctx, projectID, slot, versionID); err != nil {
 		return err
 	}
-	published, err := s.versionIsPublished(ctx, project, versionID)
+	published, err := s.versionIsPublished(ctx, project, slot, versionID)
 	if err != nil {
 		return err
 	}
 	if published {
 		return ErrVersionPublished
 	}
-	if err := s.store.DeleteVersion(ctx, projectID, versionID); err != nil {
+	if err := s.store.DeleteVersion(ctx, projectID, slot, versionID); err != nil {
 		return err
 	}
 	s.publish(projectID)
 	if s.logger != nil {
 		s.logger.Info("已删除版本",
 			zap.String("project_id", projectID),
+			zap.String("slot", string(slot)),
 			zap.String("version_id", versionID),
 			zap.String("subject_id", subjectID))
 	}
 	return nil
 }
 
-// versionIsPublished 判定一个版本是不是当前发布指向的那一个。
+// versionIsPublished 判定**某一个槽**的版本是不是该槽当前发布指向的那一个。
 //
 // 判据是**发布记录里的版本标识**，而不是"重新算一遍发布标识再比较"：指针指向
-// 的是记录，记录里写着它发布的是哪个版本，这条链只有一个来源。
-func (s *Service) versionIsPublished(ctx context.Context, project Project, versionID string) (bool, error) {
-	if project.CurrentPublicationID == "" {
+// 的是记录，记录里写着它发布的是哪个版本，这条链只有一个来源。**另一个槽的
+// 指针不参与这个判定**。
+func (s *Service) versionIsPublished(ctx context.Context, project Project, slot ContentSlot, versionID string) (bool, error) {
+	enabled, ok := project.FindSlot(slot)
+	if !ok || enabled.CurrentPublicationID == "" {
 		return false, nil
 	}
-	publication, err := s.store.GetPublication(ctx, project.CurrentPublicationID)
+	publication, err := s.store.GetPublication(ctx, enabled.CurrentPublicationID)
 	if err != nil {
 		if errors.Is(err, ErrPublicationNotFound) {
 			// 指针指向一条不存在的记录是数据不一致，不把它当成"未发布"。
@@ -145,27 +150,34 @@ func (s *Service) versionIsPublished(ctx context.Context, project Project, versi
 	return publication.VersionID == versionID, nil
 }
 
-// referencingVersions 返回引用了某个资产的版本，按序号升序。
+// referencingVersions 返回引用了某个资产的版本，按（槽，序号）升序。
 //
 // **它的输入只有版本的文件清单**：一个版本引用了哪些资产由清单里的资产条目
 // 直接读出，不解析任何文本——清单与文本会漂移，而漂移的表现是"发布时校验通过
 // 但页面上一张图裂开"，或者反过来，把一个不再被引用的资产也搬上公开区。
+//
+// **资产是工程级的，因此两个槽都要查**：一个资产可能只被站点槽引用、只被文档槽
+// 引用，或两个槽都引用它。漏查一个槽的表现是"删掉了还在用的资产"，而那要到
+// 发布时才会被发现。
 func (s *Service) referencingVersions(ctx context.Context, projectID, assetID string) ([]Version, error) {
-	versions, err := s.store.ListVersions(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
 	var referencing []Version
-	for _, version := range versions {
-		for _, referenced := range version.Manifest.AssetIDs() {
-			if referenced == assetID {
-				// 只留展示需要的字段：清单不该被带进错误信息与日志。
-				referencing = append(referencing, Version{
-					ID:        version.ID,
-					ProjectID: version.ProjectID,
-					Seq:       version.Seq,
-				})
-				break
+	for _, slot := range ContentSlots() {
+		versions, err := s.store.ListVersions(ctx, projectID, slot)
+		if err != nil {
+			return nil, err
+		}
+		for _, version := range versions {
+			for _, referenced := range version.Manifest.AssetIDs() {
+				if referenced == assetID {
+					// 只留展示需要的字段：清单不该被带进错误信息与日志。
+					referencing = append(referencing, Version{
+						ID:        version.ID,
+						ProjectID: version.ProjectID,
+						Slot:      version.Slot,
+						Seq:       version.Seq,
+					})
+					break
+				}
 			}
 		}
 	}

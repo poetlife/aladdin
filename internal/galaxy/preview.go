@@ -42,9 +42,9 @@ const PreviewGrantTTL = 5 * time.Minute
 
 // ErrPreviewNotFound 是一次预览请求"取不到东西"的唯一否定结论。
 //
-// 凭证不存在、凭证过期、凭证不属于这个工程、工程不存在、路径不在草稿里、草稿还是
-// 空的——**六者同一个结论**，与发布态那五者同一个道理：区分它们等于告诉一个猜地址
-// 的人"这个工程的草稿是真的，只是过期了"。
+// 凭证不存在、凭证过期、**凭证不属于这个槽**、凭证不属于这个工程、工程不存在、
+// 路径不在草稿里、草稿还是空的——**这些全是同一个结论**，与发布态那几个同一
+// 个道理：区分它们等于告诉一个猜地址的人"这个工程的草稿是真的，只是过期了"。
 var ErrPreviewNotFound = errors.New("预览地址不存在")
 
 // ErrPreviewUnavailable 表示这个部署没有预览这条路（没有发布域或没有对象存储）。
@@ -52,13 +52,17 @@ var ErrPreviewUnavailable = errors.New("预览功能未启用")
 
 // PreviewGrant 是一条预览凭证。
 //
-// 它**只做一件事**：把"这个工程的草稿可以按路径取"授权给任何拿到这个字符串的人，
-// 直到失效时刻。它不承载别的能力——读不了别的工程，写不了，也发不了布。
+// 它**只做一件事**：把"这个工程**这个槽**的草稿可以按路径取"授权给任何拿到这个
+// 字符串的人，直到失效时刻。它不承载别的能力——读不了别的工程、别的槽，写不了，
+// 也发不了布。
 type PreviewGrant struct {
 	// Token 是凭证本体，出现在预览地址的路径里。
 	Token string
 	// ProjectID 是它授权的工程。
 	ProjectID string
+	// Slot 是它授权的内容槽。**凭证绑在（工程，槽）上**：拿站点槽的票去取文档槽
+	// 的路径，与"这一页不存在"没有区别。
+	Slot ContentSlot
 	// SubjectID 是签发时的主体，留痕用。
 	SubjectID string
 	// ExpiresAt 是失效时刻。**判定只比较它与现在**：一条没被清掉的行也不会多给
@@ -76,34 +80,56 @@ func (g PreviewGrant) Expired(now time.Time) bool { return !now.Before(g.Expires
 // 可读信息。
 func NewPreviewGrantToken() (string, error) { return newID("") }
 
-// PreviewRoot 返回一个工程在预览态下的**站点根路径**，形如
-// `/g/p/<凭证>/<工程标识>/`。
+// PreviewRoot 返回**某一个槽**在预览态下的**站点根路径**。
+//
+// 形状是 `/g/p/<凭证>/<工程标识>/<槽的根后缀>`——**与发布态的布局逐段对齐**：
+// site 槽到工程标识为止，docs 槽再多一个 `docs/`。
 //
 // 它有两个身份，两者必须一致：浏览器眼里它是页面的目录（相对地址按它解析），
 // 交付那一步它是"发布根换成预览根"那次替换的目标。
-func PreviewRoot(projectID, token string) string {
-	return PublicPathPrefix + PreviewPathSegment + "/" + token + "/" + projectID + "/"
+func PreviewRoot(projectID, token string, slot ContentSlot) string {
+	return PublicPathPrefix + PreviewPathSegment + "/" + token + "/" + projectID + "/" + slot.RootSuffix()
 }
 
-// SplitPreviewPath 把一条预览地址拆成（凭证，工程标识，条目路径）（唯一入口）。
+// SplitPreviewPath 把一条预览地址拆成（凭证，工程标识，内容槽，条目路径）
+// （唯一入口）。
+//
+// 槽的判定与 SplitSitePath **是同一件事**（次段是 `docs` 即文档槽），因此预览与
+// 发布的地址在槽这一层上长得完全一样——两处各写一份的表现是"预览里能点开、
+// 发布后点不开"。
 //
 // 第二个返回值为假表示这条地址不是一次预览请求。与 SplitSitePath 一样，**它是
-// 形状解析，不是判定**：凭证真伪与路径是否存在由 OpenPreview 回答。
-func SplitPreviewPath(requestPath string) (token, projectID, entryPath string, ok bool) {
+// 形状解析，不是判定**：凭证真伪、槽是否绑定、路径是否存在由 OpenPreview 回答。
+func SplitPreviewPath(requestPath string) (token, projectID string, slot ContentSlot, entryPath string, ok bool) {
 	prefix := PublicPathPrefix + PreviewPathSegment + "/"
 	if !strings.HasPrefix(requestPath, prefix) {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 	rest := strings.TrimPrefix(requestPath, prefix)
 	token, rest, ok = cutSegment(rest)
 	if !ok {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
-	projectID, entryPath, ok = cutSegment(rest)
+	projectID, rest, ok = cutSegment(rest)
 	if !ok {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
-	return token, projectID, entryPath, true
+	slot, entryPath = splitSlotPath(rest)
+	return token, projectID, slot, entryPath, true
+}
+
+// splitSlotPath 把工程标识之后的一段拆成（槽，条目路径）。
+//
+// **它与发布态共用同一条规则**：次段是 `docs` 就是文档槽，否则是站点槽。抽成一个
+// 函数而不是在两处各写一遍，是因为"哪一段是保留段"只有一个答案。
+func splitSlotPath(rest string) (ContentSlot, string) {
+	if rest == ReservedSegment {
+		return SlotDocs, ""
+	}
+	if suffix, found := strings.CutPrefix(rest, ReservedSegment+"/"); found {
+		return SlotDocs, suffix
+	}
+	return SlotSite, rest
 }
 
 // cutSegment 切下一段（到第一个 `/` 为止），并返回余下的部分。
@@ -143,7 +169,7 @@ type PreviewTarget struct {
 //
 // **它没有"调用者"这个参数**：凭证就是授权。签发那一刻已经问过"这个人能不能读这个
 // 工程"（见 PreviewDraft），此后这条地址自己成立——与资产那套短时地址同源。
-func (s *Service) OpenPreview(ctx context.Context, token, projectID, requestPath string) (PreviewTarget, error) {
+func (s *Service) OpenPreview(ctx context.Context, token, projectID string, slot ContentSlot, requestPath string) (PreviewTarget, error) {
 	if !s.previewEnabled() {
 		return PreviewTarget{}, ErrPreviewNotFound
 	}
@@ -154,9 +180,10 @@ func (s *Service) OpenPreview(ctx context.Context, token, projectID, requestPath
 		}
 		return PreviewTarget{}, err
 	}
-	// 凭证绑定的工程与地址里的工程标识必须一致：地址是给浏览器解析的，凭证是授权
-	// ——两者不一致说明有人在改地址，那就是一次否定结论。
-	if grant.ProjectID != projectID || grant.Expired(s.now()) {
+	// 凭证绑定的（工程，槽）与地址里的必须一致：地址是给浏览器解析的，凭证是授权
+	// ——不一致说明有人在改地址，那就是一次否定结论。**槽也要对**：拿站点槽的票
+	// 去取文档槽的路径同样是一次否定结论。
+	if grant.ProjectID != projectID || grant.Slot != slot || grant.Expired(s.now()) {
 		return PreviewTarget{}, ErrPreviewNotFound
 	}
 	project, err := s.store.GetProject(ctx, projectID)
@@ -166,7 +193,10 @@ func (s *Service) OpenPreview(ctx context.Context, token, projectID, requestPath
 		}
 		return PreviewTarget{}, err
 	}
-	draft, err := s.store.GetDraft(ctx, projectID)
+	if _, ok := project.FindSlot(slot); !ok {
+		return PreviewTarget{}, ErrPreviewNotFound
+	}
+	draft, err := s.store.GetDraft(ctx, projectID, slot)
 	if errors.Is(err, ErrDraftNotFound) {
 		return PreviewTarget{}, ErrPreviewNotFound
 	} else if err != nil {
@@ -178,32 +208,32 @@ func (s *Service) OpenPreview(ctx context.Context, token, projectID, requestPath
 
 	artifactPath := requestPath
 	if artifactPath == "" {
-		artifactPath = ArtifactPath(project.Form, project.Form.EntryPath())
+		artifactPath = ArtifactPath(slot, slot.EntryPath())
 	}
-	return s.previewTarget(ctx, project, token, draft.Manifest, artifactPath)
+	return s.previewTarget(ctx, project, slot, token, draft.Manifest, artifactPath)
 }
 
-// previewTarget 按形态把一条产物路径解析成要交付的东西。
+// previewTarget 按槽把一条产物路径解析成要交付的东西。
 //
-// 两种形态的差别在这里只有一处：`static` 的产物就是文件组里的那一份（读它、替换
-// 记号即可），`docs` 的页面**不存在于文件组里**——它由渲染产生，因此要把整组渲染
-// 一遍才谈得上"这一页长什么样"。站点文件两种形态一样：按原路径给出。
-func (s *Service) previewTarget(ctx context.Context, project Project, token string, manifest Manifest, artifactPath string) (PreviewTarget, error) {
-	if project.Form != SiteFormDocs {
+// 两个槽的差别在这里只有一处：`site` 的产物就是文件组里的那一份（读它、替换记号
+// 即可），`docs` 的页面**不存在于文件组里**——它由渲染产生，因此要把整组渲染一遍
+// 才谈得上"这一页长什么样"。站点文件两个槽一样：按原路径给出。
+func (s *Service) previewTarget(ctx context.Context, project Project, slot ContentSlot, token string, manifest Manifest, artifactPath string) (PreviewTarget, error) {
+	if slot != SlotDocs {
 		entry, found := manifest.Find(artifactPath)
 		if !found {
 			return PreviewTarget{}, ErrPreviewNotFound
 		}
-		return s.previewTextEntry(ctx, project, token, manifest, entry, artifactPath)
+		return s.previewTextEntry(ctx, project, slot, token, manifest, entry, artifactPath)
 	}
 
 	// `docs`：站点文件（不是 markdown 的那些文本条目）按原路径给出。
 	if entry, found := manifest.Find(artifactPath); found && !IsMarkdownPath(entry.Path) {
-		return s.previewTextEntry(ctx, project, token, manifest, entry, artifactPath)
+		return s.previewTextEntry(ctx, project, slot, token, manifest, entry, artifactPath)
 	}
 
 	// 其余的是渲染出来的页面：整组渲染一次，取这一页。
-	artifacts, err := s.buildPreviewArtifacts(ctx, project, manifest)
+	artifacts, err := s.buildPreviewArtifacts(ctx, project, slot, manifest)
 	if err != nil {
 		return PreviewTarget{}, err
 	}
@@ -213,12 +243,12 @@ func (s *Service) previewTarget(ctx context.Context, project Project, token stri
 	}
 	return PreviewTarget{
 		ContentType: renderedContentType,
-		Data:        rewritePreviewRoot(project.ID, token, s.origin, data),
+		Data:        rewritePreviewRoot(project.ID, slot, token, s.origin, data),
 	}, nil
 }
 
 // previewTextEntry 交付一条文本条目：资产重定向，文本读字节并逐字替换。
-func (s *Service) previewTextEntry(ctx context.Context, project Project, token string, manifest Manifest, entry Entry, artifactPath string) (PreviewTarget, error) {
+func (s *Service) previewTextEntry(ctx context.Context, project Project, slot ContentSlot, token string, manifest Manifest, entry Entry, artifactPath string) (PreviewTarget, error) {
 	if entry.Kind == EntryKindAsset {
 		url, err := s.presignEntry(ctx, project.ID, entry)
 		if err != nil {
@@ -239,7 +269,7 @@ func (s *Service) previewTextEntry(ctx context.Context, project Project, token s
 	if err != nil {
 		return PreviewTarget{}, err
 	}
-	siteRoot := s.origin.SiteRoot(project.ID)
+	siteRoot := s.origin.SiteRoot(project.ID, slot)
 	substituted, err := SubstituteAssetMarkers(source, func(assetID string) (string, error) {
 		asset, found := assetEntryByID(manifest, assetID)
 		if !found {
@@ -252,7 +282,7 @@ func (s *Service) previewTextEntry(ctx context.Context, project Project, token s
 	if err != nil {
 		return PreviewTarget{}, err
 	}
-	contentType, ok := ArtifactContentType(project.Form, artifactPath)
+	contentType, ok := ArtifactContentType(slot, artifactPath)
 	if !ok {
 		// 产物清单里的每一条都来自文件组，而文件组的路径都过了白名单；走到这里
 		// 说明库里的数据不是这个工程写进去的。给一个中性类型而不是猜一个——猜错
@@ -261,25 +291,30 @@ func (s *Service) previewTextEntry(ctx context.Context, project Project, token s
 	}
 	return PreviewTarget{
 		ContentType: contentType,
-		Data:        rewritePreviewRoot(project.ID, token, s.origin, substituted),
+		Data:        rewritePreviewRoot(project.ID, slot, token, s.origin, substituted),
 	}, nil
 }
 
-// rewritePreviewRoot 把文本里的**发布根**前缀逐字换成预览根。
+// rewritePreviewRoot 把文本里的**该槽的发布根**前缀逐字换成**该槽的预览根**。
 //
 // 这是预览唯一一处改写。构建产物写的是站点绝对地址（`/g/<标识>/assets/index-abc.js`），
-// 它必须落在同一个工程的**草稿**上——留在发布根上会取到已发布的那一版，或者取到
-// 一个不存在的位置。替换的是一段**已知字符串**（发布根本身），因此不解析、不枚举
-// 引用位置，也就不会漏：出现在属性里、`url()` 里、脚本字符串里，都只是把这段文本
-// 换掉（与 `asset://` 记号同一条性质）。
+// 它必须落在同一个工程、同一个槽的**草稿**上——留在发布根上会取到已发布的那一版，
+// 或者取到一个不存在的位置。替换的是一段**已知字符串**（该槽的发布根本身），因此
+// 不解析、不枚举引用位置，也就不会漏：出现在属性里、`url()` 里、脚本字符串里，
+// 都只是把这段文本换掉（与 `asset://` 记号同一条性质）。
+//
+// **两个槽各自的根是两段互不包含的字符串**（`/g/<标识>/` 与
+// `/g/<标识>/docs/`），因此各按自己的槽替换，不需要考虑先后。
 //
 // 凭证放在路径里而不是查询串里，正是为了让相对地址也落回这条通道：浏览器按目录
 // 解析相对地址时，会把 `<发布域>/g/p/<凭证>/<标识>/` 这一段原样带上。
-func rewritePreviewRoot(projectID, token string, origin PublicOrigin, data []byte) []byte {
+func rewritePreviewRoot(projectID string, slot ContentSlot, token string, origin PublicOrigin, data []byte) []byte {
 	if origin.IsZero() || token == "" {
 		return data
 	}
-	return bytes.ReplaceAll(data, []byte(origin.SiteRoot(projectID)), []byte(PreviewRoot(projectID, token)))
+	return bytes.ReplaceAll(data,
+		[]byte(origin.SiteRoot(projectID, slot)),
+		[]byte(PreviewRoot(projectID, token, slot)))
 }
 
 // previewEnabled 是"预览这条路在不在"的唯一判据。
@@ -289,26 +324,27 @@ func rewritePreviewRoot(projectID, token string, origin PublicOrigin, data []byt
 // 而不是退回一份解析不了自己引用的文档。
 func (s *Service) previewEnabled() bool { return s.assets != nil && !s.origin.IsZero() }
 
-// PreviewDraft 给出草稿整站的预览入口地址。
+// PreviewDraft 给出**某一个槽**草稿整站的预览入口地址。
 //
-// 它做两件事，顺序不可换：**先按权限与归属确认这个人能读这个工程**，再签发一条短时
-// 凭证并把地址拼出来。凭证是这条地址唯一保密的那一段，因此它只能在这里产生。
+// 它做两件事，顺序不可换：**先按权限与归属确认这个人能读这个工程与这个槽**，再
+// 签发一条短时凭证并把地址拼出来。凭证是这条地址唯一保密的那一段，因此它只能
+// 在这里产生。凭证**绑在（工程，槽）上**，因此换一个槽要重新开一次。
 //
-// 返回空地址表示**草稿里还没有可预览的入口**（草稿为空、或连入口文件都没有）。那
-// 不是错误，而是"还没内容"：界面该显示空态，而不是一个打不开的地址。
+// 返回空地址表示**这个槽的草稿里还没有可预览的入口**（草稿为空、或连入口文件都
+// 没有）。那不是错误，而是"还没内容"：界面该显示空态，而不是一个打不开的地址。
 //
 // entryPath 是要预览的那一份；为空表示入口。取不到时退回入口——前端手里的路径是它
 // 上一次读到的清单，与此刻的草稿不一致时（命令行刚 push 过），退回入口比给出一个
 // 必然 404 的地址好。
-func (s *Service) PreviewDraft(ctx context.Context, subjectID, projectID, entryPath string) (string, error) {
-	project, err := OwnedProject(ctx, s.store, projectID, subjectID)
+func (s *Service) PreviewDraft(ctx context.Context, subjectID, projectID string, slot ContentSlot, entryPath string) (string, error) {
+	project, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot)
 	if err != nil {
 		return "", err
 	}
 	if !s.previewEnabled() {
 		return "", ErrPreviewUnavailable
 	}
-	draft, err := s.store.GetDraft(ctx, projectID)
+	draft, err := s.store.GetDraft(ctx, projectID, slot)
 	if errors.Is(err, ErrDraftNotFound) {
 		return "", nil
 	} else if err != nil {
@@ -316,15 +352,15 @@ func (s *Service) PreviewDraft(ctx context.Context, subjectID, projectID, entryP
 	}
 
 	// 入口存在与否看的是**源路径**（`index.html` / `index.md`），而地址指向的是
-	// **产物路径**（`docs` 的入口是渲染出来的 `index.html`）。
-	source := project.Form.EntryPath()
+	// **产物路径**（`docs` 槽的入口是渲染出来的 `index.html`）。
+	source := slot.EntryPath()
 	if _, ok := draft.Manifest.Find(source); !ok {
 		return "", nil
 	}
-	artifactPath := ArtifactPath(project.Form, source)
+	artifactPath := ArtifactPath(slot, source)
 	if entryPath != "" {
 		if _, ok := draft.Manifest.Find(entryPath); ok {
-			artifactPath = ArtifactPath(project.Form, entryPath)
+			artifactPath = ArtifactPath(slot, entryPath)
 		}
 	}
 
@@ -336,6 +372,7 @@ func (s *Service) PreviewDraft(ctx context.Context, subjectID, projectID, entryP
 	grant := PreviewGrant{
 		Token:     token,
 		ProjectID: projectID,
+		Slot:      slot,
 		SubjectID: subjectID,
 		ExpiresAt: now.Add(PreviewGrantTTL),
 		CreatedAt: now,
@@ -345,14 +382,14 @@ func (s *Service) PreviewDraft(ctx context.Context, subjectID, projectID, entryP
 	if err := s.store.PutPreviewGrant(ctx, grant, now); err != nil {
 		return "", err
 	}
-	return s.previewURL(project, token, artifactPath), nil
+	return s.previewURL(project, slot, token, artifactPath), nil
 }
 
 // previewURL 拼出一条预览地址。**地址由服务端算好下发**，客户端不拼：客户端再拼
 // 一份就是第二个来源（与 PageURL 同一条约定）。
-func (s *Service) previewURL(project Project, token, entryPath string) string {
+func (s *Service) previewURL(project Project, slot ContentSlot, token, entryPath string) string {
 	if s.origin.IsZero() {
 		return ""
 	}
-	return s.origin.PreviewBase() + PreviewRoot(project.ID, token) + entryPath
+	return s.origin.PreviewBase() + PreviewRoot(project.ID, token, slot) + entryPath
 }

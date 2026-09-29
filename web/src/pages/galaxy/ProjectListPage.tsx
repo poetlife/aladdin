@@ -3,12 +3,12 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Empty,
   Form,
   Input,
   Modal,
   Popconfirm,
-  Radio,
   Space,
   Table,
   Tag,
@@ -22,15 +22,16 @@ import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
 import { PermissionGate } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
-import { SiteForm, type Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { ContentSlot, type Project, type ProjectSlot } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../../telemetry/track'
+import { allSlots, slotDescription, slotLabel } from './content-slot'
 import { formatTime } from './format-time'
 
 interface ProjectFormValues {
   name?: string
   description?: string
-  form: SiteForm
+  slots: ContentSlot[]
 }
 
 interface failure {
@@ -44,6 +45,9 @@ interface failure {
  * 只有**一个**列表入口，且范围由凭证决定（见 docs/design/galaxy/README.md）：
  * 没有"列出所有工程"的形状。新建与删除是写操作，按 `galaxy.project.write`
  * 裁剪——无权限的入口不渲染，而不是渲染一个点了报错的控件。
+ *
+ * **列表按槽说话，不问"这个工程是什么形态"**：一个工程可以既是站点又有文档，
+ * 两槽各发各的。因此这里有一列内容槽，状态也按槽逐条给出（最多两条）。
  */
 export function ProjectListPage(): React.ReactNode {
   const navigate = useNavigate()
@@ -95,7 +99,7 @@ export function ProjectListPage(): React.ReactNode {
       const response = await galaxyApi.createProject(
         values.name ?? '',
         values.description ?? '',
-        values.form,
+        values.slots,
       )
       setCreateOpen(false)
       form.resetFields()
@@ -153,26 +157,32 @@ export function ProjectListPage(): React.ReactNode {
       render: (value: string) => formatTime(value),
     },
     {
-      title: '形态',
-      key: 'form',
-      // 形态创建时定下、此后不可改，因此这里只是展示，没有切换入口。
-      render: (_: unknown, project) => (
-        <Tag>{project.form === SiteForm.DOCS ? 'docs' : 'static'}</Tag>
-      ),
+      title: '内容槽',
+      key: 'slots',
+      // 槽只增不删，因此这里只是展示；加槽在工作台的槽切换器那里。
+      render: (_: unknown, project) =>
+        project.slots.length === 0 ? (
+          <Typography.Text type="secondary">无</Typography.Text>
+        ) : (
+          <Space size={4} wrap>
+            {project.slots.map((slot) => (
+              <Tag key={slot.slot}>{slotLabel(slot.slot)}</Tag>
+            ))}
+          </Space>
+        ),
     },
     {
       title: '状态',
       key: 'published',
       render: (_: unknown, project) =>
-        project.published ? (
-          <Space orientation="vertical" size={0}>
-            <Tag color="success">已发布</Tag>
-            <Typography.Text type="secondary" copyable style={{ wordBreak: 'break-all' }}>
-              {project.publishedUrl}
-            </Typography.Text>
-          </Space>
-        ) : (
+        project.slots.length === 0 ? (
           <Tag>未发布</Tag>
+        ) : (
+          <Space orientation="vertical" size={4}>
+            {project.slots.map((slot) => (
+              <SlotStatus key={slot.slot} slot={slot} />
+            ))}
+          </Space>
         ),
     },
     {
@@ -285,18 +295,21 @@ export function ProjectListPage(): React.ReactNode {
         <Form<ProjectFormValues>
           form={form}
           layout="vertical"
-          initialValues={{ form: SiteForm.STATIC }}
+          initialValues={{ slots: [ContentSlot.SITE] }}
           onFinish={(v) => void handleCreate(v)}
         >
           <Form.Item
-            name="form"
-            label="形态"
-            extra="创建时定下，此后不可改：它决定已保存版本的发布语义"
+            name="slots"
+            label="内容槽"
+            extra="至少选一个。选两个就是「既有站点又有文档」：两槽各有自己的草稿、版本与发布地址，互不影响。此后可以再加，不能删"
+            rules={[{ required: true, message: '至少选一个内容槽' }]}
           >
-            <Radio.Group>
-              <Radio.Button value={SiteForm.STATIC}>static · 整站文件原样服务</Radio.Button>
-              <Radio.Button value={SiteForm.DOCS}>docs · markdown 渲染成多页</Radio.Button>
-            </Radio.Group>
+            <Checkbox.Group
+              options={allSlots().map((slot) => ({
+                label: `${slotLabel(slot)} · ${slotDescription(slot)}`,
+                value: slot,
+              }))}
+            />
           </Form.Item>
           <Form.Item name="name" label="名称" extra="仅用于你自己识别，不是地址、不需要唯一">
             <Input maxLength={64} placeholder="比如：我的首页" autoComplete="off" />
@@ -327,4 +340,27 @@ function trackProjectDeleteCancel(): void {
     action: Action.PROJECT_DELETE,
     result: Result.CANCEL,
   })
+}
+
+/** 一个内容槽的发布状态：已发布时把该槽的地址一并给出来。 */
+function SlotStatus({ slot }: { slot: ProjectSlot }): React.ReactNode {
+  if (!slot.published) {
+    return (
+      <Space size={4}>
+        <Tag>{slotLabel(slot.slot)}</Tag>
+        <Typography.Text type="secondary">未发布</Typography.Text>
+      </Space>
+    )
+  }
+  return (
+    <Space orientation="vertical" size={0}>
+      <Space size={4}>
+        <Tag color="success">已发布</Tag>
+        <Tag>{slotLabel(slot.slot)}</Tag>
+      </Space>
+      <Typography.Text type="secondary" copyable style={{ wordBreak: 'break-all' }}>
+        {slot.publishedUrl}
+      </Typography.Text>
+    </Space>
+  )
 }

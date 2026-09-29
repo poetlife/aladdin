@@ -40,11 +40,14 @@ type fileSetFile struct {
 //     `.gitignore` 这类东西，它们既不是站点的一部分，也不是用户想发布的内容。
 //   - **符号链接被拒**。跟随它会让"这个目录里有什么"取决于链接指向哪里，而
 //     目录是整组的输入单位——一次 pull 回来的目录里不该出现一个指向别处的项。
+//   - **保留段被拒**（`docs` 由文档槽占用，见 galaxy.ValidateSlotPath）。这条
+//     在**发送之前**就报错，省一次往返，也让错误在人还记得自己刚动过什么的时候
+//     出现。
 //   - **白名单外的扩展名被拒**，而不是被静默丢掉。判定"是不是文本"用的是**服务端
 //     那张白名单**（galaxy.IsTextPath），因此"命令行以为这是文本、服务端拒了它"
 //     不会发生；剩下的必须是资产类型表认识的，否则用户会得到一句明确的话，而不
 //     是一个静默少掉的文件。
-func readFileSet(dir string, form galaxy.SiteForm) ([]fileSetFile, error) {
+func readFileSet(dir string, slot galaxy.ContentSlot) ([]fileSetFile, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, usageErrorf("读取目录 %s 失败：%v", dir, err)
@@ -83,12 +86,16 @@ func readFileSet(dir string, form galaxy.SiteForm) ([]fileSetFile, error) {
 		if !galaxy.ValidEntryPath(entryPath) {
 			return usageErrorf("路径 %q 不合形状（见 docs/design/galaxy/site-model.md 的路径约束）", entryPath)
 		}
-		isText := galaxy.IsTextPath(form, entryPath)
+		if err := galaxy.ValidateSlotPath(slot, entryPath); err != nil {
+			return usageErrorf("%q 落在保留段里：%s 这一段由文档槽占用，站点槽的路径不能以它开头",
+				entryPath, galaxy.ReservedSegment)
+		}
+		isText := galaxy.IsTextPath(slot, entryPath)
 		if !isText {
 			if _, ok := assetTypeForPath(entryPath); !ok {
-				return usageErrorf("%q 既不是 %s 形态的文本（%s），也不在资产类型表里；"+
+				return usageErrorf("%q 既不是 %s 槽的文本（%s），也不在资产类型表里；"+
 					"把它删掉，或换一个认识的扩展名",
-					entryPath, form, strings.Join(textExtensions(form), "、"))
+					entryPath, slot, strings.Join(textExtensions(slot), "、"))
 			}
 		}
 		//nolint:gosec // 路径来自调用者自己的命令行参数，读的是他自己的文件
@@ -150,16 +157,16 @@ func writeFileSet(dir string, entries []*galaxyv1.FileEntry, fetch func(*galaxyv
 	return nil
 }
 
-// textExtensions 返回一种形态下的文本扩展名，供报错信息使用。
+// textExtensions 返回一个内容槽下的文本扩展名，供报错信息使用。
 //
 // 它**只为把可选项念给用户听**，不参与任何判定——判定一律走
 // galaxy.IsTextPath（服务端那一个白名单）。
-func textExtensions(form galaxy.SiteForm) []string {
-	ordered := map[galaxy.SiteForm][]string{
-		galaxy.SiteFormStatic: {".html", ".htm", ".css", ".js", ".mjs", ".json", ".txt", ".svg"},
-		galaxy.SiteFormDocs:   {".md", ".css", ".js", ".mjs", ".json"},
+func textExtensions(slot galaxy.ContentSlot) []string {
+	ordered := map[galaxy.ContentSlot][]string{
+		galaxy.SlotSite: {".html", ".htm", ".css", ".js", ".mjs", ".json", ".txt", ".svg"},
+		galaxy.SlotDocs: {".md", ".css", ".js", ".mjs", ".json"},
 	}
-	return ordered[form]
+	return ordered[slot]
 }
 
 // describeEntry 输出一条条目的一行摘要。
@@ -183,12 +190,12 @@ func describeEntry(entry *galaxyv1.FileEntry) string {
 //
 // 最后一步是**记号登记**：文本里出现 `asset://<资产标识>` 的地方要额外成为一条
 // 资产条目，否则发布时那处引用落在不了文件组里。
-func uploadFileSet(ctx context.Context, svc galaxyv1connect.GalaxyServiceClient, projectID string, form galaxy.SiteForm, files []fileSetFile) ([]*galaxyv1.FileEntry, error) {
+func uploadFileSet(ctx context.Context, svc galaxyv1connect.GalaxyServiceClient, projectID string, slot galaxy.ContentSlot, files []fileSetFile) ([]*galaxyv1.FileEntry, error) {
 	entries := make([]*galaxyv1.FileEntry, 0, len(files))
 	usedPaths := make(map[string]bool, len(files))
 
 	for _, file := range files {
-		if galaxy.IsTextPath(form, file.Path) {
+		if galaxy.IsTextPath(slot, file.Path) {
 			entry, err := uploadTextFile(ctx, svc, projectID, file)
 			if err != nil {
 				return nil, err
@@ -208,7 +215,7 @@ func uploadFileSet(ctx context.Context, svc galaxyv1connect.GalaxyServiceClient,
 	// 记号登记：源侧的 asset:// 在**进入文件组**这一步被解析成条目，此后服务端
 	// 只认文件组（见 docs/design/galaxy/authoring.md）。
 	for _, file := range files {
-		if !galaxy.IsTextPath(form, file.Path) {
+		if !galaxy.IsTextPath(slot, file.Path) {
 			continue
 		}
 		for _, assetID := range galaxy.AssetMarkerIDs(file.Data) {

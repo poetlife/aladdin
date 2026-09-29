@@ -56,24 +56,24 @@ func PublicProjectHandler(service *galaxy.Service, logger *zap.Logger) http.Hand
 		// 预览通道的形状先判：它的第一段（`p`）在发布态的形状里也是一个合法的
 		// 工程标识位置，因此顺序反过来会让预览路径落进发布那条路（见
 		// galaxy/preview.go 的 PreviewPathSegment）。
-		if token, previewProjectID, previewPath, ok := galaxy.SplitPreviewPath(r.URL.Path); ok {
-			servePreview(w, r, token, previewProjectID, previewPath, service, logger)
+		if token, previewProjectID, previewSlot, previewPath, ok := galaxy.SplitPreviewPath(r.URL.Path); ok {
+			servePreview(w, r, token, previewProjectID, previewSlot, previewPath, service, logger)
 			return
 		}
 
-		projectID, entryPath, ok := galaxy.SplitSitePath(r.URL.Path)
+		projectID, slot, entryPath, ok := galaxy.SplitSitePath(r.URL.Path)
 		if !ok {
 			writePublicNotFound(w)
 			return
 		}
-
-		form, entry, err := service.PublishedEntry(r.Context(), projectID, entryPath)
+		entry, err := service.PublishedEntry(r.Context(), projectID, slot, entryPath)
 		if err != nil {
 			if !errors.Is(err, galaxy.ErrPublicationNotFound) {
 				// 存储故障不是"这个页面不存在"。但对访问者而言，两者都只能
 				// 看到"打不开"，因此响应相同、留痕不同。
 				logger.Warn("读取发布产物失败",
 					zap.String("project_id", projectID),
+					zap.String("slot", string(slot)),
 					zap.String("path", entryPath),
 					zap.Error(err))
 			}
@@ -120,7 +120,7 @@ func PublicProjectHandler(service *galaxy.Service, logger *zap.Logger) http.Hand
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		contentType, ok := galaxy.ArtifactContentType(form, entry.Path)
+		contentType, ok := galaxy.ArtifactContentType(slot, entry.Path)
 		if !ok {
 			// 产物清单里的每一条都来自文件组，而文件组的路径都过了白名单；走到
 			// 这里说明库里的数据不是这个版本写进去的。给一个中性类型而不是
@@ -188,14 +188,15 @@ func writePublicNotFound(w http.ResponseWriter) {
 // 不是匿名、资产指向私有区而不是公开区。安全头逐条相同——**内容仍然跑在发布域
 // 上**，因此隔离靠的是这一条（与主应用不同源）加上 iframe 的沙箱属性（见
 // docs/design/galaxy/authoring.md）。
-func servePreview(w http.ResponseWriter, r *http.Request, token, projectID, entryPath string, service *galaxy.Service, logger *zap.Logger) {
-	target, err := service.OpenPreview(r.Context(), token, projectID, entryPath)
+func servePreview(w http.ResponseWriter, r *http.Request, token, projectID string, slot galaxy.ContentSlot, entryPath string, service *galaxy.Service, logger *zap.Logger) {
+	target, err := service.OpenPreview(r.Context(), token, projectID, slot, entryPath)
 	if err != nil {
 		if !errors.Is(err, galaxy.ErrPreviewNotFound) {
 			// 存储故障不是"这一页不存在"。但对浏览器而言两者都只能看到"打不开"，
 			// 因此响应相同、留痕不同。
 			logger.Warn("读取预览内容失败",
 				zap.String("project_id", projectID),
+				zap.String("slot", string(slot)),
 				zap.String("path", entryPath),
 				zap.Error(err))
 		}

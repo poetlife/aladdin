@@ -31,8 +31,16 @@ const (
 )
 
 var (
-	// ErrSiteFormInvalid 表示形态取值不是两种之一。零值（未填）也在此列。
-	ErrSiteFormInvalid = fmt.Errorf("工程形态不合法")
+	// ErrContentSlotInvalid 表示内容槽取值不是两种之一。零值（未填）也在此列。
+	ErrContentSlotInvalid = fmt.Errorf("内容槽不合法")
+
+	// ErrReservedPath 表示一条路径落在保留段里。
+	//
+	// 保留段是 `docs`：它占住文档槽的地址空间，因此 site 槽的路径不得以它开头。
+	ErrReservedPath = fmt.Errorf("路径落在保留段里")
+
+	// ErrSlotEnabled 表示要加的槽已经启用了。
+	ErrSlotEnabled = fmt.Errorf("内容槽已经启用")
 
 	// ErrEntryPathInvalid 表示一条条目路径不合形状。
 	ErrEntryPathInvalid = fmt.Errorf("条目路径不合法")
@@ -74,7 +82,7 @@ var (
 // 各有一份相同字节，就是两个对象（见 spec 的待定决策「跨工程的私有区内容去重」）。
 // CommitContentUpload 在核对失败时删掉的也只是这一个键。
 //
-// **键上不体现工程形态**：同一个工程里，同一份字节无论是 markdown 还是 JS/CSS，
+// **键上不体现内容槽**：同一个工程里，同一份字节无论是 markdown 还是 JS/CSS，
 // 键都一样。要判断它拿来做什么，读清单，不要读键。
 func ContentObjectKey(projectID, digest string) string {
 	return assetKeyPrefix + projectID + "/text/" + digest
@@ -254,9 +262,9 @@ func isPathByte(b byte) bool {
 
 // contentTypeRules 是签发内容对象直传凭证用的类型规则（唯一入口）。
 //
-// **内容对象没有"声明类型"这一层**：它的下发类型由路径扩展名派生（见 site.go），
-// 对象本身不承担类型语义。因此写入时用一个**中性类型**——顺带消掉"预签名地址
-// 被直接打开时按 HTML 渲染"这条隐患。
+// **内容对象没有"声明类型"这一层**：它的下发类型由路径扩展名派生（见
+// content_slot.go），对象本身不承担类型语义。因此写入时用一个**中性类型**——顺带
+// 消掉"预签名地址被直接打开时按 HTML 渲染"这条隐患。
 func contentTypeRules() []objectstore.TypeRule {
 	return []objectstore.TypeRule{{ContentType: objectstore.NeutralContentType, MaxBytes: MaxTextBytes}}
 }

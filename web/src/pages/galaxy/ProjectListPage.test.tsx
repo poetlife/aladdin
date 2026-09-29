@@ -13,10 +13,10 @@ import {
   WhoAmIResponseSchema,
 } from '../../gen/proto/aladdin/identity/v1/identity_pb'
 import {
+  ContentSlot,
   DeleteProjectResponseSchema,
   ListProjectsResponseSchema,
   ProjectSchema,
-  SiteForm,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { ProjectListPage } from './ProjectListPage'
 
@@ -71,7 +71,13 @@ beforeEach(() => {
   )
   vi.mocked(galaxyApi.listProjects).mockResolvedValue(
     create(ListProjectsResponseSchema, {
-      projects: [create(ProjectSchema, { id: 'p1', name: '我的工程', form: SiteForm.STATIC })],
+      projects: [
+        create(ProjectSchema, {
+          id: 'p1',
+          name: '我的工程',
+          slots: [{ slot: ContentSlot.SITE }],
+        }),
+      ],
     }),
   )
 })

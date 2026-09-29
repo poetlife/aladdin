@@ -1,17 +1,36 @@
-import { Button, Dropdown, Flex, Space } from 'antd'
+import { Button, Dropdown, Flex, Segmented, Space } from 'antd'
 import type { MenuProps } from 'antd'
-import { ArrowLeft, ChevronDown, History, Images, Layers, Rocket } from 'lucide-react'
+import { ArrowLeft, ChevronDown, History, Images, Layers, Plus, Rocket } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import type { FileEntry, Project, Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import {
+  ContentSlot,
+  type FileEntry,
+  type Project,
+  type ProjectSlot,
+  type Version,
+} from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../../telemetry/track'
+import { addSlotLabel, allSlots, slotLabel } from './content-slot'
 import { formatTime } from './format-time'
 import { ProjectInfoPopover } from './ProjectInfoPopover'
 
 interface WorkbenchTopBarProps {
   project: Project
   versions: readonly Version[]
+  /**
+   * 当前看的内容槽与它的发布状态，以及这个工程启用的全部槽。
+   *
+   * **这一页一次只看一个槽**，状态条、版本、草稿与预览都属于它（见
+   * docs/design/galaxy/authoring.md）。切换器与"加一个槽"的入口就在这一排：
+   * 它们回答的是"我在哪里"，与"有哪些集合可以打开"同一层。
+   */
+  slot: ProjectSlot | undefined
+  slots: readonly ProjectSlot[]
+  slotBusy: boolean
+  onSwitchSlot: (slot: ContentSlot) => void
+  onAddSlot: (slot: ContentSlot) => void
   /** 是否持有写权限（galaxy.project.write）。 */
   canWrite: boolean
   /** 是否持有发布权限（galaxy.project.publish）。 */
@@ -67,6 +86,11 @@ interface WorkbenchTopBarProps {
 export function WorkbenchTopBar({
   project,
   versions,
+  slot,
+  slots,
+  slotBusy,
+  onSwitchSlot,
+  onAddSlot,
   canWrite,
   canPublish,
   publishEnabled,
@@ -84,6 +108,10 @@ export function WorkbenchTopBar({
 }: WorkbenchTopBarProps): React.ReactNode {
   const navigate = useNavigate()
 
+  const enabledSlots = slots.map((candidate) => candidate.slot)
+  // 槽只增不删，因此最多只有一个"还没有的槽"可以加。
+  const missingSlot = allSlots().find((candidate) => !enabledSlots.includes(candidate))
+
   const draftSignature = manifestSignature(draftEntries)
   const versionBlocked = (version: Version): boolean =>
     draftHasProblems && manifestSignature(version.entries) === draftSignature
@@ -95,7 +123,7 @@ export function WorkbenchTopBar({
     key: version.id,
     disabled: versionBlocked(version),
     label: `#${Number(version.seq)} · ${formatTime(version.savedAt)}${
-      version.id === project.publishedVersionId ? '（当前发布）' : ''
+      version.id === slot?.publishedVersionId ? '（当前发布）' : ''
     }`,
   }))
 
@@ -115,6 +143,27 @@ export function WorkbenchTopBar({
           canWrite={canWrite}
           onProjectChange={onProjectChange}
         />
+        {slots.length > 1 && (
+          <Segmented<ContentSlot>
+            size="small"
+            value={slot?.slot ?? ContentSlot.UNSPECIFIED}
+            onChange={onSwitchSlot}
+            options={slots.map((candidate) => ({
+              value: candidate.slot,
+              label: slotLabel(candidate.slot),
+            }))}
+          />
+        )}
+        {missingSlot !== undefined && canWrite && (
+          <Button
+            size="small"
+            icon={<Plus size={14} />}
+            loading={slotBusy}
+            onClick={() => onAddSlot(missingSlot)}
+          >
+            {addSlotLabel(enabledSlots)}
+          </Button>
+        )}
       </Flex>
 
       <Space wrap>
@@ -169,7 +218,7 @@ export function WorkbenchTopBar({
               loading={publishBusy}
               disabled={publishableCount === 0}
             >
-              {project.published ? '更新发布' : '发布'}
+              {slot?.published === true ? '更新发布' : '发布'}
               <ChevronDown size={14} />
             </Button>
           </Dropdown>

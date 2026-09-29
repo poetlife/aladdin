@@ -1,7 +1,7 @@
 import { Button, Divider, Flex, Popconfirm, Popover, Typography, theme } from 'antd'
 import { CircleCheck, TriangleAlert } from 'lucide-react'
 
-import type { Project, Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import type { ProjectSlot, Version } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../../telemetry/track'
 import { describeValidation, type ValidationState } from './validation-state'
@@ -9,7 +9,13 @@ import { describeValidation, type ValidationState } from './validation-state'
 interface LifecycleStripProps {
   validation: ValidationState
   versions: readonly Version[]
-  project: Project
+  /**
+   * 当前看的内容槽与它的发布状态。
+   *
+   * **状态条说的就是这个槽**：另一个槽发没发出去、有没有版本，与这一条上的每一句
+   * 都无关（见 docs/design/galaxy/authoring.md 的"这一页一次看一个内容槽"）。
+   */
+  slot: ProjectSlot | undefined
   /** 是否渲染发布那一半。未启用发布时整段不出现（见 spec：不渲染发布入口）。 */
   publishEnabled: boolean
   /** 是否持有发布权限：决定已发布时有没有撤回。 */
@@ -34,7 +40,7 @@ interface LifecycleStripProps {
 export function LifecycleStrip({
   validation,
   versions,
-  project,
+  slot,
   publishEnabled,
   canPublish,
   publishBusy,
@@ -97,15 +103,15 @@ export function LifecycleStrip({
       {publishEnabled && (
         <>
           <Divider type="vertical" style={{ margin: 0 }} />
-          {project.published ? (
+          {slot?.published === true ? (
             <Flex align="center" gap={4} wrap>
               <Typography.Text type="success">已发布</Typography.Text>
               <Typography.Text
                 copyable
-                ellipsis={{ tooltip: project.publishedUrl }}
+                ellipsis={{ tooltip: slot.publishedUrl }}
                 style={{ maxWidth: 260 }}
               >
-                {project.publishedUrl}
+                {slot.publishedUrl}
               </Typography.Text>
               {canPublish && (
                 <Popconfirm

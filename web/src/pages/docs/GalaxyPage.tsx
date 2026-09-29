@@ -50,28 +50,33 @@ export function GalaxyPage(): React.ReactNode {
         title={
           <Space size={8}>
             <FolderTree size={16} />
-            先选形态：static 还是 docs
+            选内容槽：站点、文档，或两个都要
           </Space>
         }
       >
         <Typography.Paragraph>
-          建工程时<strong>必须定下形态</strong>，此后不可改——形态决定已保存版本的发布语义，
-          能改就等于让历史版本的产物无法复现。
+          建工程时<strong>至少选一个内容槽</strong>，此后<strong>只增不删</strong>——一个已经
+          发布了站点的工程，可以再长出文档来，而不必另建一个工程。两个槽各有自己的草稿、版本、
+          发布地址与发布状态，<strong>互不影响</strong>：推文档不会覆盖站点，撤回一个也不动
+          另一个。
         </Typography.Paragraph>
         <ul>
           <li>
-            <Tag>static</Tag> 整站文件<strong>原样服务</strong>。覆盖手写单页与构建产物，
-            入口是 <Typography.Text code>index.html</Typography.Text>。
+            <Tag>site</Tag> 整站文件<strong>原样服务</strong>。覆盖手写单页与构建产物，
+            入口是 <Typography.Text code>index.html</Typography.Text>，地址是工程根
+            <Typography.Text code>{'/g/<工程标识>/'}</Typography.Text>。
           </li>
           <li>
             <Tag>docs</Tag> 一组 markdown <strong>渲染成多页</strong>，站点文件（CSS、JS、JSON）
-            按原路径一并带上，入口是 <Typography.Text code>index.md</Typography.Text>。
+            按原路径一并带上，入口是 <Typography.Text code>index.md</Typography.Text>，
+            地址是它下面的 <Typography.Text code>docs/</Typography.Text>。
           </li>
         </ul>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          <Typography.Text code>docs</Typography.Text> 形态<strong>不收 HTML</strong>
-          ：它的页面是渲染出来的，不是写出来的。两者的白名单因此不同，
-          命令行会按形态告诉你哪些文件能进。
+          <Typography.Text code>docs</Typography.Text> 槽<strong>不收 HTML</strong>
+          ：它的页面是渲染出来的，不是写出来的。两者的白名单因此不同，命令行会按槽告诉你
+          哪些文件能进。也正因为 <Typography.Text code>docs</Typography.Text> 这一段地址
+          归文档槽，站点槽里不能有以它开头的路径。
         </Typography.Paragraph>
       </Card>
 
@@ -156,18 +161,26 @@ export function GalaxyPage(): React.ReactNode {
       >
         <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <CommandBlock>{`# 建工程，记下它打印的工程标识
-aladdin galaxy project create --form static --name "我的站点"
+aladdin galaxy project create --slot site --name "我的站点"
 
 # 把发布根交给构建命令，产物里的绝对路径才对得上
-vite build --base "$(aladdin galaxy project base <工程标识>)"
+vite build --base "$(aladdin galaxy project base <工程标识> --slot site)"
 
 # 整组推送一个目录（目录里没有的路径 = 删掉），再校验
-aladdin galaxy draft push <工程标识> ./dist
-aladdin galaxy validate <工程标识>
+aladdin galaxy draft push <工程标识> ./dist --slot site
+aladdin galaxy validate <工程标识> --slot site
 
 # 存成一个版本，发布它，拿到地址
-aladdin galaxy version save <工程标识>
-aladdin galaxy publish <工程标识> <版本标识> --yes`}</CommandBlock>
+aladdin galaxy version save <工程标识> --slot site
+aladdin galaxy publish <工程标识> <版本标识> --slot site --yes
+
+# 后来想加上文档：加一个文档槽，再往那个槽推（槽只增不删）
+aladdin galaxy project slot add <工程标识> --slot docs
+aladdin galaxy draft push <工程标识> ./docs --slot docs`}</CommandBlock>
+          <Typography.Paragraph type="secondary">
+            <Typography.Text code>--slot</Typography.Text> 在只有一个槽的工程上可以省略；
+            两个槽都有时必须给，否则命令行不知道该打到哪一个。服务端始终要求显式的槽。
+          </Typography.Paragraph>
           <Typography.Paragraph type="secondary">
             <Typography.Text code>validate</Typography.Text> 校的是<strong>已保存的草稿</strong>
             （推送是唯一的写入路径），有问题时逐条列出文件与行号并以非零状态退出，所以{' '}
@@ -193,7 +206,7 @@ aladdin galaxy publish <工程标识> <版本标识> --yes`}</CommandBlock>
         <Typography.Paragraph>
           每一处<strong>取资源</strong>的引用都必须落在这一组文件里：指向外部地址、别的工程、
           或不存在的位置，发布会被拒绝，提示里带着文件和行号。链接到外部网站不受此限——那是你的意图，
-          不是资源引用。<Typography.Text code>docs</Typography.Text> 形态下文档之间的相对链接同理，
+          不是资源引用。<Typography.Text code>docs</Typography.Text> 槽下文档之间的相对链接同理，
           指向不存在的位置即拒绝。
         </Typography.Paragraph>
         <Typography.Paragraph>

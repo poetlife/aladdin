@@ -77,13 +77,22 @@ func parseOrigin(what, raw string) (*url.URL, error) {
 // IsZero 表示没有配置发布域。零值不是一条可用的发布配置。
 func (o PublicOrigin) IsZero() bool { return o.assets == nil || o.page == nil }
 
-// SiteRoot 返回一个工程的**发布根路径**，形如 `/g/<工程标识>/`。
+// SiteRoot 返回**某一个内容槽**的**发布根路径**。
 //
-// 它是站点内绝对地址的基准，也是构建产物里那些绝对路径的前缀（见 cli.md 的
+// site 槽是 `/g/<工程标识>/`，docs 槽是它下面的 `/g/<工程标识>/docs/`。它是站点
+// 内绝对地址的基准，也是构建产物里那些绝对路径的前缀（见 cli.md 的
 // `project base`）。返回**路径**而不是完整地址：产物里写完整地址会让站点绑死在
 // 当前这个发布域上，换一个域就要重新构建。
-func (o PublicOrigin) SiteRoot(projectID string) string {
-	return PublicPathPrefix + projectID + "/"
+func (o PublicOrigin) SiteRoot(projectID string, slot ContentSlot) string {
+	return slotRootPath(projectID, slot)
+}
+
+// slotRootPath 返回一个槽在 `/g/` 之下的根路径（含结尾斜杠）。
+//
+// **两个槽各占一段，与另一个槽是否存在无关。** 这是"槽可加"的前提：文档的地址
+// 若是随站点槽有无而变，后加一个槽就会挪走一条已经发出去的地址。
+func slotRootPath(projectID string, slot ContentSlot) string {
+	return PublicPathPrefix + projectID + "/" + slot.RootSuffix()
 }
 
 // AssetURL 返回一个公开区对象的地址。
@@ -113,14 +122,14 @@ func (o PublicOrigin) AllowedSource() string {
 	return o.assets.Scheme + "://" + o.assets.Host
 }
 
-// PageURL 返回一个工程的发布地址。
+// PageURL 返回**某一个内容槽**的发布地址。
 //
 // **地址由服务端算好下发**，客户端不拼：客户端再拼一份就是第三个来源。
-func (o PublicOrigin) PageURL(projectID string) string {
+func (o PublicOrigin) PageURL(projectID string, slot ContentSlot) string {
 	if o.IsZero() {
 		return ""
 	}
-	return o.pageBase() + PublicPathPrefix + projectID
+	return o.pageBase() + strings.TrimSuffix(slotRootPath(projectID, slot), "/")
 }
 
 // PreviewBase 返回发布域的根地址（不带结尾斜杠）。预览通道的地址也落在它下面
@@ -139,21 +148,39 @@ func (o PublicOrigin) pageBase() string {
 	return strings.TrimSuffix(o.page.String(), "/")
 }
 
-// SplitSitePath 把一条发布地址拆成（工程标识，条目路径）（唯一入口）。
+// SplitSitePath 把一条发布地址拆成（工程标识，内容槽，条目路径）（唯一入口）。
 //
-// 入口地址（`/g/<标识>` 与 `/g/<标识>/`）的条目路径为空——它等价于入口文件
-// （见 docs/design/galaxy/site-model.md 的"一文件一地址"）。
+// 首段是**工程标识**，次段判槽：**恰好是 `docs` 或以 `docs/` 开头的落文档槽**
+// （`/g/<标识>/docs` 与 `/g/<标识>/docs/` 的条目路径都为空，等价于该槽的入口
+// 文件），其余一律落站点槽。
+//
+// **次段的判定就是保留段的判定**——同一件事只有这一处定义（见 content_slot.go
+// 的 ValidateSlotPath），写入期拒掉的路径与这里认下的槽因此不会打架。判定
+// **区分大小写**，与"集合成员测试不处理编码与大小写差异"同一条取向。
 //
 // 第二个返回值为假表示这条地址根本不是一次发布请求。**不做前缀之外的任何
 // 猜测**：多余的分段属于条目路径（那是发布态自己的事），而不属于工程标识。
 //
 // 它是**形状解析，不是判定**：真伪由集合成员测试回答（见 publish.go 的
-// PublishedEntry）。
-func SplitSitePath(requestPath string) (projectID, entryPath string, ok bool) {
+// PublishedEntry）——包括"这个工程其实没有文档槽"。
+func SplitSitePath(requestPath string) (projectID string, slot ContentSlot, entryPath string, ok bool) {
 	if !strings.HasPrefix(requestPath, PublicPathPrefix) {
-		return "", "", false
+		return "", "", "", false
 	}
 	rest := strings.TrimPrefix(requestPath, PublicPathPrefix)
+	if rest == "" {
+		return "", "", "", false
+	}
+	projectID, rest, ok = cutFirstSegment(rest)
+	if !ok {
+		return "", "", "", false
+	}
+	slot, entryPath = splitSlotPath(rest)
+	return projectID, slot, entryPath, true
+}
+
+// cutFirstSegment 切下第一个 `/` 分隔的段，返回它与其余部分。
+func cutFirstSegment(rest string) (first, remainder string, ok bool) {
 	if rest == "" {
 		return "", "", false
 	}

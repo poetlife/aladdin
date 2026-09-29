@@ -17,11 +17,12 @@ import (
 // URL——产物里写的是站点内的路径，因此构建产物一个字节都不用改，工程标识也
 // 只出现在发布根一处。
 type SiteLinker struct {
-	// Form 是工程形态，决定 markdown 源被渲染成 `.html`。
-	Form SiteForm
+	// Slot 是内容槽，决定 markdown 源被渲染成 `.html`。
+	Slot ContentSlot
 	// Manifest 是该版本的文件组。
 	Manifest Manifest
-	// SiteRoot 是发布根路径，形如 `/g/<工程标识>/`。
+	// SiteRoot 是**该槽的**发布根路径，形如 `/g/<工程标识>/`（docs 槽到
+	// `docs/`）。
 	SiteRoot string
 }
 
@@ -34,7 +35,7 @@ func (l SiteLinker) Resolve(from, dest string, isResource bool) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return l.SiteRoot + ArtifactPath(l.Form, entry.Path), nil
+	return l.SiteRoot + ArtifactPath(l.Slot, entry.Path), nil
 }
 
 // entryFor 把一处引用解析成文件组里的条目（唯一入口）。
