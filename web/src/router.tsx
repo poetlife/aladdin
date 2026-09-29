@@ -8,6 +8,7 @@ import { ForbiddenPage } from './pages/ForbiddenPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { PermissionCatalogPage } from './pages/PermissionCatalogPage'
 import { RolesPage } from './pages/RolesPage'
 import { SubjectBindingsPage } from './pages/SubjectBindingsPage'
 import { PermissionCodes } from './gen/permission-codes'
@@ -66,7 +67,12 @@ export const router = createBrowserRouter([
           { path: '/docs/galaxy', element: <GalaxyPage /> },
           {
             element: <RequirePermission require={[PermissionCodes.RbacRoleRead]} />,
-            children: [{ path: '/access/roles', element: <RolesPage /> }],
+            children: [
+              { path: '/access/roles', element: <RolesPage /> },
+              // 权限码目录与角色定义同一道门：它要显示"哪些角色持有这个码"，
+              // 那是角色信息（见 docs/design/rbac/management-ui.md）。
+              { path: '/access/codes', element: <PermissionCatalogPage /> },
+            ],
           },
           // 人员授权：按主体查询绑定、授予与回收。**没有"按范围列全部绑定"的
           // 接口**，所以这一页以主体标识为键（见 docs/design/rbac/management-ui.md）。

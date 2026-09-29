@@ -39,6 +39,13 @@
 - 因此角色页必须把这句话写在界面上；只把顶栏和表格摆在一起、不解释它们的关系，会被读成"改了范围筛选了列表"。
 - 界面上不出现没有真实语义的动作。名称像"发布"、实际只是重新读取的按钮一律不出现。
 
+### 权限码目录
+
+- 它回答的是"角色页里那一串码分别是什么意思"，纯只读对照。
+- 码与说明来自生成的目录（唯一信源是 `api/permissions/catalog.yaml`），**因此这一页不需要请求就能回答"这个码是什么"**，也不需要新增接口。
+- 通配（`*`）与角色继承的展开**不在这里做**：那是服务端的职责，前端自己推一遍就是第二份实现。因此"谁持有"这一列只列**直接声明**该码的角色，并把这条边界写在界面上——否则读者会把"直接声明"读成"只有这些角色能用"，而一个持有 `*` 的角色明明对全部权限生效。
+- 角色列表读取失败时，目录本身照常可读：把一次读取失败显示成"没有角色持有它"是个错误结论，因此那一列留空并说明原因。
+
 ### 管理面的作用域约定
 
 - **管理面（`rbac.proto`）的范围一律取自请求体里显式的范围字段**，不从请求元数据（`aladdin-scope` 头）取。这条不是风格：管理操作的"在哪个范围上做"必须是被调用方明确写下来的，否则一次漏传就会静默落到全局范围上，看起来像"权限不够"。
@@ -90,6 +97,8 @@
 | 候选项来源（当前主体的绑定范围） | [web/src/rbac/use-my-scopes.ts](../../../web/src/rbac/use-my-scopes.ts) |
 | 人员授权页 | [web/src/pages/SubjectBindingsPage.tsx](../../../web/src/pages/SubjectBindingsPage.tsx) |
 | 角色定义页 | [web/src/pages/RolesPage.tsx](../../../web/src/pages/RolesPage.tsx) |
+| 权限码目录页 | [web/src/pages/PermissionCatalogPage.tsx](../../../web/src/pages/PermissionCatalogPage.tsx) |
+| 权限码目录数据（由权限目录生成） | [web/src/gen/permission-catalog.ts](../../../web/src/gen/permission-catalog.ts) |
 | 管理面调用封装 | [web/src/api/rbac.ts](../../../web/src/api/rbac.ts) |
 | 管理面接口与范围来源声明 | [api/proto/aladdin/rbac/v1/rbac.proto](../../../api/proto/aladdin/rbac/v1/rbac.proto) |
 | 范围来源一致性校验 | [internal/rbac/catalog_test.go](../../../internal/rbac/catalog_test.go) |
