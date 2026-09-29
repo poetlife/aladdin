@@ -30,7 +30,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | `galaxy draft pull` / `push` | 把草稿整组写到本地目录 / 以本地目录替换整组草稿 | `galaxy.project.read` / `write` |
 | `galaxy version save` / `delete` | 把草稿存成不可变版本、删除版本 | `galaxy.project.write` |
 | `galaxy version list` / `get` / `pull` | 列出、读取版本（单份文件用 `--path`）、把某个版本整组写到本地目录 | `galaxy.project.read` |
-| `galaxy validate` | 校验一段正文能不能发布 | `galaxy.project.read` |
+| `galaxy validate` | 校验当前草稿能不能发布 | `galaxy.project.read` |
 | `galaxy asset list` | 列出工程资产库（含短时读取地址） | `galaxy.asset.read` |
 | `galaxy asset upload` / `delete` | 上传、删除资产 | `galaxy.asset.write` |
 | `galaxy publish` / `unpublish` | 发布一个版本、撤回发布 | `galaxy.project.publish` |
@@ -148,7 +148,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 版本与校验 | [cmd/aladdin/command-galaxy-version.go](../../../cmd/aladdin/command-galaxy-version.go) |
 | 资产与上传编排 | [cmd/aladdin/command-galaxy-asset.go](../../../cmd/aladdin/command-galaxy-asset.go) |
 | 发布与撤回 | [cmd/aladdin/command-galaxy-publish.go](../../../cmd/aladdin/command-galaxy-publish.go) |
-| 正文的读写与目录上送（唯一入口） | [cmd/aladdin/galaxy-content.go](../../../cmd/aladdin/galaxy-content.go) |
+| 文件组的读写与目录上送（唯一入口） | [cmd/aladdin/galaxy-content.go](../../../cmd/aladdin/galaxy-content.go) |
 | 命令行侧直传（唯一实现） | [cmd/aladdin/direct-upload.go](../../../cmd/aladdin/direct-upload.go) |
 | 命令的权限声明与静态检查 | [cmd/aladdin/permission-decl.go](../../../cmd/aladdin/permission-decl.go) |
 
