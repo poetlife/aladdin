@@ -1,8 +1,9 @@
 # 权限目录 —— 权限码全集的唯一信源。
 #
-# 本文件由 `make gen` 派生两份产物，两端都不得手工修改：
-#   - internal/rbac/catalog_gen.go    （Go 常量 + 内置角色定义）
-#   - web/src/gen/permission-codes.ts （前端常量）
+# 本文件由 `make gen` 派生三份产物，两端都不得手工修改：
+#   - internal/rbac/catalog_gen.go        （Go 常量 + 内置角色定义）
+#   - web/src/gen/permission-codes.ts     （前端常量）
+#   - web/src/gen/permission-catalog.ts   （码 + 说明的数据形式，供只读目录页）
 #
 # 新增权限的行为约定（见 docs/design/rbac/role-model.md）：
 #   1. 先在本文件登记；
@@ -19,6 +20,10 @@ permissions:
     description: "读取主体的角色绑定关系"
   - code: "rbac.subject.assign"
     description: "为主体授予或回收角色，会改变权限边界"
+  - code: "rbac.scope.read"
+    description: "读取范围目录：这个部署里登记了哪些范围"
+  - code: "rbac.scope.write"
+    description: "登记范围、改显示名、删除范围。删除属不可逆操作"
   - code: "rbac.policy.publish"
     description: "使一次角色变更正式生效（缓存失效与生效确认）"
   - code: "audit.log.read"
@@ -54,6 +59,8 @@ roles:
       - "rbac.role.write"
       - "rbac.subject.read"
       - "rbac.subject.assign"
+      - "rbac.scope.read"
+      - "rbac.scope.write"
       - "rbac.policy.publish"
   - id: "auditor"
     display_name: "审计员"
@@ -63,12 +70,16 @@ roles:
       - "audit.log.export"
       - "rbac.role.read"
       - "rbac.subject.read"
+      # 审计要能看见"哪些范围存在"：范围名是部署内的目录，不是秘密
+      # （隔离靠绑定，不靠隐藏名字，见 docs/design/rbac/scopes.md）。
+      - "rbac.scope.read"
   - id: "viewer"
     display_name: "只读用户"
     builtin: true
     permissions:
       - "rbac.role.read"
       - "rbac.subject.read"
+      - "rbac.scope.read"
   # 业务领域角色。随业务资源（galaxy 工程）落地而加入，见 docs/design/galaxy/README.md。
   # 角色决定"能不能创作"，资源归属决定"能创作哪些"，两把闸门都要过。
   - id: "galaxy.author"

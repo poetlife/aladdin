@@ -16,11 +16,12 @@
 - 权限码集合是前端所有裁断的唯一依据。前端**不得**自行拼接、推断或用角色名反推权限码——例如不得写"如果角色是管理员就显示"。
 - 会话失效、主体变更、作用域切换后，权限码集合必须重新获取；不允许沿用旧集合。
 
-### 作用域
+### 管理范围
 
-- 前端持有"当前作用域"。所有权限判断都在这个作用域下进行。
-- 切换作用域（如从某租户切到另一租户）等同于会话权限变更：必须重新获取权限码集合并重新计算全部裁剪结果。
-- 页面不得硬编码作用域值。
+- 前端持有"当前管理范围"。所有权限判断都在这个范围下进行。
+- 切换范围（如从某租户切到另一租户）等同于会话权限变更：必须重新获取权限码集合并重新计算全部裁剪结果。
+- 页面不得硬编码范围值。
+- 这个值在界面上的呈现（叫什么、候选从哪来、「全局」怎么写）见 [management-ui.md](management-ui.md)。它与"权限码的领域段""凭证默认作用域"是三件不同的事，不得互相替代。
 
 ### 三层裁剪
 
@@ -100,6 +101,8 @@
 | 路由级裁剪 | [web/src/auth/require-permission.tsx](../../../web/src/auth/require-permission.tsx) |
 | 控件级裁剪 | [web/src/auth/permission-gate.tsx](../../../web/src/auth/permission-gate.tsx) |
 | 权限码集合与成员判断 | [web/src/auth/permission-set.ts](../../../web/src/auth/permission-set.ts) |
+| 管理范围控件（顶栏） | [web/src/layouts/AppHeader.tsx](../../../web/src/layouts/AppHeader.tsx) |
+| 管理范围的候选项与显示 | [web/src/rbac/](../../../web/src/rbac/) |
 | 路由表（基础权限的唯一声明处） | [web/src/router.tsx](../../../web/src/router.tsx) |
 | 权限码常量（由权限目录生成） | [web/src/gen/permission-codes.ts](../../../web/src/gen/permission-codes.ts) |
 

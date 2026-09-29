@@ -124,6 +124,27 @@ type RoleBindingRecord struct {
 // TableName 实现 gorm 的表名解析。
 func (RoleBindingRecord) TableName() string { return "role_bindings" }
 
+// ScopeRecord 是一个**已登记**的范围在库里的一行（见 docs/design/rbac/scopes.md）。
+//
+// 路径是主键，因此同一个路径只有一条记录。它是标识，**一经登记不可更改**——
+// "改路径"不是改名，而是"删掉旧范围 + 新建一个"，与角色标识同构。显示名只用于
+// 展示，不参与判定，也不参与匹配，因此两个范围可以重名。
+//
+// 全局（根）不在这里：它永远可用、不可创建也不可删除，不是一条记录。
+//
+// 与绑定表之间**不建外键**：绑定必须指向已登记范围，这条是领域约束，唯一入口
+// 是授权面的校验（见 internal/rbac/constraints.go）。写成外键等于让同一份判定
+// 有两个会漂移的实现，也把"范围路径是自由文本"这一性质交给库约束接管。
+type ScopeRecord struct {
+	// Path 是范围路径，主键。
+	Path string `gorm:"primaryKey;size:191"`
+	// DisplayName 是展示名，可改。
+	DisplayName string
+}
+
+// TableName 实现 gorm 的表名解析。
+func (ScopeRecord) TableName() string { return "scopes" }
+
 // SessionRecord 是一份已签发的访问凭证在库里的一行。
 //
 // **这里存的是凭证的摘要，不是凭证本身。** 拿到库的人拿到的是摘要，而摘要

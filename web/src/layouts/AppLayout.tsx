@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 
 import { ProfileProvider } from '../profile'
+import { ScopesProvider } from '../rbac'
 import { AppHeader } from './AppHeader'
 import { AppSidebar } from './AppSidebar'
 import { useNarrowViewport } from './use-narrow-viewport'
@@ -24,9 +25,14 @@ const TOGGLE_ICON_SIZE = 18
 export function AppLayout(): React.ReactNode {
   // 档案由外壳持有：账号区要显示展示名，而档案页要改它。放在这里，
   // 两者读的是同一份状态，改完之后账号区立刻跟着变。
+  //
+  // 范围目录同理：顶栏要拿它当候选，而范围页要增删它。放在外壳上，
+  // 刚登记的范围立刻出现在候选里，而不是等下一次整页刷新。
   return (
     <ProfileProvider>
-      <AppShell />
+      <ScopesProvider>
+        <AppShell />
+      </ScopesProvider>
     </ProfileProvider>
   )
 }

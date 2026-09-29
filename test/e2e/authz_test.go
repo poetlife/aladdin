@@ -180,6 +180,14 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 	}); err != nil {
 		t.Fatalf("注入测试主体失败: %v", err)
 	}
+	// 范围也要登记：绑定只能指向已登记的范围，因此走服务的授予路径（管理面用例）
+	// 需要这一条（见 docs/design/rbac/scopes.md）。直接写的绑定不受它约束，
+	// 但夹具要能同时覆盖"读/写都走服务"的用例。
+	if scope != rbac.GlobalScope {
+		if err := srv.Store().PutScope(context.Background(), rbac.ScopeDefinition{Path: string(scope)}); err != nil {
+			t.Fatalf("登记测试范围失败: %v", err)
+		}
+	}
 	if err := srv.Store().Bind(context.Background(), rbac.RoleBinding{
 		SubjectID: testSubject, RoleID: roleID, Scope: scope,
 	}); err != nil {
@@ -316,7 +324,11 @@ func TestSessionPermissionsAreExpanded(t *testing.T) {
 		{
 			name: "具体权限码原样下发",
 			role: rbac.RoleViewer,
-			want: []rbac.PermissionCode{rbac.PermissionRbacRoleRead, rbac.PermissionRbacSubjectRead},
+			want: []rbac.PermissionCode{
+				rbac.PermissionRbacRoleRead,
+				rbac.PermissionRbacSubjectRead,
+				rbac.PermissionRbacScopeRead,
+			},
 		},
 		{
 			name: "整个集合就是一个通配",

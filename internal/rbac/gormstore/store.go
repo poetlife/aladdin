@@ -234,6 +234,78 @@ func (s *Store) BindingsOfRole(ctx context.Context, roleID string) ([]rbac.RoleB
 	return rbac.SortBindings(toBindings(recs)), nil
 }
 
+// BindingsUnderScope 实现 rbac.MutableStore。
+//
+// 读回全部绑定后在 Go 侧按 Scope.Contains 过滤，而不是写一条带前缀的 SQL：
+// 范围路径是自由文本，SQL 里的前缀匹配要处理 LIKE 的 % 与 _ 转义，而包含语义
+// 只能有一处实现。代价是这次查询是 O(全部绑定)——它只服务删除范围前的一次
+// 引用校验，属管理面操作，可以接受。
+func (s *Store) BindingsUnderScope(ctx context.Context, scope rbac.Scope) ([]rbac.RoleBinding, error) {
+	var recs []database.RoleBindingRecord
+	if err := s.db.WithContext(ctx).Find(&recs).Error; err != nil {
+		return nil, unavailable("读取范围 "+string(scope)+" 下的绑定", err)
+	}
+	out := make([]rbac.RoleBinding, 0, len(recs))
+	for _, b := range toBindings(recs) {
+		if scope.Contains(b.Scope) {
+			out = append(out, b)
+		}
+	}
+	return rbac.SortBindings(out), nil
+}
+
+// Scopes 实现 rbac.Store。
+//
+// 不带 ORDER BY：顺序由 rbac.SortScopes 定义，两个存储实现共用同一条规则。
+func (s *Store) Scopes(ctx context.Context) ([]rbac.ScopeDefinition, error) {
+	var recs []database.ScopeRecord
+	if err := s.db.WithContext(ctx).Find(&recs).Error; err != nil {
+		return nil, unavailable("读取范围目录", err)
+	}
+	return rbac.SortScopes(toScopes(recs)), nil
+}
+
+// Scope 实现 rbac.Store。
+func (s *Store) Scope(ctx context.Context, path string) (rbac.ScopeDefinition, error) {
+	var rec database.ScopeRecord
+	if err := s.db.WithContext(ctx).First(&rec, "path = ?", path).Error; err != nil {
+		return rbac.ScopeDefinition{}, scopeLookupError(err, path)
+	}
+	return toScopeDefinition(rec), nil
+}
+
+// PutScope 实现 rbac.MutableStore。
+//
+// 冲突即覆盖，因此"登记一个已存在的路径"退化为改显示名——路径是主键，
+// 覆盖不会把它换掉（见 docs/design/rbac/scopes.md）。
+func (s *Store) PutScope(ctx context.Context, scope rbac.ScopeDefinition) error {
+	rec := fromScopeDefinition(scope)
+	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "path"}},
+		UpdateAll: true,
+	}).Create(&rec).Error
+	if err != nil {
+		return unavailable("登记范围 "+scope.Path, err)
+	}
+	return nil
+}
+
+// DeleteScope 实现 rbac.MutableStore。
+//
+// 只执行、不判定：范围内或其后代上是否还有绑定，由调用方先经
+// rbac.ValidateScopeDeletion 校验。删除不存在的范围返回 ErrScopeNotFound，
+// 而不是静默成功——多半意味着调用方拼错了路径。
+func (s *Store) DeleteScope(ctx context.Context, path string) error {
+	result := s.db.WithContext(ctx).Where("path = ?", path).Delete(&database.ScopeRecord{})
+	if result.Error != nil {
+		return unavailable("删除范围 "+path, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("%w: %s", rbac.ErrScopeNotFound, path)
+	}
+	return nil
+}
+
 // 编译期断言：本实现同时满足两个接口。少实现一个方法时在这里就报错，
 // 而不是等到服务端装配处才报——那时的错误信息指向装配代码，不指向这里。
 var (

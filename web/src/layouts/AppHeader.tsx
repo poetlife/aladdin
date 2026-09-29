@@ -1,8 +1,9 @@
-import { Button, Input, Layout, theme } from 'antd'
+import { AutoComplete, Button, Layout, theme, Tooltip } from 'antd'
 import { Building2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { useSession } from '../auth'
+import { formatScope, GLOBAL_SCOPE_LABEL, parseScope, useMyScopes, useScopes } from '../rbac'
 import { ThemeSwitch } from '../theme'
 
 const { Header } = Layout
@@ -16,13 +17,17 @@ interface AppHeaderProps {
 }
 
 /**
- * 页头：与**当前视图**相关的控件——折叠开关、作用域、主题。
+ * 页头：与**当前视图**相关的控件——折叠开关、管理范围、主题。
  *
  * 账号入口不在这里，在侧边栏底部（见 AppSidebar.tsx）：它回答的是"我是谁"，
  * 与导航同类，因此与导航同处一侧。
  *
  * 那颗开关在宽屏与窄屏下做的事不同（收放导轨 / 开抽屉），页头不自己判断是哪一种，
  * 图标、标签与行为都由外壳注入——判断"是否窄屏"的地方只有一处。
+ *
+ * 中间那个控件叫**管理范围**：它回答"我在哪个授权范围下工作"。这个词是刻意的，
+ * 它既不叫"作用域"（会与权限码的"领域"段和凭证默认作用域混起来），也不该被
+ * 理解成业务域/产品线。三个概念的区分见 docs/design/rbac/management-ui.md。
  *
  * 背景与分隔线取自 `theme.useToken()`，而不是 antd 的 `Layout.Header` 默认值——
  * 后者是硬编码的深色 `#001529`，不随明暗算法变化，会在亮色主题下留一条深色带。
@@ -31,13 +36,38 @@ export function AppHeader({ toggleIcon, toggleLabel, onToggle }: AppHeaderProps)
   const { token } = theme.useToken()
   const { scope, setScope } = useSession()
 
-  const [scopeDraft, setScopeDraft] = useState(scope)
+  // 候选项首选**已登记的范围目录**（这个部署里有哪些范围，见
+  // docs/design/rbac/scopes.md），读不到时退回**我自己的绑定范围**——后者是
+  // 前者的子集，退回不丢候选。目录为空既可能是没权限，也可能是还没登记过，
+  // 两种情形下退回都一样对。
+  const catalog = useScopes()
+  const mine = useMyScopes()
 
-  async function applyScope(): Promise<void> {
-    if (scopeDraft !== scope) {
-      await setScope(scopeDraft)
+  // 输入框里显示的永远是**界面写法**：空串显示成「全局」。
+  const [draft, setDraft] = useState(() => formatScope(scope))
+
+  // 范围可能在别处变化（首次登录时服务端会采纳凭证的默认范围），
+  // 草稿要跟着回到与它一致的那一份，否则输入框会停在一个已经作废的值上。
+  useEffect(() => {
+    setDraft(formatScope(scope))
+  }, [scope])
+
+  async function commit(input: string): Promise<void> {
+    const next = parseScope(input)
+    // 先归一化显示：输入「全局」或留空之后，框里回的应该是同一个写法。
+    setDraft(formatScope(next))
+    if (next !== scope) {
+      await setScope(next)
     }
   }
+
+  const candidates =
+    catalog.scopes.length > 0 ? catalog.scopes.map((s) => s.path) : mine.scopes
+
+  // 不额外塞一个「全局」：请求里的空范围在服务端表示"不指定、按凭证默认范围解析"，
+  // 不是"我要全局"，因此它不是一个用户能点选的落点——真正的全局会作为**解析结果**
+  // 出现在这个框里。
+  const options = candidates.map((s) => ({ value: formatScope(s), label: formatScope(s) }))
 
   return (
     <Header
@@ -73,18 +103,45 @@ export function AppHeader({ toggleIcon, toggleLabel, onToggle }: AppHeaderProps)
           minWidth: 0,
         }}
       >
-        {/* 宽度是弹性的：桌面端封顶 220，手机上有多少用多少。
-            写死 220 会在 360px 的屏上把主题切换挤出页头。 */}
-        <Input
-          value={scopeDraft}
-          onChange={(e) => setScopeDraft(e.target.value)}
-          onBlur={() => void applyScope()}
-          onPressEnter={() => void applyScope()}
-          placeholder="作用域，如 tenant/acme"
-          prefix={<Building2 size={14} />}
-          style={{ flex: '1 1 160px', maxWidth: 220, minWidth: 0 }}
-          aria-label="当前作用域"
-        />
+        {/* 宽度是弹性的：桌面端封顶 260，手机上有多少用多少。
+            写死 260 会在 360px 的屏上把主题切换挤出页头。
+            这个控件是"可手输 + 有建议"，不是只读选择：候选项列不出来时
+            （没有读主体的权限、主体还没登记、这次读取失败）仍然要能直接写路径。 */}
+        <Tooltip
+          title={
+            <span>
+              这次权限判定所在的范围。它是层级路径，父范围包含子范围，最上层是「
+              {GLOBAL_SCOPE_LABEL}」。
+              <br />
+              它由你的角色绑定决定：留空表示不指定，服务端会回落到你凭证的默认范围，并把
+              <strong>解析结果回填到这里</strong>——框里显示的永远是实际生效的那个。
+              <br />
+              它与权限码里的「领域」段（如 rbac、galaxy）不是一回事。
+              {candidates.length === 0 && (
+                <>
+                  <br />
+                  暂时列不出可用的范围，可直接输入路径。
+                </>
+              )}
+            </span>
+          }
+        >
+          <AutoComplete
+            value={draft}
+            options={options}
+            onChange={(value) => setDraft(value)}
+            // 选中一个候选项是一次明确的决定，立即生效；手输则等回车或失焦再提交。
+            onSelect={(value) => void commit(value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void commit(draft)
+            }}
+            onBlur={() => void commit(draft)}
+            placeholder="管理范围"
+            prefix={<Building2 size={14} />}
+            style={{ flex: '1 1 160px', maxWidth: 260, minWidth: 0 }}
+            aria-label="管理范围"
+          />
+        </Tooltip>
 
         <ThemeSwitch />
       </div>

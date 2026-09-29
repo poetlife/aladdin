@@ -81,6 +81,28 @@ func fromBinding(binding rbac.RoleBinding) database.RoleBindingRecord {
 	}
 }
 
+func toScopes(recs []database.ScopeRecord) []rbac.ScopeDefinition {
+	out := make([]rbac.ScopeDefinition, 0, len(recs))
+	for _, rec := range recs {
+		out = append(out, toScopeDefinition(rec))
+	}
+	return out
+}
+
+func toScopeDefinition(rec database.ScopeRecord) rbac.ScopeDefinition {
+	return rbac.ScopeDefinition{
+		Path:        rec.Path,
+		DisplayName: rec.DisplayName,
+	}
+}
+
+func fromScopeDefinition(scope rbac.ScopeDefinition) database.ScopeRecord {
+	return database.ScopeRecord{
+		Path:        scope.Path,
+		DisplayName: scope.DisplayName,
+	}
+}
+
 func toPermissionCodes(codes []string) []rbac.PermissionCode {
 	if codes == nil {
 		return nil

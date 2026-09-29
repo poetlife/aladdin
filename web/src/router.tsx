@@ -8,7 +8,10 @@ import { ForbiddenPage } from './pages/ForbiddenPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { PermissionCatalogPage } from './pages/PermissionCatalogPage'
 import { RolesPage } from './pages/RolesPage'
+import { ScopesPage } from './pages/ScopesPage'
+import { SubjectBindingsPage } from './pages/SubjectBindingsPage'
 import { PermissionCodes } from './gen/permission-codes'
 import { CliPage } from './pages/docs/CliPage'
 import { DocsIndexPage } from './pages/docs/DocsIndexPage'
@@ -65,8 +68,28 @@ export const router = createBrowserRouter([
           { path: '/docs/galaxy', element: <GalaxyPage /> },
           {
             element: <RequirePermission require={[PermissionCodes.RbacRoleRead]} />,
-            children: [{ path: '/roles', element: <RolesPage /> }],
+            children: [
+              { path: '/access/roles', element: <RolesPage /> },
+              // 权限码目录与角色定义同一道门：它要显示"哪些角色持有这个码"，
+              // 那是角色信息（见 docs/design/rbac/management-ui.md）。
+              { path: '/access/codes', element: <PermissionCatalogPage /> },
+            ],
           },
+          // 人员授权：按主体查询绑定、授予与回收。**没有"按范围列全部绑定"的
+          // 接口**，所以这一页以主体标识为键（见 docs/design/rbac/management-ui.md）。
+          {
+            element: <RequirePermission require={[PermissionCodes.RbacSubjectRead]} />,
+            children: [{ path: '/access/subjects', element: <SubjectBindingsPage /> }],
+          },
+          // 范围目录：这个部署里登记了哪些范围。绑定只能指向已登记的范围
+          //（见 docs/design/rbac/scopes.md）。
+          {
+            element: <RequirePermission require={[PermissionCodes.RbacScopeRead]} />,
+            children: [{ path: '/access/scopes', element: <ScopesPage /> }],
+          },
+          // 权限管理原先挂在 /roles 下。旧地址留一次跳转：部署文档里
+          // 的 SPA 回落冒烟步骤正是拿它当例子（见 docs/deploy.md）。
+          { path: '/roles', element: <Navigate to="/access/roles" replace /> },
           // galaxy 创作面。基础权限是 `galaxy.project.read`——列表与编辑器
           // 同属一块能力；编辑器内部的写/发布/资产入口再按各自权限码裁剪。
           {
