@@ -2616,6 +2616,102 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.telemetry.v1.ReportEventsResponse'
+  /aladdin.telemetry.v1.TelemetryAdminService/ListEventStats:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: telemetry.read
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.telemetry.v1.TelemetryAdminService
+      summary: ListEventStats
+      description: |-
+        **鉴权**：需要权限 `telemetry.read`；作用域取自请求字段。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
+        按 `client × action × result` 统计时间窗内的事件条数。
+
+         它是"Web/CLI 最近在干什么、失败或被拦多不多"这一眼的直接答案：三个维度
+         都是写侧的有界取值，因此结果行数有上界（端 × 动作 × 结局），不需要分页。
+      operationId: aladdin.telemetry.v1.TelemetryAdminService.ListEventStats
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.telemetry.v1.ListEventStatsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.telemetry.v1.ListEventStatsResponse'
+  /aladdin.telemetry.v1.TelemetryAdminService/ListRecentEvents:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: telemetry.read
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.telemetry.v1.TelemetryAdminService
+      summary: ListRecentEvents
+      description: |-
+        **鉴权**：需要权限 `telemetry.read`；作用域取自请求字段。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
+        列出时间窗内**最新的一页**事件明细。
+
+         只给最新的一页、条数有上限，不提供游标翻页：这一页要回答的是"刚才发生了什么"，
+         而不是"把三个月的事件翻完"。要翻完就该去日志系统，那里的检索没有上限。
+      operationId: aladdin.telemetry.v1.TelemetryAdminService.ListRecentEvents
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.telemetry.v1.ListRecentEventsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.telemetry.v1.ListRecentEventsResponse'
 components:
   schemas:
     aladdin.events.v1.Control:
@@ -4956,6 +5052,184 @@ components:
          服务端丢弃一条事件（未知动作、不允许匿名、超限、属性不合规）时**不报错**：
          遥测的数据问题绝不能升级成客户端的业务错误，否则一次清单不一致就会让前端
          弹框、CLI 非零退出。丢弃与否由服务端日志回答，客户端只看得到"这一批被收到了"。
+    aladdin.telemetry.v1.TimeWindow:
+      type: string
+      title: TimeWindow
+      enum:
+        - TIME_WINDOW_UNSPECIFIED
+        - TIME_WINDOW_TODAY
+        - TIME_WINDOW_LAST_7_DAYS
+        - TIME_WINDOW_LAST_30_DAYS
+      description: |-
+        TimeWindow 是允许选择的观察窗口。**枚举而不是时间戳对**：有界取值让服务端不必
+         校验"这个时间范围是不是过大"，也不会出现"前端算出的 from/to 与服务端的时钟差
+         一点点"这类无从对账的偏差。
+
+         三个窗口都以**服务端收到请求的那一刻**为锚：
+
+           - TODAY：服务器本地时区当日零点到此刻；
+           - LAST_7_DAYS / LAST_30_DAYS：此刻往前 7 / 30 个 24 小时。
+
+         区间一律是半开的 `[from, to)`。事件保留 30 天（回收比窗口多留一天，见
+         docs/observability.md），因此 LAST_30_DAYS 是能被完整回答的最长窗口。
+    aladdin.telemetry.v1.EventStat:
+      type: object
+      properties:
+        client:
+          allOf:
+            - title: client
+              description: 上报端。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Client'
+        action:
+          type: string
+          title: action
+          description: |-
+            动作名。取值来自写侧的动作允许清单（internal/telemetry 的动作表）。
+
+             类型是 string 而不是 Action 枚举：动作清单会随业务扩展，而计数行是**历史
+             数据**——用枚举会让"昨天记下的动作"在清单变更后变成一个无法表示的值。
+             服务端保证它只会是清单内的名字。
+        result:
+          allOf:
+            - title: result
+              description: 结局。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Result'
+        count:
+          oneOf:
+            - type: integer
+              title: integer
+              format: int64
+            - type: string
+              title: string
+          title: count
+          description: 该组合在窗口内的条数。
+      title: EventStat
+      additionalProperties: false
+      description: EventStat 是一个分组维度的计数。
+    aladdin.telemetry.v1.ListEventStatsRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+          description: |-
+            **只用于鉴权**：判断调用方有没有在这个范围上读遥测的权限。
+
+             事件没有归属范围（它是端上的动作，不是某个人或某个范围的资源），因此这个
+             字段**不过滤结果**——与 ListRoles 的 scope 同理（见 rbac.proto）。同一主体在
+             任意有读权限的范围上调用，拿到的都是同一份计数；变化的是"还能不能读"。
+        window:
+          allOf:
+            - title: window
+              description: 观察窗口。TIME_WINDOW_UNSPECIFIED 不是合法取值，会被拒绝。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.TimeWindow'
+      title: ListEventStatsRequest
+      additionalProperties: false
+      description: ListEventStatsRequest 是一次计数查询。
+    aladdin.telemetry.v1.ListEventStatsResponse:
+      type: object
+      properties:
+        stats:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.telemetry.v1.EventStat'
+          title: stats
+          description: |-
+            每条是一个 (client, action, result) 组合的计数。**只返回出现过的组合**，
+             计数为零的组合不占一行。
+      title: ListEventStatsResponse
+      additionalProperties: false
+      description: ListEventStatsResponse 是分组计数结果。
+    aladdin.telemetry.v1.ListRecentEventsRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+          description: 只用于鉴权，不过滤结果（同 ListEventStatsRequest.scope）。
+        window:
+          allOf:
+            - title: window
+              description: 观察窗口。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.TimeWindow'
+        limit:
+          type: integer
+          title: limit
+          description: 条数上限。0 表示用服务端默认值；超过服务端上限时按上限处理。
+      title: ListRecentEventsRequest
+      additionalProperties: false
+      description: ListRecentEventsRequest 是一次明细查询。
+    aladdin.telemetry.v1.ListRecentEventsResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.telemetry.v1.RecentEvent'
+          title: events
+          description: 按发生时间**从新到旧**排列。
+      title: ListRecentEventsResponse
+      additionalProperties: false
+      description: ListRecentEventsResponse 是最新的一页明细。
+    aladdin.telemetry.v1.RecentEvent:
+      type: object
+      properties:
+        occurredAt:
+          type: string
+          title: occurred_at
+          description: 发生时间，RFC3339（UTC）。由服务端盖章，不由上报端提供。
+        client:
+          allOf:
+            - title: client
+              description: 上报端。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Client'
+        surface:
+          allOf:
+            - title: surface
+              description: 发生在哪个界面/入口。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Surface'
+        action:
+          type: string
+          title: action
+          description: 动作名（取值语义同 EventStat.action）。
+        result:
+          allOf:
+            - title: result
+              description: 结局。
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.Result'
+        durationMs:
+          type: integer
+          title: duration_ms
+          description: 耗时（毫秒）。0 表示上报端未提供。
+        clientTraceId:
+          type: string
+          title: client_trace_id
+          description: 上报端当时所在链路的 trace_id；空表示未提供。
+        subjectId:
+          type: string
+          title: subject_id
+          description: 事件所属主体；空表示匿名（只有允许匿名的动作会是空）。
+        attrs:
+          type: object
+          title: attrs
+          additionalProperties:
+            type: string
+            title: value
+          description: 白名单属性，键与取值都在服务端登记过（同写侧）。
+      title: RecentEvent
+      additionalProperties: false
+      description: RecentEvent 是一条事件的明细，字段与写侧落盘的日志字段一一对应。
+    aladdin.telemetry.v1.RecentEvent.AttrsEntry:
+      type: object
+      properties:
+        key:
+          type: string
+          title: key
+        value:
+          type: string
+          title: value
+      title: AttrsEntry
+      additionalProperties: false
 tags:
   - name: aladdin.events.v1.EventsService
     description: |-
@@ -5052,3 +5326,24 @@ tags:
 
        归属：它是**基础设施**，不属于任何业务模块（与 EventsService 同理）。下一个
        要记动作的业务只往动作清单里加一项，不新建服务。
+  - name: aladdin.telemetry.v1.TelemetryAdminService
+    description: |-
+      TelemetryAdminService 是客户端事件的**只读管理面**。
+
+       它与 TelemetryService 是一件事的两侧，因此拆成两个服务而不是塞进一个：
+
+         - TelemetryService 是**公开的写侧**（登录页失败、命令行未登录退出都发生在
+           拿到会话之前，要求先认证才能上报是循环依赖），任何人都能调用；
+         - 本服务是**受控的读侧**，只有持有 `telemetry.read` 的主体能调用。
+
+       两者的准入条件正相反，写在同一份接口里会让"这个服务要不要认证"变成一个需要
+       逐方法去看的问题——那正是注解漏写的温床。
+
+       两条边界同样写死在这里：
+
+         - **读侧不放大字段面**。返回的都是写侧已经脱敏后的字段（有界枚举、服务端从
+           会话得出的主体标识、校验过的 trace_id、白名单属性），没有请求体、没有自由
+           文本。读侧能看见的东西不会比写侧落盘的多。
+         - **它不是第二套观测平台**。查询参数有界——时间窗是一个枚举，条数有上限，
+           没有任意过滤表达式。需要那种能力的分析走外部日志系统（见
+           docs/observability.md）。

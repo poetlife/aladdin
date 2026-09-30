@@ -1,6 +1,7 @@
 import { Avatar, Button, Dropdown, Menu, theme } from 'antd'
 import type { MenuProps } from 'antd'
 import {
+  Activity,
   BookOpen,
   ChevronDown,
   CircleUserRound,
@@ -26,10 +27,14 @@ const ICON_SIZE = 16
 
 /** 导航分组的标识。分组本身不指向任何页面，只是一个可展开的容器。 */
 const GROUP_ACCESS = 'access'
+const GROUP_ADMIN = 'admin'
 
 /** 分组的显示信息。 */
 const GROUP_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
   [GROUP_ACCESS]: { label: '权限', icon: <ShieldCheck size={ICON_SIZE} /> },
+  // 「运维」而不是「管理」：与 /access 那组（权限管理）区分开——这一组放的是
+  // 运行观测，不是给谁配权限。
+  [GROUP_ADMIN]: { label: '运维', icon: <Activity size={ICON_SIZE} /> },
 }
 
 /**
@@ -66,6 +71,8 @@ const NAV: NavEntry[] = [
   { path: '/access/scopes', label: '范围', icon: <FolderTree size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacScopeRead },
   // 权限码目录是只读对照（码 + 说明 + 直接声明它的角色），与角色定义同一道权限门。
   { path: '/access/codes', label: '权限码', icon: <KeyRound size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacRoleRead },
+  // 运维这一组：客户端遥测。它是只读的观测面，与"谁能做什么"无关，因此独立成组。
+  { path: '/admin/telemetry', label: '遥测', icon: <Activity size={ICON_SIZE} />, group: GROUP_ADMIN, permission: PermissionCodes.TelemetryRead },
   // 文档区也不需要权限码：它讲的是"怎么把命令行装上并登录"，
   // 而零权限的主体恰恰最需要它（见 docs/design/web/docs-area.md）。
   // 导航**只有这一项**：章节加页只往区域里加，这里不再变。

@@ -21,7 +21,18 @@ import (
 //
 // 期望值按 **sqlite** 记录。换后端时这里会整体变化——那时应当再留一份
 // 该后端的快照，而不是把这份改成两边都不像。
-const wantSchema = `table galaxy_asset_tags
+const wantSchema = `table client_events
+  action text pk=false null=true
+  attrs text pk=false null=true
+  client text pk=false null=true
+  client_trace_id text pk=false null=true
+  duration_ms integer pk=false null=true
+  id integer pk=true null=true
+  occurred_at datetime pk=false null=true
+  result text pk=false null=true
+  subject_id text pk=false null=true
+  surface text pk=false null=true
+table galaxy_asset_tags
   asset_id text pk=true null=true
   project_id text pk=true null=true
   tag text pk=true null=true
@@ -145,6 +156,12 @@ func schemaDump(t *testing.T, db *gorm.DB) string {
 
 	var b strings.Builder
 	for _, table := range tables {
+		// 跳过引擎自己的记账表（sqlite_sequence 等）。它们不是"库结构"的一部分，
+		// 而是 sqlite 为自增列维护的内部表——把它冻进快照，会让"某张表用了自增
+		// 主键"这件事看起来像一次结构变更，也会让快照随引擎版本漂移。
+		if strings.HasPrefix(table, "sqlite_") {
+			continue
+		}
 		columns, err := db.Migrator().ColumnTypes(table)
 		if err != nil {
 			t.Fatalf("读取表 %s 的列失败: %v", table, err)

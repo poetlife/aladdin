@@ -24,6 +24,7 @@ import (
 	profilegormstore "github.com/poetlife/aladdin/internal/profile/gormstore"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
+	telemetrygormstore "github.com/poetlife/aladdin/internal/telemetry/gormstore"
 )
 
 // version 由构建期经 -ldflags 注入，作为上报时的 service.version。
@@ -183,6 +184,9 @@ func run() error {
 		Assets:   objects,
 		Public:   publicWriter,
 		Origin:   origin,
+	}, server.TelemetryStores{
+		// 事件表与其它表同库同连接：写侧记进去的与读侧查出来的必须是同一份数据。
+		Events: telemetrygormstore.New(store.DB()),
 	})
 
 	// 引导先于种子：它只在存储里一条绑定都没有时生效，而种子会写入绑定。
