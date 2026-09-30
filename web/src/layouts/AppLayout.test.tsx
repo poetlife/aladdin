@@ -371,4 +371,20 @@ describe('权限分组与管理范围', () => {
     const options = [...document.querySelectorAll('.ant-select-item-option')].map((o) => o.textContent)
     expect(options).toContain('tenant/acme/project')
   })
+
+  // 列不出候选（没读主体的权限、主体还没登记、这次读取失败）是可预期的状态，
+  // 不能让用户以为"没得选"：提示要落在他能看到候选的那块地方——下拉空态。
+  it('列不出候选时，下拉空态里说明可以手输', async () => {
+    installMatchMedia(false)
+
+    const container = await renderAuthenticated([], '/')
+    const auto = container.querySelector('.ant-select-auto-complete')
+    expect(auto, '顶栏没有管理范围控件').not.toBeNull()
+    const trigger = (auto as Element).querySelector('.ant-select-content') ?? auto
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+
+    expect(document.body.textContent).toContain('可直接输入路径')
+  })
 })
