@@ -94,6 +94,8 @@
 | 新主体标识的分配（唯一入口） | `identity` 的身份解析入口 | [internal/identity/identity_resolver.go](../internal/identity/identity_resolver.go) |
 | 会话凭证的生成与摘要计算 | `identity` 的会话签发入口 | [internal/identity/session.go](../internal/identity/session.go) |
 | 过期会话行的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
+| 超出保留期的客户端事件行的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
+| 读侧时间窗折算成半开区间 `[from, to)` | `telemetry.WindowRange` | [internal/telemetry/window.go](../internal/telemetry/window.go) |
 
 > **链路标识只用 OTel 的传播实现**。仓库里不保留任何自研的 trace_id 生成、注入或继承逻辑：那会与 `traceparent` 形成两套并存的标识，而它们迟早会不一致（见 [docs/observability.md](observability.md)）。
 
@@ -119,7 +121,7 @@
 | 每个请求留一行可检索的日志（含 trace_id / 过程名 / 结果码 / 耗时） | `telemetryMiddleware.logRequest` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 遥测数据的导出与退出前冲刷 | `observability.Provider` 的 `Shutdown`（导出失败不影响业务） | [internal/observability/provider.go](../internal/observability/provider.go) |
 | 指标名、属性键与记录入口 | 常量定义 + `observability.Metrics` 的方法 | [internal/observability/metrics.go](../internal/observability/metrics.go) |
-| 客户端事件的校验、脱敏、限流与落盘 | `telemetry.Recorder.Report`（RPC 那一层只是薄壳） | [internal/telemetry/recorder.go](../internal/telemetry/recorder.go) |
+| 客户端事件的校验、脱敏、限流与落盘（日志与库两个去处） | `telemetry.Recorder.Report`（RPC 那一层只是薄壳） | [internal/telemetry/recorder.go](../internal/telemetry/recorder.go) |
 | 上报端标识 `x-aladdin-client` 的注入 | Web 传输层的拦截器 / CLI 客户端的请求头注入处 | [web/src/api/transport.ts](../web/src/api/transport.ts) / [pkg/client/client.go](../pkg/client/client.go) |
 | 前端客户端事件的上报入口（攒批、失败即时发送、页面隐藏冲刷） | `track` | [web/src/telemetry/track.ts](../web/src/telemetry/track.ts) |
 | 命令行本地失败的上报（配置/凭证/用法，退出前发出） | `recordLocalFailure` + `flushClientEvents`（只在退出路径调用） | [cmd/aladdin/telemetry-events.go](../cmd/aladdin/telemetry-events.go) |
@@ -139,6 +141,8 @@
 | 权限码全集（Go 常量与前端常量同源） | 权限目录，经 `make gen` 双向派生 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
 | 客户端事件的类型、动作允许清单与字段（Go / TypeScript 两端同源） | proto 定义，经 `buf generate` 派生 | [api/proto/aladdin/telemetry/v1/telemetry.proto](../api/proto/aladdin/telemetry/v1/telemetry.proto) |
 | 一个动作的日志取值、是否允许匿名、可携带哪些属性 | 动作策略表 | [internal/telemetry/actions.go](../internal/telemetry/actions.go) |
+| 客户端事件（有界取值）的持久化数据 | telemetry 的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/telemetry/store.go](../internal/telemetry/store.go) / [internal/telemetry/gormstore/](../internal/telemetry/gormstore/) |
+| 落库的稳定取值折回协议枚举（读侧） | 由写侧那张表的反向映射派生，不另抄一份 | [internal/telemetry/enums.go](../internal/telemetry/enums.go) |
 | 角色 / 权限 / 主体关系的持久化数据 | `rbac.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/rbac/store.go](../internal/rbac/store.go) / [internal/rbac/gormstore/](../internal/rbac/gormstore/store.go) |
 | 会话（谁、到什么时候为止、作用域）的持久化数据 | 会话存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/session.go](../internal/identity/session.go) / [internal/identity/gormstore/](../internal/identity/gormstore/store.go) |
 | 身份别名（（来源，身份标识）→ 主体）的持久化数据 | 身份别名的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/identity.go](../internal/identity/identity.go) / [internal/identity/gormstore/identity.go](../internal/identity/gormstore/identity.go) |

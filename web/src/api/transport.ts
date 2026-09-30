@@ -7,6 +7,7 @@ import { GalaxyService } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { IdentityService } from '../gen/proto/aladdin/identity/v1/identity_pb'
 import { ProfileService } from '../gen/proto/aladdin/profile/v1/profile_pb'
 import { RBACService } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
+import { TelemetryAdminService } from '../gen/proto/aladdin/telemetry/v1/telemetry_admin_pb'
 import { TelemetryService } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 
 /**
@@ -189,4 +190,14 @@ export function eventsClient() {
  */
 export function telemetryClient() {
   return createClient(TelemetryService, getTransport())
+}
+
+/**
+ * 客户端事件**只读管理面**的客户端。
+ *
+ * 与上面的上报客户端是同一个领域的两侧：那个是公开的写侧（任何会话都能报），
+ * 这个是受控的读侧（要 telemetry.read）。因此两个描述符、两个客户端，不合并。
+ */
+export function telemetryAdminClient() {
+  return createClient(TelemetryAdminService, getTransport())
 }

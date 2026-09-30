@@ -20,7 +20,7 @@ import (
 func newTestTelemetryService(t *testing.T) (*TelemetryService, *observer.ObservedLogs) {
 	t.Helper()
 	core, logs := observer.New(zapcore.DebugLevel)
-	recorder := telemetry.NewRecorder(zap.New(core), telemetry.NewLimiter(telemetry.DefaultLimits))
+	recorder := telemetry.NewRecorder(zap.New(core), telemetry.NewLimiter(telemetry.DefaultLimits), nil)
 	return NewTelemetryService(recorder), logs
 }
 

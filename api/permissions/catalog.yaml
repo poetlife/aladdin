@@ -30,6 +30,8 @@ permissions:
     description: "查阅审计日志"
   - code: "audit.log.export"
     description: "导出审计日志。属批量操作"
+  - code: "telemetry.read"
+    description: "读取客户端遥测的计数与明细（Web/CLI 本地动作）。只读"
   - code: "galaxy.project.read"
     description: "读取自己创建的工程、草稿与版本"
   - code: "galaxy.project.write"
@@ -68,6 +70,9 @@ roles:
     permissions:
       - "audit.log.read"
       - "audit.log.export"
+      # 客户端事件是审计面要看的一类运行事实：谁在什么时候被拦下、失败多不多。
+      # 它是只读聚合，与审计日志同属"看得见但不改得动"。
+      - "telemetry.read"
       - "rbac.role.read"
       - "rbac.subject.read"
       # 审计要能看见"哪些范围存在"：范围名是部署内的目录，不是秘密
