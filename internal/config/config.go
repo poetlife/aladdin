@@ -402,6 +402,28 @@ func DefaultCLI() CLIConfig {
 	}
 }
 
+// OfficialSiteOrigin 返回官方站点的源（形如 https://host:port），取自发布构建
+// 注入的默认地址；非发布构建（注入为空）返回空串。
+//
+// 它与 CLIConfig.Address 的区别是**不受 --address / ALADDIN_ADDRESS 覆盖**：
+// 命令行的自更新兜底镜像挂在官方站点上（见 docs/design/cli/self-update.md），
+// 它跟着"官方服务在哪"走，不跟着"这次连哪个服务端"走——用 SSH 隧道连本机的人
+// 依然应当从官方站点取升级材料，而不是去 127.0.0.1 上找一个不存在的镜像。
+//
+// 主机与端口原样保留，不改写：端口解析在这里换不来任何东西，却多一处会判错的
+// 边界（非默认端口、IPv6 字面量）。协议沿用与传输层同一条规则（非回环即 TLS），
+// 因此它不可能与"官方服务是加密的"这件事不一致。
+func OfficialSiteOrigin() string {
+	if injectedCLIDefaultAddress == "" {
+		return ""
+	}
+	scheme := "https"
+	if loopback.IsAddress(injectedCLIDefaultAddress) {
+		scheme = "http"
+	}
+	return scheme + "://" + injectedCLIDefaultAddress
+}
+
 // RequiresTLS 判断这个目标地址是否必须使用 TLS。
 //
 // **非回环地址一律要求 TLS**，只有回环（本机开发、SSH 隧道）允许明文。这个判断

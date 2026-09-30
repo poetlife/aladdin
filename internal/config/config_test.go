@@ -610,6 +610,48 @@ func TestDefaultAddressShared(t *testing.T) {
 	}
 }
 
+// 官方站点由发布构建注入的默认地址推导，且**不受 --address 影响**。
+//
+// 命令行的自更新兜底镜像挂在官方站点上（见 docs/design/cli/self-update.md）：
+// 它跟着"官方服务在哪"走，不跟着"这次连哪个服务端"走。用 SSH 隧道连本机的人
+// 依然应当从官方站点取升级材料，而不是去 127.0.0.1 上找一个不存在的镜像。
+func TestOfficialSiteOriginFollowsInjectedAddressOnly(t *testing.T) {
+	clearEnv(t)
+	isolateHome(t)
+
+	original := injectedCLIDefaultAddress
+	t.Cleanup(func() { injectedCLIDefaultAddress = original })
+
+	// 源码构建没有注入值，也就没有官方站点可推导：兜底路径整体缺席。
+	injectedCLIDefaultAddress = ""
+	if got := OfficialSiteOrigin(); got != "" {
+		t.Errorf("没有注入值时应为空串，得到 %q", got)
+	}
+
+	injectedCLIDefaultAddress = "aladdin.example.test:443"
+	if got := OfficialSiteOrigin(); got != "https://aladdin.example.test:443" {
+		t.Errorf("非回环地址应得到 https 源，得到 %q", got)
+	}
+
+	// --address 只改"这次连哪"。
+	cfg, err := LoadCLI(CLIFlags{Address: "127.0.0.1:9090"})
+	if err != nil {
+		t.Fatalf("LoadCLI: %v", err)
+	}
+	if cfg.Address != "127.0.0.1:9090" {
+		t.Fatalf("--address 应覆盖目标地址，得到 %q", cfg.Address)
+	}
+	if got := OfficialSiteOrigin(); got != "https://aladdin.example.test:443" {
+		t.Errorf("官方站点不该被 --address 带走，得到 %q", got)
+	}
+
+	// 回环注入值（本机开发）走明文，与传输层同一条规则。
+	injectedCLIDefaultAddress = "127.0.0.1:9090"
+	if got := OfficialSiteOrigin(); got != "http://127.0.0.1:9090" {
+		t.Errorf("回环地址应得到 http 源，得到 %q", got)
+	}
+}
+
 // 目标地址决定是否使用 TLS：非回环一律 TLS，只有回环允许明文。
 func TestCLIRequiresTLS(t *testing.T) {
 	cases := []struct {

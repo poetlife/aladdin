@@ -39,6 +39,7 @@ aladdin 的服务端是一个只讲 RPC 的进程：它不托管静态文件、�
      ▼
    nginx :443（终止 TLS，证书由 certbot 维护）
      ├─ location /          → /opt/aladdin/web（静态前端）
+     ├─ location /cli/latest/ → /opt/aladdin/cli/latest（CLI 自更新镜像，只留最新）
      ├─ location /aladdin.  → 127.0.0.1:9090（Connect：浏览器与命令行共用）
      └─ location /grpc.health.v1.Health/ → 127.0.0.1:9090
                                    │
@@ -56,6 +57,7 @@ aladdin 的服务端是一个只讲 RPC 的进程：它不托管静态文件、�
    浏览器 ── https://<发布域>/g/<工程标识> ──▶ 同一个回环端口（公开，不校验凭证）
 
    CLI ── Connect over TLS ──▶ 上面那个 nginx :443（发布产物默认走这条）
+   CLI ── 自更新兜底 ──▶ https://<域名>/cli/latest/（发布源不可用时才走，只读静态文件）
 
    源码构建的 CLI ── ssh -L 9090:127.0.0.1:9090 <主机别名> ──▶ 同一个回环端口
 ```
@@ -116,6 +118,10 @@ sudo ln -sf /etc/nginx/sites-available/<域名> /etc/nginx/sites-enabled/
 ```
 
 未替换就装上去，nginx 会因为 `server_name` 不合法而**直接起不来**——这比"看起来装好了却谁都不匹配"早暴露得多。
+
+> **已有的站点要手工补一条 location。** 模板里新增了 `/cli/latest/`（命令行自更新的兜底镜像，见 [design/cli/self-update.md](design/cli/self-update.md)）。已经装好的站点是按当时的模板装的，**也可能是宿主机上的自有配置**（例如 443 经 SNI 分流到 4443 的形态）——两者都不会自己更新。把那条 location 加进去，再 `sudo nginx -t && sudo systemctl reload nginx`。
+>
+> 漏了它的表现不显眼：主站镜像整体 404，于是客户端在发布源不可用时**兜底失败**（错误信息会同时交代两路），而不是任何一条指向配置的报错。镜像的目录由 `deploy.sh` 自己创建，不必预先建。
 
 模板里的 `/aladdin.` 与 `/grpc.health.v1.Health/` **按 HTTP/1.1 转发上游即可**：浏览器与命令行都走 Connect，它把错误放在 HTTP 状态与响应体里。
 
@@ -315,7 +321,9 @@ ssh <主机别名>                                 # 登录服务器
 sudo /opt/aladdin/deploy.sh v0.2.0             # 省略版本号则取最新 Release
 ```
 
-`deploy.sh` 依次做：拉取产物 → 校验和 → 备份当前二进制与前端 → 原子替换 → 重启 → 健康检查（最多 15 秒）→ 失败则回滚。
+`deploy.sh` 依次做：拉取产物 → 校验和 → 备份当前二进制与前端 → 原子替换 → 重启 → 健康检查（最多 15 秒）→ 失败则回滚 → **成功后刷新主站上的 CLI 自更新镜像**（见 [design/cli/self-update.md](design/cli/self-update.md)）。
+
+镜像那一步是**尽力而为**的收尾：走到那里 Release 已经产出、服务端已经换好，没有可回滚的东西，因此任何失败都只告警、不让本次部署失败，也不碰上一版镜像。它镜像的是 **GitHub 当时的 latest**，与本次部署的版本号无关——一次服务端回滚不该把第三方 CLI 的镜像一起往回带。想单独刷新它，重新跑一次 `deploy.sh` 即可。
 
 注意发布**不碰反向代理**：只有二进制与静态文件在变。改了 `deploy/` 下的配置才需要手工同步，那是前置步骤而不是发布步骤。
 
@@ -413,6 +421,8 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 发布域打不开而主域正常 | 发布域的解析、证书与 nginx `server_name` 三处；**不要图省事把它指回主域**——服务端会因同源而拒绝启动 |
 | 撤回发布后地址仍然出内容 | 撤回是把工程的发布指针置空；若内容还在，看是不是浏览器缓存了产物（服务端的返回不带长效缓存） |
 | 改了 nginx 配置没生效 | 需要 `sudo nginx -t && sudo systemctl reload nginx`；反过来，**只换静态产物不需要 reload** |
+| 命令行报"主站镜像也不可用" | 先看镜像本身在不在：`curl -fsS https://<域名>/cli/latest/version.json`。404 多半是站点配置里少了 `/cli/latest/` 那条 location（见"一次性前置"第 3 步），或者服务器上那份 `deploy.sh` 还是旧的（镜像那一步是后加的，改过 `deploy/` 的文件就要重新 scp 一次） |
+| 镜像里的 tag 比 Release 旧 | 镜像只在部署收尾刷新。看最近一次 `deploy.sh` 有没有打印"已刷新 CLI 镜像"——没打印就往上翻它的告警（读不到元数据、下载失败、校验和不匹配都会只告警） |
 | 头像不显示，昵称与简介正常 | 桶地址与密钥是否配好（`sudo journalctl -u aladdin-server \| grep -i 头像`）；预签名地址是否已过有效期——刷新页面即拿到新地址 |
 | 服务端起不来且日志说缺 COS 密钥 | 半套头像配置：只配了 `cos_bucket_url` 没给密钥，或反之。这是有意拒绝启动，不是故障 |
 | 控制台报 CORS 错误 | 分清写入还是读取。上传失败：桶是否允许主应用源的 `PUT`。工作台源码视图拿不到正文：是否允许 `GET`，且脚本能读到响应体。`<img src>` 取头像或缩略图不需要 CORS；头像不显示先看预签名是否过期、桶与密钥是否配好 |
@@ -428,6 +438,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 身份认证 | 首次引导依赖一次真实登录产出的主体标识（见 [design/identity/channel-login.md](design/identity/channel-login.md)） |
 | 反向代理 | 提供 TLS 终止、静态托管与到 9090 的转发；**按 HTTP/1.1 转发上游即可**（浏览器与命令行都走 Connect）。具体用什么、443 上还有没有别人，由宿主决定 |
 | CLI 的默认目标地址 | 发布产物里带着构建期注入的生产地址，注入值由 CI 的仓库变量提供（见 [release.md](release.md)）；仓库里只有模板与占位符 |
+| CLI 自更新镜像 | 官方站点 `/cli/latest/` 下的静态文件，由 `deploy.sh` 在收尾时从 GitHub 的 latest 覆盖写；命令行从中推导地址、不经配置（见 [release.md](release.md) 与 [design/cli/self-update.md](design/cli/self-update.md)） |
 | 可观测性 | 日志走 journald；`otel_endpoint` 留空表示不上报，链路标识照常生成与传播 |
 | 头像存储 | COS 桶；桶地址由 `cos_bucket_url` 给出，密钥由 systemd 的 `EnvironmentFile` 提供（见 [design/profile/avatar-storage.md](design/profile/avatar-storage.md)） |
 | galaxy 资产私有区 | 同一个桶的 `galaxy/` 前缀；地址同样由 `cos_bucket_url` 给出（见 [design/galaxy/asset-library.md](design/galaxy/asset-library.md)） |
@@ -446,6 +457,8 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 前端 SPA 可深链 | 直接访问 `/roles` 返回页面而非 404（部署后冒烟） |
 | 健康检查从外部可达 | `curl -X POST https://<域名>/grpc.health.v1.Health/Check` 返回 SERVING |
 | 发布产物默认指向生产 | `aladdin --debug whoami` 打印的正是生产地址（人工核对项：判据里不写实值） |
+| 主站只暴露最新的 CLI | `curl -fsS https://<域名>/cli/latest/version.json` 报的 tag 与最新 Release 相同；更早的 tag 的包经同一路径取不到（部署后冒烟） |
+| 镜像与 Release 同源 | 从主站取回的包与它那份 `SHA256SUMS` 里的条目对得上（部署后冒烟：下载后 `sha256sum -c`） |
 | 非回环强制 TLS | 指向非回环明文端点时被拒绝，而不是明文过境（`pkg/client` 单测 + 冒烟） |
 | 只监听回环 | `ss -lnt \| grep 9090` 显示 `127.0.0.1:9090` 而非 `0.0.0.0:9090` |
 | 证书可续期 | `certbot renew --dry-run` 通过；`:80` 的 ACME location 仍在 |
