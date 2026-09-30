@@ -546,7 +546,13 @@ func parseAttributes(text string, base int) []htmlAttr {
 		if i >= len(text) || text[i] != '=' {
 			if name != "" {
 				attrs = append(attrs, htmlAttr{name: name})
+				continue
 			}
+			// 走到这里说明这个字节既不构成属性名、也不是 `=`——自闭合标签末尾
+			// 那个 `/` 就是这种。**必须推进**：名字为空时上面那个 `continue`
+			// 不消耗任何字节，一个 `<meta ... />` 就足以让属性解析原地打转，
+			// 进而让校验永远转不完（服务端一个核被打满）。
+			i++
 			continue
 		}
 		i++ // '='

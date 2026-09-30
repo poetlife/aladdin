@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Empty, Flex, Modal, Segmented, Select, Skeleton, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Empty, Flex, Modal, Segmented, Select, Skeleton, Space, Typography } from 'antd'
 import { ExternalLink, Eye, FileCode, RefreshCw } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
@@ -18,7 +18,6 @@ import {
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { useNarrowViewport } from '../../layouts/use-narrow-viewport'
 import { track } from '../../telemetry/track'
-import { MONOSPACE } from '../../theme'
 import { useWatch } from '../../watch/use-watch'
 import { projectTopic } from '../../watch/topics'
 import { AssetLibrary } from './AssetLibrary'
@@ -26,6 +25,7 @@ import { LifecycleStrip } from './LifecycleStrip'
 import { formatTime } from './format-time'
 import { PreviewFrame } from './PreviewFrame'
 import { useReloadWhenVisible } from './reload-when-visible'
+import { SourceView } from './SourceView'
 import { VALIDATION_PENDING, type ValidationState } from './validation-state'
 import { VersionList } from './VersionList'
 import { WorkbenchTopBar } from './WorkbenchTopBar'
@@ -644,11 +644,6 @@ export function ProjectEditorPage(): React.ReactNode {
   // 只有工程元数据可写。此时不渲染内容相关的入口与结论，改给一句说明。
   const contentEnabled = capabilities?.assetUploadEnabled === true
   const textEntries = entries.filter((entry) => entry.source.case === 'digest')
-  const selectedEntry = entries.find((entry) => entry.path === selectedPath)
-  const selectedAsset =
-    selectedEntry?.source.case === 'assetId'
-      ? assets.find((asset) => asset.id === selectedEntry.source.value)
-      : undefined
 
   const topBar = (
     <WorkbenchTopBar
@@ -856,94 +851,14 @@ export function ProjectEditorPage(): React.ReactNode {
             <PreviewFrame url={previewUrl} height="100%" />
           )
         ) : (
-          <Flex gap={8} style={{ height: '100%', minHeight: 0 }}>
-            {/* 源码视图是**文件列表 + 选中的那一份**，不是"一份正文"：内容本来
-                就是一组具名文件，把它伪装成一份文本会立刻引出"我改的到底是哪一份"
-                这个无法回答的问题。 */}
-            <div
-              style={{
-                width: 220,
-                overflowY: 'auto',
-                border: '1px solid rgba(128,128,128,0.25)',
-                borderRadius: 6,
-                padding: 4,
-                flexShrink: 0,
-              }}
-            >
-              {entries.length === 0 ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  草稿还是空的。用命令行 push 一组文件上来。
-                </Typography.Text>
-              ) : (
-                entries.map((entry) => (
-                  <Flex
-                    key={entry.path}
-                    align="center"
-                    justify="space-between"
-                    gap={4}
-                    onClick={() => void handleSelectEntry(entry)}
-                    style={{
-                      cursor: 'pointer',
-                      padding: '4px 6px',
-                      borderRadius: 4,
-                      background: entry.path === selectedPath ? 'rgba(128,128,128,0.16)' : undefined,
-                    }}
-                  >
-                    <Typography.Text style={{ fontSize: 12 }} ellipsis>
-                      {entry.path}
-                    </Typography.Text>
-                    {entry.source.case === 'assetId' && (
-                      <Tag style={{ marginInlineEnd: 0 }} color="blue">
-                        资产
-                      </Tag>
-                    )}
-                  </Flex>
-                ))
-              )}
-            </div>
-            <div
-              style={{
-                flex: 1,
-                minWidth: 0,
-                overflow: 'auto',
-                border: '1px solid rgba(128,128,128,0.25)',
-                borderRadius: 6,
-                padding: 8,
-              }}
-            >
-              {selectedEntry === undefined ? (
-                <Empty description="选一份文件看它写了什么" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              ) : selectedEntry.source.case === 'assetId' ? (
-                // 资产是一份二进制，源码视图**不把它当文本读**——它只回答"这一份
-                // 是什么"。内容看预览，要换去处看资产面板里的地址。
-                <Space direction="vertical" size={4}>
-                  <Typography.Text type="secondary">
-                    这一份是资产（{selectedAsset?.mediaType ?? '类型未知'}）。
-                  </Typography.Text>
-                  {selectedAsset !== undefined && selectedAsset.url !== '' && (
-                    <Typography.Link href={selectedAsset.url} target="_blank" rel="noopener noreferrer">
-                      在新标签页打开
-                    </Typography.Link>
-                  )}
-                </Space>
-              ) : sourceBusy ? (
-                <Skeleton active paragraph={{ rows: 6 }} />
-              ) : (
-                // **只读**：网页端不改内容（见 docs/design/galaxy/authoring.md）。
-                <pre
-                  style={{
-                    margin: 0,
-                    fontFamily: MONOSPACE,
-                    fontSize: 13,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all',
-                  }}
-                >
-                  {sourceText}
-                </pre>
-              )}
-            </div>
-          </Flex>
+          <SourceView
+            entries={entries}
+            assets={assets}
+            selectedPath={selectedPath}
+            sourceText={sourceText}
+            sourceBusy={sourceBusy}
+            onSelect={(entry) => void handleSelectEntry(entry)}
+          />
         )}
       </div>
     </Flex>

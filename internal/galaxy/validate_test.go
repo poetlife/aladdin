@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // 校验入口是**唯一入口**：界面提示与发布前置校验共用它。
@@ -297,6 +298,46 @@ func TestValidateDraftIsReadOnly(t *testing.T) {
 	}
 	if len(after.Manifest) != len(before.Manifest) || !after.UpdatedAt.Equal(before.UpdatedAt) {
 		t.Error("校验改变了草稿")
+	}
+}
+
+// 自闭合标签末尾那个 `/` 曾让属性解析原地打转：一个 `<meta ... />` 就足以让校验
+// 永远转不完（服务端一个核被打满）。
+//
+// **这条用一个限时守住"它必须结束"**：只断言结论的话，回归的表现是整个测试包挂
+// 死到超时，而不是一条失败的用例——那种失败没有人能一眼看出卡在哪。
+func TestSelfClosingTagEndsValidation(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html",
+			`<!doctype html><meta charset="utf-8" />`+
+				`<link rel="stylesheet" href="style.css" />`+
+				`<img src="a.png" alt="图" />`),
+		f.textEntry(t, project.ID, "style.css", "body{margin:0}"),
+		f.assetEntry(t, project.ID, "a.png", "image/png", "a.png", []byte("png")),
+	})
+
+	type outcome struct {
+		report Report
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		report, err := f.service.ValidateDraft(context.Background(), testOwner, project.ID, SlotSite)
+		done <- outcome{report: report, err: err}
+	}()
+
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("校验出错（期望是一个结论）: %v", got.err)
+		}
+		if !got.report.OK() {
+			t.Fatalf("自闭合标签不该产生问题：%s", problems(got.report))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("校验没有在限时内结束——属性解析又在原地打转了")
 	}
 }
 

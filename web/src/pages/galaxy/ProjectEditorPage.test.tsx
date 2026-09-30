@@ -13,6 +13,7 @@ import {
   WhoAmIResponseSchema,
 } from '../../gen/proto/aladdin/identity/v1/identity_pb'
 import {
+  type Asset,
   AssetSchema,
   CapabilitiesSchema,
   DraftSchema,
@@ -790,5 +791,133 @@ describe('资产的说明层元数据', () => {
       '给首页用的图',
     )
     expect(vi.mocked(galaxyApi.listAssets).mock.calls.length).toBeGreaterThan(before)
+  })
+})
+
+describe('源码视图的文件树与资产呈现', () => {
+  /**
+   * 一份带目录的草稿：根上是入口页，`img/` 下两份图片（都是资产条目）。
+   *
+   * 目录这一层是这一组用例的主体——平铺列表里它只是每条路径上的一个前缀。
+   */
+  function draftWithDirectory() {
+    return create(GetDraftResponseSchema, {
+      draft: create(DraftSchema, {
+        updatedAt: '2026-03-01T12:00:00Z',
+        entries: [
+          create(FileEntrySchema, {
+            path: 'index.html',
+            source: { case: 'digest', value: 'aa' },
+            url: 'https://cos.example/signed/aa',
+          }),
+          create(FileEntrySchema, {
+            path: 'img/pov-01.jpg',
+            source: { case: 'assetId', value: 'ast_1' },
+            url: 'https://cos.example/signed/asset-1',
+          }),
+          create(FileEntrySchema, {
+            path: 'img/pov-02.jpg',
+            source: { case: 'assetId', value: 'ast_2' },
+            url: 'https://cos.example/signed/asset-2',
+          }),
+        ],
+      }),
+    })
+  }
+
+  /** 一张 jpeg 资产，与草稿里的 `ast_1` 对上。 */
+  function assetsWithSequence() {
+    return create(ListAssetsResponseSchema, {
+      assets: [
+        create(AssetSchema, {
+          id: 'ast_1',
+          mediaType: 'image/jpeg',
+          sizeBytes: 3n,
+          filename: 'pov-01.jpg',
+          uploadedAt: '2026-03-01T12:00:00Z',
+        }),
+      ],
+    })
+  }
+
+  /**
+   * 左栏里的一行——文本里含 `label` 的**最内层** div。
+   *
+   * 目录行的外层 div 也含有同样的文本（它把整棵子树包在里面），只看文本会点到
+   * 那个不响应的外壳上。
+   */
+  function findTreeRow(container: HTMLElement, label: string): HTMLElement | undefined {
+    const has = (element: HTMLElement): boolean => element.textContent?.includes(label) ?? false
+    return Array.from(container.querySelectorAll<HTMLElement>('div'))
+      .filter(has)
+      .find(
+        (candidate) =>
+          !Array.from(candidate.querySelectorAll<HTMLElement>('div')).some((child) => has(child)),
+      )
+  }
+
+  /** 渲染一份带目录的草稿并切到源码视图。 */
+  async function renderSource(assets: Asset[]): Promise<HTMLElement> {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    vi.mocked(galaxyApi.getDraft).mockResolvedValue(draftWithDirectory())
+    vi.mocked(galaxyApi.listAssets).mockResolvedValue(create(ListAssetsResponseSchema, { assets }))
+    const container = await renderEditor()
+    await settle()
+    await switchStage(container, '源码')
+    return container
+  }
+
+  it('按路径段折成树：文件行只写自己的名字，目录行收着这一支', async () => {
+    const container = await renderSource(assetsWithSequence().assets)
+
+    // 目录自己一行——折叠状态挂在它上面，而不是散在每条路径里。
+    expect(findTreeRow(container, 'img/')).not.toBeUndefined()
+    // 文件行不必再重写目录前缀：目录行已经说了它在哪。
+    const fileRow = findTreeRow(container, 'pov-01.jpg')
+    expect(fileRow?.textContent).toContain('pov-01.jpg')
+    expect(fileRow?.textContent).not.toContain('img/')
+  })
+
+  it('折叠一个目录之后，这一支下的文件不再逐条列出', async () => {
+    const container = await renderSource(assetsWithSequence().assets)
+
+    await act(async () => {
+      findTreeRow(container, 'img/')?.click()
+    })
+    expect(container.textContent).not.toContain('pov-01.jpg')
+    // 折叠的是这一支，别处的文件照常。
+    expect(container.textContent).toContain('index.html')
+  })
+
+  // 源码视图回答"这一份是什么"；对一张图片，答案就是那张图片。
+  it('选中一份资产条目时把它渲染出来，而不是只给一句类型说明', async () => {
+    const container = await renderSource(assetsWithSequence().assets)
+
+    await act(async () => {
+      findTreeRow(container, 'pov-01.jpg')?.click()
+    })
+
+    // 类型与"它是哪一份"压在顶上一行，正文就是那张图本身。
+    expect(container.textContent).toContain('image/jpeg')
+    // 渲染用的是**条目自己带的**那条短时地址，资产清单取不到时也成立（下一条用例）。
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(
+      'https://cos.example/signed/asset-1',
+    )
+  })
+
+  // 缺 `galaxy.asset.read` 时资产清单是空的：说不说得出类型，与给不给得出地址是两件事。
+  it('资产清单取不到时说不出类型，但地址照给、不猜着渲染', async () => {
+    const container = await renderSource([])
+
+    await act(async () => {
+      findTreeRow(container, 'pov-01.jpg')?.click()
+    })
+
+    expect(container.textContent).toContain('类型未知')
+    // 类型是猜的就不能往 `<img>` 里塞——不认识的格式会显示成一张裂开的图。
+    expect(container.querySelector('img')).toBeNull()
+    // 地址照给：拿得到原样的字节就还有去处，只是这一页不替它猜类型。
+    const link = container.querySelector('[aria-label="在新标签页打开"]')
+    expect(link?.getAttribute('href')).toBe('https://cos.example/signed/asset-1')
   })
 })
