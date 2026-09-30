@@ -248,13 +248,16 @@ export function WorkbenchTopBar({
       moreItems.push({ key: 'versions', icon: <History size={16} />, label: '版本' })
     }
     if (slots.length > 1) {
-      // 当前那个槽在这一列里点亮（禁用态即"你已经在这一档"）。
+      // 当前那个槽在标签上标出来。不用 `disabled`——那读作"不可用"，而它只是
+      // "你已经在这一档"（再点一次是空操作，没有害处）。
       moreItems.push({ type: 'divider' })
       for (const candidate of slots) {
         moreItems.push({
           key: `slot:${candidate.slot}`,
-          label: slotLabel(candidate.slot),
-          disabled: candidate.slot === slot?.slot,
+          label:
+            candidate.slot === slot?.slot
+              ? `${slotLabel(candidate.slot)}（当前）`
+              : slotLabel(candidate.slot),
         })
       }
     }
