@@ -897,7 +897,8 @@ describe('源码视图的文件树与资产呈现', () => {
       findTreeRow(container, 'pov-01.jpg')?.click()
     })
 
-    expect(container.textContent).toContain('这一份是资产（image/jpeg）')
+    // 类型与"它是哪一份"压在顶上一行，正文就是那张图本身。
+    expect(container.textContent).toContain('image/jpeg')
     // 渲染用的是**条目自己带的**那条短时地址，资产清单取不到时也成立（下一条用例）。
     expect(container.querySelector('img')?.getAttribute('src')).toBe(
       'https://cos.example/signed/asset-1',
@@ -912,12 +913,11 @@ describe('源码视图的文件树与资产呈现', () => {
       findTreeRow(container, 'pov-01.jpg')?.click()
     })
 
-    expect(container.textContent).toContain('这一份是资产（类型未知）')
+    expect(container.textContent).toContain('类型未知')
     // 类型是猜的就不能往 `<img>` 里塞——不认识的格式会显示成一张裂开的图。
     expect(container.querySelector('img')).toBeNull()
-    const link = Array.from(container.querySelectorAll('a')).find((candidate) =>
-      candidate.textContent?.includes('在新标签页打开'),
-    )
+    // 地址照给：拿得到原样的字节就还有去处，只是这一页不替它猜类型。
+    const link = container.querySelector('[aria-label="在新标签页打开"]')
     expect(link?.getAttribute('href')).toBe('https://cos.example/signed/asset-1')
   })
 })

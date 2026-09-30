@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Empty, Flex, Skeleton, Tag, Typography } from 'antd'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { Button, Empty, Flex, Skeleton, Tag, Tooltip, Typography, theme } from 'antd'
+import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 
 import type { Asset, FileEntry } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { MONOSPACE } from '../../theme'
@@ -36,6 +36,7 @@ export function SourceView({
   sourceBusy,
   onSelect,
 }: SourceViewProps): React.ReactNode {
+  const { token } = theme.useToken()
   // 被**折叠起来**的目录。记折叠而不是记展开：新出现的目录因此天然是展开的，
   // 不需要一条"清单变了就同步一次展开集"的逻辑。
   const [collapsedDirs, setCollapsedDirs] = useState<string[]>([])
@@ -50,10 +51,12 @@ export function SourceView({
   // 成立。类型与标题只有资产清单知道，取不到就不猜——只留一句"类型未知"。
   const assetURL =
     selectedEntry !== undefined && selectedEntry.source.case === 'assetId' ? selectedEntry.url : ''
+  // 顶上一行要回答的是"它是哪一份"，而它在左栏已经占了一整行：这里只写资产库给的
+  // 标题，没有标题就写路径的最后一段——一个长路径在这一行里只会被截成 `img/pov-…`。
   const assetLabel =
     selectedAsset?.title !== undefined && selectedAsset.title !== ''
       ? selectedAsset.title
-      : (selectedEntry?.path ?? '')
+      : (selectedEntry?.path.split('/').pop() ?? '')
 
   /** 折叠或展开左栏里的一支。 */
   function toggleDir(key: string): void {
@@ -163,20 +166,60 @@ export function SourceView({
         ) : selectedEntry.source.case === 'assetId' ? (
           // 二进制不进来当文本读，但**照它本来的样子显示**："能渲染"正是网页端比
           // 命令行多出来的那一样，退化成一句类型说明就等于在这个强项上缺席。
-          <Flex vertical gap={8}>
-            <Typography.Text type="secondary">
-              这一份是资产（{selectedAsset?.mediaType ?? '类型未知'}）。
-            </Typography.Text>
-            {assetURL !== '' && (
-              <Typography.Link href={assetURL} target="_blank" rel="noopener noreferrer">
-                在新标签页打开
-              </Typography.Link>
-            )}
-            <AssetMedia
-              url={assetURL}
-              mediaType={selectedAsset?.mediaType ?? ''}
-              label={assetLabel}
-            />
+          //
+          // 版面是**一行元信息 + 一块呈现面**：左栏那一条已经标着"资产"，这里就
+          // 不必再说一遍"这一份是资产"——它要回答的是"它是哪一份、长什么样"，
+          // 因此正文交给字节本身，其余压在顶上那一行的次要位置。
+          <Flex vertical style={{ height: '100%', minHeight: 0 }}>
+            <Flex
+              align="center"
+              justify="space-between"
+              gap={8}
+              style={{ paddingBottom: 8, borderBottom: `1px solid ${token.colorBorderSecondary}` }}
+            >
+              <Flex align="center" gap={8} style={{ minWidth: 0 }}>
+                <Tag style={{ marginInlineEnd: 0 }}>{selectedAsset?.mediaType ?? '类型未知'}</Tag>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                  {assetLabel}
+                </Typography.Text>
+              </Flex>
+              {assetURL !== '' && (
+                <Tooltip title="在新标签页打开">
+                  <Button
+                    type="text"
+                    size="small"
+                    href={assetURL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="在新标签页打开"
+                    icon={<ExternalLink size={14} />}
+                  />
+                </Tooltip>
+              )}
+            </Flex>
+            {/* 呈现面自己滚：图比这一栏长时滚的是它，顶上的元信息行留在原地。
+                居中用 `margin: auto` 而不是 `align-items: center`——后者在内容
+                溢出时会连顶部一起裁掉。 */}
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                overflow: 'auto',
+                marginTop: 8,
+                padding: 12,
+                borderRadius: 6,
+                background: token.colorFillQuaternary,
+              }}
+            >
+              <div style={{ margin: 'auto', maxWidth: '100%' }}>
+                <AssetMedia
+                  url={assetURL}
+                  mediaType={selectedAsset?.mediaType ?? ''}
+                  label={assetLabel}
+                />
+              </div>
+            </div>
           </Flex>
         ) : sourceBusy ? (
           <Skeleton active paragraph={{ rows: 6 }} />
