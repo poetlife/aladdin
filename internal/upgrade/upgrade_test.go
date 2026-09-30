@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -210,14 +211,28 @@ const (
 func testUpdater(t *testing.T, current, exePath string, release *fakeRelease) Updater {
 	t.Helper()
 
-	updater, err := New(Options{
+	return testUpdaterWith(t, Options{
 		Current:        current,
-		Released:       true,
-		GOOS:           testGOOS,
-		GOARCH:         testGOARCH,
 		ExecutablePath: exePath,
 		APIBaseURL:     release.server.URL,
 	})
+}
+
+// testUpdaterWith 补齐平台与发布标记，构造一个入口。
+//
+// 这两个取值几乎每个用例都要给，由它统一补上，免得每个用例各写一遍——写漏
+// 任一个都会让用例悄悄换个平台或直接拒绝构造。
+func testUpdaterWith(t *testing.T, opts Options) Updater {
+	t.Helper()
+
+	opts.Released = true
+	if opts.GOOS == "" {
+		opts.GOOS = testGOOS
+	}
+	if opts.GOARCH == "" {
+		opts.GOARCH = testGOARCH
+	}
+	updater, err := New(opts)
 	if err != nil {
 		t.Fatalf("构造自更新入口失败: %v", err)
 	}
@@ -560,5 +575,294 @@ func TestParseChecksums(t *testing.T) {
 	}
 	if len(sums) != 2 {
 		t.Errorf("只应解析出两行，实际 %d 行：%v", len(sums), sums)
+	}
+}
+
+// ------------------------------------------------------------ 主站兜底
+
+// fakeMirror 是一个本机的假主站镜像，挂在固定的镜像前缀上。
+//
+// 前缀由服务端路径带上、而不是由 Options 拼：Options.MirrorOrigin 拿到的只是
+// "源"，前缀是客户端自己加的，这样正好把那一跳也验了。
+func newFakeMirror(t *testing.T, tag string, assets map[string][]byte) *httptest.Server {
+	t.Helper()
+
+	names := make([]string, 0, len(assets))
+	for name := range assets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(mirrorPrefix+"/"+mirrorMetadataAsset, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(mirrorMetadata{Tag: tag, Assets: names})
+	})
+	mux.HandleFunc(mirrorPrefix+"/", func(w http.ResponseWriter, r *http.Request) {
+		content, ok := assets[strings.TrimPrefix(r.URL.Path, mirrorPrefix+"/")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(content)
+	})
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return server
+}
+
+// unusedMirror 起一个"一旦被访问就让用例失败"的假主站。
+func unusedMirror(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("这条路径不该访问主站镜像")
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// fakeStatusServer 起一个只回固定状态码的假服务端（发布源与主站都用得上）。
+func fakeStatusServer(t *testing.T, status int) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// mirrorUpdater 构造一个同时指向假发布源与假主站的入口。
+func mirrorUpdater(t *testing.T, current, exePath, apiBase, mirrorOrigin string) Updater {
+	t.Helper()
+
+	return testUpdaterWith(t, Options{
+		Current:        current,
+		ExecutablePath: exePath,
+		APIBaseURL:     apiBase,
+		MirrorOrigin:   mirrorOrigin,
+	})
+}
+
+// 暂时性失败时落到主站，且材料**全部**来自主站：tag、清单、字节同源。
+func TestResolveFallsBackToMirrorOnTransientFailure(t *testing.T) {
+	transient := map[string]int{
+		"限频 403":  http.StatusForbidden,
+		"限频 429":  http.StatusTooManyRequests,
+		"服务端 500": http.StatusInternalServerError,
+		"网关 502":  http.StatusBadGateway,
+	}
+	for title, status := range transient {
+		t.Run(title, func(t *testing.T) {
+			binary := []byte("主站上的新二进制")
+			mirror := newFakeMirror(t, "v0.6.0", cliAssets(t, "v0.6.0", testGOOS, testGOARCH, binary))
+			path := installedBinary(t, "旧")
+			updater := mirrorUpdater(t, "v0.4.3", path, fakeStatusServer(t, status).URL, mirror.URL)
+
+			decision, err := updater.Resolve(context.Background())
+			if err != nil {
+				t.Fatalf("暂时性失败时应当落到主站：%v", err)
+			}
+			if decision.Source != SourceMirror {
+				t.Fatalf("来源应当是主站镜像，实际 %v", decision.Source)
+			}
+			if decision.Status != StatusOutdated {
+				t.Fatalf("应当有新版可用，实际 %v", decision.Status)
+			}
+
+			if _, err := updater.Upgrade(context.Background(), decision); err != nil {
+				t.Fatalf("经主站升级失败：%v", err)
+			}
+			if got, _ := os.ReadFile(path); !bytes.Equal(got, binary) {
+				t.Fatalf("没有换成主站上的二进制：%q", got)
+			}
+		})
+	}
+}
+
+// githubDownTransport 让发往发布源元数据端点的请求在传输层失败（连不上、不通的
+// 形态），其余请求放行——主站镜像走的仍是真网络。
+type githubDownTransport struct{ inner http.RoundTripper }
+
+func (t githubDownTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(req.URL.Path, "/releases/latest") {
+		return nil, errors.New("connection refused")
+	}
+	return t.inner.RoundTrip(req)
+}
+
+// 网络层失败同样是暂时性的，一样落到主站。
+func TestResolveFallsBackToMirrorOnNetworkFailure(t *testing.T) {
+	binary := []byte("主站上的新二进制")
+	mirror := newFakeMirror(t, "v0.6.0", cliAssets(t, "v0.6.0", testGOOS, testGOARCH, binary))
+	updater := testUpdaterWith(t, Options{
+		Current:      "v0.4.3",
+		MirrorOrigin: mirror.URL,
+		HTTPClient:   &http.Client{Transport: githubDownTransport{inner: http.DefaultTransport}},
+	})
+
+	decision, err := updater.Resolve(context.Background())
+	if err != nil {
+		t.Fatalf("网络层失败时应当落到主站：%v", err)
+	}
+	if decision.Source != SourceMirror {
+		t.Fatalf("来源应当是主站镜像，实际 %v", decision.Source)
+	}
+}
+
+// 发布源上确实没有发布——这是一个确定的答案，**不**拿镜像去盖过它。
+func TestResolveDoesNotFallBackOnNotFound(t *testing.T) {
+	updater := mirrorUpdater(t, "v0.4.3", "",
+		fakeStatusServer(t, http.StatusNotFound).URL, unusedMirror(t).URL)
+
+	_, err := updater.Resolve(context.Background())
+	if err == nil {
+		t.Fatal("发布源上没有发布时应当失败")
+	}
+	if !strings.Contains(err.Error(), "没有找到任何发布") {
+		t.Fatalf("应当保留发布源自己的语义，实际：%v", err)
+	}
+}
+
+// 发布源给出可用的答案时，完全不碰主站。
+func TestResolveUsesGitHubWithoutTouchingMirror(t *testing.T) {
+	binary := []byte("GitHub 上的新二进制")
+	release := newFakeRelease(t, "v0.6.0", cliAssets(t, "v0.6.0", testGOOS, testGOARCH, binary))
+	updater := mirrorUpdater(t, "v0.4.3", "", release.server.URL, unusedMirror(t).URL)
+
+	decision, err := updater.Resolve(context.Background())
+	if err != nil {
+		t.Fatalf("比较失败: %v", err)
+	}
+	if decision.Source != SourceGitHub {
+		t.Fatalf("来源应当是发布源，实际 %v", decision.Source)
+	}
+}
+
+// 两路都不可用时，错误信息要同时交代两路，而不是只说"请稍后重试"。
+func TestResolveReportsBothSourcesWhenBothFail(t *testing.T) {
+	updater := mirrorUpdater(t, "v0.4.3", "",
+		fakeStatusServer(t, http.StatusForbidden).URL,
+		fakeStatusServer(t, http.StatusInternalServerError).URL)
+
+	_, err := updater.Resolve(context.Background())
+	if err == nil {
+		t.Fatal("两路都不可用时应当失败")
+	}
+	for _, want := range []string{"频率", "主站镜像也不可用"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("错误信息里应包含 %q：%v", want, err)
+		}
+	}
+}
+
+// 主站没有本平台的产物时失败，并列出支持的平台。
+func TestResolveMirrorWithoutPlatformAssetListsSupported(t *testing.T) {
+	mirror := newFakeMirror(t, "v0.6.0", cliAssets(t, "v0.6.0", "linux", "amd64", []byte("新")))
+	updater := mirrorUpdater(t, "v0.4.3", "",
+		fakeStatusServer(t, http.StatusTooManyRequests).URL, mirror.URL)
+
+	_, err := updater.Resolve(context.Background())
+	if err == nil {
+		t.Fatal("主站没有本平台产物时应当失败")
+	}
+	for _, platform := range SupportedPlatforms {
+		if !strings.Contains(err.Error(), platform) {
+			t.Errorf("错误信息里没有列出 %s：%v", platform, err)
+		}
+	}
+}
+
+// 经过主站升级时，校验语义与走发布源时完全相同：清单里没有本产物、或摘要不符，
+// 一律失败且本机二进制一个字节不变。
+func TestUpgradeFromMirrorFailsClosed(t *testing.T) {
+	name := assetName("v0.6.0", testGOOS, testGOARCH)
+	cases := map[string]string{
+		"清单里没有本产物": sha256Hex([]byte("别人")) + "  aladdin-server_v0.6.0_x.tar.gz\n",
+		"摘要不符":     sha256Hex([]byte("别的字节")) + "  " + name + "\n",
+	}
+	for title, checksums := range cases {
+		t.Run(title, func(t *testing.T) {
+			mirror := newFakeMirror(t, "v0.6.0", map[string][]byte{
+				name:           tarGz(t, "aladdin", []byte("新")),
+				checksumsAsset: []byte(checksums),
+			})
+			path := installedBinary(t, "旧")
+			updater := mirrorUpdater(t, "v0.4.3", path,
+				fakeStatusServer(t, http.StatusForbidden).URL, mirror.URL)
+
+			decision, err := updater.Resolve(context.Background())
+			if err != nil {
+				t.Fatalf("比较失败: %v", err)
+			}
+			if _, err := updater.Upgrade(context.Background(), decision); err == nil {
+				t.Fatal("校验不通过时应当失败")
+			}
+			if got, _ := os.ReadFile(path); string(got) != "旧" {
+				t.Fatalf("校验失败却改了二进制：%q", got)
+			}
+		})
+	}
+}
+
+// 主站的元数据本身不可用时如实报错，而不是静默地"没有兜底"。
+func TestResolveRejectsMalformedMirrorMetadata(t *testing.T) {
+	cases := map[string]string{
+		"不是 JSON":  "这不是 JSON",
+		"没有 tag":   `{"assets":[]}`,
+		"tag 形态不对": `{"tag":"v0.6","assets":[]}`,
+	}
+	for title, body := range cases {
+		t.Run(title, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc(mirrorPrefix+"/"+mirrorMetadataAsset,
+				func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = io.WriteString(w, body)
+				})
+			server := httptest.NewServer(mux)
+			t.Cleanup(server.Close)
+
+			updater := mirrorUpdater(t, "v0.4.3", "",
+				fakeStatusServer(t, http.StatusForbidden).URL, server.URL)
+
+			if _, err := updater.Resolve(context.Background()); err == nil {
+				t.Fatal("主站元数据不可用时应当时报错")
+			}
+		})
+	}
+}
+
+// version.json 的形态是与部署脚本之间的对外契约：这里用一个**字面量**钉住它。
+//
+// 改动 deploy.sh 里写出它的那一行、或改动这里的解析，都会让这两个用例中的一个变红。
+func TestMirrorMetadataShapeIsPinned(t *testing.T) {
+	const written = `{"tag":"v0.6.0","assets":["aladdin_v0.6.0_darwin_arm64.tar.gz","aladdin_v0.6.0_linux_amd64.tar.gz","SHA256SUMS"]}`
+
+	var meta mirrorMetadata
+	if err := json.Unmarshal([]byte(written), &meta); err != nil {
+		t.Fatalf("部署脚本写出的形态解析不了：%v", err)
+	}
+	if meta.Tag != "v0.6.0" {
+		t.Errorf("tag 解析为 %q", meta.Tag)
+	}
+	if len(meta.Assets) != 3 {
+		t.Fatalf("assets 解析出 %d 项", len(meta.Assets))
+	}
+	if meta.Assets[2] != checksumsAsset {
+		t.Errorf("校验和清单必须在 assets 表里，实际 %q", meta.Assets[2])
+	}
+}
+
+// 部署脚本写出上面那个形态的那一行必须还在。
+func TestDeployScriptWritesPinnedMirrorMetadata(t *testing.T) {
+	script, err := os.ReadFile(filepath.Join("..", "..", "deploy", "deploy.sh"))
+	if err != nil {
+		t.Fatalf("读部署脚本失败: %v", err)
+	}
+	const line = `'{"tag":"%s","assets":[%s]}\n'`
+	if !bytes.Contains(script, []byte(line)) {
+		t.Errorf("deploy.sh 写 version.json 的那一行变了：与客户端的契约不再一致（找不到 %s）", line)
 	}
 }

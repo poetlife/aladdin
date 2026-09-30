@@ -43,11 +43,17 @@ PORT="9090"
 HEALTH_URL="http://127.0.0.1:${PORT}/grpc.health.v1.Health/Check"
 HEALTH_RETRIES=15
 
+# CLI 自更新兜底镜像的落盘位置。nginx 用 /cli/latest/ 服务它（见
+# deploy/nginx-aladdin-site.conf 与 docs/design/cli/self-update.md）。
+CLI_ROOT="${APP_DIR}/cli"
+CLI_LATEST="${CLI_ROOT}/latest"
+
 WORK=""
 PREV_BIN=""
 PREV_WEB=""
 
 log()  { printf '>>> %s\n' "$*"; }
+warn() { printf '警告：%s\n' "$*" >&2; }
 fail() { printf '错误：%s\n' "$*" >&2; exit 1; }
 
 cleanup() {
@@ -207,6 +213,89 @@ docs/design/persistence/README.md），因此**换了二进制而库没换**时�
 EOF
 }
 
+# 刷新主站的 CLI 自更新兜底镜像（/cli/latest/）。
+#
+# 为什么是服务器拉而不是 CI 推：推的模式要把一把能写生产的东西放进 GitHub
+# secrets，与脚本顶部那条取舍是同一件事——单实例下，部署时顺手拉一次的代价
+# 可以接受，而少一把能写生产的钥匙是实打实的收窄。
+#
+# **尽力而为**：走到这一步 Release 已经产出、服务端已经换好，没有可回滚的东西，
+# 因此任何失败都只告警、绝不让本次部署失败。失败时**不碰现有镜像**——宁可是旧的
+# 一份，也不要是空的（空了等于把兜底路径整个拿掉）。
+#
+# 镜像的是**GitHub 当时的 latest**，不是本次部署的 VERSION：一次服务端回滚不该
+# 把第三方 CLI 的镜像一起往回带。
+mirror_cli() {
+  local stage="${CLI_ROOT}/.latest.new"
+  # 任何一条提前退出都走这里：清掉半成品，保留现有镜像。
+  skip() { warn "跳过 CLI 镜像刷新：$1"; rm -rf "${stage}"; return 0; }
+
+  local json
+  json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" \
+    || { skip "读不到最新 Release 元数据"; return 0; }
+
+  local tag
+  tag="$(grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' <<<"${json}" \
+    | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+  [[ -n "${tag}" ]] || { skip "Release 元数据里没有版本号"; return 0; }
+
+  # 取资产列表而不是照 Makefile 的 PLATFORMS 硬编码：将来加平台不必改这里。
+  # 只取 CLI 包（排除服务端与前端）与校验和清单——它们的命名是对外契约的一部分。
+  local urls
+  urls="$(grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*"' <<<"${json}" \
+    | sed 's/.*"\([^"]*\)"$/\1/' \
+    | grep -E '/(aladdin_[^/]*\.tar\.gz|SHA256SUMS)$' \
+    | grep -vE '/aladdin-server_|/aladdin-web_')" || urls=""
+  [[ -n "${urls}" ]] || { skip "Release 里没有 CLI 产物"; return 0; }
+
+  rm -rf "${stage}"
+  mkdir -p "${stage}" || { skip "无法创建暂存目录 ${stage}"; return 0; }
+
+  local names="" u name
+  while IFS= read -r u; do
+    [[ -n "${u}" ]] || continue
+    name="${u##*/}"
+    curl -fsSL -o "${stage}/${name}" "${u}" \
+      || { skip "下载 ${name} 失败"; return 0; }
+    names="${names}${names:+ }${name}"
+  done <<<"${urls}"
+
+  # 只核对本次镜像的包：SHA256SUMS 里还有服务端与前端，它们没被下载，
+  # 整份 -c 会因为"找不到文件"而失败。与 download_and_verify 同一处写法，
+  # 包括"先取条目再喂给 sha256sum"——空输入时 sha256sum -c 会返回 0，
+  # 也就是"一个都没校验"与"全部通过"不可区分。
+  local pkgs="" sums
+  for name in ${names}; do
+    [[ "${name}" == "SHA256SUMS" ]] && continue
+    pkgs="${pkgs}${pkgs:+|}${name}"
+  done
+  sums="$(grep -E "(${pkgs})$" "${stage}/SHA256SUMS")" \
+    || { skip "校验和清单里没有本次要用的包"; return 0; }
+  ( cd "${stage}" && printf '%s\n' "${sums}" | sha256sum -c - >/dev/null ) \
+    || { skip "校验和不匹配"; return 0; }
+
+  # 元数据：tag + 实际镜像的资产名。形态是与客户端之间的对外契约
+  # （见 docs/design/cli/self-update.md）：客户端按契约从 tag 推出本平台的包名，
+  # 再要求它和 SHA256SUMS 都出现在这个表里。
+  local assets=""
+  for name in ${names}; do
+    assets="${assets}${assets:+,}\"${name}\""
+  done
+  printf '{"tag":"%s","assets":[%s]}\n' "${tag}" "${assets}" > "${stage}/version.json" \
+    || { skip "写 version.json 失败"; return 0; }
+
+  # 整体替换：先清掉旧的一份再换上去（rename 不能覆盖一个非空目录）。
+  # 中间那一瞬没有 latest 是可接受的——镜像只是兜底，取不到时客户端会如实报错。
+  rm -rf "${CLI_LATEST}"
+  mv "${stage}" "${CLI_LATEST}" || { skip "替换 ${CLI_LATEST} 失败"; return 0; }
+
+  # nginx 以 www-data 读这些文件，而本脚本以 root 写入。
+  chmod -R a+rX "${CLI_LATEST}" || warn "放开 ${CLI_LATEST} 的读权限失败，nginx 可能读不到"
+
+  log "已刷新 CLI 镜像：${tag}（${names}）"
+  return 0
+}
+
 main() {
   require_root
   require_cmd curl tar sha256sum install
@@ -249,6 +338,10 @@ main() {
   fi
 
   log "部署完成：${VERSION}"
+
+  # 收尾：刷新主站的 CLI 自更新镜像。它与本次部署的版本号无关（镜像的是
+  # GitHub 当时的 latest），失败也不影响这次部署——见上面的说明。
+  mirror_cli
 }
 
 main "$@"

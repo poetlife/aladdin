@@ -52,12 +52,43 @@ const (
 	StatusOutdated
 )
 
+// Source 是这一次决定所依据的发布源。
+//
+// GitHub Release 是**权威**源，主站镜像是它在"暂时取不到"时的替补——两者不是
+// 并列的两个选项，因此这里记下来源只是为了说清楚"这次的材料是从哪来的"。
+type Source int
+
+const (
+	// SourceGitHub 是本仓库的 GitHub Release，权威发布源。
+	SourceGitHub Source = iota
+	// SourceMirror 是主站上的兜底镜像，只留最新一份（见 docs/design/cli/self-update.md）。
+	SourceMirror
+)
+
+// String 返回用在下行文案里的说法。
+func (s Source) String() string {
+	if s == SourceMirror {
+		return "主站镜像"
+	}
+	return "发布"
+}
+
+// Slug 是给机器读的稳定取值（输出格式里用它，不用文案）。
+func (s Source) Slug() string {
+	if s == SourceMirror {
+		return "mirror"
+	}
+	return "github"
+}
+
 // Decision 是一次"要不要升级、要升的话下哪个产物"的结论。
 type Decision struct {
 	Status  Status
 	Current Version
 	// Latest 是最新发布的版本。
 	Latest Version
+	// Source 是这次结论所依据的源。
+	Source Source
 	// Asset 与下面的两个地址只在 Status 为 StatusOutdated 时有意义。
 	Asset        string
 	assetURL     string
@@ -90,18 +121,26 @@ type Options struct {
 	ExecutablePath string
 	// APIBaseURL 覆盖 API 基址。**仅供测试**注入一个本机假发布源。
 	APIBaseURL string
+	// MirrorOrigin 是主站兜底镜像所在站点的源（形如 https://host:port），
+	// 留空表示没有主站兜底。
+	//
+	// 产品里它由发布构建注入的官方地址推导而来（internal/config.OfficialSiteOrigin），
+	// **不是配置项**：让"从哪升级"可配置，与 GitHub 那一处是同一个开关，
+	// 只是换了个地址写而已（见包注释）。**仅供测试**直接注入。
+	MirrorOrigin string
 	// HTTPClient 可注入；为 nil 时用带超时的默认客户端。
 	HTTPClient *http.Client
 }
 
 // Updater 是自更新的入口。
 type Updater struct {
-	current Version
-	goos    string
-	goarch  string
-	exePath string
-	apiBase string
-	client  *http.Client
+	current    Version
+	goos       string
+	goarch     string
+	exePath    string
+	apiBase    string
+	mirrorBase string
+	client     *http.Client
 }
 
 // New 构造自更新入口。
@@ -140,18 +179,24 @@ func New(opts Options) (Updater, error) {
 	if apiBase == "" {
 		apiBase = defaultAPIBaseURL
 	}
+	// 空串表示没有主站兜底（源码构建恒为此，见 internal/config.OfficialSiteOrigin）。
+	mirrorBase := ""
+	if opts.MirrorOrigin != "" {
+		mirrorBase = strings.TrimSuffix(opts.MirrorOrigin, "/") + mirrorPrefix
+	}
 	client := opts.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: requestTimeout}
 	}
 
 	return Updater{
-		current: current,
-		goos:    goos,
-		goarch:  goarch,
-		exePath: exePath,
-		apiBase: strings.TrimSuffix(apiBase, "/"),
-		client:  client,
+		current:    current,
+		goos:       goos,
+		goarch:     goarch,
+		exePath:    exePath,
+		apiBase:    strings.TrimSuffix(apiBase, "/"),
+		mirrorBase: mirrorBase,
+		client:     client,
 	}, nil
 }
 
@@ -165,17 +210,17 @@ func (u Updater) ExecutablePath() string { return u.exePath }
 //
 // 它只读元数据、不下载产物：只报告的形态到这里就结束。
 func (u Updater) Resolve(ctx context.Context) (Decision, error) {
-	release, err := u.fetchLatest(ctx)
+	rel, source, err := u.resolveSource(ctx)
 	if err != nil {
 		return Decision{}, err
 	}
 
-	latest, ok := ParseVersion(release.TagName)
+	latest, ok := ParseVersion(rel.Tag)
 	if !ok {
-		return Decision{}, fmt.Errorf("发布 %q 的版本号不是 vX.Y.Z 形态", release.TagName)
+		return Decision{}, fmt.Errorf("%s %q 的版本号不是 vX.Y.Z 形态", source, rel.Tag)
 	}
 
-	decision := Decision{Current: u.current, Latest: latest}
+	decision := Decision{Current: u.current, Latest: latest, Source: source}
 	switch compare := u.current.Compare(latest); {
 	case compare == 0:
 		decision.Status = StatusUpToDate
@@ -186,15 +231,15 @@ func (u Updater) Resolve(ctx context.Context) (Decision, error) {
 	}
 
 	// 本平台没有产物时说清楚"有哪些"，而不是让人对着一次找不到文件去猜。
-	name := assetName(release.TagName, u.goos, u.goarch)
-	assetURL, ok := release.assetURL(name)
+	name := assetName(rel.Tag, u.goos, u.goarch)
+	assetURL, ok := rel.assetURL(name)
 	if !ok {
-		return Decision{}, fmt.Errorf("发布 %s 里没有 %s 的产物（当前只发布 %s）",
-			release.TagName, u.goos+"/"+u.goarch, strings.Join(SupportedPlatforms, "、"))
+		return Decision{}, fmt.Errorf("%s %s 里没有 %s 的产物（当前只发布 %s）",
+			source, rel.Tag, u.goos+"/"+u.goarch, strings.Join(SupportedPlatforms, "、"))
 	}
-	checksumsURL, ok := release.assetURL(checksumsAsset)
+	checksumsURL, ok := rel.assetURL(checksumsAsset)
 	if !ok {
-		return Decision{}, fmt.Errorf("发布 %s 里没有校验和清单 %s", release.TagName, checksumsAsset)
+		return Decision{}, fmt.Errorf("%s %s 里没有校验和清单 %s", source, rel.Tag, checksumsAsset)
 	}
 
 	decision.Status = StatusOutdated
@@ -202,6 +247,33 @@ func (u Updater) Resolve(ctx context.Context) (Decision, error) {
 	decision.assetURL = assetURL
 	decision.checksumsURL = checksumsURL
 	return decision, nil
+}
+
+// resolveSource 取最新发布的元数据，返回它是从哪个源取到的。
+//
+// 顺序是刻意的：**先试权威发布源**，只有当它的失败属于暂时性时才落到主站镜像。
+// 两个理由：GitHub 才是"最新"的定义处，镜像只是它的副本；而且镜像的字节来自同
+// 一次 GitHub 发布，先问 GitHub 拿到的永远不会比镜像旧。
+//
+// 回退**只发生在这一步**。一旦选定了源，产物与校验和清单都从同一个源取——tag、
+// 清单、字节三者同代由构造保证，而不是靠两次请求之间"应该没变"的假设。
+func (u Updater) resolveSource(ctx context.Context) (release, Source, error) {
+	rel, err := u.fetchLatest(ctx)
+	if err == nil {
+		return rel, SourceGitHub, nil
+	}
+	// 没有主站兜底（源码构建），或这个失败本来就不该重试：原样报出去。
+	if u.mirrorBase == "" || !isTransient(err) {
+		return release{}, SourceGitHub, err
+	}
+
+	mirror, mirrorErr := u.fetchMirrorLatest(ctx)
+	if mirrorErr != nil {
+		// 两路都要交代。只说"请稍后重试"会让人以为等一等就好了，而这里
+		// 是两路同时不可用——其中一路还是本就为了兜底才存在的那一路。
+		return release{}, SourceGitHub, fmt.Errorf("%w；主站镜像也不可用：%w", err, mirrorErr)
+	}
+	return mirror, SourceMirror, nil
 }
 
 // Upgrade 下载产物、校验、解包并替换本机二进制。
