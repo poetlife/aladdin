@@ -1,6 +1,6 @@
 import { Button, Dropdown, Flex, Segmented, Space } from 'antd'
 import type { MenuProps } from 'antd'
-import { ArrowLeft, ChevronDown, History, Images, Layers, Plus, Rocket } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Ellipsis, History, Images, Layers, Plus, Rocket } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import {
@@ -18,6 +18,14 @@ import { ProjectInfoPopover } from './ProjectInfoPopover'
 
 interface WorkbenchTopBarProps {
   project: Project
+  /**
+   * 是否窄屏（见 docs/design/web/responsive.md 的「工作台窄屏」）。
+   *
+   * 窄屏时这一排收成一行：返回、工程标题与**一颗**主操作常驻，其余入口
+   * （资产、版本、槽切换、加槽，以及次要的那个流程动作）收进「更多」。
+   * 两态引用**同一批控件**，只是排布不同——收起来的每一件都只有一份实现。
+   */
+  narrow: boolean
   versions: readonly Version[]
   /**
    * 当前看的内容槽与它的发布状态，以及这个工程启用的全部槽。
@@ -85,6 +93,7 @@ interface WorkbenchTopBarProps {
  */
 export function WorkbenchTopBar({
   project,
+  narrow,
   versions,
   slot,
   slots,
@@ -127,102 +136,217 @@ export function WorkbenchTopBar({
     }`,
   }))
 
+  // 「我的工程」四个字在窄屏上是一行 chrome 的开销；窄屏只留箭头，靠 aria-label
+  // 保留它的名字（宽屏原样）。
+  const backButton = (
+    <Button
+      type="text"
+      size="small"
+      icon={<ArrowLeft size={16} />}
+      aria-label={narrow ? '返回' : undefined}
+      onClick={() => void navigate('/galaxy')}
+    >
+      {narrow ? null : '我的工程'}
+    </Button>
+  )
+
+  // 工程标题就是工程信息弹层的入口，因此**常驻**：把它收进菜单既不省纵向空间
+  // （标题照样在），又要把它改成受控开合——多一份机制换不到一个像素。
+  const projectTitle = (
+    <ProjectInfoPopover project={project} canWrite={canWrite} onProjectChange={onProjectChange} />
+  )
+
+  const slotSwitcher = slots.length > 1 && (
+    <Segmented<ContentSlot>
+      size="small"
+      value={slot?.slot ?? ContentSlot.UNSPECIFIED}
+      onChange={onSwitchSlot}
+      options={slots.map((candidate) => ({
+        value: candidate.slot,
+        label: slotLabel(candidate.slot),
+      }))}
+    />
+  )
+
+  const addSlotButton = missingSlot !== undefined &&
+    canWrite && (
+      <Button
+        size="small"
+        icon={<Plus size={14} />}
+        loading={slotBusy}
+        onClick={() => onAddSlot(missingSlot)}
+      >
+        {addSlotLabel(enabledSlots)}
+      </Button>
+    )
+
+  const assetsButton = assetPanelEnabled && (
+    <Button icon={<Images size={16} />} onClick={onOpenAssets}>
+      资产
+    </Button>
+  )
+
+  const versionsButton = contentEnabled && (
+    <Button icon={<History size={16} />} onClick={onOpenVersions}>
+      版本
+    </Button>
+  )
+
+  const saveVersionButton = contentEnabled && canWrite && (
+    <Button
+      type={publishAvailable ? 'default' : 'primary'}
+      icon={<Layers size={16} />}
+      loading={versionBusy}
+      onClick={onSaveVersion}
+    >
+      存为版本
+    </Button>
+  )
+
+  const publishButton = publishEnabled && canPublish && (
+    <Dropdown
+      // 默认是 hover 触发，而 hover 在触屏上不存在——手机上就点不开发布。
+      trigger={['click']}
+      disabled={publishableCount === 0}
+      menu={{
+        items: publishItems,
+        onClick: ({ key }) => {
+          const version = versions.find((item) => item.id === key)
+          if (version === undefined || versionBlocked(version)) {
+            // 前端拦下、请求根本没发出去——这一点只有客户端事件答得了，
+            // 服务端请求留痕里没有它（见 docs/observability.md）。
+            track({
+              surface: Surface.WEB_EDITOR,
+              action: Action.PUBLISH,
+              result: Result.BLOCKED,
+            })
+            return
+          }
+          onPublish(key)
+        },
+      }}
+    >
+      <Button
+        type="primary"
+        icon={<Rocket size={16} />}
+        loading={publishBusy}
+        disabled={publishableCount === 0}
+      >
+        {slot?.published === true ? '更新发布' : '发布'}
+        <ChevronDown size={14} />
+      </Button>
+    </Dropdown>
+  )
+
+  // 窄屏：一行放下 返回 + 标题 + 主操作，其余进「更多」。
+  if (narrow) {
+    const moreItems: NonNullable<MenuProps['items']> = []
+    if (assetPanelEnabled) {
+      moreItems.push({ key: 'assets', icon: <Images size={16} />, label: '资产' })
+    }
+    if (contentEnabled) {
+      moreItems.push({ key: 'versions', icon: <History size={16} />, label: '版本' })
+    }
+    if (slots.length > 1) {
+      // 当前那个槽在这一列里点亮（禁用态即"你已经在这一档"）。
+      moreItems.push({ type: 'divider' })
+      for (const candidate of slots) {
+        moreItems.push({
+          key: `slot:${candidate.slot}`,
+          label: slotLabel(candidate.slot),
+          disabled: candidate.slot === slot?.slot,
+        })
+      }
+    }
+    if (missingSlot !== undefined && canWrite) {
+      moreItems.push({ key: 'add-slot', icon: <Plus size={14} />, label: addSlotLabel(enabledSlots) })
+    }
+    if (publishAvailable) {
+      // 主操作是发布时，存版本退到这里。
+      if (contentEnabled && canWrite) {
+        moreItems.push(
+          { type: 'divider' },
+          { key: 'save-version', icon: <Layers size={16} />, label: '存为版本' },
+        )
+      }
+    } else if (publishEnabled && canPublish) {
+      // 还没有可发布的版本：主操作是存版本，发布在这里**禁用而不隐藏**——
+      // 与桌面同一条（能力不隐藏，只禁用；理由在状态条上）。
+      moreItems.push(
+        { type: 'divider' },
+        {
+          key: 'publish',
+          icon: <Rocket size={16} />,
+          label: slot?.published === true ? '更新发布' : '发布',
+          disabled: true,
+        },
+      )
+    }
+
+    // 常驻的那一颗：与桌面同一处判定——能发布时是发布，否则是存版本。
+    const primaryAction = publishAvailable
+      ? publishButton
+      : contentEnabled && canWrite
+        ? saveVersionButton
+        : null
+
+    return (
+      <Flex align="center" justify="space-between" gap={8} wrap={false}>
+        <Flex align="center" gap={4} style={{ minWidth: 0 }}>
+          {backButton}
+          {projectTitle}
+        </Flex>
+        <Space size={8} wrap={false}>
+          {primaryAction}
+          {moreItems.length > 0 && (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: moreItems,
+                onClick: ({ key }) => {
+                  if (key === 'assets') {
+                    onOpenAssets()
+                    return
+                  }
+                  if (key === 'versions') {
+                    onOpenVersions()
+                    return
+                  }
+                  if (key === 'save-version') {
+                    onSaveVersion()
+                    return
+                  }
+                  if (key === 'add-slot') {
+                    if (missingSlot !== undefined) onAddSlot(missingSlot)
+                    return
+                  }
+                  const next = slots.find((candidate) => `slot:${candidate.slot}` === key)
+                  if (next !== undefined) onSwitchSlot(next.slot)
+                },
+              }}
+            >
+              <Button icon={<Ellipsis size={16} />} aria-label="更多" />
+            </Dropdown>
+          )}
+        </Space>
+      </Flex>
+    )
+  }
+
   return (
     <Flex align="center" justify="space-between" gap={12} wrap>
       <Flex align="center" gap={4} wrap>
-        <Button
-          type="text"
-          size="small"
-          icon={<ArrowLeft size={16} />}
-          onClick={() => void navigate('/galaxy')}
-        >
-          我的工程
-        </Button>
-        <ProjectInfoPopover
-          project={project}
-          canWrite={canWrite}
-          onProjectChange={onProjectChange}
-        />
-        {slots.length > 1 && (
-          <Segmented<ContentSlot>
-            size="small"
-            value={slot?.slot ?? ContentSlot.UNSPECIFIED}
-            onChange={onSwitchSlot}
-            options={slots.map((candidate) => ({
-              value: candidate.slot,
-              label: slotLabel(candidate.slot),
-            }))}
-          />
-        )}
-        {missingSlot !== undefined && canWrite && (
-          <Button
-            size="small"
-            icon={<Plus size={14} />}
-            loading={slotBusy}
-            onClick={() => onAddSlot(missingSlot)}
-          >
-            {addSlotLabel(enabledSlots)}
-          </Button>
-        )}
+        {backButton}
+        {projectTitle}
+        {slotSwitcher}
+        {addSlotButton}
       </Flex>
 
       <Space wrap>
-        {assetPanelEnabled && (
-          <Button icon={<Images size={16} />} onClick={onOpenAssets}>
-            资产
-          </Button>
-        )}
-        {contentEnabled && (
-          <Button icon={<History size={16} />} onClick={onOpenVersions}>
-            版本
-          </Button>
-        )}
-
-        {contentEnabled && canWrite && (
-          <Button
-            type={publishAvailable ? 'default' : 'primary'}
-            icon={<Layers size={16} />}
-            loading={versionBusy}
-            onClick={onSaveVersion}
-          >
-            存为版本
-          </Button>
-        )}
-
-        {publishEnabled && canPublish && (
-          <Dropdown
-            // 默认是 hover 触发，而 hover 在触屏上不存在——手机上就点不开发布。
-            trigger={['click']}
-            disabled={publishableCount === 0}
-            menu={{
-              items: publishItems,
-              onClick: ({ key }) => {
-                const version = versions.find((item) => item.id === key)
-                if (version === undefined || versionBlocked(version)) {
-                  // 前端拦下、请求根本没发出去——这一点只有客户端事件答得了，
-                  // 服务端请求留痕里没有它（见 docs/observability.md）。
-                  track({
-                    surface: Surface.WEB_EDITOR,
-                    action: Action.PUBLISH,
-                    result: Result.BLOCKED,
-                  })
-                  return
-                }
-                onPublish(key)
-              },
-            }}
-          >
-            <Button
-              type="primary"
-              icon={<Rocket size={16} />}
-              loading={publishBusy}
-              disabled={publishableCount === 0}
-            >
-              {slot?.published === true ? '更新发布' : '发布'}
-              <ChevronDown size={14} />
-            </Button>
-          </Dropdown>
-        )}
+        {assetsButton}
+        {versionsButton}
+        {saveVersionButton}
+        {publishButton}
       </Space>
     </Flex>
   )

@@ -648,6 +648,7 @@ export function ProjectEditorPage(): React.ReactNode {
   const topBar = (
     <WorkbenchTopBar
       project={project}
+      narrow={narrow}
       versions={versions}
       slot={activeSlotState}
       slots={project.slots}
@@ -699,6 +700,7 @@ export function ProjectEditorPage(): React.ReactNode {
       publishBusy={publishBusy}
       onRetryValidate={() => void validate(activeSlot)}
       onUnpublish={() => void handleUnpublish()}
+      narrow={narrow}
     />
   )
 
@@ -798,7 +800,7 @@ export function ProjectEditorPage(): React.ReactNode {
               <Select
                 size="small"
                 value={previewPath}
-                style={{ minWidth: 180 }}
+                style={{ minWidth: narrow ? 120 : 180 }}
                 onChange={(value: string) => {
                   setPreviewPath(value)
                   void renderPreview(activeSlot, value)
@@ -811,8 +813,10 @@ export function ProjectEditorPage(): React.ReactNode {
               target="_blank"
               rel="noopener"
               icon={<ExternalLink size={16} />}
+              // 窄屏只留图标，名字靠 aria-label 保住（与顶栏/状态条同一条做法）。
+              aria-label={narrow ? '单独打开' : undefined}
             >
-              单独打开
+              {narrow ? null : '单独打开'}
             </Button>
             <Button
               icon={<RefreshCw size={16} />}
@@ -882,10 +886,11 @@ export function ProjectEditorPage(): React.ReactNode {
   )
 
   // 一列到底，宽窄都一样：容器占满内容区，那块面积吃掉剩下的高度（它的下限按
-  // 宽窄不同，见上面的常量）。**不按宽窄分叉出两段结构**——两段只有在"下限是多少"
-  // 这一处不同，结构上多一份就会各自演化（见 docs/design/web/responsive.md）。
+  // 宽窄不同，见上面的常量）。**这里不分叉结构**——窄屏的差异全在下面两个 chrome
+  // 组件内部（顶栏收成一行 +「更多」、状态条压一行，见 docs/design/web/responsive.md
+  // 的「工作台窄屏」），本页只把 narrow 传下去，并收紧一档行距。
   return (
-    <Flex vertical gap={12} style={{ height: '100%', minHeight: 0 }}>
+    <Flex vertical gap={narrow ? 8 : 12} style={{ height: '100%', minHeight: 0 }}>
       {failureAlert}
       {topBar}
       {!contentEnabled && contentUnavailable}

@@ -32,6 +32,7 @@ import {
   VersionSchema,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import * as eventsApi from '../../api/events'
+import { installMatchMedia } from '../../test/match-media'
 import { fakeTopicStream, type FakeTopicStream } from '../../test/topic-event-stream'
 import { projectTopic } from '../../watch/topics'
 import { ProjectEditorPage } from './ProjectEditorPage'
@@ -176,7 +177,33 @@ async function switchStage(container: HTMLElement, label: string): Promise<void>
   })
 }
 
+/** 按 `aria-label` 找一颗按钮：窄屏下不少控件只剩图标，文本定位不到它们。 */
+function findButtonByLabel(container: HTMLElement, label: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find(
+    (candidate) => candidate.getAttribute('aria-label') === label,
+  )
+}
+
+/** 打开顶栏的「更多」（窄屏把集合入口收在这里）。 */
+async function openMore(container: HTMLElement): Promise<void> {
+  await clickButton(findButtonByLabel(container, '更多'), '更多')
+}
+
+/**
+ * 菜单里的一项。antd 把菜单挂在 `document.body` 上，因此看整份文档——
+ * 与既有的发布菜单用例同一做法（`[role="menuitem"]`）。
+ */
+function menuItem(label: string): HTMLElement | undefined {
+  return Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+    (candidate) => candidate.textContent?.trim() === label,
+  )
+}
+
 beforeEach(() => {
+  // 宽窄是模块级状态：窄屏用例会把它置为 true，不在这里显式复位就会泄漏到
+  // 后面的桌面用例。桌面用例（本文件的大多数）因此都从"非窄屏"开始。
+  installMatchMedia(false)
+
   globalThis.localStorage?.clear()
   // 有令牌时 SessionProvider 才会去拉会话与权限码。
   globalThis.localStorage?.setItem('aladdin.token', 'test-token')
@@ -317,6 +344,103 @@ describe('工作台的形态', () => {
 
     await clickButton(findButtonExact(container, '资产'), '资产')
     expect(document.body.textContent).toContain('上传资产')
+  })
+})
+
+// 窄屏（手机竖屏）：chrome 折叠，预览/源码成为首屏主体。宽屏形态见上一组——
+// 两态引用同一批控件，这里验的是"收进去的那些还到得了"。
+describe('窄屏下的形态', () => {
+  beforeEach(() => {
+    // 晚于外层 beforeEach 执行，因此窄屏在这里生效（外层刚把它复位成桌面）。
+    installMatchMedia(true)
+  })
+
+  it('常驻行只有 返回 + 标题 + 一颗主操作，集合入口收进「更多」', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps({ publishEnabled: true }))
+    vi.mocked(galaxyApi.listVersions).mockResolvedValue(
+      create(ListVersionsResponseSchema, {
+        versions: [create(VersionSchema, { id: 'v1', seq: 1n })],
+      }),
+    )
+
+    const container = await renderEditor()
+
+    expect(findButtonByLabel(container, '返回'), '没有返回入口').not.toBeUndefined()
+    expect(findButtonByLabel(container, '工程信息'), '标题不在常驻行上').not.toBeUndefined()
+    // 主操作常驻：有版本可发布时是「发布」。
+    expect(findButton(container, '发布'), '主操作不在常驻行上').not.toBeUndefined()
+    // 集合入口不在顶栏的直接可见处。
+    expect(findButtonExact(container, '资产'), '资产还在常驻行上').toBeUndefined()
+    expect(findButtonExact(container, '版本'), '版本还在常驻行上').toBeUndefined()
+    expect(findButtonByLabel(container, '更多'), '没有「更多」入口').not.toBeUndefined()
+  })
+
+  it('「更多」里能打开版本面板', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+
+    const container = await renderEditor()
+    await settle()
+
+    await openMore(container)
+    await act(async () => {
+      menuItem('版本')?.click()
+    })
+
+    expect(document.body.textContent).toContain('序号')
+  })
+
+  it('「更多」里能打开资产面板', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    vi.mocked(galaxyApi.listAssets).mockResolvedValue(create(ListAssetsResponseSchema, {}))
+
+    const container = await renderEditor()
+    await settle()
+
+    await openMore(container)
+    await act(async () => {
+      menuItem('资产')?.click()
+    })
+
+    expect(document.body.textContent).toContain('上传资产')
+  })
+
+  it('已发布时状态条一行：短标签可复制、长地址不常驻、撤回仍在', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps({ publishEnabled: true }))
+    const publishedURL = 'https://pub.example.com/published/abc'
+    vi.mocked(galaxyApi.getProject).mockResolvedValue(
+      create(GetProjectResponseSchema, {
+        project: create(ProjectSchema, {
+          id: 'p1',
+          name: '我的工程',
+          slots: [{ slot: ContentSlot.SITE, published: true, publishedUrl: publishedURL }],
+        }),
+      }),
+    )
+
+    const container = await renderEditor()
+    await settle()
+
+    expect(container.textContent).toContain('已发布')
+    // 撤回紧挨着地址、仍是按钮（窄屏只剩图标，名字在 aria-label 上）。
+    expect(findButtonByLabel(container, '撤回发布')).not.toBeUndefined()
+    // 地址本身不常驻在这条上。
+    expect(container.textContent).not.toContain(publishedURL)
+  })
+
+  it('预览工具条收起「单独打开」，刷新与预览/源码切换照常', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+
+    const container = await renderEditor()
+
+    // 「单独打开」只剩图标：地址没变，只是不再占一段可见文字。
+    const openAlone = container.querySelector('[aria-label="单独打开"]')
+    expect(openAlone?.getAttribute('href')).toBe('/galaxy/p1/preview?slot=site')
+    expect(container.textContent).not.toContain('单独打开')
+
+    expect(findButton(container, '刷新')).not.toBeUndefined()
+
+    await switchStage(container, '源码')
+    expect(container.textContent).toContain('index.html')
   })
 })
 
