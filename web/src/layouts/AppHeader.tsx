@@ -1,9 +1,9 @@
-import { AutoComplete, Button, Layout, theme, Tooltip } from 'antd'
+import { AutoComplete, Button, Layout, theme } from 'antd'
 import { Building2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { useSession } from '../auth'
-import { formatScope, GLOBAL_SCOPE_LABEL, parseScope, useMyScopes, useScopes } from '../rbac'
+import { formatScope, parseScope, useMyScopes, useScopes } from '../rbac'
 import { ThemeSwitch } from '../theme'
 
 const { Header } = Layout
@@ -112,42 +112,27 @@ export function AppHeader({ toggleIcon, toggleLabel, onToggle }: AppHeaderProps)
         {/* 宽度是弹性的：桌面端封顶 260，手机上有多少用多少。
             写死 260 会在 360px 的屏上把主题切换挤出页头。
             这个控件是"可手输 + 有建议"，不是只读选择：候选项列不出来时
-            （没有读主体的权限、主体还没登记、这次读取失败）仍然要能直接写路径。 */}
-        <Tooltip
-          title={
-            <span>
-              这次权限判定所在的范围。它是层级路径，父范围包含子范围，最上层是「
-              {GLOBAL_SCOPE_LABEL}」。
-              <br />
-              它由你的角色绑定决定：留空表示不指定，服务端会回落到你凭证的默认范围，并把
-              <strong>解析结果回填到这里</strong>——框里显示的永远是实际生效的那个。
-              <br />
-              它与权限码里的「领域」段（如 rbac、galaxy）不是一回事。
-              {candidates.length === 0 && (
-                <>
-                  <br />
-                  暂时列不出可用的范围，可直接输入路径。
-                </>
-              )}
-            </span>
-          }
-        >
-          <AutoComplete
-            value={draft}
-            options={options}
-            onChange={(value) => setDraft(value)}
-            // 选中一个候选项是一次明确的决定，立即生效；手输则等回车或失焦再提交。
-            onSelect={(value) => void commit(value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void commit(draft)
-            }}
-            onBlur={() => void commit(draft)}
-            placeholder="管理范围"
-            prefix={<Building2 size={14} />}
-            style={{ flex: '1 1 160px', maxWidth: 260, minWidth: 0 }}
-            aria-label="管理范围"
-          />
-        </Tooltip>
+            （没有读主体的权限、主体还没登记、这次读取失败）仍然要能直接写路径，
+            空态里说明这一点。控件不挂解释——它讲给谁听、讲什么见
+            docs/design/rbac/management-ui.md 的"顶栏：管理范围"。 */}
+        <AutoComplete
+          value={draft}
+          options={options}
+          onChange={(value) => setDraft(value)}
+          // 选中一个候选项是一次明确的决定，立即生效；手输则等回车或失焦再提交。
+          onSelect={(value) => void commit(value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void commit(draft)
+          }}
+          onBlur={() => void commit(draft)}
+          placeholder="管理范围"
+          prefix={<Building2 size={14} />}
+          // 列不出候选是可预期的一种状态（没权限、主体未登记、这次读取失败）。
+          // 这句放在下拉空态里：想看候选的人正好在这里读到"可以手输"。
+          notFoundContent="暂时列不出可用的范围，可直接输入路径。"
+          style={{ flex: '1 1 160px', maxWidth: 260, minWidth: 0 }}
+          aria-label="管理范围"
+        />
 
         <ThemeSwitch />
       </div>

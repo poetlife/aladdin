@@ -40,9 +40,16 @@ const testBucket = "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
 // 发布**没有自己的桶**——公开区与私有区在同一个桶里，靠逐对象的公开读区分，
 // 因此这里必须把 COS 一起配上：只给发布域会被校验拒绝，那样这个用例测的就成了
 // "半套配置被拒吗"，那是另一回事。
+//
+// 同理也要有主站的对外地址：**分享出去的地址落在主站上**（发布域只是主站壳里
+// 跨源沙箱 iframe 的落点），缺了它发布同样只发得出一半。用例自己挑了地址的
+// （同源 / 同注册域那几个）不覆盖。
 func galaxyOn(c *ServerConfig, publishBaseURL string) {
 	c.COS = COSConfig{BucketURL: testBucket, SecretID: "id", SecretKey: "key"}
 	c.Galaxy = GalaxyConfig{PublishBaseURL: publishBaseURL}
+	if c.PublicBaseURL == "" {
+		c.PublicBaseURL = "https://aladdin.example.net"
+	}
 }
 
 // isolateHome 把用户配置目录指到临时目录，避免测试写到真实的家目录里。
@@ -481,7 +488,8 @@ func TestValidate(t *testing.T) {
 			c.Bootstrap = BootstrapConfig{Scope: "root"}
 		}, false},
 		{"客户端标识为空即未启用", func(c *ServerConfig) { c.GoogleClientID = "" }, true},
-		// galaxy 的发布：只给发布域不行（素材住在桶里），且发布域不得与主应用同站。
+		// galaxy 的发布：只给发布域不行（素材住在桶里、分享地址落在主站上），
+		// 且发布域不得与主应用同站。
 		{"发布未配置", func(c *ServerConfig) { c.Galaxy = GalaxyConfig{} }, true},
 		{"发布已启用", func(c *ServerConfig) { galaxyOn(c, "https://pub.example.com") }, true},
 		{"只给发布域而不给桶", func(c *ServerConfig) {
@@ -513,9 +521,10 @@ func TestValidate(t *testing.T) {
 			c.PublicBaseURL = "https://app.example.com"
 			galaxyOn(c, "https://pages.example.net")
 		}, true},
-		{"主应用未配置对外地址时发布域合法", func(c *ServerConfig) {
+		{"发布域给了而主站对外地址为空", func(c *ServerConfig) {
 			galaxyOn(c, "https://pub.example.com")
-		}, true},
+			c.PublicBaseURL = ""
+		}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -796,12 +805,14 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyBootstrapAdminEmail:   keyBootstrapAdminScope + ": root\n",
 			keyBootstrapAdminScope:   keyBootstrapAdminSubject + ": google:110000000000000000001\n",
 			// 重定向型登录渠道的三项也必须成对出现，理由同上。
-			keyGithubClientID: keyPublicBaseURL + ": https://aladdin.example.com\n",
+			keyGithubClientID: keyPublicBaseURL + ": https://aladdin.example.net\n",
 			keyPublicBaseURL:  keyGithubClientID + ": Iv1.0123456789abcdef\n",
 			// 发布没有自己的桶（公开区与私有区在同一个桶里），但**没有桶就发不了
 			// 发布**，因此这个键要连桶地址一起给——否则走的是"只给发布域"那条
-			// 拒绝路径，而那是另一回事，另有专门的用例守着。
-			keyGalaxyPublishBaseURL: keyCOSBucketURL + ": https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com\n",
+			// 拒绝路径，而那是另一回事，另有专门的用例守着。同理还要给主站的
+			// 对外地址：分享出去的地址落在主站上。
+			keyGalaxyPublishBaseURL: keyCOSBucketURL + ": https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com\n" +
+				keyPublicBaseURL + ": https://aladdin.example.net\n",
 		}
 		// 生效前提来自环境变量的键。头像桶地址本身不是秘密、可以写进配置文件，
 		// 但它的两项密钥只有环境变量这一个来源（见 EnvCOSSecretID），因此这个

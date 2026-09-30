@@ -23,7 +23,7 @@ import { projectTopic } from '../../watch/topics'
 import { AssetLibrary } from './AssetLibrary'
 import { LifecycleStrip } from './LifecycleStrip'
 import { formatTime } from './format-time'
-import { PreviewFrame } from './PreviewFrame'
+import { SandboxFrame } from './SandboxFrame'
 import { useReloadWhenVisible } from './reload-when-visible'
 import { SourceView } from './SourceView'
 import { VALIDATION_PENDING, type ValidationState } from './validation-state'
@@ -848,7 +848,7 @@ export function ProjectEditorPage(): React.ReactNode {
               image={Empty.PRESENTED_IMAGE_SIMPLE}
             />
           ) : (
-            <PreviewFrame url={previewUrl} height="100%" />
+            <SandboxFrame url={previewUrl} title="预览" height="100%" />
           )
         ) : (
           <SourceView

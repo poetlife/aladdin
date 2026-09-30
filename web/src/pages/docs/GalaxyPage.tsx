@@ -56,8 +56,8 @@ export function GalaxyPage(): React.ReactNode {
       >
         <Typography.Paragraph>
           建工程时<strong>至少选一个内容槽</strong>，此后<strong>只增不删</strong>——一个已经
-          发布了站点的工程，可以再长出文档来，而不必另建一个工程。两个槽各有自己的草稿、版本、
-          发布地址与发布状态，<strong>互不影响</strong>：推文档不会覆盖站点，撤回一个也不动
+          分享了站点的工程，可以再长出文档来，而不必另建一个工程。两个槽各有自己的草稿、版本、
+          分享地址与发布状态，<strong>互不影响</strong>：推文档不会覆盖站点，撤回一个也不动
           另一个。
         </Typography.Paragraph>
         <ul>

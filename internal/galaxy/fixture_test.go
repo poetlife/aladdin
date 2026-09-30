@@ -17,9 +17,13 @@ const (
 	testOther = "usr_other"
 
 	// 桶地址与发布域。前者同时是私有区与公开区的主机（两者共用一个桶，靠键
-	// 前缀与对象权限区分），后者是站点在哪；断言对外地址与内容安全策略时都用得上。
+	// 前缀与对象权限区分），后者是内容与构建产物在哪；断言分享地址、内容地址与
+	// 内容安全策略时都用得上。
 	testBucketOrigin = "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
 	testPageOrigin   = "https://pages.example.com"
+	// 主站的对外地址。**分享地址落在它上面**（发布域只是跨源 iframe 的落点），
+	// 因此它与 testPageOrigin 必须不同源。
+	testAppOrigin = "https://aladdin.example.com"
 )
 
 // fixture 是一套接在内存实现上的用例夹具。
@@ -61,7 +65,7 @@ func newFixture(t *testing.T) *fixture {
 // mustOrigin 返回测试用的发布地址派生入口。
 func mustOrigin(t *testing.T) PublicOrigin {
 	t.Helper()
-	origin, err := NewPublicOrigin(testBucketOrigin, testPageOrigin)
+	origin, err := NewPublicOrigin(testBucketOrigin, testPageOrigin, testAppOrigin)
 	if err != nil {
 		t.Fatalf("构造发布地址失败: %v", err)
 	}

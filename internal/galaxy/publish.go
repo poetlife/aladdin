@@ -321,7 +321,7 @@ func (s *Service) View(ctx context.Context, project Project) (ProjectView, error
 			Slot:         enabled.Slot,
 			Published:    published,
 			Publication:  publication,
-			PublishedURL: s.PageURL(project.ID, enabled.Slot),
+			PublishedURL: s.origin.ShareURL(project.ID, enabled.Slot),
 			BaseURL:      s.BaseURL(project.ID, enabled.Slot),
 		})
 	}
@@ -345,10 +345,9 @@ func (s *Service) CurrentPublication(ctx context.Context, project Project, slot 
 	return publication, true, nil
 }
 
-// PageURL 返回一个槽的发布地址，未配置发布域时为空。
-func (s *Service) PageURL(projectID string, slot ContentSlot) string {
-	return s.origin.PageURL(projectID, slot)
-}
+// 内容地址与分享地址都由 Service.Origin() 上那一处派生给出（见
+// PublicOrigin.ContentURL / ShareURL）——不在这一层再包一遍，免得出现第二个
+// "发布地址从哪来"。
 
 // BaseURL 返回一个槽的**发布根**，未配置发布域时为空。
 //

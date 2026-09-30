@@ -4,42 +4,53 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/poetlife/aladdin/internal/loopback"
 )
 
-// PublicPathPrefix 是发布页面在发布域上的路径前缀。
+// PublicPathPrefix 是发布页面的路径前缀。**分享地址与内容地址共用它**：分享地址
+// 是 `<主站>/g/<工程标识>`，内容是 `<发布域>` 下的同一条路径——两者只有主机不同。
 //
-// 对外地址形如 `<发布域>/g/<工程标识>`。这一条常量与 PageURL 是**同一处
-// 派生**：登记浏览器直连入口的那一处直接引用它，两边写两份必然漂移（表现是
-// "页面地址变了，但中间件还放行着旧路径"）。
+// 这一条常量与 ContentURL / ShareURL 是**同一处派生**：登记浏览器直连入口的那一处
+// 直接引用它，两边写两份必然漂移（表现是"页面地址变了，但中间件还放行着旧路径"）。
 const PublicPathPrefix = "/g/"
 
 // PublicOrigin 是发布态地址的派生入口（唯一入口）。
 //
-// 它同时回答两个问题，且两者的来源是同一个配置值（桶地址）：
+// 它同时回答三个问题，且来源是同一批配置值：
 //
 //   - 改写时把 `asset://<资产标识>` 换成什么地址（AssetURL）；
-//   - 内容安全策略里允许从哪个来源取资源（AllowedSource）。
+//   - 内容安全策略里允许从哪个来源取资源（AllowedSource），以及允许谁嵌入它
+//     （FrameAncestorSource）；
+//   - 一个槽对外的**分享地址**（ShareURL）与 iframe 要加载的**内容地址**
+//     （ContentURL）。
 //
 // 两处各写一份的表现是"地址指向 A、策略允许 B"，而它的表现是"发布成功了但
 // 什么都显示不出来"——一个只有拿到浏览器控制台才能归因的失败。
 //
-// 页面地址是另一件事：它在**发布域**上，而发布域必须与主应用不同源（发布物
-// 里跑着用户写的脚本）。
+// 分享地址与内容地址是两件事：**内容地址在发布域上**（它是内容与构建产物的地址
+// 空间，发布物里跑着用户写的脚本，必须与主应用不同源），而**分享地址在主站上**
+// ——对外给出去的是主站上的壳，壳再用跨源沙箱 iframe 去取内容（见
+// docs/design/galaxy/publication.md 的"主站壳"）。
 type PublicOrigin struct {
 	assets *url.URL
 	page   *url.URL
+	app    *url.URL
 }
 
-// NewPublicOrigin 解析桶地址与发布域。
+// NewPublicOrigin 解析桶地址、发布域与主站的对外地址。
 //
-// 两者都必须是绝对 https 地址、有主机名、不带用户信息、不带查询串与 fragment、
-// 路径为空或只有 "/"。配置校验也会拒绝这些取值，这里再挡一次是因为本构造函数
-// 是唯一入口——绕过它就等于绕过这条约束。
+// 三者都必须是绝对地址、有主机名、不带用户信息、不带查询串与 fragment、路径为空
+// 或只有 "/"。配置校验也会拒绝这些取值，这里再挡一次是因为本构造函数是唯一入口
+// ——绕过它就等于绕过这条约束。
+//
+// 主站地址（`public_base_url`）为空是合法的：那表示"未启用发布"这条常态路径上
+// 的零配置。**发布启用时它必须非空**，由配置校验保证——没有它分享地址拼不出来。
 //
 // 注意**桶地址不等于公开区的范围**：公开区是同一个桶里的一个前缀，由键规则
 // 给出（ReleaseObjectKey）。这一层只管主机，因为内容安全策略的来源表达式也只
 // 到主机（见 AllowedSource）。
-func NewPublicOrigin(bucketURL, publishBaseURL string) (PublicOrigin, error) {
+func NewPublicOrigin(bucketURL, publishBaseURL, appBaseURL string) (PublicOrigin, error) {
 	assets, err := parseOrigin("桶地址", bucketURL)
 	if err != nil {
 		return PublicOrigin{}, err
@@ -48,7 +59,11 @@ func NewPublicOrigin(bucketURL, publishBaseURL string) (PublicOrigin, error) {
 	if err != nil {
 		return PublicOrigin{}, err
 	}
-	return PublicOrigin{assets: assets, page: page}, nil
+	app, err := parseAppOrigin("主站对外地址", appBaseURL)
+	if err != nil {
+		return PublicOrigin{}, err
+	}
+	return PublicOrigin{assets: assets, page: page, app: app}, nil
 }
 
 // parseOrigin 是"一个地址能不能当作来源"的唯一判据。
@@ -76,6 +91,44 @@ func parseOrigin(what, raw string) (*url.URL, error) {
 
 // IsZero 表示没有配置发布域。零值不是一条可用的发布配置。
 func (o PublicOrigin) IsZero() bool { return o.assets == nil || o.page == nil }
+
+// parseAppOrigin 解析主站的对外地址，空串返回 nil（未配置发布时的常态）。
+//
+// 它比 parseOrigin 宽一档：**本地回环主机允许 http**。这与配置里
+// `public_base_url` 的取值要求是同一条（见 internal/config 的 checkOriginShape），
+// 那一处允许它是因为本地开发没有证书。这里跟着放宽不是松懈——主站地址只用来
+// 拼分享地址与写 `frame-ancestors`，两者在 http 下都成立；而"发布域与主站不同源"
+// 这条安全约束因此也没有被放松（两张地址仍然必须落在不同的站点上）。
+func parseAppOrigin(what, raw string) (*url.URL, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s不是合法地址: %w", what, err)
+	}
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("%s必须是带主机名的绝对地址，当前是 %q", what, raw)
+	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("%s不得带用户信息，当前是 %q", what, raw)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, fmt.Errorf("%s不得带查询串或 fragment，当前是 %q", what, raw)
+	}
+	if path := strings.TrimSuffix(parsed.Path, "/"); path != "" {
+		return nil, fmt.Errorf("%s的路径必须为空或只有 /，当前是 %q", what, raw)
+	}
+	// 与 internal/config 的 checkOriginShape 同形：先算出"这是回环上的 http"，
+	// 再判它是不是唯一被放行的非 https 情形。
+	loopbackHTTP := parsed.Scheme == "http" && loopback.IsHost(parsed.Hostname())
+	if parsed.Scheme != "https" && !loopbackHTTP {
+		return nil, fmt.Errorf("%s必须是 https（仅本地回环主机允许 http），当前是 %q", what, raw)
+	}
+	parsed.Path = ""
+	parsed.RawPath = ""
+	return parsed, nil
+}
 
 // SiteRoot 返回**某一个内容槽**的**发布根路径**。
 //
@@ -123,14 +176,45 @@ func (o PublicOrigin) AllowedSource() string {
 	return o.assets.Scheme + "://" + o.assets.Host
 }
 
-// PageURL 返回**某一个内容槽**的发布地址。
+// ContentURL 返回**某一个内容槽**在发布域上的内容地址（槽根，不带结尾斜杠）。
+//
+// 它是主站壳里 iframe 的 `src`、也是发布域那条直连入口的入口地址。**它不是对外
+// 分享出去的那一条**——分享地址是 ShareURL（见下）。
 //
 // **地址由服务端算好下发**，客户端不拼：客户端再拼一份就是第三个来源。
-func (o PublicOrigin) PageURL(projectID string, slot ContentSlot) string {
+func (o PublicOrigin) ContentURL(projectID string, slot ContentSlot) string {
 	if o.IsZero() {
 		return ""
 	}
 	return o.pageBase() + strings.TrimSuffix(slotRootPath(projectID, slot), "/")
+}
+
+// ShareURL 返回**某一个内容槽**对外分享的地址（主站包装）。
+//
+// 它落在主站上，路径与内容地址同形：打开它得到的是主站的壳，壳再把跨源沙箱
+// iframe 指向发布域上的同一条路径（见 docs/design/galaxy/publication.md 的
+// "主站壳"）。**贴给别人的是这一条**：发布域是一处裸沙箱，把它当分享入口等于
+// 把沙箱主机名交给用户。
+//
+// 主站对外地址没配置时为空（发布未启用，或那条半套配置——后者由配置校验拒绝
+// 启动，因此走到这里只可能是前者）。
+func (o PublicOrigin) ShareURL(projectID string, slot ContentSlot) string {
+	if o.IsZero() || o.app == nil {
+		return ""
+	}
+	return strings.TrimSuffix(o.app.String(), "/") + strings.TrimSuffix(slotRootPath(projectID, slot), "/")
+}
+
+// FrameAncestorSource 返回内容安全策略里允许嵌入发布物的来源（主站）。
+//
+// 只有来源（scheme + host），与 AllowedSource 同一条理由：策略匹配的是来源。
+// 发布域与主站必须不同源（配置校验），因此本函数给出的**不是** `'self'`——发布
+// 物不该能被任何别的站点嵌进页面，只该能被主站的壳嵌。
+func (o PublicOrigin) FrameAncestorSource() string {
+	if o.app == nil {
+		return ""
+	}
+	return o.app.Scheme + "://" + o.app.Host
 }
 
 // PreviewBase 返回发布域的根地址（不带结尾斜杠）。预览通道的地址也落在它下面
@@ -138,7 +222,7 @@ func (o PublicOrigin) PageURL(projectID string, slot ContentSlot) string {
 // 已发布的那一版（见 docs/design/galaxy/site-model.md 的"预览"）。
 func (o PublicOrigin) PreviewBase() string { return o.pageBase() }
 
-// pageBase 是发布域的根地址（不带结尾斜杠），PageURL 与预览地址共用它。
+// pageBase 是发布域的根地址（不带结尾斜杠），ContentURL 与预览地址共用它。
 //
 // 两处共用而不是各拼一份：它们必须落在**同一个源**上，两处各写一份的表现是
 // "预览与发布差了一个主机名"，而那个差异只有在构建产物带绝对地址时才暴露。

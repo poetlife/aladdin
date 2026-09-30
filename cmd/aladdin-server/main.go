@@ -166,7 +166,7 @@ func run() error {
 			return fmt.Errorf("构造公开区存储失败: %w", err)
 		}
 		publicWriter = writer
-		origin, err = galaxy.NewPublicOrigin(cfg.COS.BucketURL, cfg.Galaxy.PublishBaseURL)
+		origin, err = galaxy.NewPublicOrigin(cfg.COS.BucketURL, cfg.Galaxy.PublishBaseURL, cfg.PublicBaseURL)
 		if err != nil {
 			return fmt.Errorf("构造发布地址失败: %w", err)
 		}

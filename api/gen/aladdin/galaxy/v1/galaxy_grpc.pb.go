@@ -43,6 +43,7 @@ const (
 	GalaxyService_UpdateAsset_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
 	GalaxyService_Publish_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/Publish"
 	GalaxyService_Unpublish_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
+	GalaxyService_ResolveSharedPage_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
 )
 
 // GalaxyServiceClient is the client API for GalaxyService service.
@@ -227,6 +228,21 @@ type GalaxyServiceClient interface {
 	// 撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
 	// 收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
 	Unpublish(ctx context.Context, in *UnpublishRequest, opts ...grpc.CallOption) (*UnpublishResponse, error)
+	// 把一条**主站分享路径**解析成它在发布域上的内容地址。
+	//
+	// 主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
+	// **槽的判定在服务端**（与发布地址那条 HTTP 入口共用同一处形状解析），因此
+	// 请求给的是整条路径，响应给的是整条内容地址——客户端两头都不拼。
+	//
+	// 它是**公开**的：访客打开一条分享地址时没有会话，而"分享给没登录的人"正是
+	// 这个入口唯一的用途（见 docs/design/rbac/server-permissions.md 的公开方法白
+	// 名单）。它只凭工程标识作答，与发布地址那条 HTTP 入口回答的是同一件事。
+	//
+	// **否定结论只有一个**：未发布、已撤回、该槽未启用、工程不存在、标识没被猜
+	// 中、路径不在集合里，一律返回空的 `content_url`，而不是 RPC 错误——错误码会
+	// 成为一个"这个标识是真的"的第二信号（见 docs/design/galaxy/publication.md 的
+	// "主站壳"）。
+	ResolveSharedPage(ctx context.Context, in *ResolveSharedPageRequest, opts ...grpc.CallOption) (*ResolveSharedPageResponse, error)
 }
 
 type galaxyServiceClient struct {
@@ -477,6 +493,16 @@ func (c *galaxyServiceClient) Unpublish(ctx context.Context, in *UnpublishReques
 	return out, nil
 }
 
+func (c *galaxyServiceClient) ResolveSharedPage(ctx context.Context, in *ResolveSharedPageRequest, opts ...grpc.CallOption) (*ResolveSharedPageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveSharedPageResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_ResolveSharedPage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GalaxyServiceServer is the server API for GalaxyService service.
 // All implementations must embed UnimplementedGalaxyServiceServer
 // for forward compatibility.
@@ -659,6 +685,21 @@ type GalaxyServiceServer interface {
 	// 撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
 	// 收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
 	Unpublish(context.Context, *UnpublishRequest) (*UnpublishResponse, error)
+	// 把一条**主站分享路径**解析成它在发布域上的内容地址。
+	//
+	// 主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
+	// **槽的判定在服务端**（与发布地址那条 HTTP 入口共用同一处形状解析），因此
+	// 请求给的是整条路径，响应给的是整条内容地址——客户端两头都不拼。
+	//
+	// 它是**公开**的：访客打开一条分享地址时没有会话，而"分享给没登录的人"正是
+	// 这个入口唯一的用途（见 docs/design/rbac/server-permissions.md 的公开方法白
+	// 名单）。它只凭工程标识作答，与发布地址那条 HTTP 入口回答的是同一件事。
+	//
+	// **否定结论只有一个**：未发布、已撤回、该槽未启用、工程不存在、标识没被猜
+	// 中、路径不在集合里，一律返回空的 `content_url`，而不是 RPC 错误——错误码会
+	// 成为一个"这个标识是真的"的第二信号（见 docs/design/galaxy/publication.md 的
+	// "主站壳"）。
+	ResolveSharedPage(context.Context, *ResolveSharedPageRequest) (*ResolveSharedPageResponse, error)
 	mustEmbedUnimplementedGalaxyServiceServer()
 }
 
@@ -740,6 +781,9 @@ func (UnimplementedGalaxyServiceServer) Publish(context.Context, *PublishRequest
 }
 func (UnimplementedGalaxyServiceServer) Unpublish(context.Context, *UnpublishRequest) (*UnpublishResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Unpublish not implemented")
+}
+func (UnimplementedGalaxyServiceServer) ResolveSharedPage(context.Context, *ResolveSharedPageRequest) (*ResolveSharedPageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveSharedPage not implemented")
 }
 func (UnimplementedGalaxyServiceServer) mustEmbedUnimplementedGalaxyServiceServer() {}
 func (UnimplementedGalaxyServiceServer) testEmbeddedByValue()                       {}
@@ -1194,6 +1238,24 @@ func _GalaxyService_Unpublish_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GalaxyService_ResolveSharedPage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveSharedPageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).ResolveSharedPage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_ResolveSharedPage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).ResolveSharedPage(ctx, req.(*ResolveSharedPageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GalaxyService_ServiceDesc is the grpc.ServiceDesc for GalaxyService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1296,6 +1358,10 @@ var GalaxyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Unpublish",
 			Handler:    _GalaxyService_Unpublish_Handler,
+		},
+		{
+			MethodName: "ResolveSharedPage",
+			Handler:    _GalaxyService_ResolveSharedPage_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

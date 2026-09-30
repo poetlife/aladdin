@@ -131,7 +131,7 @@ func TestEveryMethodIsClassified(t *testing.T) {
 //
 // 公开方法数量只减不增；新增必须在评审中说明理由，因此这里把它固定下来。
 //
-// 六个成员各自为什么必须公开，见 docs/design/rbac/server-permissions.md。
+// 七个成员各自为什么必须公开，见 docs/design/rbac/server-permissions.md。
 // 其中"查询可用的登录方式"是这条规则的边界用例：它的返回内容本来就会
 // 出现在浏览器里，不公开不保护任何东西。命令行登录的两个方法则是与"登录"
 // 同一条循环依赖：调用方正是那个还没登录的终端。
@@ -139,6 +139,11 @@ func TestEveryMethodIsClassified(t *testing.T) {
 // 遥测上报是第六个：登录页上的失败、命令行未登录就退出都发生在拿到会话之前，
 // 要求先认证才能上报是同一条循环依赖。它由服务端按动作白名单与限流兜住
 // （见 internal/telemetry），而不是靠"要求认证"。
+//
+// 第七个（解析已发布页面的内容地址）是**访客**打开一条分享地址时主站壳要问的
+// 下一跳：它与发布域那条匿名 HTTP 入口回答同一件事，只凭工程标识作答、只返回
+// 公开内容、否定结论也与发布态完全一致。要求先认证才能问，等于让"分享给没登录
+// 的人"这条唯一用途办不成。
 func TestPublicMethodsAreAllowlisted(t *testing.T) {
 	want := map[string]bool{
 		"/aladdin.identity.v1.IdentityService/Login":            true,
@@ -147,6 +152,7 @@ func TestPublicMethodsAreAllowlisted(t *testing.T) {
 		"/aladdin.identity.v1.IdentityService/StartDeviceLogin": true,
 		"/aladdin.identity.v1.IdentityService/PollDeviceLogin":  true,
 		"/aladdin.telemetry.v1.TelemetryService/ReportEvents":   true,
+		"/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage":    true,
 	}
 	got := map[string]bool{}
 	eachMethod(t, func(fullMethod string, _ *descriptorpb.MethodOptions) {

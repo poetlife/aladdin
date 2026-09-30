@@ -386,7 +386,7 @@ func (s *Service) PreviewDraft(ctx context.Context, subjectID, projectID string,
 }
 
 // previewURL 拼出一条预览地址。**地址由服务端算好下发**，客户端不拼：客户端再拼
-// 一份就是第二个来源（与 PageURL 同一条约定）。
+// 一份就是第二个来源（与 ContentURL 同一条约定）。
 func (s *Service) previewURL(project Project, slot ContentSlot, token, entryPath string) string {
 	if s.origin.IsZero() {
 		return ""

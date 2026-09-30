@@ -9,7 +9,7 @@ import { ContentSlot, type Project } from '../../gen/proto/aladdin/galaxy/v1/gal
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../../telemetry/track'
 import { slotDescription, slotFromName, slotLabel } from './content-slot'
-import { PreviewFrame } from './PreviewFrame'
+import { SandboxFrame } from './SandboxFrame'
 
 interface failure {
   message: string
@@ -178,7 +178,10 @@ export function PreviewPage(): React.ReactNode {
             style={{ paddingTop: 48 }}
           />
         ) : (
-          <PreviewFrame url={url} height="100%" />
+          // 预览**不做审查、不做裁剪**：内容写什么就渲染什么，坏引用就显示坏的。
+          // "这处有问题"由状态条上的校验结论单独给出——把两者混起来会让用户以为
+          // 预览看起来对就等于发布能成功（见 docs/design/galaxy/authoring.md）。
+          <SandboxFrame url={url} title="预览" height="100%" />
         )}
       </div>
     </Flex>
