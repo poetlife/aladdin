@@ -482,10 +482,27 @@ func (s *Service) CommitAssetUpload(ctx context.Context, subjectID, projectID, a
 			return Asset{}, err
 		}
 	}
-	// **摘要在这里不核对。** 核对它需要把字节读回来算一遍，而这件事在上架到
-	// 公开区时必然要做（它本来就要把字节搬过去，见 promote.go）。提前再读一次
-	// 只为了核对，等于把直传省下的带宽又花回去。一条假的摘要不会把公开区的
-	// 地址指向别人的内容——它在被使用之前就会被拒绝。
+	// **摘要在这一步核对**，而且只在核对通过之后才写元数据行。
+	//
+	// 它是私有区与公开区的寻址键，而直传让服务端在提交之前看不见字节——因此
+	// 摘要是上传方**声明**的。核对要看见字节，于是两条路：让存储侧自己算
+	// （一次调用，字节不过境），或把字节读回来自己算（见 verifyAssetDigest）。
+	//
+	// 这件事早先放在上架那一步（那里本来就要把字节搬去公开区），而上架改成让
+	// 存储自己复制之后，那里已经没有字节可看了（见 promote.go）。挪到这里还
+	// 顺带与文本条目一致起来：文本一直是在提交时核对的。
+	if err := s.verifyAssetDigest(ctx, key, declaredDigest); err != nil {
+		// **核对不过就把对象删掉**：它是一件"地址与内容不符"的东西，留着既
+		// 无从被引用（元数据行还没写），又占着配额。危害范围只有调用者自己的
+		// 工程——键里带工程前缀，两个工程的字节本来就不共享。
+		if deleteErr := s.assets.Delete(ctx, key); deleteErr != nil && s.logger != nil {
+			s.logger.Warn("回滚摘要不符的资产对象失败，桶上可能留下错误的对象",
+				zap.String("project_id", projectID),
+				zap.String("asset_id", assetID),
+				zap.Error(deleteErr))
+		}
+		return Asset{}, err
+	}
 	asset := Asset{
 		ID:         assetID,
 		ProjectID:  projectID,
@@ -521,6 +538,43 @@ func (s *Service) CommitAssetUpload(ctx context.Context, subjectID, projectID, a
 	// 事件在留痕之后发：资产库多了一份，订阅者的资产面板该跟上。
 	s.publish(projectID)
 	return asset, nil
+}
+
+// verifyAssetDigest 核对一个刚上传的资产：那份字节的摘要是不是它声明的那个。
+//
+// 两条路，结论相同：
+//
+//   - **让存储侧算**（objectstore.Store.SHA256）：一次调用，字节不过境。这条路
+//     把一份完整对象从服务端内存里省掉了。
+//   - **读回字节自己算**：存储侧给不出时走这条——那项能力要单独开通，因此"给
+//     不出"是常态而不是故障。它更慢（是一趟完整的下载），所以要留痕，免得一次
+//     能力失效表现成"上传变慢了"。
+//
+// 它是**唯一**核对资产摘要的地方：核对过的资产，"字节 ↔ 摘要"在库内就是成立的，
+// 上架与下发都不必再验。
+func (s *Service) verifyAssetDigest(ctx context.Context, key, declaredDigest string) error {
+	actual, err := s.assets.SHA256(ctx, key)
+	switch {
+	case err == nil:
+		if actual != declaredDigest {
+			return fmt.Errorf("%w: 资产声明 %s，实际 %s", ErrDigestMismatch, declaredDigest, actual)
+		}
+		return nil
+	case !errors.Is(err, objectstore.ErrHashUnavailable):
+		return err
+	}
+
+	data, err := s.assets.Read(ctx, key)
+	if err != nil {
+		return err
+	}
+	if actual := ContentDigest(data); actual != declaredDigest {
+		return fmt.Errorf("%w: 资产声明 %s，实际 %s", ErrDigestMismatch, declaredDigest, actual)
+	}
+	if s.logger != nil {
+		s.logger.Warn("存储侧不提供内容摘要，已回退为读回核对", zap.String("object_key", key))
+	}
+	return nil
 }
 
 // ListAssets 列出工程的资产，并逐个签发短时读取地址。

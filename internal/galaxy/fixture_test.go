@@ -38,10 +38,11 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 
+	objects := objectstore.NewMemoryStore()
 	f := &fixture{
 		store:   NewMemoryStore(),
-		objects: objectstore.NewMemoryStore(),
-		public:  NewMemoryPublicStore(),
+		objects: objects,
+		public:  NewMemoryPublicStore(objects),
 		events:  watch.NewHub(),
 		now:     time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC),
 	}

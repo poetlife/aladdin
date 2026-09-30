@@ -134,6 +134,14 @@ func TestPromoteOnlyReferencedAndIdempotent(t *testing.T) {
 		if strings.Contains(key, unused.ID) {
 			t.Error("未被引用的资产也被上架了")
 		}
+		// 上架搬过去的**正是那一份字节**（现在是让存储自己复制过去的）。
+		data, err := f.public.Object(key)
+		if err != nil {
+			t.Fatalf("读公开区对象失败: %v", err)
+		}
+		if string(data) != "used" {
+			t.Errorf("上架的字节 = %q，期望 %q", data, "used")
+		}
 	}
 
 	// 再发布一次：不产生新对象。
@@ -221,11 +229,11 @@ func TestFailureBeforeRecordLeavesNothingVisible(t *testing.T) {
 	})
 	next := f.saveVersion(t, project.ID)
 
-	f.public.PutErr = errors.New("上架失败（注入）")
+	f.public.CopyErr = errors.New("上架失败（注入）")
 	if _, err := f.service.Publish(context.Background(), testOwner, project.ID, SlotSite, next.ID); err == nil {
 		t.Fatal("上架失败却报告发布成功")
 	}
-	f.public.PutErr = nil
+	f.public.CopyErr = nil
 
 	// 指针没动：读到的还是上一次的产物。
 	stored, err := f.store.GetProject(context.Background(), project.ID)

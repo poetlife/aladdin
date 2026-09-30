@@ -359,8 +359,9 @@ func (s *Service) CommitContentUpload(ctx context.Context, subjectID, projectID,
 
 // ErrDigestMismatch 表示一段字节与它声明的摘要不符。
 //
-// 它有两个发现点：内容对象在**提交**时读回核对，资产在**上架**到公开区时读回
-// 核对（见 promote.go）。两处都是"摘要是寻址键，而服务端没有别的办法自己算它"。
+// 它有两个发现点，**都在提交那一步**：内容对象与资产。两处都是"摘要是寻址键，
+// 而服务端没有别的办法自己算它"，差别只在怎么看见字节——内容对象直接读回，
+// 资产优先让存储侧算（见 asset.go 的 verifyAssetDigest）。
 var ErrDigestMismatch = fmt.Errorf("字节与声明的摘要不符")
 
 // ContentURL 为一个文本条目签发编辑态的短时读取地址（唯一入口）。

@@ -4,6 +4,10 @@
 // 类型白名单、大小上限**；而"签发—直传—提交"这条链路、以及它承担的安全性质
 // （只允许写、钉死一个键、类型与大小由存储侧强制），只在这里实现一次。
 //
+// 除了那条上传链路，服务端自己还要对桶上的对象做几件事（读回核对、批量删除、
+// 让存储侧算内容摘要），它们同样只在这里实现一次——**"怎么用对象存储"只在一个
+// 包里**，而不是"上传一处、清理一处、核对一处"各写一遍 SDK 的用法。
+//
 // 为什么不是"字节经服务端转存"：那会让同一份字节被收一遍再送出去一遍，并在
 // 服务端内存里放一份完整副本（资产上限 100 MiB，并发上传时线性叠加）。见
 // docs/design/objectstore/README.md。
@@ -15,6 +19,8 @@ package objectstore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,6 +45,13 @@ var (
 	// 服务端拿真实字节数得出的自己的结论。两者都必要——存储侧那条是边界，
 	// 这一条是写进元数据的那个数字的来源。
 	ErrUploadTooLarge = errors.New("对象超过大小上限")
+
+	// ErrHashUnavailable 表示存储侧给不出这个对象的内容摘要。
+	//
+	// **它不是故障**，而是"这条路在这个部署上不成立"：由存储侧算哈希是一项要
+	// 单独开通的能力（见 Store.SHA256）。与"存储不可用"必须分开——两者的应对
+	// 不同：前者换一条路（读回字节自己算），后者是一次故障。
+	ErrHashUnavailable = errors.New("存储侧不提供内容摘要")
 )
 
 // VerifyUploaded 核对一次直传的结果（唯一入口）。
@@ -145,13 +158,48 @@ type Store interface {
 
 	// Read 读出该键上的字节。
 	//
-	// **它只有一个合法用途：把私有区对象上架到公开区**（发布流程的一部分，
-	// 见 internal/galaxy/promote.go）。下发不走它——下发走 PresignGet，服务端
-	// 不代理媒体带宽。
+	// **下发不走它**：下发走 PresignGet，服务端不代理媒体带宽。它只服务于服务端
+	// 自己要看见字节的那几处——对声明摘要的回退核对（Store.SHA256 给不出时，
+	// 见 internal/galaxy/asset.go），以及发布态的文本（文本按内容摘要寻址、
+	// 路径会被抹掉，因此只能由服务端在自己的路径上给出）。
 	Read(ctx context.Context, key string) ([]byte, error)
 
 	// Delete 删除该键上的对象。对象不存在时也成功（幂等）。
 	Delete(ctx context.Context, key string) error
+
+	// DeleteMany 删除一批键上的对象。
+	//
+	// 它存在的唯一理由是**往返次数**：一次工程删除要清掉几十上百个对象，逐个删
+	// 在跨境链路上就是每次都付一次往返，而对象存储自己有批量删除接口（COS 的
+	// DeleteMulti 一次最多 1000 个键）。**批量只在生产实现里成立**——内存实现
+	// 就是循环，但语义两者相同。
+	//
+	// 对象不存在时也算成功，与 Delete 同一条语义。单个键失败时返回一个点名那些
+	// 键的错误：调用方（工程与资产的清理）本来就是尽力而为——库内的行才是权威，
+	// 桶上留下的孤儿对象没有功能影响。
+	DeleteMany(ctx context.Context, keys []string) error
+
+	// ReadMany 读出一批键上的字节。
+	//
+	// 与 DeleteMany 同源：逐条读在跨境链路上是逐个往返，而这一步每次校验与预览
+	// 都要走。生产实现并发地读，内存实现顺序读。
+	//
+	// **返回的 map 只含读到了字节的键。** 请求了但不在其中的键，就是该键上没有
+	// 对象——它在这个机制里是一处内容问题（"这一条的内容没有推送完整"），不是
+	// 故障，因此不进 error：两者在用户面前是两句不同的话，调用方要能分开。
+	// **真故障（存储不可用）才走 error**，此时返回的 map 不作数。
+	ReadMany(ctx context.Context, keys []string) (map[string][]byte, error)
+
+	// SHA256 返回该键上对象字节的 SHA-256（小写十六进制），**由存储侧计算**。
+	//
+	// 它存在的理由与前两个同源：核对"上传方声明的摘要"要看见字节，而把字节拉回
+	// 服务端再算一遍，正是直传想省掉的那一趟。存储侧能自己算时（COS 的数据万象
+	// 同步 filehash 接口），这只是一次调用、字节不过境。
+	//
+	// 算法是接口的一部分：它与 internal/galaxy 的 ContentDigest 必须是同一个，
+	// 否则比对的两边不是一回事。**存储侧给不出时返回 ErrHashUnavailable**，
+	// 调用方据此回退到读回字节自己算——那条路总要留着，因为这项能力要单独开通。
+	SHA256(ctx context.Context, key string) (string, error)
 
 	// Put 把一个对象写进**私有区**，内容类型随对象一起写入。
 	//
@@ -206,6 +254,13 @@ type MemoryStore struct {
 	mu      sync.Mutex
 	objects map[string][]byte
 	issued  []IssuedUpload
+
+	// deleteBatchSizes 记录每一次 DeleteMany 带了多少个键。
+	//
+	// **只存在于内存实现上。** 它让"调用方把一批键按一次交下来"这条可以离线断言
+	// ——批量正是这次改动的全部意义（见 DeleteMany），而它在生产实现上表现为
+	// "一次请求"，离线看不见。
+	deleteBatchSizes []int
 
 	// IssueErr 允许测试注入签发失败。
 	IssueErr error
@@ -307,6 +362,63 @@ func (s *MemoryStore) Delete(_ context.Context, key string) error {
 
 	delete(s.objects, key)
 	return nil
+}
+
+// DeleteMany 实现 Store：内存实现顺序删（这里没有往返可省，"批量"是生产实现的事）。
+func (s *MemoryStore) DeleteMany(_ context.Context, keys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.deleteBatchSizes = append(s.deleteBatchSizes, len(keys))
+	for _, key := range keys {
+		delete(s.objects, key)
+	}
+	return nil
+}
+
+// DeleteBatchSizes 返回历次批量删除各带了多少个键（只存在于内存实现上）。
+func (s *MemoryStore) DeleteBatchSizes() []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]int, len(s.deleteBatchSizes))
+	copy(out, s.deleteBatchSizes)
+	return out
+}
+
+// ReadMany 实现 Store：内存实现顺序读（"并发"是生产实现的事）。
+func (s *MemoryStore) ReadMany(_ context.Context, keys []string) (map[string][]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	bytesByKey := make(map[string][]byte, len(keys))
+	for _, key := range keys {
+		data, ok := s.objects[key]
+		if !ok {
+			continue
+		}
+		out := make([]byte, len(data))
+		copy(out, data)
+		bytesByKey[key] = out
+	}
+	return bytesByKey, nil
+}
+
+// SHA256 实现 Store：内存实现自己算。
+//
+// 它**总是给得出**（没有"这项能力没开通"这一档），因此生产实现里那条回退路径
+// 在离线用例里跑不到——那一条只能在真桶上冒烟验。这里能离线断言的是另一半：
+// 声明摘要与实际字节不符即被拒。
+func (s *MemoryStore) SHA256(_ context.Context, key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, ok := s.objects[key]
+	if !ok {
+		return "", ErrObjectNotFound
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // Put 实现 Store。

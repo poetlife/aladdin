@@ -148,7 +148,7 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 	// 公开区与上面那个私有区共用同一个（靠逐对象的公开读区分）。
 	bucket := "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
 	publishBase := "https://pub.example.com"
-	public := galaxy.NewMemoryPublicStore()
+	public := galaxy.NewMemoryPublicStore(objects)
 	origin, err := galaxy.NewPublicOrigin(bucket, publishBase)
 	if err != nil {
 		t.Fatalf("构造发布地址失败: %v", err)

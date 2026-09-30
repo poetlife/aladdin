@@ -819,18 +819,23 @@ func validateProjectMeta(name, description string) error {
 // 它刻意不返回错误：库内的元数据行是"存在哪些资产"的权威，对象删除失败只会
 // 留下一个无从被引用的孤儿对象。把这件事升级成一次失败，会让"工程已经删不掉
 // 了"变成一个由存储抖动决定的结果。
+//
+// **一次交下来而不是逐个删**：一个工程可能有几十上百个资产，逐个删在跨境链路
+// 上就是每次都付一次往返（见 issue #33 的实测）。批量是存储实现的事，这里只管
+// 把键凑齐。
 func (s *Service) deleteAssetObjects(ctx context.Context, projectID string, assets []Asset, action string) {
-	if s.assets == nil {
+	if s.assets == nil || len(assets) == 0 {
 		return
 	}
+	keys := make([]string, 0, len(assets))
 	for _, asset := range assets {
-		key := AssetObjectKey(projectID, asset.MediaKind, asset.ID)
-		if err := s.assets.Delete(ctx, key); err != nil && s.logger != nil {
-			s.logger.Warn("删除资产对象失败，元数据已清空",
-				zap.String("action", action),
-				zap.String("project_id", projectID),
-				zap.String("asset_id", asset.ID),
-				zap.Error(err))
-		}
+		keys = append(keys, AssetObjectKey(projectID, asset.MediaKind, asset.ID))
+	}
+	if err := s.assets.DeleteMany(ctx, keys); err != nil && s.logger != nil {
+		s.logger.Warn("删除资产对象失败，元数据已清空",
+			zap.String("action", action),
+			zap.String("project_id", projectID),
+			zap.Int("assets", len(keys)),
+			zap.Error(err))
 	}
 }
