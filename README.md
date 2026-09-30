@@ -1,6 +1,6 @@
 # aladdin
 
-阿拉丁神灯 —— 前端、服务端与命令行一体的权限管理平台。
+阿拉丁神灯 —— 前端、服务端与命令行一体的仓库。RBAC 权限体系是底座，之上有身份登录、个人档案，以及 galaxy：用户创作工程与资产、发布成一个可公开访问的站点。
 
 ## 简介
 
@@ -12,7 +12,19 @@
 
 三端之间的接口契约由 `api/proto/` 单一来源派生：服务端 handler、前端类型与 service descriptor 都出自同一次 `buf generate`。
 
-设计文档见 [docs/design/rbac/](docs/design/rbac/README.md)（权限体系）、[docs/design/config/](docs/design/config/README.md)（配置与凭证）与 [docs/design/persistence/](docs/design/persistence/README.md)（落库与迁移）。
+在权限底座之上，仓库已落地的核心模块：
+
+| 模块 | 一句话 | 设计文档 |
+|------|--------|---------|
+| 权限 rbac | 角色、权限码、作用域；判定只在服务端 | [docs/design/rbac/](docs/design/rbac/README.md) |
+| 身份 identity | 登录方式、主体标识、会话凭证 | [docs/design/identity/](docs/design/identity/README.md) |
+| 档案 profile | 昵称、头像、简介 | [docs/design/profile/](docs/design/profile/README.md) |
+| 对象存储 objectstore | 临时凭证 + 客户端直传 + 提交核对 | [docs/design/objectstore/](docs/design/objectstore/README.md) |
+| galaxy | 工程与多版本、资产库、发布成可公开访问的站点 | [docs/design/galaxy/](docs/design/galaxy/README.md) |
+| 配置 config | 配置来源分层与合并；凭证不进配置文件 | [docs/design/config/](docs/design/config/README.md) |
+| 持久化 persistence | 库结构、迁移语义、后端选择 | [docs/design/persistence/](docs/design/persistence/README.md) |
+
+完整文档索引见 [AGENTS.md](AGENTS.md)——三端各自的文档、发布与部署、测试与排障都在那里。
 
 ## 快速开始
 
@@ -64,6 +76,8 @@ aladdin permissions
 aladdin role list
 ```
 
+上面三条是权限冒烟。真实登录（`aladdin login`，含设备码流程）与 galaxy 的创作、发布入口见 [docs/design/identity/](docs/design/identity/README.md)、[docs/design/galaxy/](docs/design/galaxy/README.md) 与 `aladdin galaxy --help`。
+
 ## 配置与凭证
 
 服务端与 CLI **各自**有一份配置文件，不共用：`address` 在服务端是**监听**地址、在 CLI 是**目标**地址，共用一份会让配置在两端之间传递时静默连错地方。
@@ -85,53 +99,14 @@ aladdin role list
 
 ```
 aladdin/
-├── config.server.example.yml     # 服务端配置示例（键集合由测试守着，不会与实现漂移）
-├── config.cli.example.yml        # CLI 配置示例
-├── api/
-│   ├── proto/                    # 接口契约（唯一信源，经 buf generate 派生 Go 与 TS 代码）
-│   ├── permissions/catalog.yaml  # 权限码全集（唯一信源，派生 Go 与 TS 常量）
-│   └── gen/                      # 生成的 Go 代码，不手工修改
-├── cmd/
-│   ├── aladdin-server/           # gRPC 服务端入口
-│   └── aladdin/                  # cobra CLI 入口
-├── internal/
-│   ├── rbac/                     # 权限模型与决策引擎（服务端与 CLI 共用）
-│   │   ├── gormstore/            # rbac.Store 的 SQL 实现
-│   │   └── builtin_roles.go      # 内置角色在库中的初始化（只补缺失）
-│   ├── server/                   # Connect 服务装配与服务实现
-│   │   ├── middleware.go         # 链路标识与认证（HTTP 层）
-│   │   └── interceptor/          # 鉴权拦截器（协议无关）
-│   ├── auth/                     # CLI 侧凭证解析与持久化
-│   ├── database/                 # 数据库连接、方言与表结构定义（唯一入口）
-│   │   ├── dialect.go            # 后端类型、连接串归一与脱敏
-│   │   ├── database.go           # 连接的建立与连接池
-│   │   ├── schema.go             # 表结构定义（唯一信源）
-│   │   └── migrate/              # 迁移机制与迁移清单（只增不减）
-│   │       ├── migrate.go        # 迁移的执行与版本记录
-│   │       ├── migrations.go     # 有序迁移清单（唯一入口）
-│   │       └── migration_*.go    # 已发布的迁移，发布后不可修改
-│   ├── config/                   # 配置来源与合并（唯一入口）
-│   │   ├── config.go             # 两端类型、默认值、校验、环境变量名
-│   │   ├── file.go               # 配置文件定位与解析（键集合、未知键报错）
-│   │   └── load.go               # 五层来源合并与两端加载入口
-│   ├── observability/            # 日志与链路标识（唯一入口）
-│   └── tools/permissiongen/      # 权限目录代码生成器
-├── pkg/client/                   # 对外可复用的 gRPC 客户端
-├── test/e2e/                     # 端到端测试
-├── web/                          # React + antd 前端
-│   └── src/
-│       ├── api/                  # 传输层（唯一出口）、各服务调用、错误解码、链路标识
-│       ├── auth/                 # 会话、权限码集合、路由与控件裁剪
-│       ├── gen/                  # 生成的 TS 常量与 proto 类型，不手工修改
-│       ├── layouts/  pages/      # 界面
-│       └── router.tsx            # 路由表（基础权限的唯一声明处）
-└── docs/
-    ├── design/                   # 功能设计文档（spec）
-    ├── debugging/                # 排障记录与索引
-    ├── observability.md          # 可观测性规范
-    ├── testing.md                # 测试指南
-    └── ssot-registry.md          # 同一件事唯一入口的登记表
+├── api/       # 契约唯一信源：proto 接口与权限码目录
+├── cmd/       # Connect 多协议服务端 与 cobra CLI 入口
+├── internal/  # 各业务模块（唯一入口清单见 docs/ssot-registry.md）
+├── web/       # React + antd 前端
+└── docs/      # 设计文档（文档索引见 AGENTS.md）
 ```
+
+这棵树只给到方向：同一个包内的唯一入口（配置与合并、代码生成、迁移等各只有一处）登记在 [docs/ssot-registry.md](docs/ssot-registry.md)，不在这里再维护一份只会更快过时的清单。
 
 ## 开发规范
 
