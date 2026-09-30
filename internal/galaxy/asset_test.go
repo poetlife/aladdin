@@ -237,6 +237,84 @@ func TestCommitAssetUploadRejectsOversizedObject(t *testing.T) {
 	}
 }
 
+// 提交核对**内容**：声明的摘要与那份字节不符时拒绝，并把它唯一的残留物删掉。
+//
+// 这是"按内容寻址"的前提——摘要是私有区与公开区的键，一条假的摘要会让地址指向
+// 另一份内容。直传让服务端在提交之前看不见字节，因此这道核对只能做在这里。
+func TestCommitAssetUploadRejectsWrongDigest(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	ctx := context.Background()
+
+	assetID, credential, err := f.service.BeginAssetUpload(ctx, testOwner, project.ID, "image/png", 3)
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	f.objects.SimulateUpload(credential.Key, []byte("aaa"))
+
+	// 另一份字节的摘要：形状合法，内容不符。
+	wrong := ContentDigest([]byte("bbb"))
+	if _, err := f.service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png", wrong, "a.png", "", "", nil); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("err = %v，期望 ErrDigestMismatch", err)
+	}
+	if _, err := f.objects.Head(ctx, credential.Key); !errors.Is(err, objectstore.ErrObjectNotFound) {
+		t.Error("摘要不符的对象没有被删掉")
+	}
+	if assets, err := f.store.ListAssets(ctx, project.ID, nil); err != nil || len(assets) != 0 {
+		t.Errorf("摘要不符的上传留下了元数据行: %v / %d 条", err, len(assets))
+	}
+}
+
+// noHashStore 是一个"存储侧给不出摘要"的私有区，用来走回退那条路。
+//
+// 本机没有对象存储，而"给不出摘要"由部署形态决定（那项能力要单独开通），
+// 只有替身能造出这一档。其余行为与内存实现相同。
+type noHashStore struct{ *objectstore.MemoryStore }
+
+func (noHashStore) SHA256(context.Context, string) (string, error) {
+	return "", objectstore.ErrHashUnavailable
+}
+
+// 存储侧给不出摘要时回退到读回字节自己算：两条路给出同一个结论。
+func TestCommitAssetUploadFallsBackWhenStoreCannotHash(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "工程")
+	service := NewService(Deps{
+		Store:  f.store,
+		Assets: noHashStore{f.objects},
+		Public: f.public,
+		Origin: mustOrigin(t),
+		Logger: f.service.logger,
+		Now:    func() time.Time { return f.now },
+	})
+	ctx := context.Background()
+
+	// 摘要正确：回退那条路也放行。
+	assetID, credential, err := service.BeginAssetUpload(ctx, testOwner, project.ID, "image/png", 3)
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	f.objects.SimulateUpload(credential.Key, []byte("aaa"))
+	if _, err := service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png",
+		ContentDigest([]byte("aaa")), "a.png", "", "", nil); err != nil {
+		t.Fatalf("回退核对把正确的摘要拒了: %v", err)
+	}
+
+	// 摘要不符：回退那条路照样拒绝，并删掉对象。
+	assetID, credential, err = service.BeginAssetUpload(ctx, testOwner, project.ID, "image/png", 3)
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	f.objects.SimulateUpload(credential.Key, []byte("bbb"))
+	if _, err := service.CommitAssetUpload(ctx, testOwner, project.ID, assetID, "image/png",
+		ContentDigest([]byte("aaa")), "b.png", "", "", nil); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("err = %v，期望 ErrDigestMismatch", err)
+	}
+	if _, err := f.objects.Head(ctx, credential.Key); !errors.Is(err, objectstore.ErrObjectNotFound) {
+		t.Error("回退路径下摘要不符的对象没有被删掉")
+	}
+}
+
 // 摘要的形状必须先校验：它**是公开区的对象键**，一个含分隔符的取值会把
 // "按内容寻址"变成"按调用方给的路径写"。
 func TestCommitAssetUploadChecksDigestShape(t *testing.T) {

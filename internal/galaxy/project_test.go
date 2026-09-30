@@ -525,3 +525,29 @@ func TestDeleteProjectRemovesEverything(t *testing.T) {
 		t.Errorf("删除之后仍能取到产物: %v", err)
 	}
 }
+
+// 一批资产的对象**一次交下去删**：逐个删在跨境链路上是每次都付一次往返。
+//
+// 断言落在"批量删除被调用了几次、各带几个键"上——这是这次改动在离线唯一能看见的
+// 形状，生产实现上它表现为一次请求（见 objectstore.Store.DeleteMany）。
+func TestDeleteProjectDeletesObjectsInOneBatch(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "待删")
+	const count = 5
+	for i := 0; i < count; i++ {
+		f.uploadAsset(t, project.ID, "image/png", "a.png", []byte{byte('a' + i)})
+	}
+	ctx := context.Background()
+
+	if err := f.service.DeleteProject(ctx, testOwner, project.ID); err != nil {
+		t.Fatalf("删除工程失败: %v", err)
+	}
+
+	batches := f.objects.DeleteBatchSizes()
+	if len(batches) != 1 {
+		t.Fatalf("批量删除被调用了 %d 次，期望 1 次（各带 %v 个键）", len(batches), batches)
+	}
+	if batches[0] != count {
+		t.Errorf("这一次带了 %d 个键，期望 %d 个", batches[0], count)
+	}
+}

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/poetlife/aladdin/internal/objectstore"
 )
 
 // Problem 是校验发现的一处问题。
@@ -239,10 +237,28 @@ func (s *Service) buildPreviewArtifacts(ctx context.Context, project Project, sl
 // **它是"这份内容的文本字节"的唯一读取入口**：校验与发布都从它拿字节，因此
 // "读不到对象"这件事在两处的表现一致——它是一处内容问题（对象不存在），不是
 // 一次存储故障，因此以问题清单返回而不是 error。
+//
+// **它一次把键交下去读**（见 objectstore.Store.ReadMany）：逐条读在跨境链路上
+// 是逐个往返，而这一步每次校验与预览都要走。两条条目指向同一份字节时是同一个
+// 键，只读一次。
 func (s *Service) loadTextEntries(ctx context.Context, projectID string, manifest Manifest) (map[string][]byte, []Problem, error) {
 	if s.assets == nil {
 		return nil, nil, ErrAssetUnavailable
 	}
+	keys := make([]string, 0, len(manifest))
+	for _, entry := range manifest {
+		if entry.Kind != EntryKindText {
+			continue
+		}
+		keys = append(keys, ContentObjectKey(projectID, entry.Digest))
+	}
+	read, err := s.assets.ReadMany(ctx, uniqueStrings(keys))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// **按清单顺序回填**：问题清单的顺序因此只取决于清单本身，与读的先后无关
+	// ——错在哪一份文件要能被稳定地复现。
 	bytesByPath := make(map[string][]byte, len(manifest))
 	var problems []Problem
 	var total int
@@ -250,16 +266,13 @@ func (s *Service) loadTextEntries(ctx context.Context, projectID string, manifes
 		if entry.Kind != EntryKindText {
 			continue
 		}
-		data, err := s.assets.Read(ctx, ContentObjectKey(projectID, entry.Digest))
-		if err != nil {
-			if errors.Is(err, objectstore.ErrObjectNotFound) {
-				problems = append(problems, Problem{
-					Path:    entry.Path,
-					Message: "这一条的内容对象不存在，内容可能没有推送完整",
-				})
-				continue
-			}
-			return nil, nil, err
+		data, ok := read[ContentObjectKey(projectID, entry.Digest)]
+		if !ok {
+			problems = append(problems, Problem{
+				Path:    entry.Path,
+				Message: "这一条的内容对象不存在，内容可能没有推送完整",
+			})
+			continue
 		}
 		if len(data) > MaxTextBytes {
 			problems = append(problems, Problem{
@@ -277,6 +290,23 @@ func (s *Service) loadTextEntries(ctx context.Context, projectID string, manifes
 		})
 	}
 	return bytesByPath, problems, nil
+}
+
+// uniqueStrings 按首次出现的顺序去重。
+//
+// 它只为请求数服务：同一个内容摘要被多条条目引用时（同一份字节出现在两个路径
+// 上），逐条去读会把同一份字节来回传好几遍。
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 // checkResourceReferences 扫一遍一段非 markdown 文本里的取资源引用，并把不落在

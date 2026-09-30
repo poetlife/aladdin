@@ -13,10 +13,13 @@ package cosupload
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/tencentyun/cos-go-sdk-v5"
@@ -40,6 +43,19 @@ const httpTimeout = 5 * time.Minute
 // 库把那个时长写死在换取调用里（见 docs/design/objectstore/README.md 的待定
 // 决策）。这里给出的是**给客户端的提示值**，实际失效时刻以对象存储的判断为准。
 const credentialTTL = 30 * time.Minute
+
+// deleteMultiLimit 是批量删除单次请求的键数上限（接口的规定值：最多 1000 个）。
+//
+// 超过就切块：一次工程删除可能上千个对象，而"切块"这件事是**这个实现**的细节，
+// 调用方按一批交下来即可。
+const deleteMultiLimit = 1000
+
+// readManyConcurrency 是批量读的并发度。
+//
+// 它有上界：并发是为了把一条跨境链路上的等待时间填满（串行读时每次往返链路都
+// 是闲的——见 docs/design 里那条延迟实测），但无上限会同时占满本机的连接与桶侧
+// 的并发配额，而收益到某个点就饱和了。
+const readManyConcurrency = 16
 
 // Config 是构造 COS 直传存储所需的取值。
 type Config struct {
@@ -192,6 +208,111 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// DeleteMany 实现 objectstore.Store。
+//
+// 一次请求最多 1000 个键（deleteMultiLimit），超出由本实现切块。**批量删除是
+// 逐键给结果的**："整批成功"不是对象存储能给的结论，因此失败的键被点名返回——
+// 调用方是尽力而为的清理，它只需要知道哪些没删掉。
+func (s *Store) DeleteMany(ctx context.Context, keys []string) error {
+	var failed []string
+	for start := 0; start < len(keys); start += deleteMultiLimit {
+		end := start + deleteMultiLimit
+		if end > len(keys) {
+			end = len(keys)
+		}
+		objects := make([]cos.Object, 0, end-start)
+		for _, key := range keys[start:end] {
+			objects = append(objects, cos.Object{Key: key})
+		}
+		res, _, err := s.client.Object.DeleteMulti(ctx, &cos.ObjectDeleteMultiOptions{Objects: objects})
+		if err != nil {
+			return fmt.Errorf("%w: 批量删除对象失败: %w", objectstore.ErrStoreUnavailable, err)
+		}
+		if res == nil {
+			continue
+		}
+		for _, item := range res.Errors {
+			failed = append(failed, fmt.Sprintf("%s(%s)", item.Key, item.Code))
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("批量删除有 %d 个对象失败: %s", len(failed), strings.Join(failed, ", "))
+	}
+	return nil
+}
+
+// ReadMany 实现 objectstore.Store：并发 GET，逐个键归类结果。
+//
+// "键上没有对象"不进 error，而由返回的 map 里有没有这个键表达（见
+// objectstore.Store.ReadMany）。真故障才返回 error，此时返回的 map 不作数。
+func (s *Store) ReadMany(ctx context.Context, keys []string) (map[string][]byte, error) {
+	bytesByKey := make(map[string][]byte, len(keys))
+	var mu sync.Mutex
+	var firstErr error
+
+	sem := make(chan struct{}, readManyConcurrency)
+	var wg sync.WaitGroup
+	for _, key := range keys {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			data, err := s.Read(ctx, key)
+
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				bytesByKey[key] = data
+			case errors.Is(err, objectstore.ErrObjectNotFound):
+				// 缺失由"map 里没有这个键"表达，这里什么都不做。
+			case firstErr == nil:
+				firstErr = err
+			}
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return bytesByKey, nil
+}
+
+// SHA256 实现 objectstore.Store：交给数据万象算，**字节不过境**。
+//
+// 直传之后服务端看不到字节，而"核对上传方声明的摘要"要看见字节——把字节拉回来
+// 算一遍正是直传想省掉的那一趟。数据万象的同步 filehash 接口在广州侧把这件事做
+// 完，只回一个摘要，延迟与对象大小基本无关（实测 52 字节 676ms、8 MiB 658ms）。
+//
+// 这条能力**要单独开通**，因此"给不出"是一种常态而不是故障：没开通数据万象、
+// 对象超过同步接口 128MB 的上限、服务端临时故障——一律报 ErrHashUnavailable，
+// 由调用方回退到读回字节自己算。这里刻意**不按错误码枚举**：枚举清单写完就开始
+// 过期，而调用方并不需要按码分支，它只需要知道"这条路走不通，换一条"。
+//
+// 唯一的例外是上下文已经结束：那时回退那条路同样走不动，把它报成"能力不可用"
+// 会把一次取消表现成一次降级。
+func (s *Store) SHA256(ctx context.Context, key string) (string, error) {
+	res, _, err := s.client.CI.GetFileHash(ctx, key, &cos.GetFileHashOptions{
+		CIProcess: "filehash",
+		Type:      "sha256",
+	})
+	if err != nil {
+		if cos.IsNotFoundError(err) {
+			return "", objectstore.ErrObjectNotFound
+		}
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("%w: 计算内容摘要失败: %w", objectstore.ErrStoreUnavailable, err)
+		}
+		return "", fmt.Errorf("%w: %w", objectstore.ErrHashUnavailable, err)
+	}
+	if res == nil || res.FileHashCodeResult == nil || res.FileHashCodeResult.SHA256 == "" {
+		return "", fmt.Errorf("%w: 存储侧没有给出摘要", objectstore.ErrHashUnavailable)
+	}
+	return strings.ToLower(res.FileHashCodeResult.SHA256), nil
+}
+
 // Put 实现 objectstore.Store：把一个对象写进私有区。
 //
 // 它**不设置任何 ACL**，因此写下去的对象仍是私有的——桶默认私有读写，而"哪些
@@ -228,16 +349,22 @@ func (s *Store) PresignGet(ctx context.Context, key string, ttl time.Duration) (
 // 调用处一眼可见。
 type PublicWriter struct {
 	client *cos.Client
+	// parts 用来拼复制源：公开区与私有区在同一个桶，源就是"桶名 + 私有区键"。
+	parts bucketParts
 }
 
 // NewPublicWriter 构造公开区的写入口。它**复用私有区的桶地址与同一对密钥**：
 // 公开与私有由对象权限决定，不由桶或凭证决定。
 func NewPublicWriter(bucketURL, secretID, secretKey string) (*PublicWriter, error) {
+	parts, err := parseBucketURL(bucketURL)
+	if err != nil {
+		return nil, err
+	}
 	client, err := newClient(bucketURL, secretID, secretKey)
 	if err != nil {
 		return nil, err
 	}
-	return &PublicWriter{client: client}, nil
+	return &PublicWriter{client: client, parts: parts}, nil
 }
 
 // Exists 判定公开区里是否已有该键的对象。
@@ -251,22 +378,35 @@ func (w *PublicWriter) Exists(ctx context.Context, key string) (bool, error) {
 	return true, nil
 }
 
-// Put 把一个对象按给定的键写进公开区。
+// Copy 把一个**私有区**的对象复制进公开区。
 //
-// 内容类型随对象一起写入：公开区对象由访问者的浏览器直连取用，而"这个对象是
-// 什么类型"应当是对象自己的属性，不该靠地址上的参数去补。
+// 它取代了早先的"把字节读回服务端再写上去"：公开区与私有区在**同一个桶**里，
+// 因此这件事可以由对象存储自己在一次请求里做完——**字节不过境**。资产上架是
+// 发布流程里最大的一块开销，而这正是它的来源（见 issue #33）。
 //
-// **公开读在这里设置，而且只在这里设置。** 桶保持默认私有读写、没有桶级的公开读
-// 策略，因此"哪些对象是公开的"完全由本方法的调用路径决定。由此得到一条对本方法
-// 前提的约束：**写下去的内容必须是发布校验已经放过的内容**（见
-// docs/design/galaxy/publication.md）——它是允许来源唯一能取到的东西。
-func (w *PublicWriter) Put(ctx context.Context, key, contentType string, data []byte) error {
-	_, err := w.client.Object.Put(ctx, key, bytes.NewReader(data), &cos.ObjectPutOptions{
-		ACLHeaderOptions:       &cos.ACLHeaderOptions{XCosACL: cos.ACL.PublicRead},
-		ObjectPutHeaderOptions: &cos.ObjectPutHeaderOptions{ContentType: contentType},
+// 随复制一起改的两个属性：
+//
+//   - **公开读在这里设置，而且只在这里设置。** 桶保持默认私有读写、没有桶级的
+//     公开读策略，因此"哪些对象是公开的"完全由本方法的调用路径决定。由此得到
+//     一条对本方法前提的约束：**复制过去的内容必须是发布校验已经放过的内容**
+//     （见 docs/design/galaxy/publication.md）。
+//   - 内容类型被**替换**成公开区该有的那个。私有区对象写下去时用的是中性的
+//     application/octet-stream（见 objectstore.NeutralContentType），而公开区
+//     对象由访问者的浏览器直连取用，类型应当是对象自己的属性，不该靠地址上的
+//     参数去补。`Replaced` 是必需的：不带它，对象存储会原样沿用源的元数据。
+//
+// 复制源写的是**同一个桶里的键**：跨桶复制要先让源可公开读或给目标账号授权，
+// 这里不需要，而这也正是"公开区与私有区共用一个桶"换来的便利。
+func (w *PublicWriter) Copy(ctx context.Context, srcKey, dstKey, contentType string) error {
+	_, _, err := w.client.Object.Copy(ctx, dstKey, w.parts.Bucket+"/"+srcKey, &cos.ObjectCopyOptions{
+		ACLHeaderOptions: &cos.ACLHeaderOptions{XCosACL: cos.ACL.PublicRead},
+		ObjectCopyHeaderOptions: &cos.ObjectCopyHeaderOptions{
+			ContentType:           contentType,
+			XCosMetadataDirective: "Replaced",
+		},
 	})
 	if err != nil {
-		return fmt.Errorf("写入公开区对象失败: %w", err)
+		return fmt.Errorf("复制到公开区失败: %w", err)
 	}
 	return nil
 }

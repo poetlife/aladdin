@@ -743,7 +743,8 @@ func TestGalaxyPromotesOnlyReferencedAssets(t *testing.T) {
 	if keys := h.public.Keys(); len(keys) != 1 || keys[0] != key {
 		t.Errorf("公开区的对象键 = %v，期望只含被引用的那一个（%s）", keys, key)
 	}
-	// 上架的字节与私有区那份一致：直传之后服务端不接触字节，上架是唯一一次读回。
+	// 上架的字节与私有区那份一致：直传之后服务端不接触字节，上架是让存储自己把
+	// 对象复制进公开区。
 	promoted, err := h.public.Object(key)
 	if err != nil {
 		t.Fatalf("读取公开区对象失败: %v", err)

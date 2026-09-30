@@ -33,7 +33,8 @@ const contentDigestLength = 64
 // 它的形状必须在被使用之前校验：一个含 `/`、`..` 或控制字符的取值会把"按内容
 // 寻址"变成"按调用方给的路径写"。
 //
-// 它只校验形状，不校验正确性——正确性在上架时读回字节核对（见 promote.go）。
+// 它只校验形状，不校验正确性——正确性在**提交**时核对（见 asset.go 的
+// verifyAssetDigest）。
 func IsContentDigest(declared string) bool {
 	if len(declared) != contentDigestLength {
 		return false
