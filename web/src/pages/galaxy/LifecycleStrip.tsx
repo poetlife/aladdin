@@ -125,8 +125,13 @@ export function LifecycleStrip({
                     track({ surface: Surface.WEB_EDITOR, action: Action.UNPUBLISH, result: Result.CANCEL })
                   }
                 >
-                  <Button type="link" size="small" danger loading={publishBusy}>
-                    撤回
+                  {/* **按钮级，不是文字链接。** 同一排里"发布"是实心按钮、撤回是一
+                      行小字时，人得先认出那行字能点才会去点——"能力已经有、却像没
+                      有"正是这么来的。描边的次要按钮在体量上仍然服从那条原则：它是
+                      那一处状态的逆操作，不是第二个发布入口（见
+                      docs/design/galaxy/authoring.md）。 */}
+                  <Button size="small" danger loading={publishBusy}>
+                    撤回发布
                   </Button>
                 </Popconfirm>
               )}

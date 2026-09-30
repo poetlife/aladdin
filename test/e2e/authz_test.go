@@ -72,7 +72,9 @@ type harness struct {
 	public *galaxy.MemoryPublicStore
 	// publishBase 是发布域的取值，bucket 是发布物素材所在的桶——**公开区与
 	// 私有区共用它**，因此断言对外地址与响应头里的允许来源时用的是同一个主机。
+	// appBase 是主站的对外地址，**分享地址落在它上面**。
 	publishBase string
+	appBase     string
 	bucket      string
 }
 
@@ -146,10 +148,14 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 	// 公开区与发布域：让发布这条路在端到端测试里是**启用**的，于是"发布—对外
 	// 地址返回产物"会被真的走一遍，而不是因为没配而整条跳过。发布没有自己的桶：
 	// 公开区与上面那个私有区共用同一个（靠逐对象的公开读区分）。
+	//
+	// appBase 是主站的对外地址：**分享出去的地址落在它上面**，发布域只是主站壳里
+	// 跨源沙箱 iframe 的落点（见 docs/design/galaxy/publication.md 的"主站壳"）。
 	bucket := "https://aladdin-1250000000.cos.ap-guangzhou.myqcloud.com"
 	publishBase := "https://pub.example.com"
+	appBase := "https://app.example.com"
 	public := galaxy.NewMemoryPublicStore(objects)
-	origin, err := galaxy.NewPublicOrigin(bucket, publishBase)
+	origin, err := galaxy.NewPublicOrigin(bucket, publishBase, appBase)
 	if err != nil {
 		t.Fatalf("构造发布地址失败: %v", err)
 	}
@@ -222,6 +228,7 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 		objects:     objects,
 		public:      public,
 		publishBase: publishBase,
+		appBase:     appBase,
 		bucket:      bucket,
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"connectrpc.com/connect"
@@ -509,6 +510,57 @@ func (s *GalaxyService) Unpublish(ctx context.Context, req *connect.Request[gala
 		zap.String("slot", string(slot)),
 		zap.String("subject_id", subject.ID))
 	return connect.NewResponse(&galaxyv1.UnpublishResponse{Project: toProtoProject(view)}), nil
+}
+
+// ResolveSharedPage 实现 GalaxyService：把一条**主站分享路径**解析成发布域上的
+// 内容地址。
+//
+// **它是公开的**（方法上标了 public），因此不解析调用者是谁：访客打开一条分享地址
+// 时没有会话，而"分享给没登录的人"正是这个入口唯一的用途。它与发布域那条匿名
+// HTTP 入口回答的是同一个问题，因此**判定完全复用领域层那一个**（PublishedEntry）
+// ——在这里再判一份就是第二个"这一页存不存在"。
+//
+// **否定结论只有一个**：任何取不到内容的情形都返回空的 `content_url`，而不是
+// RPC 错误。用错误码区分"未发布"与"标识不存在"，等于给出一个"这个标识是真的"的
+// 第二信号，与发布态的六合一否定结论冲突（见 docs/design/galaxy/publication.md
+// 的"主站壳"）。
+func (s *GalaxyService) ResolveSharedPage(ctx context.Context, req *connect.Request[galaxyv1.ResolveSharedPageRequest]) (*connect.Response[galaxyv1.ResolveSharedPageResponse], error) {
+	empty := connect.NewResponse(&galaxyv1.ResolveSharedPageResponse{})
+
+	// 请求给的是路径，而**浏览器的 pathname 是百分比编码的**：与发布域那条直连
+	// 入口一样，先还原成库里的形态再解析。还原不了（非法转义）就是一条不可能
+	// 对应到任何条目的地址，落进下面那个统一的否定结论。
+	requestPath, err := url.PathUnescape(req.Msg.GetPath())
+	if err != nil {
+		return empty, nil
+	}
+	projectID, slot, entryPath, ok := galaxy.SplitSitePath(requestPath)
+	if !ok {
+		return empty, nil
+	}
+	if _, err := s.galaxy.PublishedEntry(ctx, projectID, slot, entryPath); err != nil {
+		if !errors.Is(err, galaxy.ErrPublicationNotFound) {
+			// 存储故障不是"这一页不存在"。但对访客两者都只能看到"打不开"，
+			// 因此响应相同、留痕不同（与发布域那条直连入口同构）。
+			s.logger.Warn("解析发布地址失败",
+				zap.String("project_id", projectID),
+				zap.String("slot", string(slot)),
+				zap.String("path", entryPath),
+				zap.Error(err))
+		}
+		return empty, nil
+	}
+	return connect.NewResponse(&galaxyv1.ResolveSharedPageResponse{
+		ContentUrl: joinPublishedPath(s.galaxy.Origin().ContentURL(projectID, slot), entryPath),
+	}), nil
+}
+
+// joinPublishedPath 把槽根地址接上条目路径。空条目表示槽根本身。
+func joinPublishedPath(root, entryPath string) string {
+	if entryPath == "" {
+		return root
+	}
+	return root + "/" + entryPath
 }
 
 // toProtoCapabilities 把能力边界翻译成接口类型。

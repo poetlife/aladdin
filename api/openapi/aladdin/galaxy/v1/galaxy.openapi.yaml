@@ -1160,6 +1160,60 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.UnpublishResponse'
+  /aladdin.galaxy.v1.GalaxyService/ResolveSharedPage:
+    post:
+      x-aladdin-auth:
+        kind: public
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: ResolveSharedPage
+      description: |-
+        **鉴权**：公开接口，无需认证。
+
+        把一条**主站分享路径**解析成它在发布域上的内容地址。
+
+         主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
+         **槽的判定在服务端**（与发布地址那条 HTTP 入口共用同一处形状解析），因此
+         请求给的是整条路径，响应给的是整条内容地址——客户端两头都不拼。
+
+         它是**公开**的：访客打开一条分享地址时没有会话，而"分享给没登录的人"正是
+         这个入口唯一的用途（见 docs/design/rbac/server-permissions.md 的公开方法白
+         名单）。它只凭工程标识作答，与发布地址那条 HTTP 入口回答的是同一件事。
+
+         **否定结论只有一个**：未发布、已撤回、该槽未启用、工程不存在、标识没被猜
+         中、路径不在集合里，一律返回空的 `content_url`，而不是 RPC 错误——错误码会
+         成为一个"这个标识是真的"的第二信号（见 docs/design/galaxy/publication.md 的
+         "主站壳"）。
+      operationId: aladdin.galaxy.v1.GalaxyService.ResolveSharedPage
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.ResolveSharedPageRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.ResolveSharedPageResponse'
 components:
   schemas:
     aladdin.galaxy.v1.ContentSlot:
@@ -1898,11 +1952,15 @@ components:
           type: string
           title: published_url
           description: |-
-            这个槽的发布地址：site 槽形如 <发布域>/g/<工程标识>，docs 槽形如
-             <发布域>/g/<工程标识>/docs。未发布时为空。
+            这个槽的**分享地址**：site 槽形如 <主站>/g/<工程标识>，docs 槽形如
+             <主站>/g/<工程标识>/docs。未发布时为空。
+
+             **它落在主站，不落在发布域**：贴给别人的是这一条，打开它由主站壳用跨源沙箱
+             iframe 取发布域上的同一条路径（见 docs/design/galaxy/publication.md 的"主站
+             壳"）。发布域上的内容地址由 ResolveSharedPage 给出，默认不展示。
 
              **地址由服务端算好**，客户端不拼：记号解析生成的地址、内容安全策略里的
-             允许来源与这个地址都从同一批配置值派生，客户端再拼一份就是又一个来源。
+             允许来源与这条分享地址都从同一批配置值派生，客户端再拼一份就是又一个来源。
         publishedAt:
           type: string
           title: published_at
@@ -1941,7 +1999,7 @@ components:
         url:
           type: string
           title: url
-          description: 发布地址，与对应 ProjectSlot.published_url 同一处派生。
+          description: '**分享地址**（主站包装），与对应 ProjectSlot.published_url 同一处派生。'
         slot:
           allOf:
             - title: slot
@@ -1952,8 +2010,8 @@ components:
       description: |-
         Publication 是一次发布的产物记录。
 
-         对外地址按**产物清单**分派：文本条目由服务端在它自己的路径上给出，资产
-         条目重定向到公开区。
+         发布域上的**内容地址**按产物清单分派：文本条目由服务端在它自己的路径上给出，
+         资产条目重定向到公开区；对外**分享**给访问者的是主站上的包装地址。
     aladdin.galaxy.v1.PublishRequest:
       type: object
       properties:
@@ -2017,6 +2075,35 @@ components:
       description: |-
         返回推送之后的草稿，而不是一个成功标志：客户端刚做过一次会改变现状的
          操作，让它在同一次往返里拿到新现状，比再发一次查询更省事。
+    aladdin.galaxy.v1.ResolveSharedPageRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          title: path
+          description: |-
+            主站上的分享路径，以 `/g/` 开头，形如 `/g/<工程标识>`、`/g/<工程标识>/docs`
+             或 `/g/<工程标识>/docs/guide`。
+
+             给整条路径而不是（工程，槽，路径）三元组：**槽的判定只有服务端一处**，客户端
+             再解析一份就是第二个形状来源。
+      title: ResolveSharedPageRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.ResolveSharedPageResponse:
+      type: object
+      properties:
+        contentUrl:
+          type: string
+          title: content_url
+          description: |-
+            这条路径在**发布域**上的内容地址，形如
+             `<发布域>/g/<工程标识>[/docs][/路径]`。壳把它放进 iframe 的 src。
+
+             **空表示"没有这一页"**，且六种情形同此一答（未发布 / 已撤回 / 该槽未启用 /
+             工程不存在 / 标识没被猜中 / 路径不在集合里）。它不是错误：调用方据此渲染
+             与发布态相同的"不存在"。
+      title: ResolveSharedPageResponse
+      additionalProperties: false
     aladdin.galaxy.v1.SaveVersionRequest:
       type: object
       properties:

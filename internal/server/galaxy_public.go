@@ -175,7 +175,7 @@ func PublicProjectHandler(service *galaxy.Service, logger *zap.Logger) http.Hand
 // "取字节"）。
 //
 // **目标不由请求路径再拼一份**，而是取 `PublicOrigin.SiteRoot` / `PreviewRoot`——
-// 与 PageURL 那条"地址由服务端算好下发，客户端不拼"是同一条约定。本函数只补查询串。
+// 与 ContentURL 那条"地址由服务端算好下发，客户端不拼"是同一条约定。本函数只补查询串。
 //
 // **它无条件重定向，不看这个工程存不存在。** 若只在发布过时才转，则"重定向还是
 // 404"本身就成了"这个标识是真的"这条信号，与否定结论只有一个的取向冲突（见

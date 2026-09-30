@@ -650,7 +650,9 @@ func checkOriginShape(key, env, raw, pathReason string) error {
 
 // validateGalaxy 校验 galaxy 发布所需的地址。
 //
-// 只有一种搭配是错误：**给了发布域却没给桶**。反过来那一半（有桶、没有发布域）
+// 有两种搭配是错误：**给了发布域却没给桶**（有页面地址、没有放素材的地方），
+// 以及**给了发布域却没给主站对外地址**（分享地址拼不出来——对外分享的地址落在
+// 主站上，见 [design/galaxy/publication.md]）。反过来那一半（有桶、没有发布域）
 // 是"没启用发布"，是配置的常态而不是半套——它与"没启用头像"同类，由前端不渲染
 // 发布入口来表达。这与 validateCOS、validateGithubLogin 是同一条取向：真正该拒
 // 的是那种失败方式既不是"没启用"（前端会渲染一个点了报错的发布入口）、也不是
@@ -672,15 +674,16 @@ func validateGalaxy(c ServerConfig) error {
 			"不能只给发布域：发布物的素材放在 "+keyCOSBucketURL+"（"+EnvCOSBucketURL+
 				"）指向的那个桶里，没有它等于有页面地址、没有放素材的地方")
 	}
+	// 分享出去的地址落在主站上（主站壳包一层跨源沙箱 iframe），因此主站地址
+	// 缺了它发布同样只发得出一半。
+	if c.PublicBaseURL == "" {
+		return invalidKey(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL,
+			"不能只给发布域：对外分享的地址落在 "+keyPublicBaseURL+"（"+EnvPublicBaseURL+
+				"）上（主站壳包一层跨源沙箱 iframe），没有它等于发得出去、分享地址是空的")
+	}
 	if err := checkOriginShape(keyGalaxyPublishBaseURL, EnvGalaxyPublishBaseURL, c.Galaxy.PublishBaseURL,
 		"带路径会让 /g/<工程标识> 变成一个子路径，而那不在本 spec 的地址形状里"); err != nil {
 		return err
-	}
-
-	// 主应用没有配置对外地址时无从比较：此时"不同源"这条没有对象，而不是
-	// "自动通过"——发布域自己的取值要求已经在上一步查过。
-	if c.PublicBaseURL == "" {
-		return nil
 	}
 	return validateDifferentSite(c.PublicBaseURL, c.Galaxy.PublishBaseURL)
 }

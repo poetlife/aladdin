@@ -189,3 +189,19 @@ export async function publish(projectId: string, slot: ContentSlot, versionId: s
 export async function unpublish(projectId: string, slot: ContentSlot) {
   return galaxyClient().unpublish({ projectId, slot })
 }
+
+/**
+ * 把一条**主站分享路径**解析成它在发布域上的内容地址（主站壳用）。
+ *
+ * 它是唯一一个**匿名可用**的 galaxy 调用：访客打开一条分享地址时没有会话，而
+ * "分享给没登录的人"正是它的用途。服务端对未发布 / 已撤回 / 槽未启用 / 工程不
+ * 存在 / 标识没被猜中 / 路径不在集合，一律返回空 `contentUrl`——**那不是错误，
+ * 是统一的否定结论**，调用方据此渲染"页面不存在"（见
+ * docs/design/galaxy/publication.md 的"主站壳"）。
+ *
+ * 传整条路径而不是（工程，槽，路径）三元组：槽的判定只有服务端一处，前端不做
+ * 第二份形状解析。
+ */
+export async function resolveSharedPage(path: string) {
+  return galaxyClient().resolveSharedPage({ path })
+}

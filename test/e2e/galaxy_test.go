@@ -148,13 +148,13 @@ func createProject(t *testing.T, client galaxyv1connect.GalaxyServiceClient, nam
 	return project.Msg.GetProject().GetId()
 }
 
-// publishDraft 把**站点槽**的草稿存成版本并发布，返回发布地址。
+// publishDraft 把**站点槽**的草稿存成版本并发布，返回**分享地址**。
 func publishDraft(t *testing.T, client galaxyv1connect.GalaxyServiceClient, projectID string) string {
 	t.Helper()
 	return publishDraftSlot(t, client, projectID, galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 }
 
-// publishDraftSlot 把某一个内容槽的草稿存成版本并发布，返回该槽的发布地址。
+// publishDraftSlot 把某一个内容槽的草稿存成版本并发布，返回该槽的**分享地址**。
 func publishDraftSlot(t *testing.T, client galaxyv1connect.GalaxyServiceClient, projectID string, slot galaxyv1.ContentSlot) string {
 	t.Helper()
 	ctx := context.Background()
@@ -175,7 +175,7 @@ func publishDraftSlot(t *testing.T, client galaxyv1connect.GalaxyServiceClient, 
 
 // siteRoot 返回一条槽根地址的**带结尾斜杠**形式（只保留路径）。
 //
-// 发布地址由服务端算出来时**不带**结尾斜杠（见 galaxy.PublicOrigin.PageURL），而
+// 内容地址由服务端算出来时**不带**结尾斜杠（见 galaxy.PublicOrigin.ContentURL），而
 // 站点根是它带斜杠的形式：页内相对地址按文档所在的目录解析，不带斜杠的槽根会让
 // 浏览器退一层目录去取 `/g/style.css`。因此入口页本身要用这个形式取（见
 // internal/server/galaxy_public.go 的 slotRootTarget）。
@@ -189,6 +189,36 @@ func siteRoot(address string) string {
 		return strings.TrimSuffix(address, "/") + "/"
 	}
 	return strings.TrimSuffix(parsed.Path, "/") + "/"
+}
+
+// pathOf 返回一条地址的路径部分（分享地址与内容地址共用它比较）。
+func pathOf(address string) string {
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return address
+	}
+	return parsed.Path
+}
+
+// resolveSharedPage 走一次**匿名**的解析调用：主站壳打开一条分享地址时要问的那一跳。
+//
+// 不带任何凭证——访客打开一条分享地址时没有会话，而"分享给没登录的人"正是这个入口
+// 唯一的用途（见 docs/design/rbac/server-permissions.md 的公开方法白名单）。传的是
+// **路径**（浏览器的 pathname 就是编码形态），槽的判定在服务端。
+func resolveSharedPage(t *testing.T, h harness, shareAddress string) string {
+	t.Helper()
+	parsed, err := url.Parse(shareAddress)
+	if err != nil {
+		t.Fatalf("分享地址不是合法 URL: %v", err)
+	}
+	anonymous := connectGalaxy(t, h, "")
+	resp, err := anonymous.ResolveSharedPage(context.Background(), connect.NewRequest(&galaxyv1.ResolveSharedPageRequest{
+		Path: parsed.EscapedPath(),
+	}))
+	if err != nil {
+		t.Fatalf("匿名解析分享地址失败: %v", err)
+	}
+	return resp.Msg.GetContentUrl()
 }
 
 // fetchPublished 取发布地址上的一个路径（**不带任何凭证**）。
@@ -246,8 +276,18 @@ func TestGalaxyPublishedSiteIsPubliclyReachable(t *testing.T) {
 		pushAssetOverRPC(t, h, client, projectID, "logo.png", "image/png", pngBytes),
 	)
 	address := publishDraft(t, client, projectID)
-	if !strings.HasPrefix(address, h.publishBase+galaxy.PublicPathPrefix) {
-		t.Fatalf("发布地址 = %q，期望落在发布域的前缀下", address)
+	// **分享出去的地址落在主站上**，不落在发布域：发布域是一处裸沙箱，分享地址由
+	// 主站壳包一层跨源沙箱 iframe（见 docs/design/galaxy/publication.md 的"主站壳"）。
+	if !strings.HasPrefix(address, h.appBase+galaxy.PublicPathPrefix) {
+		t.Fatalf("分享地址 = %q，期望落在主站的前缀下", address)
+	}
+	// 而匿名解析给出的**内容地址**落在发布域上，与分享地址同路径。
+	content := resolveSharedPage(t, h, address)
+	if !strings.HasPrefix(content, h.publishBase+galaxy.PublicPathPrefix) {
+		t.Fatalf("内容地址 = %q，期望落在发布域的前缀下", content)
+	}
+	if pathOf(content) != pathOf(address) {
+		t.Errorf("内容地址与分享地址路径不同: %q vs %q", content, address)
 	}
 
 	// **槽根带结尾斜杠，不带斜杠的先 301 过去**：页内相对地址按文档所在的目录解析，
@@ -333,6 +373,14 @@ func TestGalaxyPublishedSiteIsPubliclyReachable(t *testing.T) {
 	}
 	if !strings.Contains(policy, "frame-src 'none'") || !strings.Contains(policy, "base-uri 'none'") {
 		t.Errorf("策略缺少两条兜底:\n%s", policy)
+	}
+	// **只允许主站嵌它**：不同源挡住了脚本读会话，但挡不住别人把发布域嵌进自己的
+	// 页面（钓鱼框）。允许的祖先因此不是 `'self'`，而是主站那一个来源。
+	if !strings.Contains(policy, "frame-ancestors "+h.appBase) {
+		t.Errorf("策略没有把帧祖先收成主站:\n%s", policy)
+	}
+	if strings.Contains(policy, "frame-ancestors 'self'") {
+		t.Error("帧祖先落成了 'self'：那等于允许发布域被任何页面嵌")
 	}
 }
 
@@ -523,6 +571,65 @@ func TestGalaxyNegativeConclusionsAreTheSame(t *testing.T) {
 		if status, _, _ := fetchPublished(t, h, siteRoot(address), entryPath, nil); status != http.StatusNotFound {
 			t.Errorf("撤回之后 %q = %d，期望 404", entryPath, status)
 		}
+	}
+}
+
+// 主站壳要问的那一跳：**匿名**、按整条分享路径回答、否定结论只有一个。
+//
+// 它回答的事实与发布域那条直连入口完全一样（见 docs/design/rbac/server-permissions.md
+// 的公开方法白名单），因此这里把"同一个空结果"在 RPC 上也断言一遍——用错误码区分
+// 未发布与标识不存在，会给出一个"这个标识是真的"的第二信号。
+func TestGalaxySharedPageResolutionIsAnonymousAndUniform(t *testing.T) {
+	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
+	client := connectGalaxy(t, h, testToken)
+	anonymous := connectGalaxy(t, h, "")
+	ctx := context.Background()
+
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
+	pushDraft(t, client, projectID,
+		pushContentOverRPC(t, h, client, projectID, "index.html", "<p>你好</p>"),
+		pushContentOverRPC(t, h, client, projectID, "guide/one.html", "<p>一</p>"),
+	)
+	shareAddress := publishDraft(t, client, projectID)
+
+	// 已发布：给出发布域上的**同路径**地址（分享地址在主站，内容地址在发布域）。
+	want := h.publishBase + galaxy.PublicPathPrefix + projectID
+	if got := resolveSharedPage(t, h, shareAddress); got != want {
+		t.Errorf("槽根的内容地址 = %q，期望 %q", got, want)
+	}
+	// 深链透传一次：分享出去的站内页面落在同一页上。
+	if got, wantDeep := resolveSharedPage(t, h, shareAddress+"/guide/one.html"), want+"/guide/one.html"; got != wantDeep {
+		t.Errorf("深链的内容地址 = %q，期望 %q", got, wantDeep)
+	}
+
+	// 五种情形同一个空结果：**空**而不是错误。
+	unpublishedID := createProject(t, client, "没发过", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
+	cases := map[string]string{
+		"未发布":    galaxy.PublicPathPrefix + unpublishedID,
+		"槽未启用":   galaxy.PublicPathPrefix + projectID + "/docs",
+		"工程不存在":  galaxy.PublicPathPrefix + "prj_没有这个工程",
+		"路径不在集合": galaxy.PublicPathPrefix + projectID + "/nope.html",
+		"不是分享路径": "/galaxy",
+	}
+	for name, path := range cases {
+		resp, err := anonymous.ResolveSharedPage(ctx, connect.NewRequest(&galaxyv1.ResolveSharedPageRequest{Path: path}))
+		if err != nil {
+			t.Errorf("%s：解析被当成一次错误返回: %v", name, err)
+			continue
+		}
+		if got := resp.Msg.GetContentUrl(); got != "" {
+			t.Errorf("%s：内容地址 = %q，期望空（否定结论只有一个）", name, got)
+		}
+	}
+
+	// 撤回之后同一个路径也落进同一个否定结论。
+	if _, err := client.Unpublish(ctx, connect.NewRequest(&galaxyv1.UnpublishRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+	})); err != nil {
+		t.Fatalf("撤回失败: %v", err)
+	}
+	if got := resolveSharedPage(t, h, shareAddress); got != "" {
+		t.Errorf("撤回之后的内容地址 = %q，期望空", got)
 	}
 }
 

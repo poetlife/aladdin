@@ -75,17 +75,21 @@ func TestGalaxyInterfaceHasNoEnumerationEntry(t *testing.T) {
 	}
 }
 
-// 每个创作方法都要**能被归入三类之一**，且都不是公开方法。
+// 每个创作方法都要**能被归入三类之一**，且只有一个公开方法。
 //
-// 公开方法只有登录那几条（见 docs/design/rbac/server-permissions.md）；创作面的
-// 内容不属于"未认证也能拿到"的东西——唯一匿名可达的是发布地址那条 HTTP 入口，
-// 它根本不是 RPC 方法。
+// 创作面的内容不属于"未认证也能拿到"的东西——唯一匿名可达的是发布地址那条 HTTP
+// 入口，它根本不是 RPC 方法。**唯一的例外是主站壳的解析调用**
+// （ResolveSharedPage）：访客打开一条分享地址时没有会话，而它回答的事实与那条
+// HTTP 入口完全一样，因此与它同一档（见 docs/design/rbac/server-permissions.md
+// 的公开方法白名单）。除它之外任何方法落进这一档都是缺陷。
 func TestGalaxyMethodsAreClassified(t *testing.T) {
 	serviceName := "aladdin.galaxy.v1.GalaxyService"
 	methods := galaxyv1.File_aladdin_galaxy_v1_galaxy_proto.Services().Get(0).Methods()
 	if methods.Len() == 0 {
 		t.Fatal("创作服务没有任何方法")
 	}
+	publicAllowed := map[string]bool{"ResolveSharedPage": true}
+	seenPublic := map[string]bool{}
 	for i := 0; i < methods.Len(); i++ {
 		method := methods.Get(i)
 		procedure := "/" + serviceName + "/" + string(method.Name())
@@ -96,10 +100,21 @@ func TestGalaxyMethodsAreClassified(t *testing.T) {
 			continue
 		}
 		if rule.Kind == rbac.KindPublic {
-			t.Errorf("%s 是公开方法——创作面不该有不需要任何凭证的 RPC", procedure)
+			if !publicAllowed[string(method.Name())] {
+				t.Errorf("%s 是公开方法——创作面不该有不需要任何凭证的 RPC", procedure)
+				continue
+			}
+			seenPublic[string(method.Name())] = true
 		}
 		if rule.Kind == rbac.KindDenied {
 			t.Errorf("%s 没有被归入三类之一: %s", procedure, rule.Reason)
+		}
+	}
+	// 白名单里的那个必须**确实**是公开的：注解被误删时上面那个循环不会报错，
+	// 而主站壳会静默变成"未认证调用被拒"。
+	for name := range publicAllowed {
+		if !seenPublic[name] {
+			t.Errorf("%s 不再被标记为 public：主站壳的匿名解析会因此被拒", "/"+serviceName+"/"+name)
 		}
 	}
 

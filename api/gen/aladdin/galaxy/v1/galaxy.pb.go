@@ -529,11 +529,15 @@ type ProjectSlot struct {
 	Published bool `protobuf:"varint,2,opt,name=published,proto3" json:"published,omitempty"`
 	// 这个槽当前发布指向的版本标识。未发布时为空。
 	PublishedVersionId string `protobuf:"bytes,3,opt,name=published_version_id,json=publishedVersionId,proto3" json:"published_version_id,omitempty"`
-	// 这个槽的发布地址：site 槽形如 <发布域>/g/<工程标识>，docs 槽形如
-	// <发布域>/g/<工程标识>/docs。未发布时为空。
+	// 这个槽的**分享地址**：site 槽形如 <主站>/g/<工程标识>，docs 槽形如
+	// <主站>/g/<工程标识>/docs。未发布时为空。
+	//
+	// **它落在主站，不落在发布域**：贴给别人的是这一条，打开它由主站壳用跨源沙箱
+	// iframe 取发布域上的同一条路径（见 docs/design/galaxy/publication.md 的"主站
+	// 壳"）。发布域上的内容地址由 ResolveSharedPage 给出，默认不展示。
 	//
 	// **地址由服务端算好**，客户端不拼：记号解析生成的地址、内容安全策略里的
-	// 允许来源与这个地址都从同一批配置值派生，客户端再拼一份就是又一个来源。
+	// 允许来源与这条分享地址都从同一批配置值派生，客户端再拼一份就是又一个来源。
 	PublishedUrl string `protobuf:"bytes,4,opt,name=published_url,json=publishedUrl,proto3" json:"published_url,omitempty"`
 	// 这个槽当前发布的生效时间。未发布时为空。
 	PublishedAt string `protobuf:"bytes,5,opt,name=published_at,json=publishedAt,proto3" json:"published_at,omitempty"`
@@ -986,15 +990,15 @@ func (x *ValidationProblem) GetLine() int32 {
 
 // Publication 是一次发布的产物记录。
 //
-// 对外地址按**产物清单**分派：文本条目由服务端在它自己的路径上给出，资产
-// 条目重定向到公开区。
+// 发布域上的**内容地址**按产物清单分派：文本条目由服务端在它自己的路径上给出，
+// 资产条目重定向到公开区；对外**分享**给访问者的是主站上的包装地址。
 type Publication struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	ProjectId   string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	VersionId   string                 `protobuf:"bytes,3,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`
 	PublishedAt string                 `protobuf:"bytes,4,opt,name=published_at,json=publishedAt,proto3" json:"published_at,omitempty"`
-	// 发布地址，与对应 ProjectSlot.published_url 同一处派生。
+	// **分享地址**（主站包装），与对应 ProjectSlot.published_url 同一处派生。
 	Url string `protobuf:"bytes,5,opt,name=url,proto3" json:"url,omitempty"`
 	// 这次发布的是哪个内容槽。
 	Slot          ContentSlot `protobuf:"varint,6,opt,name=slot,proto3,enum=aladdin.galaxy.v1.ContentSlot" json:"slot,omitempty"`
@@ -3541,6 +3545,105 @@ func (x *UnpublishResponse) GetProject() *Project {
 	return nil
 }
 
+type ResolveSharedPageRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 主站上的分享路径，以 `/g/` 开头，形如 `/g/<工程标识>`、`/g/<工程标识>/docs`
+	// 或 `/g/<工程标识>/docs/guide`。
+	//
+	// 给整条路径而不是（工程，槽，路径）三元组：**槽的判定只有服务端一处**，客户端
+	// 再解析一份就是第二个形状来源。
+	Path          string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveSharedPageRequest) Reset() {
+	*x = ResolveSharedPageRequest{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveSharedPageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveSharedPageRequest) ProtoMessage() {}
+
+func (x *ResolveSharedPageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveSharedPageRequest.ProtoReflect.Descriptor instead.
+func (*ResolveSharedPageRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *ResolveSharedPageRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ResolveSharedPageResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 这条路径在**发布域**上的内容地址，形如
+	// `<发布域>/g/<工程标识>[/docs][/路径]`。壳把它放进 iframe 的 src。
+	//
+	// **空表示"没有这一页"**，且六种情形同此一答（未发布 / 已撤回 / 该槽未启用 /
+	// 工程不存在 / 标识没被猜中 / 路径不在集合里）。它不是错误：调用方据此渲染
+	// 与发布态相同的"不存在"。
+	ContentUrl    string `protobuf:"bytes,1,opt,name=content_url,json=contentUrl,proto3" json:"content_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveSharedPageResponse) Reset() {
+	*x = ResolveSharedPageResponse{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveSharedPageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveSharedPageResponse) ProtoMessage() {}
+
+func (x *ResolveSharedPageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveSharedPageResponse.ProtoReflect.Descriptor instead.
+func (*ResolveSharedPageResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *ResolveSharedPageResponse) GetContentUrl() string {
+	if x != nil {
+		return x.ContentUrl
+	}
+	return ""
+}
+
 var File_aladdin_galaxy_v1_galaxy_proto protoreflect.FileDescriptor
 
 const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
@@ -3778,7 +3881,12 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x122\n" +
 	"\x04slot\x18\x02 \x01(\x0e2\x1e.aladdin.galaxy.v1.ContentSlotR\x04slot\"I\n" +
 	"\x11UnpublishResponse\x124\n" +
-	"\aproject\x18\x01 \x01(\v2\x1a.aladdin.galaxy.v1.ProjectR\aproject*Y\n" +
+	"\aproject\x18\x01 \x01(\v2\x1a.aladdin.galaxy.v1.ProjectR\aproject\".\n" +
+	"\x18ResolveSharedPageRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"<\n" +
+	"\x19ResolveSharedPageResponse\x12\x1f\n" +
+	"\vcontent_url\x18\x01 \x01(\tR\n" +
+	"contentUrl*Y\n" +
 	"\vContentSlot\x12\x1c\n" +
 	"\x18CONTENT_SLOT_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11CONTENT_SLOT_SITE\x10\x01\x12\x15\n" +
@@ -3788,7 +3896,7 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x10MEDIA_KIND_IMAGE\x10\x01\x12\x14\n" +
 	"\x10MEDIA_KIND_VIDEO\x10\x02\x12\x14\n" +
 	"\x10MEDIA_KIND_AUDIO\x10\x03\x12\x13\n" +
-	"\x0fMEDIA_KIND_FONT\x10\x042\x8b\x18\n" +
+	"\x0fMEDIA_KIND_FONT\x10\x042\x81\x19\n" +
 	"\rGalaxyService\x12u\n" +
 	"\x0fGetCapabilities\x12).aladdin.galaxy.v1.GetCapabilitiesRequest\x1a*.aladdin.galaxy.v1.GetCapabilitiesResponse\"\v\x90\x88'\x03\xa0\x88'\x01\x90\x02\x01\x12\x7f\n" +
 	"\fListProjects\x12&.aladdin.galaxy.v1.ListProjectsRequest\x1a'.aladdin.galaxy.v1.ListProjectsResponse\"\x1e\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x90\x02\x01\x12\x80\x01\n" +
@@ -3816,7 +3924,8 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\vDeleteAsset\x12%.aladdin.galaxy.v1.DeleteAssetRequest\x1a&.aladdin.galaxy.v1.DeleteAssetResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12x\n" +
 	"\vUpdateAsset\x12%.aladdin.galaxy.v1.UpdateAssetRequest\x1a&.aladdin.galaxy.v1.UpdateAssetResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12p\n" +
 	"\aPublish\x12!.aladdin.galaxy.v1.PublishRequest\x1a\".aladdin.galaxy.v1.PublishResponse\"\x1e\x8a\x88'\x16galaxy.project.publish\x90\x88'\x03\x12v\n" +
-	"\tUnpublish\x12#.aladdin.galaxy.v1.UnpublishRequest\x1a$.aladdin.galaxy.v1.UnpublishResponse\"\x1e\x8a\x88'\x16galaxy.project.publish\x90\x88'\x03B@Z>github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1;galaxyv1b\x06proto3"
+	"\tUnpublish\x12#.aladdin.galaxy.v1.UnpublishRequest\x1a$.aladdin.galaxy.v1.UnpublishResponse\"\x1e\x8a\x88'\x16galaxy.project.publish\x90\x88'\x03\x12t\n" +
+	"\x11ResolveSharedPage\x12+.aladdin.galaxy.v1.ResolveSharedPageRequest\x1a,.aladdin.galaxy.v1.ResolveSharedPageResponse\"\x04\x98\x88'\x01B@Z>github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1;galaxyv1b\x06proto3"
 
 var (
 	file_aladdin_galaxy_v1_galaxy_proto_rawDescOnce sync.Once
@@ -3831,7 +3940,7 @@ func file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP() []byte {
 }
 
 var file_aladdin_galaxy_v1_galaxy_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_aladdin_galaxy_v1_galaxy_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
+var file_aladdin_galaxy_v1_galaxy_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
 var file_aladdin_galaxy_v1_galaxy_proto_goTypes = []any{
 	(ContentSlot)(0),                    // 0: aladdin.galaxy.v1.ContentSlot
 	(MediaKind)(0),                      // 1: aladdin.galaxy.v1.MediaKind
@@ -3893,7 +4002,9 @@ var file_aladdin_galaxy_v1_galaxy_proto_goTypes = []any{
 	(*PublishResponse)(nil),             // 57: aladdin.galaxy.v1.PublishResponse
 	(*UnpublishRequest)(nil),            // 58: aladdin.galaxy.v1.UnpublishRequest
 	(*UnpublishResponse)(nil),           // 59: aladdin.galaxy.v1.UnpublishResponse
-	(*v1.DirectUploadCredential)(nil),   // 60: aladdin.objectstore.v1.DirectUploadCredential
+	(*ResolveSharedPageRequest)(nil),    // 60: aladdin.galaxy.v1.ResolveSharedPageRequest
+	(*ResolveSharedPageResponse)(nil),   // 61: aladdin.galaxy.v1.ResolveSharedPageResponse
+	(*v1.DirectUploadCredential)(nil),   // 62: aladdin.objectstore.v1.DirectUploadCredential
 }
 var file_aladdin_galaxy_v1_galaxy_proto_depIdxs = []int32{
 	1,  // 0: aladdin.galaxy.v1.AssetKindLimit.kind:type_name -> aladdin.galaxy.v1.MediaKind
@@ -3929,9 +4040,9 @@ var file_aladdin_galaxy_v1_galaxy_proto_depIdxs = []int32{
 	0,  // 30: aladdin.galaxy.v1.ValidateDraftRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
 	10, // 31: aladdin.galaxy.v1.ValidateDraftResponse.problems:type_name -> aladdin.galaxy.v1.ValidationProblem
 	0,  // 32: aladdin.galaxy.v1.PreviewDraftRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
-	60, // 33: aladdin.galaxy.v1.BeginContentUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
+	62, // 33: aladdin.galaxy.v1.BeginContentUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
 	9,  // 34: aladdin.galaxy.v1.ListAssetsResponse.assets:type_name -> aladdin.galaxy.v1.Asset
-	60, // 35: aladdin.galaxy.v1.BeginAssetUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
+	62, // 35: aladdin.galaxy.v1.BeginAssetUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
 	9,  // 36: aladdin.galaxy.v1.CommitAssetUploadResponse.asset:type_name -> aladdin.galaxy.v1.Asset
 	9,  // 37: aladdin.galaxy.v1.UpdateAssetResponse.asset:type_name -> aladdin.galaxy.v1.Asset
 	0,  // 38: aladdin.galaxy.v1.PublishRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
@@ -3963,32 +4074,34 @@ var file_aladdin_galaxy_v1_galaxy_proto_depIdxs = []int32{
 	54, // 64: aladdin.galaxy.v1.GalaxyService.UpdateAsset:input_type -> aladdin.galaxy.v1.UpdateAssetRequest
 	56, // 65: aladdin.galaxy.v1.GalaxyService.Publish:input_type -> aladdin.galaxy.v1.PublishRequest
 	58, // 66: aladdin.galaxy.v1.GalaxyService.Unpublish:input_type -> aladdin.galaxy.v1.UnpublishRequest
-	13, // 67: aladdin.galaxy.v1.GalaxyService.GetCapabilities:output_type -> aladdin.galaxy.v1.GetCapabilitiesResponse
-	15, // 68: aladdin.galaxy.v1.GalaxyService.ListProjects:output_type -> aladdin.galaxy.v1.ListProjectsResponse
-	17, // 69: aladdin.galaxy.v1.GalaxyService.CreateProject:output_type -> aladdin.galaxy.v1.CreateProjectResponse
-	19, // 70: aladdin.galaxy.v1.GalaxyService.AddProjectSlot:output_type -> aladdin.galaxy.v1.AddProjectSlotResponse
-	21, // 71: aladdin.galaxy.v1.GalaxyService.GetProject:output_type -> aladdin.galaxy.v1.GetProjectResponse
-	23, // 72: aladdin.galaxy.v1.GalaxyService.UpdateProject:output_type -> aladdin.galaxy.v1.UpdateProjectResponse
-	25, // 73: aladdin.galaxy.v1.GalaxyService.DeleteProject:output_type -> aladdin.galaxy.v1.DeleteProjectResponse
-	27, // 74: aladdin.galaxy.v1.GalaxyService.GetDraft:output_type -> aladdin.galaxy.v1.GetDraftResponse
-	29, // 75: aladdin.galaxy.v1.GalaxyService.PushDraft:output_type -> aladdin.galaxy.v1.PushDraftResponse
-	31, // 76: aladdin.galaxy.v1.GalaxyService.SaveVersion:output_type -> aladdin.galaxy.v1.SaveVersionResponse
-	33, // 77: aladdin.galaxy.v1.GalaxyService.ListVersions:output_type -> aladdin.galaxy.v1.ListVersionsResponse
-	35, // 78: aladdin.galaxy.v1.GalaxyService.GetVersion:output_type -> aladdin.galaxy.v1.GetVersionResponse
-	37, // 79: aladdin.galaxy.v1.GalaxyService.DeleteVersion:output_type -> aladdin.galaxy.v1.DeleteVersionResponse
-	39, // 80: aladdin.galaxy.v1.GalaxyService.ValidateDraft:output_type -> aladdin.galaxy.v1.ValidateDraftResponse
-	41, // 81: aladdin.galaxy.v1.GalaxyService.PreviewDraft:output_type -> aladdin.galaxy.v1.PreviewDraftResponse
-	43, // 82: aladdin.galaxy.v1.GalaxyService.BeginContentUpload:output_type -> aladdin.galaxy.v1.BeginContentUploadResponse
-	45, // 83: aladdin.galaxy.v1.GalaxyService.CommitContentUpload:output_type -> aladdin.galaxy.v1.CommitContentUploadResponse
-	47, // 84: aladdin.galaxy.v1.GalaxyService.ListAssets:output_type -> aladdin.galaxy.v1.ListAssetsResponse
-	49, // 85: aladdin.galaxy.v1.GalaxyService.BeginAssetUpload:output_type -> aladdin.galaxy.v1.BeginAssetUploadResponse
-	51, // 86: aladdin.galaxy.v1.GalaxyService.CommitAssetUpload:output_type -> aladdin.galaxy.v1.CommitAssetUploadResponse
-	53, // 87: aladdin.galaxy.v1.GalaxyService.DeleteAsset:output_type -> aladdin.galaxy.v1.DeleteAssetResponse
-	55, // 88: aladdin.galaxy.v1.GalaxyService.UpdateAsset:output_type -> aladdin.galaxy.v1.UpdateAssetResponse
-	57, // 89: aladdin.galaxy.v1.GalaxyService.Publish:output_type -> aladdin.galaxy.v1.PublishResponse
-	59, // 90: aladdin.galaxy.v1.GalaxyService.Unpublish:output_type -> aladdin.galaxy.v1.UnpublishResponse
-	67, // [67:91] is the sub-list for method output_type
-	43, // [43:67] is the sub-list for method input_type
+	60, // 67: aladdin.galaxy.v1.GalaxyService.ResolveSharedPage:input_type -> aladdin.galaxy.v1.ResolveSharedPageRequest
+	13, // 68: aladdin.galaxy.v1.GalaxyService.GetCapabilities:output_type -> aladdin.galaxy.v1.GetCapabilitiesResponse
+	15, // 69: aladdin.galaxy.v1.GalaxyService.ListProjects:output_type -> aladdin.galaxy.v1.ListProjectsResponse
+	17, // 70: aladdin.galaxy.v1.GalaxyService.CreateProject:output_type -> aladdin.galaxy.v1.CreateProjectResponse
+	19, // 71: aladdin.galaxy.v1.GalaxyService.AddProjectSlot:output_type -> aladdin.galaxy.v1.AddProjectSlotResponse
+	21, // 72: aladdin.galaxy.v1.GalaxyService.GetProject:output_type -> aladdin.galaxy.v1.GetProjectResponse
+	23, // 73: aladdin.galaxy.v1.GalaxyService.UpdateProject:output_type -> aladdin.galaxy.v1.UpdateProjectResponse
+	25, // 74: aladdin.galaxy.v1.GalaxyService.DeleteProject:output_type -> aladdin.galaxy.v1.DeleteProjectResponse
+	27, // 75: aladdin.galaxy.v1.GalaxyService.GetDraft:output_type -> aladdin.galaxy.v1.GetDraftResponse
+	29, // 76: aladdin.galaxy.v1.GalaxyService.PushDraft:output_type -> aladdin.galaxy.v1.PushDraftResponse
+	31, // 77: aladdin.galaxy.v1.GalaxyService.SaveVersion:output_type -> aladdin.galaxy.v1.SaveVersionResponse
+	33, // 78: aladdin.galaxy.v1.GalaxyService.ListVersions:output_type -> aladdin.galaxy.v1.ListVersionsResponse
+	35, // 79: aladdin.galaxy.v1.GalaxyService.GetVersion:output_type -> aladdin.galaxy.v1.GetVersionResponse
+	37, // 80: aladdin.galaxy.v1.GalaxyService.DeleteVersion:output_type -> aladdin.galaxy.v1.DeleteVersionResponse
+	39, // 81: aladdin.galaxy.v1.GalaxyService.ValidateDraft:output_type -> aladdin.galaxy.v1.ValidateDraftResponse
+	41, // 82: aladdin.galaxy.v1.GalaxyService.PreviewDraft:output_type -> aladdin.galaxy.v1.PreviewDraftResponse
+	43, // 83: aladdin.galaxy.v1.GalaxyService.BeginContentUpload:output_type -> aladdin.galaxy.v1.BeginContentUploadResponse
+	45, // 84: aladdin.galaxy.v1.GalaxyService.CommitContentUpload:output_type -> aladdin.galaxy.v1.CommitContentUploadResponse
+	47, // 85: aladdin.galaxy.v1.GalaxyService.ListAssets:output_type -> aladdin.galaxy.v1.ListAssetsResponse
+	49, // 86: aladdin.galaxy.v1.GalaxyService.BeginAssetUpload:output_type -> aladdin.galaxy.v1.BeginAssetUploadResponse
+	51, // 87: aladdin.galaxy.v1.GalaxyService.CommitAssetUpload:output_type -> aladdin.galaxy.v1.CommitAssetUploadResponse
+	53, // 88: aladdin.galaxy.v1.GalaxyService.DeleteAsset:output_type -> aladdin.galaxy.v1.DeleteAssetResponse
+	55, // 89: aladdin.galaxy.v1.GalaxyService.UpdateAsset:output_type -> aladdin.galaxy.v1.UpdateAssetResponse
+	57, // 90: aladdin.galaxy.v1.GalaxyService.Publish:output_type -> aladdin.galaxy.v1.PublishResponse
+	59, // 91: aladdin.galaxy.v1.GalaxyService.Unpublish:output_type -> aladdin.galaxy.v1.UnpublishResponse
+	61, // 92: aladdin.galaxy.v1.GalaxyService.ResolveSharedPage:output_type -> aladdin.galaxy.v1.ResolveSharedPageResponse
+	68, // [68:93] is the sub-list for method output_type
+	43, // [43:68] is the sub-list for method input_type
 	43, // [43:43] is the sub-list for extension type_name
 	43, // [43:43] is the sub-list for extension extendee
 	0,  // [0:43] is the sub-list for field type_name
@@ -4009,7 +4122,7 @@ func file_aladdin_galaxy_v1_galaxy_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aladdin_galaxy_v1_galaxy_proto_rawDesc), len(file_aladdin_galaxy_v1_galaxy_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   58,
+			NumMessages:   60,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

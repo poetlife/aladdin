@@ -101,6 +101,9 @@ const (
 	GalaxyServicePublishProcedure = "/aladdin.galaxy.v1.GalaxyService/Publish"
 	// GalaxyServiceUnpublishProcedure is the fully-qualified name of the GalaxyService's Unpublish RPC.
 	GalaxyServiceUnpublishProcedure = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
+	// GalaxyServiceResolveSharedPageProcedure is the fully-qualified name of the GalaxyService's
+	// ResolveSharedPage RPC.
+	GalaxyServiceResolveSharedPageProcedure = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
 )
 
 // GalaxyServiceClient is a client for the aladdin.galaxy.v1.GalaxyService service.
@@ -267,6 +270,21 @@ type GalaxyServiceClient interface {
 	// 撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
 	// 收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
 	Unpublish(context.Context, *connect.Request[v1.UnpublishRequest]) (*connect.Response[v1.UnpublishResponse], error)
+	// 把一条**主站分享路径**解析成它在发布域上的内容地址。
+	//
+	// 主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
+	// **槽的判定在服务端**（与发布地址那条 HTTP 入口共用同一处形状解析），因此
+	// 请求给的是整条路径，响应给的是整条内容地址——客户端两头都不拼。
+	//
+	// 它是**公开**的：访客打开一条分享地址时没有会话，而"分享给没登录的人"正是
+	// 这个入口唯一的用途（见 docs/design/rbac/server-permissions.md 的公开方法白
+	// 名单）。它只凭工程标识作答，与发布地址那条 HTTP 入口回答的是同一件事。
+	//
+	// **否定结论只有一个**：未发布、已撤回、该槽未启用、工程不存在、标识没被猜
+	// 中、路径不在集合里，一律返回空的 `content_url`，而不是 RPC 错误——错误码会
+	// 成为一个"这个标识是真的"的第二信号（见 docs/design/galaxy/publication.md 的
+	// "主站壳"）。
+	ResolveSharedPage(context.Context, *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error)
 }
 
 // NewGalaxyServiceClient constructs a client for the aladdin.galaxy.v1.GalaxyService service. By
@@ -431,6 +449,12 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(galaxyServiceMethods.ByName("Unpublish")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveSharedPage: connect.NewClient[v1.ResolveSharedPageRequest, v1.ResolveSharedPageResponse](
+			httpClient,
+			baseURL+GalaxyServiceResolveSharedPageProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("ResolveSharedPage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -460,6 +484,7 @@ type galaxyServiceClient struct {
 	updateAsset         *connect.Client[v1.UpdateAssetRequest, v1.UpdateAssetResponse]
 	publish             *connect.Client[v1.PublishRequest, v1.PublishResponse]
 	unpublish           *connect.Client[v1.UnpublishRequest, v1.UnpublishResponse]
+	resolveSharedPage   *connect.Client[v1.ResolveSharedPageRequest, v1.ResolveSharedPageResponse]
 }
 
 // GetCapabilities calls aladdin.galaxy.v1.GalaxyService.GetCapabilities.
@@ -580,6 +605,11 @@ func (c *galaxyServiceClient) Publish(ctx context.Context, req *connect.Request[
 // Unpublish calls aladdin.galaxy.v1.GalaxyService.Unpublish.
 func (c *galaxyServiceClient) Unpublish(ctx context.Context, req *connect.Request[v1.UnpublishRequest]) (*connect.Response[v1.UnpublishResponse], error) {
 	return c.unpublish.CallUnary(ctx, req)
+}
+
+// ResolveSharedPage calls aladdin.galaxy.v1.GalaxyService.ResolveSharedPage.
+func (c *galaxyServiceClient) ResolveSharedPage(ctx context.Context, req *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error) {
+	return c.resolveSharedPage.CallUnary(ctx, req)
 }
 
 // GalaxyServiceHandler is an implementation of the aladdin.galaxy.v1.GalaxyService service.
@@ -746,6 +776,21 @@ type GalaxyServiceHandler interface {
 	// 撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
 	// 收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
 	Unpublish(context.Context, *connect.Request[v1.UnpublishRequest]) (*connect.Response[v1.UnpublishResponse], error)
+	// 把一条**主站分享路径**解析成它在发布域上的内容地址。
+	//
+	// 主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
+	// **槽的判定在服务端**（与发布地址那条 HTTP 入口共用同一处形状解析），因此
+	// 请求给的是整条路径，响应给的是整条内容地址——客户端两头都不拼。
+	//
+	// 它是**公开**的：访客打开一条分享地址时没有会话，而"分享给没登录的人"正是
+	// 这个入口唯一的用途（见 docs/design/rbac/server-permissions.md 的公开方法白
+	// 名单）。它只凭工程标识作答，与发布地址那条 HTTP 入口回答的是同一件事。
+	//
+	// **否定结论只有一个**：未发布、已撤回、该槽未启用、工程不存在、标识没被猜
+	// 中、路径不在集合里，一律返回空的 `content_url`，而不是 RPC 错误——错误码会
+	// 成为一个"这个标识是真的"的第二信号（见 docs/design/galaxy/publication.md 的
+	// "主站壳"）。
+	ResolveSharedPage(context.Context, *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error)
 }
 
 // NewGalaxyServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -906,6 +951,12 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(galaxyServiceMethods.ByName("Unpublish")),
 		connect.WithHandlerOptions(opts...),
 	)
+	galaxyServiceResolveSharedPageHandler := connect.NewUnaryHandler(
+		GalaxyServiceResolveSharedPageProcedure,
+		svc.ResolveSharedPage,
+		connect.WithSchema(galaxyServiceMethods.ByName("ResolveSharedPage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/aladdin.galaxy.v1.GalaxyService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GalaxyServiceGetCapabilitiesProcedure:
@@ -956,6 +1007,8 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 			galaxyServicePublishHandler.ServeHTTP(w, r)
 		case GalaxyServiceUnpublishProcedure:
 			galaxyServiceUnpublishHandler.ServeHTTP(w, r)
+		case GalaxyServiceResolveSharedPageProcedure:
+			galaxyServiceResolveSharedPageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1059,4 +1112,8 @@ func (UnimplementedGalaxyServiceHandler) Publish(context.Context, *connect.Reque
 
 func (UnimplementedGalaxyServiceHandler) Unpublish(context.Context, *connect.Request[v1.UnpublishRequest]) (*connect.Response[v1.UnpublishResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.Unpublish is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) ResolveSharedPage(context.Context, *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.ResolveSharedPage is not implemented"))
 }

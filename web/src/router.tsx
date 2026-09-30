@@ -19,6 +19,7 @@ import { GalaxyPage } from './pages/docs/GalaxyPage'
 import { ProjectEditorPage } from './pages/galaxy/ProjectEditorPage'
 import { ProjectListPage } from './pages/galaxy/ProjectListPage'
 import { PreviewPage } from './pages/galaxy/PreviewPage'
+import { PublishedPage } from './pages/galaxy/PublishedPage'
 
 /**
  * 路由表。
@@ -43,6 +44,16 @@ export const router = createBrowserRouter([
   // 回调端点在 /auth/github/），前端在这里放路由会被服务端接走。
   { path: '/login/callback', element: <AuthCallbackPage /> },
   { path: '/forbidden', element: <ForbiddenPage /> },
+  // 主站壳：一条**已发布内容**的分享地址落点（`/g/<工程标识>[/docs][/路径]`）。
+  //
+  // **它必须在 RequirePermission 之外，也在 AppLayout 之外。** 访客打开一条分享
+  // 地址时没有会话，而"分享给没登录的人"正是这条地址唯一的用途；它也不该套上创作
+  // 面的外壳——那一块与访客无关。页面自己只做一件事：把这条路径解析成发布域上的
+  // 地址，再交给跨源沙箱 iframe（见 docs/design/galaxy/publication.md 的"主站壳"）。
+  //
+  // 用通配段而不是把槽解析写在这里：`docs` 那一段的判定只有服务端一处。这条路由
+  // 也不能落在 `path: '*'` 兜底之后，否则整条分享地址会被送去首页。
+  { path: '/g/*', element: <PublishedPage /> },
   {
     element: <RequirePermission />,
     children: [

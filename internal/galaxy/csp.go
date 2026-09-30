@@ -48,7 +48,26 @@ func cspDirectives(origin PublicOrigin) []string {
 		"form-action 'none'",
 		// 不能用 <base> 改写正文里所有相对地址的解析基准。
 		"base-uri 'none'",
+		// **谁能把发布物嵌进页面：只有主站。** 不同源挡住了脚本读主站的会话，
+		// 但挡不住别人把发布域嵌进自己的页面（钓鱼框）。允许的祖先因此不是
+		// `'self'`，而是主站那一个来源——发布物只该被主站的壳嵌。
+		//
+		// 这一条**不影响直接打开**：frame-ancestors 管的是"能不能被嵌"，不是
+		// "能不能访问"，因此高级用户照旧可以直连发布域。
+		//
+		// 主站来源取不到时给出 `'none'`（什么都不许嵌），而不是省掉这一条：省掉
+		// 等于回到"谁都能嵌"。发布启用时主站地址必然有值（配置校验），因此这一档
+		// 只会在半套配置下面临——而那种配置启动就被拒了。
+		frameAncestorsDirective(origin),
 	}
+}
+
+// frameAncestorsDirective 给出 `frame-ancestors` 那一条。
+func frameAncestorsDirective(origin PublicOrigin) string {
+	if source := origin.FrameAncestorSource(); source != "" {
+		return "frame-ancestors " + source
+	}
+	return "frame-ancestors 'none'"
 }
 
 // ContentSecurityPolicy 返回发布物交付时的内容安全策略取值（唯一入口）。

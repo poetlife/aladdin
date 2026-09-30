@@ -66,6 +66,12 @@ export function ProjectListPage(): React.ReactNode {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
+  // 撤回发布：**按槽**，因此键是「工程:槽」而不是工程。同一个工程的两个槽各有
+  // 各的确认框与提交中状态——撤回一个槽不动另一个（见 publication.md）。
+  const unpublishingRef = useRef<string | null>(null)
+  const [unpublishingKey, setUnpublishingKey] = useState<string | null>(null)
+  const [confirmingUnpublish, setConfirmingUnpublish] = useState<string | null>(null)
+
   // trackOpen 只在"进入这个页面"时为真：load 在删除之后也会被调用来刷新，
   // 那一次不是"打开列表"，不该再报一条 PROJECT_LIST_OPEN。
   const load = useCallback(async (trackOpen = false): Promise<void> => {
@@ -136,6 +142,34 @@ export function ProjectListPage(): React.ReactNode {
     await load()
   }
 
+  /**
+   * 撤回**某一个槽**的发布。
+   *
+   * 与工作台里那一处是同一个服务端动作：只置空该槽的指针，另一个槽的地址、版本与
+   * 状态都不动。列表侧提供它是因为**能看到地址的地方就该能在那里把它作废**——否则
+   * 用户得先打开工作台、再去找状态条，而那正是"只能发、不能撤"这个印象的来源。
+   */
+  async function handleUnpublish(projectId: string, slot: ContentSlot): Promise<void> {
+    if (unpublishingRef.current !== null) {
+      return
+    }
+    const key = unpublishKey(projectId, slot)
+    unpublishingRef.current = key
+    setUnpublishingKey(key)
+    setConfirmingUnpublish(key)
+    try {
+      await galaxyApi.unpublish(projectId, slot)
+    } catch (err) {
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+      return
+    } finally {
+      unpublishingRef.current = null
+      setUnpublishingKey(null)
+      setConfirmingUnpublish(null)
+    }
+    await load()
+  }
+
   const columns: NonNullable<TableProps<Project>['columns']> = [
     {
       title: '名称',
@@ -179,9 +213,30 @@ export function ProjectListPage(): React.ReactNode {
           <Tag>未发布</Tag>
         ) : (
           <Space orientation="vertical" size={4}>
-            {project.slots.map((slot) => (
-              <SlotStatus key={slot.slot} slot={slot} />
-            ))}
+            {project.slots.map((slot) => {
+              const key = unpublishKey(project.id, slot.slot)
+              return (
+                <SlotStatus
+                  key={slot.slot}
+                  slot={slot}
+                  confirming={confirmingUnpublish === key}
+                  busy={unpublishingKey === key}
+                  anyBusy={unpublishingKey !== null}
+                  onConfirmChange={(nextOpen) => {
+                    if (unpublishingRef.current !== null) {
+                      return
+                    }
+                    // 取消确认框：动作根本没发生（请求没发出去），服务端留痕里没有它。
+                    // 成功与失败则由撤回请求本身留痕覆盖，这里不重复报。
+                    if (!nextOpen && confirmingUnpublish === key) {
+                      trackUnpublishCancel()
+                    }
+                    setConfirmingUnpublish(nextOpen ? key : null)
+                  }}
+                  onUnpublish={() => void handleUnpublish(project.id, slot.slot)}
+                />
+              )
+            })}
           </Space>
         ),
     },
@@ -342,8 +397,49 @@ function trackProjectDeleteCancel(): void {
   })
 }
 
-/** 一个内容槽的发布状态：已发布时把该槽的地址一并给出来。 */
-function SlotStatus({ slot }: { slot: ProjectSlot }): React.ReactNode {
+/** 上报一次"取消撤回发布"：同上，动作根本没发生。 */
+function trackUnpublishCancel(): void {
+  track({
+    surface: Surface.WEB_PROJECT_LIST,
+    action: Action.UNPUBLISH,
+    result: Result.CANCEL,
+  })
+}
+
+/** 一个（工程，槽）在撤回那件事上的键。**按槽**：两个槽各有各的确认与提交中状态。 */
+function unpublishKey(projectId: string, slot: ContentSlot): string {
+  return `${projectId}:${slot}`
+}
+
+interface SlotStatusProps {
+  slot: ProjectSlot
+  /** 这一个槽的确认框是否开着。 */
+  confirming: boolean
+  /** 这一个槽正在撤回。 */
+  busy: boolean
+  /** 别的槽正在撤回（或删除）时不让再开一个确认框。 */
+  anyBusy: boolean
+  onConfirmChange: (open: boolean) => void
+  onUnpublish: () => void
+}
+
+/**
+ * 一个内容槽的发布状态：已发布时把该槽的地址一并给出来，**并在地址旁给出撤回**。
+ *
+ * 撤回放在这里而不是"操作"列，与工作台是同一条原则：它是那一处状态的逆操作，
+ * 跟着它要作废的那个地址走（见 docs/design/galaxy/authoring.md）。能看到地址的
+ * 地方就该能在那里把它作废——否则用户得先打开工作台、再去找状态条。
+ *
+ * 按 `galaxy.project.publish` 裁剪：不持有发布权限时只显示地址，不渲染撤回。
+ */
+function SlotStatus({
+  slot,
+  confirming,
+  busy,
+  anyBusy,
+  onConfirmChange,
+  onUnpublish,
+}: SlotStatusProps): React.ReactNode {
   if (!slot.published) {
     return (
       <Space size={4}>
@@ -358,9 +454,26 @@ function SlotStatus({ slot }: { slot: ProjectSlot }): React.ReactNode {
         <Tag color="success">已发布</Tag>
         <Tag>{slotLabel(slot.slot)}</Tag>
       </Space>
-      <Typography.Text type="secondary" copyable style={{ wordBreak: 'break-all' }}>
-        {slot.publishedUrl}
-      </Typography.Text>
+      <Space size={4} wrap>
+        <Typography.Text type="secondary" copyable style={{ wordBreak: 'break-all' }}>
+          {slot.publishedUrl}
+        </Typography.Text>
+        <PermissionGate require={PermissionCodes.GalaxyProjectPublish}>
+          <Popconfirm
+            title="撤回这个槽的发布？"
+            description="这条地址会立刻不可达。发布记录保留，之后可以重新发布同一个版本；另一个槽不受影响。"
+            okText="撤回"
+            okButtonProps={{ danger: true, loading: busy }}
+            open={confirming}
+            onOpenChange={onConfirmChange}
+            onConfirm={onUnpublish}
+          >
+            <Button type="link" size="small" danger disabled={anyBusy} loading={busy}>
+              撤回发布
+            </Button>
+          </Popconfirm>
+        </PermissionGate>
+      </Space>
     </Space>
   )
 }

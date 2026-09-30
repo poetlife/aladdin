@@ -240,12 +240,20 @@ func TestGalaxyCLIAuthoringRoundTrip(t *testing.T) {
 
 	published := mustRunCLI(t, binary, h, "galaxy", "publish", projectID, versionID)
 	address := jsonField(t, published, "publication", "url")
-	if !strings.HasPrefix(address, h.publishBase) {
-		t.Fatalf("发布地址 = %q，期望落在发布域下", address)
+	// 命令行回显的是**分享地址**，它落在主站上：发布域是一处裸沙箱，对外由主站壳
+	// 包一层跨源沙箱 iframe（见 docs/design/galaxy/publication.md 的"主站壳"）。
+	// `project base` 给的仍是发布域上的发布根——两者不是同一条。
+	if !strings.HasPrefix(address, h.appBase) {
+		t.Fatalf("分享地址 = %q，期望落在主站下", address)
+	}
+	// 内容落在发布域上：主站壳要问的那一跳。
+	content := resolveSharedPage(t, h, address)
+	if !strings.HasPrefix(content, h.publishBase) {
+		t.Fatalf("内容地址 = %q，期望落在发布域下", content)
 	}
 
 	// **不带任何凭证**取一次产物，且**每一个地址都在**。
-	status, body, _ := fetchPublished(t, h, address, "index.html", nil)
+	status, body, _ := fetchPublished(t, h, content, "index.html", nil)
 	if status != http.StatusOK {
 		t.Fatalf("匿名请求发布地址 = %d，期望 200", status)
 	}
@@ -255,15 +263,15 @@ func TestGalaxyCLIAuthoringRoundTrip(t *testing.T) {
 	if !strings.Contains(body, "/g/"+projectID+"/style.css") {
 		t.Error("构建产物里的绝对路径被改写了")
 	}
-	if status, body, _ := fetchPublished(t, h, address, "guide/one.html", nil); status != http.StatusOK || !strings.Contains(body, "<p>一</p>") {
+	if status, body, _ := fetchPublished(t, h, content, "guide/one.html", nil); status != http.StatusOK || !strings.Contains(body, "<p>一</p>") {
 		t.Errorf("guide/one.html = %d / %q", status, body)
 	}
-	if status, css, _ := fetchPublished(t, h, address, "style.css", nil); status != http.StatusOK || css != style {
+	if status, css, _ := fetchPublished(t, h, content, "style.css", nil); status != http.StatusOK || css != style {
 		t.Errorf("style.css = %d / %q", status, css)
 	}
 
 	mustRunCLI(t, binary, h, "galaxy", "unpublish", projectID)
-	if status, _, _ := fetchPublished(t, h, address, "index.html", nil); status != http.StatusNotFound {
+	if status, _, _ := fetchPublished(t, h, content, "index.html", nil); status != http.StatusNotFound {
 		t.Fatalf("撤回之后再取发布地址 = %d，期望 404", status)
 	}
 

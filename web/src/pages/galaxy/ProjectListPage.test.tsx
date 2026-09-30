@@ -17,6 +17,7 @@ import {
   DeleteProjectResponseSchema,
   ListProjectsResponseSchema,
   ProjectSchema,
+  UnpublishResponseSchema,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { ProjectListPage } from './ProjectListPage'
 
@@ -37,6 +38,7 @@ vi.mock('../../api/galaxy', () => ({
   listProjects: vi.fn(),
   createProject: vi.fn(),
   deleteProject: vi.fn(),
+  unpublish: vi.fn(),
 }))
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -60,6 +62,8 @@ async function renderList(): Promise<HTMLElement> {
 }
 
 beforeEach(() => {
+  // 每个用例从零开始数调用次数：本文件有多个"确认之后调了几次"的断言。
+  vi.clearAllMocks()
   globalThis.localStorage?.clear()
   globalThis.localStorage?.setItem('aladdin.token', 'test-token')
   vi.mocked(identityApi.whoAmI).mockResolvedValue(create(WhoAmIResponseSchema, { subjectId: 's1' }))
@@ -130,5 +134,107 @@ describe('删除工程', () => {
       resolveDelete?.()
     })
     expect(vi.mocked(galaxyApi.listProjects).mock.calls.length).toBeGreaterThan(1)
+  })
+})
+
+/** 让当前会话持有发布权限。撤回按 `galaxy.project.publish` 裁剪。 */
+function grantPublishPermission(): void {
+  vi.mocked(identityApi.getSessionPermissions).mockResolvedValue(
+    create(GetSessionPermissionsResponseSchema, {
+      scope: '',
+      permissions: [PermissionCodes.GalaxyProjectRead, PermissionCodes.GalaxyProjectPublish],
+    }),
+  )
+}
+
+/** 一个已发布的站点槽：列表里因此出现地址与撤回。 */
+function listOnePublishedProject(): void {
+  vi.mocked(galaxyApi.listProjects).mockResolvedValue(
+    create(ListProjectsResponseSchema, {
+      projects: [
+        create(ProjectSchema, {
+          id: 'p1',
+          name: '我的工程',
+          slots: [
+            {
+              slot: ContentSlot.SITE,
+              published: true,
+              publishedUrl: 'https://app.example.com/g/p1',
+            },
+          ],
+        }),
+      ],
+    }),
+  )
+}
+
+/** 在整页里找一个按钮：antd 会在汉字之间插空格，因此按去空格后的文本比。 */
+function findButton(scope: ParentNode, label: string): HTMLButtonElement | undefined {
+  return Array.from(scope.querySelectorAll('button')).find(
+    (button) => button.textContent?.replace(/\s/g, '') === label,
+  )
+}
+
+describe('列表里撤回发布', () => {
+  // 这块入口存在的理由：**能看到地址的地方就该能在那里把它作废**。以前列表只显示
+  // "已发布 + 地址"，撤回要先打开工作台、再去找状态条。
+  it('确认后按槽撤回，并刷新列表', async () => {
+    grantPublishPermission()
+    listOnePublishedProject()
+    vi.mocked(galaxyApi.unpublish).mockResolvedValue(create(UnpublishResponseSchema, {}))
+
+    const container = await renderList()
+    expect(container.textContent, '已发布的地址没有显示出来').toContain(
+      'https://app.example.com/g/p1',
+    )
+    const trigger = findButton(container, '撤回发布')
+    expect(trigger, '地址旁边没有撤回入口').not.toBeUndefined()
+
+    await act(async () => {
+      trigger?.click()
+    })
+    const ok = findButton(document.body, '撤回')
+    expect(ok, '没有找到确认按钮').not.toBeUndefined()
+
+    await act(async () => {
+      ok?.click()
+    })
+
+    expect(galaxyApi.unpublish).toHaveBeenCalledTimes(1)
+    expect(galaxyApi.unpublish).toHaveBeenCalledWith('p1', ContentSlot.SITE)
+    expect(vi.mocked(galaxyApi.listProjects).mock.calls.length).toBeGreaterThan(1)
+  })
+
+  // 取消是"动作没发生"：请求不发出去。与工作台那一处同一条。
+  it('取消确认不发请求', async () => {
+    grantPublishPermission()
+    listOnePublishedProject()
+
+    const container = await renderList()
+    const trigger = findButton(container, '撤回发布')
+    await act(async () => {
+      trigger?.click()
+    })
+    // 取消按钮按"不是主按钮"取：这个用例没挂 ConfigProvider，语言包是默认那一份，
+    // 按文案找会随环境变。
+    const ok = findButton(document.body, '撤回')
+    const cancel = ok?.parentElement?.querySelector<HTMLButtonElement>('button:not(.ant-btn-primary)')
+    expect(cancel, '没有找到取消按钮').not.toBeUndefined()
+
+    await act(async () => {
+      cancel?.click()
+    })
+
+    expect(galaxyApi.unpublish).not.toHaveBeenCalled()
+  })
+
+  // 不持有发布权限时**不渲染入口**，而不是渲染一个点了报错的控件——地址照常显示。
+  it('没有发布权限时不渲染撤回', async () => {
+    listOnePublishedProject()
+
+    const container = await renderList()
+
+    expect(container.textContent).toContain('https://app.example.com/g/p1')
+    expect(findButton(container, '撤回发布')).toBeUndefined()
   })
 })

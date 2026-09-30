@@ -50,6 +50,7 @@
 | 文档站的导航（取哪些文件、按什么序、标题从哪里来） | 导航的派生入口（只取 markdown） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
 | 一个工程有哪些内容槽、每个槽的入口路径与地址，以及哪一段路径是保留段 | 内容槽的解析入口（槽的合法取值、入口、保留段共用这一处判断） | [internal/galaxy/content_slot.go](../internal/galaxy/content_slot.go) |
 | 一个工程的发布根（构建时注入与发布态地址共用，**按槽派生**；槽根带结尾斜杠，不带时由交付入口 301 过去） | 发布根的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
+| 一个已发布槽的**分享地址**（主站包装）与**内容地址**（发布域），以及主站壳解析它时用的那一处判断 | 发布地址的派生入口（两者同一处派生，客户端不拼） | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | markdown 到 HTML 的渲染（`docs` 槽） | 文档渲染入口（确定性的唯一实现，发布时使用） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
 | 发布产物交付时的内容安全策略 | CSP 响应头的构造入口 | [internal/galaxy/csp.go](../internal/galaxy/csp.go) |
 | 上传方声明的类型能不能作为头像 | 头像的类型白名单（唯一入口；声明不等于验证，见直传） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
@@ -59,7 +60,7 @@
 | 一个资产标识是否属于某个工程 | 资产的归属查询（唯一入口，发布校验与删除拦阻共用） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
 | 一个标签串的归一化与合法性（trim、小写、去重、长度与数量上限） | 标签归一化入口（三端只能消费它的结论，不得各自再判一份） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
 | 一个工程是不是该主体的（资源归属） | galaxy 的归属校验唯一入口 | [internal/galaxy/ownership.go](../internal/galaxy/ownership.go) |
-| 发布态允许从哪个来源取资源（记号解析出的地址与内容安全策略同源；含发布根的派生） | 公开域的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
+| 发布态允许从哪个来源取资源、以及允许谁嵌入（记号解析出的地址与内容安全策略同源；含发布根与帧祖先的派生） | 公开域的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | 一份短码或设备码是否已获批准、是否已被交付 | `deviceLogins`（状态流转与交付） | [internal/server/device_logins.go](../internal/server/device_logins.go) |
 | 本机二进制相对最新发布是旧是新（要不要升级） | 严格版本的解析与比较入口 | [internal/upgrade/version.go](../internal/upgrade/version.go) |
 
