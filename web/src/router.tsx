@@ -9,6 +9,7 @@ import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { PermissionCatalogPage } from './pages/PermissionCatalogPage'
+import { TelemetryPage } from './pages/admin/TelemetryPage'
 import { RolesPage } from './pages/RolesPage'
 import { ScopesPage } from './pages/ScopesPage'
 import { SubjectBindingsPage } from './pages/SubjectBindingsPage'
@@ -101,6 +102,13 @@ export const router = createBrowserRouter([
           // 权限管理原先挂在 /roles 下。旧地址留一次跳转：部署文档里
           // 的 SPA 回落冒烟步骤正是拿它当例子（见 docs/deploy.md）。
           { path: '/roles', element: <Navigate to="/access/roles" replace /> },
+          // 运维面。眼下只有遥测一页，独立成一个顶层入口而不是塞进 /access：
+          // 那一组是**权限管理**（角色、授权、范围），遥测是运行观测，两件事。
+          // 将来 #36 的访客统计并入同一页时，沿用这个入口。
+          {
+            element: <RequirePermission require={[PermissionCodes.TelemetryRead]} />,
+            children: [{ path: '/admin/telemetry', element: <TelemetryPage /> }],
+          },
           // galaxy 创作面。基础权限是 `galaxy.project.read`——列表与编辑器
           // 同属一块能力；编辑器内部的写/发布/资产入口再按各自权限码裁剪。
           {

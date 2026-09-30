@@ -41,6 +41,7 @@ import (
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
+	telemetrygormstore "github.com/poetlife/aladdin/internal/telemetry/gormstore"
 )
 
 const (
@@ -180,6 +181,10 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 		Assets:   objects,
 		Public:   public,
 		Origin:   origin,
+	}, server.TelemetryStores{
+		// 客户端事件同样落在真实连接上：管理面用例要验证"上报进去的能查出来"，
+		// 用内存实现会把"表没建、写入没落盘"挡在测试之外。
+		Events: telemetrygormstore.New(store.DB()),
 	})
 	if err := srv.Store().PutSubject(context.Background(), rbac.Subject{
 		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,

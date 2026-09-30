@@ -3,12 +3,21 @@ package telemetry
 import (
 	"context"
 	"sort"
+	"time"
 
 	"go.uber.org/zap"
 
 	telemetryv1 "github.com/poetlife/aladdin/api/gen/aladdin/telemetry/v1"
 	"github.com/poetlife/aladdin/internal/observability"
 )
+
+// persistTimeout 是一次落库允许占用的最长时间。
+//
+// 落库在**响应返回之前**同步完成，因此它花掉的每一毫秒都加在客户端的等待上。
+// 遥测绝不该让业务变慢，所以这里有一个远小于"库正常工作所需"的上限：它防的不是
+// 慢查询，而是库无响应时把一次上报拖成客户端的一次卡顿。超时的后果只是丢这一批
+// 遥测（下面会留一条 WARN），而丢遥测远好过让用户等。
+const persistTimeout = 2 * time.Second
 
 // Request 是一次上报的协议层上下文。
 //
@@ -29,19 +38,29 @@ type Request struct {
 	Events []*telemetryv1.Event
 }
 
-// Recorder 把通过校验的事件落成结构化日志。
+// Recorder 把通过校验的事件落成结构化日志，并落库供管理页读取。
 //
-// 它是遥测落盘的**唯一入口**：校验、脱敏、限流都在它内部完成，调用方（RPC
-// handler）只负责把协议层的事实递进来。这样"什么会被写进日志"是一个可以单独
-// 测试的问题，不必起一个服务端。
+// 它是遥测落盘的**唯一入口**：校验、脱敏、限流、写日志与写库都在它内部完成，
+// 调用方（RPC handler）只负责把协议层的事实递进来。这样"什么会被写下来"是一个
+// 可以单独测试的问题，不必起一个服务端。
+//
+// 日志与库**都要写**，不是二选一：日志是长期的分析入口（可以进日志系统、可以
+// grep 全历史），库是站内那个有界只读视图的数据源。两者的字段语义必须一致
+// （见 docs/observability.md），差别只在留存与查询方式。
 type Recorder struct {
 	logger  *zap.Logger
 	limiter *Limiter
+	// store 为 nil 表示不落库，只写日志（测试与"未装配"的调用方用得上）。
+	store Store
+	// now 可注入，测试用它把落库时间戳钉死；缺省是 time.Now。
+	now func() time.Time
 }
 
-// NewRecorder 构造记录器。limiter 为 nil 表示不限流（只应在测试里这么用）。
-func NewRecorder(logger *zap.Logger, limiter *Limiter) *Recorder {
-	return &Recorder{logger: logger, limiter: limiter}
+// NewRecorder 构造记录器。
+//
+// limiter 为 nil 表示不限流，store 为 nil 表示不落库——两者都只应在测试里这么用。
+func NewRecorder(logger *zap.Logger, limiter *Limiter, store Store) *Recorder {
+	return &Recorder{logger: logger, limiter: limiter, store: store, now: time.Now}
 }
 
 // Report 处理一批上报，返回被接受的事件条数。
@@ -64,7 +83,13 @@ func (r *Recorder) Report(ctx context.Context, req Request) int {
 		logger = zap.NewNop()
 	}
 
+	// 一批共用一个时间戳：时间由服务端盖章，批次是服务端处理这个请求的最小单位。
+	// 逐条取时间只会让同一批出现肉眼看不出的先后，而那个精度对"最近发生了什么"
+	// 没有意义。
+	occurredAt := r.now()
+
 	accepted := 0
+	var entries []Entry
 	for _, ev := range req.Events {
 		rec, reason, ok := normalize(ev, req.SubjectID, req.HeaderClient)
 		if !ok {
@@ -75,8 +100,35 @@ func (r *Recorder) Report(ctx context.Context, req Request) int {
 		}
 		accepted++
 		logger.Info("客户端事件", recordFields(rec)...)
+		if r.store != nil {
+			entries = append(entries, Entry{Record: rec, OccurredAt: occurredAt})
+		}
 	}
+
+	r.persist(ctx, entries)
 	return accepted
+}
+
+// persist 把本批通过校验的事件写进库。
+//
+// **它从不返回错误，也从不改变 Report 的结果。** 遥测的数据问题绝不能升级成
+// 客户端的业务错误——一次库抖动不该让前端弹框、让命令行非零退出。写失败只留
+// 一行 WARN，由人来决定要不要管。
+//
+// 写入用**脱离请求取消**的 context：上报端最常见的两个调用时机是页面隐藏前的
+// 冲刷与失败后的立即发送，而它们恰恰最容易伴随连接关闭——用请求自己的 context
+// 会让"最该被记下的那一批"因为客户端走了而写不进去。代价是它不随请求取消，
+// 因此另加一个明确的上限（见 persistTimeout）。
+func (r *Recorder) persist(ctx context.Context, entries []Entry) {
+	if r.store == nil || len(entries) == 0 {
+		return
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistTimeout)
+	defer cancel()
+	if err := r.store.Append(writeCtx, entries); err != nil {
+		r.warn(ctx, "客户端事件落库失败，本批只留在日志里",
+			zap.Int("events", len(entries)), zap.Error(err))
+	}
 }
 
 // limitKey 取本次上报的限流键：已识别主体用它，匿名用来源地址。
@@ -99,6 +151,18 @@ func (r *Recorder) debug(ctx context.Context, msg string, fields ...zap.Field) {
 		return
 	}
 	logger.Debug(msg, fields...)
+}
+
+// warn 记一行带链路标识的 WARN 日志；没有 logger 时什么也不做。
+//
+// 只用在"本该成功却失败"的一侧——落库写不进去是设施问题，与"上报端清单不一致"
+// 那种预期内的丢弃不同级，因此不降级成 DEBUG。
+func (r *Recorder) warn(ctx context.Context, msg string, fields ...zap.Field) {
+	logger := observability.SpanLogger(ctx, r.logger)
+	if logger == nil {
+		return
+	}
+	logger.Warn(msg, fields...)
 }
 
 // recordFields 把一条记录摊平成日志字段。

@@ -34,6 +34,9 @@ const (
 	// PermissionAuditLogExport 导出审计日志。属批量操作
 	PermissionAuditLogExport PermissionCode = "audit.log.export"
 
+	// PermissionTelemetryRead 读取客户端遥测的计数与明细（Web/CLI 本地动作）。只读
+	PermissionTelemetryRead PermissionCode = "telemetry.read"
+
 	// PermissionGalaxyProjectRead 读取自己创建的工程、草稿与版本
 	PermissionGalaxyProjectRead PermissionCode = "galaxy.project.read"
 
@@ -64,6 +67,7 @@ var AllPermissionCodes = []PermissionCode{
 	PermissionRbacPolicyPublish,
 	PermissionAuditLogRead,
 	PermissionAuditLogExport,
+	PermissionTelemetryRead,
 	PermissionGalaxyProjectRead,
 	PermissionGalaxyProjectWrite,
 	PermissionGalaxyProjectPublish,
@@ -125,6 +129,7 @@ var BuiltinRoles = []RoleDefinition{
 		Permissions: []PermissionCode{
 			PermissionAuditLogRead,
 			PermissionAuditLogExport,
+			PermissionTelemetryRead,
 			PermissionRbacRoleRead,
 			PermissionRbacSubjectRead,
 			PermissionRbacScopeRead,

@@ -58,6 +58,10 @@ type Server struct {
 	engine   *rbac.Engine
 	machine  *interceptor.TokenAuthenticator
 	sessions *identity.Sessions
+	// clientEvents 保留在服务端上不是为了读接口（那个服务自己拿着它），而是为了
+	// **启动时的保留期回收**：那件事发生在监听之前，早于任何请求，因此拿不到
+	// 通过请求路径装配的实例。
+	clientEvents telemetry.Store
 
 	httpServer *http.Server
 }
@@ -110,6 +114,18 @@ type GalaxyStores struct {
 	Origin galaxy.PublicOrigin
 }
 
+// TelemetryStores 是遥测模块的存储，由入口进程构造后传入。
+//
+// 与其它模块同理：事件表由同一份迁移建好，因此它的实现必须长在同一条连接上。
+type TelemetryStores struct {
+	// Events 是客户端事件的落库与只读查询入口。
+	//
+	// 它同时被两侧使用：写侧（TelemetryService 背后的 Recorder）往里记，读侧
+	// （TelemetryAdminService）从里查。**同一个实例**是有意的——两边各建一份
+	// 不会出错，但会让"读到的就是写下的"这件事需要额外确认。
+	Events telemetry.Store
+}
+
 // galaxyReadMaxBytes 是创作服务的单条消息读上限。
 //
 // 必须显式设：connect-go 的默认是**不限制大小**，而请求体由客户端决定大小。
@@ -129,7 +145,7 @@ const galaxyReadMaxBytes = 1 << 20
 //
 // metrics 为 nil 时不记录请求指标；遥测的 provider 生命周期由调用方
 // （入口进程）管理，服务端只消费它建好的全局实现。
-func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores, prof ProfileStores, gal GalaxyStores) *Server {
+func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores, prof ProfileStores, gal GalaxyStores, tel TelemetryStores) *Server {
 	engine := rbac.NewEngine(store, logger, metrics)
 	machine := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
@@ -276,10 +292,19 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	//
 	// 校验、脱敏、限流都在 internal/telemetry——那一层不认识 Connect，因此"什么会
 	// 被写进日志"可以脱离服务端单独测试。这里只做装配与协议层的取数。
-	telemetryRecorder := telemetry.NewRecorder(logger, telemetry.NewLimiter(telemetry.DefaultLimits))
+	//
+	// 同一个 store 实例也交给下面的只读管理面：写侧记进去的、读侧查出来的必须是
+	// 同一份数据，两处各建一份不会有错，只是多一个需要确认的前提。
+	telemetryRecorder := telemetry.NewRecorder(logger, telemetry.NewLimiter(telemetry.DefaultLimits), tel.Events)
 	telemetryPath, telemetryHandler := telemetryv1connect.NewTelemetryServiceHandler(
 		NewTelemetryService(telemetryRecorder), opts...)
 	register(telemetryPath, telemetryHandler)
+
+	// 客户端事件的只读管理面。它与上面的上报服务**准入条件正相反**（那边公开、
+	// 这边要 telemetry.read），因此是两个服务而不是一个服务的两个方法。
+	telemetryAdminPath, telemetryAdminHandler := telemetryv1connect.NewTelemetryAdminServiceHandler(
+		NewTelemetryAdminService(tel.Events), opts...)
+	register(telemetryAdminPath, telemetryAdminHandler)
 
 	// 发布地址：浏览器直连的非 RPC 入口。它**不经过鉴权**（发布态公开匿名，
 	// 地址即凭据），因此必须登记在 middleware 的浏览器直连清单里，否则会在
@@ -297,6 +322,7 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		galaxyv1connect.GalaxyServiceName,
 		eventsv1connect.EventsServiceName,
 		telemetryv1connect.TelemetryServiceName,
+		telemetryv1connect.TelemetryAdminServiceName,
 	}
 	healthPath, healthHandler := grpchealth.NewHandler(grpchealth.NewStaticChecker(serviceNames...))
 	register(healthPath, healthHandler)
@@ -345,13 +371,14 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	})
 
 	return &Server{
-		cfg:        cfg,
-		logger:     logger,
-		store:      store,
-		engine:     engine,
-		machine:    machine,
-		sessions:   ident.Sessions,
-		httpServer: httpServer,
+		cfg:          cfg,
+		logger:       logger,
+		store:        store,
+		engine:       engine,
+		machine:      machine,
+		sessions:     ident.Sessions,
+		clientEvents: tel.Events,
+		httpServer:   httpServer,
 	}
 }
 
@@ -366,6 +393,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// 不让会话表无限增长，因此失败只记日志、不拒绝启动——一次回收失败
 	// 没有理由让整个权限平台起不来（见 docs/design/identity/session-token.md）。
 	s.reclaimExpiredSessions(ctx)
+
+	// 回收超出保留期的客户端事件行，然后才开门。与上面同理：正确性不依赖它
+	// （读取一律带时间条件），它只负责不让事件表无限增长。
+	s.reclaimOldClientEvents(ctx)
 
 	var lc net.ListenConfig
 	lis, err := lc.Listen(ctx, "tcp", s.cfg.Address)
@@ -444,5 +475,29 @@ func (s *Server) reclaimExpiredSessions(ctx context.Context) {
 	}
 	if removed > 0 {
 		s.logger.Info("已回收过期会话", zap.Int64("removed", removed))
+	}
+}
+
+// reclaimOldClientEvents 回收超出保留期的客户端事件行。
+//
+// 与上面的会话回收同形，理由也一样：只在启动时跑一次，不引入后台循环。差别在
+// 于这里的"过期"是**保留策略**而不是有效性——事件一旦记下就是有效的事实，回收
+// 只是决定它还能被站内的只读页面看到多久（读侧另有 30 天的窗口）。因此一次回收
+// 失败更不该让启动失败：丢的只可能是页面上更早的那一段。
+//
+// 保留期的取值在 internal/telemetry（与最长查询窗口共用一处判断），这里只负责
+// 在正确时刻调用它。
+func (s *Server) reclaimOldClientEvents(ctx context.Context) {
+	if s.clientEvents == nil {
+		return
+	}
+	cutoff := time.Now().Add(-telemetry.Retention)
+	removed, err := s.clientEvents.DeleteBefore(ctx, cutoff)
+	if err != nil {
+		s.logger.Warn("回收超期客户端事件失败，服务照常启动", zap.Error(err))
+		return
+	}
+	if removed > 0 {
+		s.logger.Info("已回收超期客户端事件", zap.Int64("removed", removed))
 	}
 }
