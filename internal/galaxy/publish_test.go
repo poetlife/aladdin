@@ -358,7 +358,7 @@ func TestPublicationManifestHoldsNoBytes(t *testing.T) {
 		if strings.Contains(entry.Digest, "<p>") || strings.Contains(entry.Path, "<p>") {
 			t.Error("清单里出现了内容本身")
 		}
-		if len(entry.Digest) != contentDigestLength {
+		if len(entry.Digest) != len(ContentDigest(nil)) {
 			t.Errorf("清单里的摘要 = %q，期望是一个内容摘要", entry.Digest)
 		}
 	}

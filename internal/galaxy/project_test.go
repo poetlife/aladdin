@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/poetlife/aladdin/internal/idgen"
 	"github.com/poetlife/aladdin/internal/objectstore"
 )
 
@@ -27,8 +28,8 @@ func TestProjectIDIsUnguessable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("标识的随机部分不是 base64url: %v", err)
 	}
-	if len(raw) != idEntropyBytes {
-		t.Errorf("随机部分 %d 字节，期望 %d（128 位）", len(raw), idEntropyBytes)
+	if len(raw) != idgen.EntropyBytes {
+		t.Errorf("随机部分 %d 字节，期望 %d（128 位）", len(raw), idgen.EntropyBytes)
 	}
 	if first.ID == second.ID {
 		t.Error("两次分配拿到了同一个标识")

@@ -76,7 +76,7 @@
 
 长度一律按**字符数**而不是字节数计，与工程名称、简介同一条理由：用户感知的长度是字数，按字节算会让"一段中文写到十几个字就被拒"成为一条需要解释的规则。
 
-**标签的归一化只有一个入口**：去掉首尾空白；统一**小写**（存储与展示都用小写，中文不受影响）；空串、含控制字符、含 `/` 或 `\` 的取值被拒；长度或数量超限被拒；归一化之后相同的只留一个，并按**字典序**排好——顺序在三端一致，因此读回来的那一组标签是可以逐字比较的。
+**标签的归一化只有一个入口**（skill 目录的标签走的是同一个：见 [../skill/catalog.md](../skill/catalog.md)）：去掉首尾空白；统一**小写**（存储与展示都用小写，中文不受影响）；空串、含控制字符、含 `/` 或 `\` 的取值被拒；长度或数量超限被拒；归一化之后相同的只留一个，并按**字典序**排好——顺序在三端一致，因此读回来的那一组标签是可以逐字比较的。
 
 **说明层永远不进产物。** 发布只关心正文引用的字节：产物里没有标题、标签或备注，改它们不改变任何版本的正文，也不改变已发布页面的外观。它们也**不进日志原文**（见 [../../observability.md](../../observability.md)），与文件名同级。
 
@@ -271,7 +271,8 @@
 | 职责 | 文件路径 |
 |------|---------|
 | 资产领域类型、白名单、分档上限、签发与提交 | [internal/galaxy/asset.go](../../../internal/galaxy/asset.go) |
-| 内容摘要的计算与形状校验 | [internal/galaxy/content_digest.go](../../../internal/galaxy/content_digest.go) |
+| 内容摘要的计算与形状校验（**与 skill 的纳管共用同一条**） | [internal/objectstore/content.go](../../../internal/objectstore/content.go) |
+| 标签的归一化（**与 skill 目录的标签共用同一条**） | [internal/tagging/tagging.go](../../../internal/tagging/tagging.go) |
 | 资产的持久化 | [internal/galaxy/gormstore/asset.go](../../../internal/galaxy/gormstore/asset.go) |
 | 直传的公共契约与内存实现 | [internal/objectstore/upload.go](../../../internal/objectstore/upload.go) |
 | COS 实现（签发凭证、Head、删除、读取地址、公开区上架） | [internal/objectstore/cosupload/](../../../internal/objectstore/cosupload/) |

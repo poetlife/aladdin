@@ -45,7 +45,10 @@
 | 一处引用（记号、文档间链接、站点内路径）解析成什么地址 | 引用的解析入口（发布态给发布根下的绝对地址、预览态给预览根下的绝对地址；两处共用同一处"落在哪一条条目上"的判断，预览那处只是不因坏引用而失败） | [internal/galaxy/link_resolver.go](../internal/galaxy/link_resolver.go) |
 | 预览里草稿按哪条地址取字节（路径形状、短时凭证、"发布根换成预览根"） | 预览通道的路径与凭证入口 | [internal/galaxy/preview.go](../internal/galaxy/preview.go) |
 | 一个路径是不是文件组里的一条条目，以及它是文本还是资产（发布态取字节的分派） | 文件组的集合成员查询（只查表，不解析路径） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
-| 内容对象的键（按内容摘要寻址）与"仅当不存在时写入" | 内容对象的写入入口（含写入后的摘要核对） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
+| 内容对象的键（按内容摘要寻址） | 键的派生入口（galaxy 按工程前缀、skill 按 `skills/text/`） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) / [internal/skill/package.go](../internal/skill/package.go) |
+| 一个内容对象怎么算摘要、怎么判形状、怎么写入（**仅当不存在时写入**，写入前核对摘要） | 内容对象的公共规则（galaxy 的产物与 skill 的纳管共用） | [internal/objectstore/content.go](../internal/objectstore/content.go) |
+| 一条相对路径的形状合法性（相对、URL 非保留字符集、无 `.` / `..` / 空段、长度上限） | `relpath.Valid`（galaxy 文件组的条目与 skill 包内路径、来源子路径共用） | [internal/relpath/relpath.go](../internal/relpath/relpath.go) |
+| 不可猜标识的分配（取多少熵、怎么编码） | `idgen.New`；前缀由调用方给（galaxy 的工程 / 版本 / 资产、skill 的技能 / 版本） | [internal/idgen/idgen.go](../internal/idgen/idgen.go) |
 | 发布态文本条目的响应形状（内容类型、`ETag`、可缓存性） | 发布态的文本响应入口 | [internal/server/galaxy_public.go](../internal/server/galaxy_public.go) |
 | 一个文件是文本还是资产（扩展名白名单，**取值按内容槽不同**） | 文本类型白名单（唯一入口，命令行与服务端共用同一张表） | [internal/galaxy/content_slot.go](../internal/galaxy/content_slot.go) |
 | 文档站的导航（取哪些文件、按什么序、标题从哪里来） | 导航的派生入口（只取 markdown） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
@@ -59,7 +62,7 @@
 | 一份内容能不能发布（引用完整性 + 体积与文件数上限） | `galaxy` 的校验入口（**编辑器提示与发布前置校验共用**，不得在前端复写） | [internal/galaxy/validate.go](../internal/galaxy/validate.go) |
 | 一个版本引用了哪些资产 | 文件组里资产条目的读取入口（不解析正文） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
 | 一个资产标识是否属于某个工程 | 资产的归属查询（唯一入口，发布校验与删除拦阻共用） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
-| 一个标签串的归一化与合法性（trim、小写、去重、长度与数量上限） | 标签归一化入口（三端只能消费它的结论，不得各自再判一份） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
+| 一个标签串的归一化与合法性（trim、小写、去重、长度与数量上限） | `tagging.Normalize`（galaxy 资产的标签与 skill 目录的标签共用；三端只能消费它的结论，不得各自再判一份） | [internal/tagging/tagging.go](../internal/tagging/tagging.go) |
 | 一个工程是不是该主体的（资源归属） | galaxy 的归属校验唯一入口 | [internal/galaxy/ownership.go](../internal/galaxy/ownership.go) |
 | 发布态允许从哪个来源取资源、以及允许谁嵌入（记号解析出的地址与内容安全策略同源；含发布根与帧祖先的派生） | 公开域的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | 一份短码或设备码是否已获批准、是否已被交付 | `deviceLogins`（状态流转与交付） | [internal/server/device_logins.go](../internal/server/device_logins.go) |
@@ -154,7 +157,7 @@
 | 工程、文件清单（草稿与版本）、资产与发布产物清单的持久化数据 | galaxy 的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) / [internal/galaxy/gormstore/](../internal/galaxy/gormstore/) |
 | 直传凭证里那条策略长什么样（动作、资源、类型与长度条件） | 策略的构造入口 | [internal/objectstore/cosupload/policy.go](../internal/objectstore/cosupload/policy.go) |
 | 公开区的对象与它的地址 | 上架入口（公开区唯一的写入口，按（工程，内容摘要，类型）幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
-| 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用） | [internal/galaxy/project.go](../internal/galaxy/project.go) |
+| 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用）；随机部分取自 `idgen.New` | [internal/galaxy/project.go](../internal/galaxy/project.go) |
 | 表结构与迁移清单（库里长什么样） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/schema.go](../internal/database/schema.go) / [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |
 | 服务端配置（监听地址、日志级别与路径） | 服务端 `config.yml` + `config.local.yml`，经 `config.LoadServer` 读取 | [internal/config/load.go](../internal/config/load.go) |
 | CLI 配置（目标地址、超时、输出详细度） | CLI `config.yml` + `config.local.yml`，经 `config.LoadCLI` 读取 | [internal/config/load.go](../internal/config/load.go) |

@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/objectstore"
+	"github.com/poetlife/aladdin/internal/tagging"
 )
 
 const (
@@ -57,10 +56,11 @@ const (
 
 	// AssetTitleMaxRunes 是展示标题的长度上限。
 	AssetTitleMaxRunes = 128
-	// AssetTagMaxRunes 是单个标签的长度上限。
-	AssetTagMaxRunes = 32
+	// AssetTagMaxRunes 与 MaxTagsPerAsset 是标签的两个上限，**取值来自 tagging**
+	// （见下）。标签的规则只有一处实现，这里给的是 galaxy 侧的名字。
+	AssetTagMaxRunes = tagging.MaxRunesPerTag
 	// MaxTagsPerAsset 是一个资产的标签数量上限（按归一化去重之后的个数算）。
-	MaxTagsPerAsset = 16
+	MaxTagsPerAsset = tagging.MaxTags
 	// AssetNotesMaxRunes 是备注的长度上限。
 	//
 	// 与工程名称、简介同一条理由按**字符数**而不是字节数计：用户感知的长度是
@@ -102,12 +102,12 @@ var (
 	// ErrAssetNotesTooLong 表示备注超过长度上限。
 	ErrAssetNotesTooLong = errors.New("资产备注过长")
 
-	// ErrAssetTagInvalid 表示某个标签不合法（空串、含控制字符或路径分隔符、
-	// 超长）。
-	ErrAssetTagInvalid = errors.New("标签不合法")
-
-	// ErrAssetTooManyTags 表示标签数量超过上限。
-	ErrAssetTooManyTags = errors.New("标签数量超过上限")
+	// ErrAssetTagInvalid 与 ErrAssetTooManyTags 是**同一个值的两个名字**：标签
+	// 规则只有一处实现（tagging），这里只是让 galaxy 的调用方按"资产标签"读到它。
+	// 它们不是两份定义——把上面那两行抄一遍就会漂移，而漂移的表现是"这个标签
+	// 在技能那边合法、在资产这边不合法"。
+	ErrAssetTagInvalid  = tagging.ErrInvalid
+	ErrAssetTooManyTags = tagging.ErrTooMany
 )
 
 // MediaKind 是资产按媒体分出的类别。它决定用哪一档大小上限，也是对象键里的一段。
@@ -303,60 +303,20 @@ func NormalizeAssetMeta(title, notes string, tags []string) (string, string, []s
 	return title, notes, normalized, nil
 }
 
-// NormalizeTags 归一化一个资产的标签集合（唯一入口）。
+// NormalizeTags 归一化一个资产的标签集合。
 //
-// 规则由 spec 钉死（见 docs/design/galaxy/asset-library.md 的"可编辑元数据"）：
+// **实现只有一处**：`tagging.Normalize`。技能目录的标签走的是同一个入口，
+// 两处归一化出不同的样子的表现是"这个标签看着对、就是筛不出来"（见
+// docs/ssot-registry.md 与 docs/design/skill/catalog.md）。
 //
-//   - 去掉首尾空白；
-//   - **统一小写**。存储与展示都用它，因此不存在"库里存一份、比较时另算一份"
-//     这第二处规则；
-//   - 空串、含控制字符、含 `/` 或 `\` 的取值被拒。前两者是"看不见的取值"，
-//     后者是路径分隔符——标签会出现在查询串与界面里，收下它等于把转义问题
-//     往后推；
-//   - 归一化之后相同的只留一个，并按**字典序**排好。顺序在三端与两个存储实现
-//     之间逐字一致，因此不存在"内存实现读回来的顺序和 SQL 不一样"这条只在
-//     契约测试里才看得见的偏差；调用方也不必也不得再排一次。
-//
-// 它只归一化，不碰存储也不判权。
+// 它在这里保留一个名字，是为了让调用方读到的仍然是"资产标签的规则"——
+// 规则本身（小写、去重、字典序、长度与数量上限）见 tagging 包。
 func NormalizeTags(tags []string) ([]string, error) {
-	if len(tags) == 0 {
-		return nil, nil
+	normalized, err := tagging.Normalize(tags)
+	if err != nil {
+		return nil, err
 	}
-	normalized := make([]string, 0, len(tags))
-	seen := make(map[string]struct{}, len(tags))
-	for _, raw := range tags {
-		tag := strings.ToLower(strings.TrimSpace(raw))
-		switch {
-		case tag == "":
-			return nil, fmt.Errorf("%w: 标签不能为空", ErrAssetTagInvalid)
-		case strings.ContainsAny(tag, `/\`):
-			return nil, fmt.Errorf("%w: %q 含路径分隔符", ErrAssetTagInvalid, tag)
-		case containsControlRune(tag):
-			return nil, fmt.Errorf("%w: %q 含控制字符", ErrAssetTagInvalid, tag)
-		case len([]rune(tag)) > AssetTagMaxRunes:
-			return nil, fmt.Errorf("%w: %q 超过 %d 个字", ErrAssetTagInvalid, tag, AssetTagMaxRunes)
-		}
-		if _, dup := seen[tag]; dup {
-			continue
-		}
-		seen[tag] = struct{}{}
-		normalized = append(normalized, tag)
-	}
-	if len(normalized) > MaxTagsPerAsset {
-		return nil, fmt.Errorf("%w: 上限 %d 个", ErrAssetTooManyTags, MaxTagsPerAsset)
-	}
-	slices.Sort(normalized)
 	return normalized, nil
-}
-
-// containsControlRune 判定一段文本里有没有控制字符。
-func containsControlRune(text string) bool {
-	for _, r := range text {
-		if unicode.IsControl(r) {
-			return true
-		}
-	}
-	return false
 }
 
 // AssetTypeRule 返回签发直传凭证用的**那一条**类型规则（唯一入口）。

@@ -200,6 +200,7 @@
 |------|---------|
 | 源侧记号的形态、识别与解析 | [internal/galaxy/placeholder.go](../../../internal/galaxy/placeholder.go) |
 | 文件组与路径约束的领域类型 | [internal/galaxy/content_set.go](../../../internal/galaxy/content_set.go) |
+| 条目路径的形状校验（**与 skill 的包内路径共用同一条**） | [internal/relpath/relpath.go](../../../internal/relpath/relpath.go) |
 | 工作台的编排（加载、状态、自动校验、预览/源码切换、分区组合） | [web/src/pages/galaxy/ProjectEditorPage.tsx](../../../web/src/pages/galaxy/ProjectEditorPage.tsx) |
 | 单独打开的预览页 | [web/src/pages/galaxy/PreviewPage.tsx](../../../web/src/pages/galaxy/PreviewPage.tsx) |
 | 源码视图（文件树、选中那一份的就地渲染） | [web/src/pages/galaxy/SourceView.tsx](../../../web/src/pages/galaxy/SourceView.tsx) |
