@@ -401,8 +401,10 @@ type SkillAdminServiceClient interface {
 	// 把当前指针切到该技能已有的某个版本。
 	//
 	// **它只切指针，不改任何字节**：版本不可变，回滚之后读到的就是目标版本那一份。
-	// 回滚之后**再来一次同步会切回远端最新**——那不是回滚失效，而是两条语义各说
-	// 各的：回滚说的是"现在我对外用哪一份"，同步说的是"追远端"。
+	//
+	// **回滚之后再同步不会把指针挪回去**：同步只在远端有新提交时动指针，而回滚
+	// 不改变"已同步到哪个提交"。这是刻意的——一次习惯性的同步不该悄悄撤销一次刚
+	// 做的回滚。要回到最新就再切一次指针。
 	SetCurrentSkillVersion(context.Context, *connect.Request[v1.SetCurrentSkillVersionRequest]) (*connect.Response[v1.SetCurrentSkillVersionResponse], error)
 	// 改说明层：标题、简介、标签。
 	//
@@ -524,8 +526,10 @@ type SkillAdminServiceHandler interface {
 	// 把当前指针切到该技能已有的某个版本。
 	//
 	// **它只切指针，不改任何字节**：版本不可变，回滚之后读到的就是目标版本那一份。
-	// 回滚之后**再来一次同步会切回远端最新**——那不是回滚失效，而是两条语义各说
-	// 各的：回滚说的是"现在我对外用哪一份"，同步说的是"追远端"。
+	//
+	// **回滚之后再同步不会把指针挪回去**：同步只在远端有新提交时动指针，而回滚
+	// 不改变"已同步到哪个提交"。这是刻意的——一次习惯性的同步不该悄悄撤销一次刚
+	// 做的回滚。要回到最新就再切一次指针。
 	SetCurrentSkillVersion(context.Context, *connect.Request[v1.SetCurrentSkillVersionRequest]) (*connect.Response[v1.SetCurrentSkillVersionResponse], error)
 	// 改说明层：标题、简介、标签。
 	//

@@ -282,13 +282,22 @@ func LoadServer(f ServerFlags) (ServerConfig, error) {
 	// 密钥不参与分层：它们没有配置键，只从环境变量读。
 	cfg.COS.SecretID, cfg.COS.SecretKey = cosSecretsFromEnv()
 	cfg.GithubClientSecret = githubClientSecretFromEnv()
+	cfg.Skill.GithubToken = githubTokenFromEnv()
 
 	return cfg, cfg.Validate()
 }
 
+// githubTokenFromEnv 读取技能目录从远端拉取时用的凭据。
+//
+// 与 cosSecretsFromEnv 同理：没有配置键，只从环境变量读。**空是合法取值**——
+// 匿名访问也能纳管公开仓库，只是限频额度低。
+func githubTokenFromEnv() string {
+	return os.Getenv(EnvGithubToken)
+}
+
 // cosSecretsFromEnv 读取头像存储的密钥。
 //
-// **这是本仓库仅有的两组"只有环境变量、没有配置键"的取值之一**，与开发种子
+// **这是本仓库仅有的三组"只有环境变量、没有配置键"的取值之一**，与开发种子
 // 旁路同类。理由不是"分层对它们没用"，而是让它们**无法**出现在配置文件里：
 // 配置文件会进版本库、进镜像、被贴给别人排查问题，而凭证不可以
 // （见 docs/design/config/credentials.md）。

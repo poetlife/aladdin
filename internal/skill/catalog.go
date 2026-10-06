@@ -312,6 +312,9 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 // 否则"这个技能上次真的更新是什么时候"会变成一个看不出答案的问题。
 //
 // 失败时当前指针**不动**：校验没过、远端挂了都只是"这一次没同步成功"。
+//
+// **回滚之后再同步不会把指针挪回去**：它只在远端有新提交时动指针，而回滚不改变
+// "已同步到哪个提交"。这是刻意的——一次习惯性的同步不该悄悄撤销一次刚做的回滚。
 func (s *Service) Resync(ctx context.Context, skillID string) (Skill, bool, error) {
 	if s.objects == nil {
 		return Skill{}, false, ErrObjectStoreUnavailable

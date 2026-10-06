@@ -147,8 +147,10 @@ service SkillAdminService {
   // 把当前指针切到该技能已有的某个版本。
   //
   // **它只切指针，不改任何字节**：版本不可变，回滚之后读到的就是目标版本那一份。
-  // 回滚之后**再来一次同步会切回远端最新**——那不是回滚失效，而是两条语义各说
-  // 各的：回滚说的是"现在我对外用哪一份"，同步说的是"追远端"。
+  //
+  // **回滚之后再同步不会把指针挪回去**：同步只在远端有新提交时动指针，而回滚
+  // 不改变"已同步到哪个提交"。这是刻意的——一次习惯性的同步不该悄悄撤销一次刚
+  // 做的回滚。要回到最新就再切一次指针。
   rpc SetCurrentSkillVersion(SetCurrentSkillVersionRequest) returns (SetCurrentSkillVersionResponse) {
     option (aladdin.rbac.v1.required_permission) = "skill.catalog.write";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
@@ -276,10 +278,13 @@ message SkillVersion {
 // 由"这个包有几个文件"决定，与"有没有人在用"无关。按人日记还有一条它没有的
 // 性质——**它有天然上界**：一个主体对一个技能一天最多贡献 1。
 message SkillUsage {
-  // 最近 30 天里有多少个人日用过它（同一个人在同一天算一次）。
-  uint32 use_days_30d = 1;
-  // 同期去重之后的主体数。
-  uint32 user_count_30d = 2;
+  // 窗口内有多少个人日用过它（同一个人在同一天算一次）。
+  //
+  // **字段名里不带窗口长度**：窗口是一个常量（30 天），把它写进字段名会让"换一个
+  // 窗口"变成一次破坏性改名，而它本来只是换一个取值。
+  uint32 use_days = 1;
+  // 窗口内去重之后的主体数。
+  uint32 user_count = 2;
   // 最近一次使用的时间。从未被取用时为空。
   string last_used_at = 3;
 }

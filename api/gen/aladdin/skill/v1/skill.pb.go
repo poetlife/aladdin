@@ -448,10 +448,13 @@ func (x *SkillVersion) GetCurrent() bool {
 // 性质——**它有天然上界**：一个主体对一个技能一天最多贡献 1。
 type SkillUsage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 最近 30 天里有多少个人日用过它（同一个人在同一天算一次）。
-	UseDays_30D uint32 `protobuf:"varint,1,opt,name=use_days_30d,json=useDays30d,proto3" json:"use_days_30d,omitempty"`
-	// 同期去重之后的主体数。
-	UserCount_30D uint32 `protobuf:"varint,2,opt,name=user_count_30d,json=userCount30d,proto3" json:"user_count_30d,omitempty"`
+	// 窗口内有多少个人日用过它（同一个人在同一天算一次）。
+	//
+	// **字段名里不带窗口长度**：窗口是一个常量（30 天），把它写进字段名会让"换一个
+	// 窗口"变成一次破坏性改名，而它本来只是换一个取值。
+	UseDays uint32 `protobuf:"varint,1,opt,name=use_days,json=useDays,proto3" json:"use_days,omitempty"`
+	// 窗口内去重之后的主体数。
+	UserCount uint32 `protobuf:"varint,2,opt,name=user_count,json=userCount,proto3" json:"user_count,omitempty"`
 	// 最近一次使用的时间。从未被取用时为空。
 	LastUsedAt    string `protobuf:"bytes,3,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -488,16 +491,16 @@ func (*SkillUsage) Descriptor() ([]byte, []int) {
 	return file_aladdin_skill_v1_skill_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *SkillUsage) GetUseDays_30D() uint32 {
+func (x *SkillUsage) GetUseDays() uint32 {
 	if x != nil {
-		return x.UseDays_30D
+		return x.UseDays
 	}
 	return 0
 }
 
-func (x *SkillUsage) GetUserCount_30D() uint32 {
+func (x *SkillUsage) GetUserCount() uint32 {
 	if x != nil {
-		return x.UserCount_30D
+		return x.UserCount
 	}
 	return 0
 }
@@ -1745,12 +1748,12 @@ const file_aladdin_skill_v1_skill_proto_rawDesc = "" +
 	"totalBytes\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\tR\tcreatedAt\x12\x18\n" +
-	"\acurrent\x18\x06 \x01(\bR\acurrent\"v\n" +
+	"\acurrent\x18\x06 \x01(\bR\acurrent\"h\n" +
 	"\n" +
-	"SkillUsage\x12 \n" +
-	"\fuse_days_30d\x18\x01 \x01(\rR\n" +
-	"useDays30d\x12$\n" +
-	"\x0euser_count_30d\x18\x02 \x01(\rR\fuserCount30d\x12 \n" +
+	"SkillUsage\x12\x19\n" +
+	"\buse_days\x18\x01 \x01(\rR\auseDays\x12\x1d\n" +
+	"\n" +
+	"user_count\x18\x02 \x01(\rR\tuserCount\x12 \n" +
 	"\flast_used_at\x18\x03 \x01(\tR\n" +
 	"lastUsedAt\"\xd2\x01\n" +
 	"\x11SkillCapabilities\x12'\n" +
