@@ -68,7 +68,10 @@ func testSkill(id string, at time.Time) skill.Skill {
 		ID:      id,
 		Title:   "",
 		Summary: "",
-		Tags:    []string{"出图", "排版"},
+		// 非空：这一列在两个写入路径上都要落得下去（创建带初值、SetCover 改它）。
+		// 用空值当夹具，漏掉一处的实现会照样通过。
+		CoverKey: skill.CoverKey(id),
+		Tags:     []string{"出图", "排版"},
 		Source: skill.Source{
 			Owner: "yanliudesign", Name: "mono-color-skill",
 			Ref: "main", SubPath: "skills/mono", Commit: "1f4a9c2d3e5b6a7089abcdef1234567890abcdef",
@@ -113,6 +116,10 @@ func TestStoreRoundTrip(t *testing.T) {
 			}
 			if got.Current.SkippedFiles != 3 {
 				t.Errorf("跳过的条数 = %d，期望 3（创建这条路上丢了？）", got.Current.SkippedFiles)
+			}
+			if got.CoverKey != skill.CoverKey("skl_a") {
+				t.Errorf("封面键 = %q，期望 %q（创建这条路上丢了？）",
+					got.CoverKey, skill.CoverKey("skl_a"))
 			}
 
 			items, err := store.ListSkills(ctx)
@@ -226,6 +233,48 @@ func TestStoreSetCurrentVersionRejectsForeignVersion(t *testing.T) {
 			}
 			if err := store.SetCurrentVersion(ctx, "skl_missing", "skv_skl_a"); !errors.Is(err, skill.ErrSkillNotFound) {
 				t.Errorf("技能不存在时 err = %v，期望 ErrSkillNotFound", err)
+			}
+		})
+	}
+}
+
+// 封面键能设也能清，且**不碰内容层任何一项**（它是说明层的一列）。
+func TestStoreSetCover(t *testing.T) {
+	at := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	for _, tc := range storeCases(t) {
+		t.Run(tc.name, func(t *testing.T) {
+			store := tc.open(t)
+			ctx := context.Background()
+			if err := store.CreateSkill(ctx, testSkill("skl_a", at)); err != nil {
+				t.Fatalf("创建技能: %v", err)
+			}
+			if err := store.SetCover(ctx, "skl_a", "skills/cover/other"); err != nil {
+				t.Fatalf("设置封面: %v", err)
+			}
+			got, err := store.GetSkill(ctx, "skl_a")
+			if err != nil {
+				t.Fatalf("读取技能: %v", err)
+			}
+			if got.CoverKey != "skills/cover/other" {
+				t.Errorf("封面键 = %q", got.CoverKey)
+			}
+			if got.Current.ID != "skv_skl_a" || len(got.Current.Files) != 2 {
+				t.Errorf("改封面碰了内容层: %+v", got.Current)
+			}
+
+			if err := store.SetCover(ctx, "skl_a", ""); err != nil {
+				t.Fatalf("清空封面: %v", err)
+			}
+			got, err = store.GetSkill(ctx, "skl_a")
+			if err != nil {
+				t.Fatalf("读取技能: %v", err)
+			}
+			if got.CoverKey != "" {
+				t.Errorf("清空之后封面键 = %q", got.CoverKey)
+			}
+
+			if err := store.SetCover(ctx, "skl_missing", "k"); !errors.Is(err, skill.ErrSkillNotFound) {
+				t.Errorf("技能不存在 err = %v，期望 ErrSkillNotFound", err)
 			}
 		})
 	}

@@ -7,6 +7,7 @@
 package skillv1
 
 import (
+	v1 "github.com/poetlife/aladdin/api/gen/aladdin/objectstore/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -67,7 +68,16 @@ type Skill struct {
 	Source *SkillSource `protobuf:"bytes,15,opt,name=source,proto3" json:"source,omitempty"`
 	// 当前版本的文件清单（路径 → 字节数 + 内容摘要）。**不含正文**
 	// （见 GetSkillFile）。
-	Files         []*SkillFile `protobuf:"bytes,16,rep,name=files,proto3" json:"files,omitempty"`
+	Files []*SkillFile `protobuf:"bytes,16,rep,name=files,proto3" json:"files,omitempty"`
+	// 封面的**短时读取地址**，列表与详情都给。空串表示这个技能没有封面，界面据此
+	// 渲染占位（标题首字 + 中性底），而不是去取一张不存在的图。
+	//
+	// 它是**预签名地址**：短时有效，过期后重新读一次就有新的。签名是本地计算、
+	// 不发网络请求，因此列表里 N 条技能不产生 N 次往返。
+	//
+	// **封面不是包的内容**：它属于说明层，不进文件清单、不进版本、不参与取用
+	// （见 docs/design/skill/catalog.md 的"封面"）。
+	CoverUrl      string `protobuf:"bytes,17,opt,name=cover_url,json=coverUrl,proto3" json:"cover_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -212,6 +222,13 @@ func (x *Skill) GetFiles() []*SkillFile {
 		return x.Files
 	}
 	return nil
+}
+
+func (x *Skill) GetCoverUrl() string {
+	if x != nil {
+		return x.CoverUrl
+	}
+	return ""
 }
 
 // SkillSource 是一个技能的内容从哪来。
@@ -1208,7 +1225,16 @@ type ImportSkillRequest struct {
 	Title   string `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
 	Summary string `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
 	// 可选的初始标签。
-	Tags          []string `protobuf:"bytes,6,rep,name=tags,proto3" json:"tags,omitempty"`
+	Tags []string `protobuf:"bytes,6,rep,name=tags,proto3" json:"tags,omitempty"`
+	// 可选的封面来源：**包内的一条图片路径**（如 `examples/cover.png`）。
+	//
+	// 服务端把这一条单独取回来、校验后存成封面。**它不进文件清单**——封面是说明层
+	// 的一项，不是包的内容（见 docs/design/skill/catalog.md 的"封面"）。因此这条
+	// 路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。
+	//
+	// 取不到、或类型与字节不符时**整次纳管失败**，与别的校验同一条：不留下"技能
+	// 进来了、只是没有封面"这种要人去猜的状态。
+	CoverPath     string `protobuf:"bytes,7,opt,name=cover_path,json=coverPath,proto3" json:"cover_path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1283,6 +1309,13 @@ func (x *ImportSkillRequest) GetTags() []string {
 		return x.Tags
 	}
 	return nil
+}
+
+func (x *ImportSkillRequest) GetCoverPath() string {
+	if x != nil {
+		return x.CoverPath
+	}
+	return ""
 }
 
 type ImportSkillResponse struct {
@@ -1717,11 +1750,297 @@ func (*DeleteSkillResponse) Descriptor() ([]byte, []int) {
 	return file_aladdin_skill_v1_skill_proto_rawDescGZIP(), []int{27}
 }
 
+type BeginSkillCoverUploadRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	SkillId string                 `protobuf:"bytes,1,opt,name=skill_id,json=skillId,proto3" json:"skill_id,omitempty"`
+	// 上传方声明的类型。服务端只校验它在白名单内——白名单里没有任何可执行类型，
+	// 而这正是这套链路能成立的原因。
+	ContentType string `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	// 上传方声明的字节数。服务端按它早退（省一次白传），真正的边界由存储侧执行。
+	SizeBytes     uint64 `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginSkillCoverUploadRequest) Reset() {
+	*x = BeginSkillCoverUploadRequest{}
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginSkillCoverUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginSkillCoverUploadRequest) ProtoMessage() {}
+
+func (x *BeginSkillCoverUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginSkillCoverUploadRequest.ProtoReflect.Descriptor instead.
+func (*BeginSkillCoverUploadRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_skill_v1_skill_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *BeginSkillCoverUploadRequest) GetSkillId() string {
+	if x != nil {
+		return x.SkillId
+	}
+	return ""
+}
+
+func (x *BeginSkillCoverUploadRequest) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *BeginSkillCoverUploadRequest) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+type BeginSkillCoverUploadResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 直传凭证。**只允许写、只对这个技能的封面这一个键有效、短时有效**，且允许
+	// 覆盖（封面是"当前这一张"）。
+	Upload        *v1.DirectUploadCredential `protobuf:"bytes,1,opt,name=upload,proto3" json:"upload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginSkillCoverUploadResponse) Reset() {
+	*x = BeginSkillCoverUploadResponse{}
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginSkillCoverUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginSkillCoverUploadResponse) ProtoMessage() {}
+
+func (x *BeginSkillCoverUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginSkillCoverUploadResponse.ProtoReflect.Descriptor instead.
+func (*BeginSkillCoverUploadResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_skill_v1_skill_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *BeginSkillCoverUploadResponse) GetUpload() *v1.DirectUploadCredential {
+	if x != nil {
+		return x.Upload
+	}
+	return nil
+}
+
+type CommitSkillCoverUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SkillId       string                 `protobuf:"bytes,1,opt,name=skill_id,json=skillId,proto3" json:"skill_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommitSkillCoverUploadRequest) Reset() {
+	*x = CommitSkillCoverUploadRequest{}
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommitSkillCoverUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommitSkillCoverUploadRequest) ProtoMessage() {}
+
+func (x *CommitSkillCoverUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommitSkillCoverUploadRequest.ProtoReflect.Descriptor instead.
+func (*CommitSkillCoverUploadRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_skill_v1_skill_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *CommitSkillCoverUploadRequest) GetSkillId() string {
+	if x != nil {
+		return x.SkillId
+	}
+	return ""
+}
+
+type CommitSkillCoverUploadResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 提交之后的那一份技能，省掉一次读取：调用方多半正要刷新卡片上的那张图。
+	Skill         *Skill `protobuf:"bytes,1,opt,name=skill,proto3" json:"skill,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommitSkillCoverUploadResponse) Reset() {
+	*x = CommitSkillCoverUploadResponse{}
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommitSkillCoverUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommitSkillCoverUploadResponse) ProtoMessage() {}
+
+func (x *CommitSkillCoverUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommitSkillCoverUploadResponse.ProtoReflect.Descriptor instead.
+func (*CommitSkillCoverUploadResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_skill_v1_skill_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *CommitSkillCoverUploadResponse) GetSkill() *Skill {
+	if x != nil {
+		return x.Skill
+	}
+	return nil
+}
+
+type DeleteSkillCoverRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SkillId       string                 `protobuf:"bytes,1,opt,name=skill_id,json=skillId,proto3" json:"skill_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSkillCoverRequest) Reset() {
+	*x = DeleteSkillCoverRequest{}
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSkillCoverRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSkillCoverRequest) ProtoMessage() {}
+
+func (x *DeleteSkillCoverRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSkillCoverRequest.ProtoReflect.Descriptor instead.
+func (*DeleteSkillCoverRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_skill_v1_skill_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *DeleteSkillCoverRequest) GetSkillId() string {
+	if x != nil {
+		return x.SkillId
+	}
+	return ""
+}
+
+type DeleteSkillCoverResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Skill         *Skill                 `protobuf:"bytes,1,opt,name=skill,proto3" json:"skill,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSkillCoverResponse) Reset() {
+	*x = DeleteSkillCoverResponse{}
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSkillCoverResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSkillCoverResponse) ProtoMessage() {}
+
+func (x *DeleteSkillCoverResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_skill_v1_skill_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSkillCoverResponse.ProtoReflect.Descriptor instead.
+func (*DeleteSkillCoverResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_skill_v1_skill_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *DeleteSkillCoverResponse) GetSkill() *Skill {
+	if x != nil {
+		return x.Skill
+	}
+	return nil
+}
+
 var File_aladdin_skill_v1_skill_proto protoreflect.FileDescriptor
 
 const file_aladdin_skill_v1_skill_proto_rawDesc = "" +
 	"\n" +
-	"\x1caladdin/skill/v1/skill.proto\x12\x10aladdin.skill.v1\x1a!aladdin/rbac/v1/annotations.proto\"\xca\x04\n" +
+	"\x1caladdin/skill/v1/skill.proto\x12\x10aladdin.skill.v1\x1a#aladdin/objectstore/v1/upload.proto\x1a!aladdin/rbac/v1/annotations.proto\"\xe7\x04\n" +
 	"\x05Skill\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x18\n" +
@@ -1741,7 +2060,8 @@ const file_aladdin_skill_v1_skill_proto_rawDesc = "" +
 	"\x12current_version_id\x18\r \x01(\tR\x10currentVersionId\x12;\n" +
 	"\x1acurrent_version_created_at\x18\x0e \x01(\tR\x17currentVersionCreatedAt\x125\n" +
 	"\x06source\x18\x0f \x01(\v2\x1d.aladdin.skill.v1.SkillSourceR\x06source\x121\n" +
-	"\x05files\x18\x10 \x03(\v2\x1b.aladdin.skill.v1.SkillFileR\x05files\"y\n" +
+	"\x05files\x18\x10 \x03(\v2\x1b.aladdin.skill.v1.SkillFileR\x05files\x12\x1b\n" +
+	"\tcover_url\x18\x11 \x01(\tR\bcoverUrl\"y\n" +
 	"\vSkillSource\x12%\n" +
 	"\x0erepository_url\x18\x01 \x01(\tR\rrepositoryUrl\x12\x10\n" +
 	"\x03ref\x18\x02 \x01(\tR\x03ref\x12\x19\n" +
@@ -1805,14 +2125,16 @@ const file_aladdin_skill_v1_skill_proto_rawDesc = "" +
 	"\x17SetSkillFavoriteRequest\x12\x19\n" +
 	"\bskill_id\x18\x01 \x01(\tR\askillId\x12\x1c\n" +
 	"\tfavorited\x18\x02 \x01(\bR\tfavorited\"\x1a\n" +
-	"\x18SetSkillFavoriteResponse\"\xac\x01\n" +
+	"\x18SetSkillFavoriteResponse\"\xcb\x01\n" +
 	"\x12ImportSkillRequest\x12%\n" +
 	"\x0erepository_url\x18\x01 \x01(\tR\rrepositoryUrl\x12\x10\n" +
 	"\x03ref\x18\x02 \x01(\tR\x03ref\x12\x19\n" +
 	"\bsub_path\x18\x03 \x01(\tR\asubPath\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x12\x18\n" +
 	"\asummary\x18\x05 \x01(\tR\asummary\x12\x12\n" +
-	"\x04tags\x18\x06 \x03(\tR\x04tags\"D\n" +
+	"\x04tags\x18\x06 \x03(\tR\x04tags\x12\x1d\n" +
+	"\n" +
+	"cover_path\x18\a \x01(\tR\tcoverPath\"D\n" +
 	"\x13ImportSkillResponse\x12-\n" +
 	"\x05skill\x18\x01 \x01(\v2\x17.aladdin.skill.v1.SkillR\x05skill\"/\n" +
 	"\x12ResyncSkillRequest\x12\x19\n" +
@@ -1835,7 +2157,22 @@ const file_aladdin_skill_v1_skill_proto_rawDesc = "" +
 	"\x05skill\x18\x01 \x01(\v2\x17.aladdin.skill.v1.SkillR\x05skill\"/\n" +
 	"\x12DeleteSkillRequest\x12\x19\n" +
 	"\bskill_id\x18\x01 \x01(\tR\askillId\"\x15\n" +
-	"\x13DeleteSkillResponse2\xfe\x05\n" +
+	"\x13DeleteSkillResponse\"{\n" +
+	"\x1cBeginSkillCoverUploadRequest\x12\x19\n" +
+	"\bskill_id\x18\x01 \x01(\tR\askillId\x12!\n" +
+	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x04R\tsizeBytes\"g\n" +
+	"\x1dBeginSkillCoverUploadResponse\x12F\n" +
+	"\x06upload\x18\x01 \x01(\v2..aladdin.objectstore.v1.DirectUploadCredentialR\x06upload\":\n" +
+	"\x1dCommitSkillCoverUploadRequest\x12\x19\n" +
+	"\bskill_id\x18\x01 \x01(\tR\askillId\"O\n" +
+	"\x1eCommitSkillCoverUploadResponse\x12-\n" +
+	"\x05skill\x18\x01 \x01(\v2\x17.aladdin.skill.v1.SkillR\x05skill\"4\n" +
+	"\x17DeleteSkillCoverRequest\x12\x19\n" +
+	"\bskill_id\x18\x01 \x01(\tR\askillId\"I\n" +
+	"\x18DeleteSkillCoverResponse\x12-\n" +
+	"\x05skill\x18\x01 \x01(\v2\x17.aladdin.skill.v1.SkillR\x05skill2\xfe\x05\n" +
 	"\fSkillService\x12s\n" +
 	"\x0fGetCapabilities\x12(.aladdin.skill.v1.GetCapabilitiesRequest\x1a).aladdin.skill.v1.GetCapabilitiesResponse\"\v\x90\x88'\x03\xa0\x88'\x01\x90\x02\x01\x12v\n" +
 	"\n" +
@@ -1843,13 +2180,16 @@ const file_aladdin_skill_v1_skill_proto_rawDesc = "" +
 	"\bGetSkill\x12!.aladdin.skill.v1.GetSkillRequest\x1a\".aladdin.skill.v1.GetSkillResponse\"\x1d\x8a\x88'\x12skill.catalog.read\x90\x88'\x03\x90\x02\x01\x12y\n" +
 	"\fGetSkillFile\x12%.aladdin.skill.v1.GetSkillFileRequest\x1a&.aladdin.skill.v1.GetSkillFileResponse\"\x1a\x8a\x88'\x12skill.catalog.read\x90\x88'\x03\x12\x8b\x01\n" +
 	"\x11ListSkillVersions\x12*.aladdin.skill.v1.ListSkillVersionsRequest\x1a+.aladdin.skill.v1.ListSkillVersionsResponse\"\x1d\x8a\x88'\x12skill.catalog.read\x90\x88'\x03\x90\x02\x01\x12\x85\x01\n" +
-	"\x10SetSkillFavorite\x12).aladdin.skill.v1.SetSkillFavoriteRequest\x1a*.aladdin.skill.v1.SetSkillFavoriteResponse\"\x1a\x8a\x88'\x12skill.catalog.read\x90\x88'\x032\xab\x05\n" +
+	"\x10SetSkillFavorite\x12).aladdin.skill.v1.SetSkillFavoriteRequest\x1a*.aladdin.skill.v1.SetSkillFavoriteResponse\"\x1a\x8a\x88'\x12skill.catalog.read\x90\x88'\x032\xe7\b\n" +
 	"\x11SkillAdminService\x12w\n" +
 	"\vImportSkill\x12$.aladdin.skill.v1.ImportSkillRequest\x1a%.aladdin.skill.v1.ImportSkillResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03\x12w\n" +
 	"\vResyncSkill\x12$.aladdin.skill.v1.ResyncSkillRequest\x1a%.aladdin.skill.v1.ResyncSkillResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03\x12\x98\x01\n" +
 	"\x16SetCurrentSkillVersion\x12/.aladdin.skill.v1.SetCurrentSkillVersionRequest\x1a0.aladdin.skill.v1.SetCurrentSkillVersionResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03\x12\x8f\x01\n" +
 	"\x13UpdateSkillMetadata\x12,.aladdin.skill.v1.UpdateSkillMetadataRequest\x1a-.aladdin.skill.v1.UpdateSkillMetadataResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03\x12w\n" +
-	"\vDeleteSkill\x12$.aladdin.skill.v1.DeleteSkillRequest\x1a%.aladdin.skill.v1.DeleteSkillResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03B>Z<github.com/poetlife/aladdin/api/gen/aladdin/skill/v1;skillv1b\x06proto3"
+	"\vDeleteSkill\x12$.aladdin.skill.v1.DeleteSkillRequest\x1a%.aladdin.skill.v1.DeleteSkillResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03\x12\x95\x01\n" +
+	"\x15BeginSkillCoverUpload\x12..aladdin.skill.v1.BeginSkillCoverUploadRequest\x1a/.aladdin.skill.v1.BeginSkillCoverUploadResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03\x12\x98\x01\n" +
+	"\x16CommitSkillCoverUpload\x12/.aladdin.skill.v1.CommitSkillCoverUploadRequest\x1a0.aladdin.skill.v1.CommitSkillCoverUploadResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03\x12\x86\x01\n" +
+	"\x10DeleteSkillCover\x12).aladdin.skill.v1.DeleteSkillCoverRequest\x1a*.aladdin.skill.v1.DeleteSkillCoverResponse\"\x1b\x8a\x88'\x13skill.catalog.write\x90\x88'\x03B>Z<github.com/poetlife/aladdin/api/gen/aladdin/skill/v1;skillv1b\x06proto3"
 
 var (
 	file_aladdin_skill_v1_skill_proto_rawDescOnce sync.Once
@@ -1863,7 +2203,7 @@ func file_aladdin_skill_v1_skill_proto_rawDescGZIP() []byte {
 	return file_aladdin_skill_v1_skill_proto_rawDescData
 }
 
-var file_aladdin_skill_v1_skill_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_aladdin_skill_v1_skill_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_aladdin_skill_v1_skill_proto_goTypes = []any{
 	(*Skill)(nil),                          // 0: aladdin.skill.v1.Skill
 	(*SkillSource)(nil),                    // 1: aladdin.skill.v1.SkillSource
@@ -1893,6 +2233,13 @@ var file_aladdin_skill_v1_skill_proto_goTypes = []any{
 	(*UpdateSkillMetadataResponse)(nil),    // 25: aladdin.skill.v1.UpdateSkillMetadataResponse
 	(*DeleteSkillRequest)(nil),             // 26: aladdin.skill.v1.DeleteSkillRequest
 	(*DeleteSkillResponse)(nil),            // 27: aladdin.skill.v1.DeleteSkillResponse
+	(*BeginSkillCoverUploadRequest)(nil),   // 28: aladdin.skill.v1.BeginSkillCoverUploadRequest
+	(*BeginSkillCoverUploadResponse)(nil),  // 29: aladdin.skill.v1.BeginSkillCoverUploadResponse
+	(*CommitSkillCoverUploadRequest)(nil),  // 30: aladdin.skill.v1.CommitSkillCoverUploadRequest
+	(*CommitSkillCoverUploadResponse)(nil), // 31: aladdin.skill.v1.CommitSkillCoverUploadResponse
+	(*DeleteSkillCoverRequest)(nil),        // 32: aladdin.skill.v1.DeleteSkillCoverRequest
+	(*DeleteSkillCoverResponse)(nil),       // 33: aladdin.skill.v1.DeleteSkillCoverResponse
+	(*v1.DirectUploadCredential)(nil),      // 34: aladdin.objectstore.v1.DirectUploadCredential
 }
 var file_aladdin_skill_v1_skill_proto_depIdxs = []int32{
 	4,  // 0: aladdin.skill.v1.Skill.usage:type_name -> aladdin.skill.v1.SkillUsage
@@ -1906,33 +2253,42 @@ var file_aladdin_skill_v1_skill_proto_depIdxs = []int32{
 	0,  // 8: aladdin.skill.v1.ResyncSkillResponse.skill:type_name -> aladdin.skill.v1.Skill
 	0,  // 9: aladdin.skill.v1.SetCurrentSkillVersionResponse.skill:type_name -> aladdin.skill.v1.Skill
 	0,  // 10: aladdin.skill.v1.UpdateSkillMetadataResponse.skill:type_name -> aladdin.skill.v1.Skill
-	6,  // 11: aladdin.skill.v1.SkillService.GetCapabilities:input_type -> aladdin.skill.v1.GetCapabilitiesRequest
-	8,  // 12: aladdin.skill.v1.SkillService.ListSkills:input_type -> aladdin.skill.v1.ListSkillsRequest
-	10, // 13: aladdin.skill.v1.SkillService.GetSkill:input_type -> aladdin.skill.v1.GetSkillRequest
-	12, // 14: aladdin.skill.v1.SkillService.GetSkillFile:input_type -> aladdin.skill.v1.GetSkillFileRequest
-	14, // 15: aladdin.skill.v1.SkillService.ListSkillVersions:input_type -> aladdin.skill.v1.ListSkillVersionsRequest
-	16, // 16: aladdin.skill.v1.SkillService.SetSkillFavorite:input_type -> aladdin.skill.v1.SetSkillFavoriteRequest
-	18, // 17: aladdin.skill.v1.SkillAdminService.ImportSkill:input_type -> aladdin.skill.v1.ImportSkillRequest
-	20, // 18: aladdin.skill.v1.SkillAdminService.ResyncSkill:input_type -> aladdin.skill.v1.ResyncSkillRequest
-	22, // 19: aladdin.skill.v1.SkillAdminService.SetCurrentSkillVersion:input_type -> aladdin.skill.v1.SetCurrentSkillVersionRequest
-	24, // 20: aladdin.skill.v1.SkillAdminService.UpdateSkillMetadata:input_type -> aladdin.skill.v1.UpdateSkillMetadataRequest
-	26, // 21: aladdin.skill.v1.SkillAdminService.DeleteSkill:input_type -> aladdin.skill.v1.DeleteSkillRequest
-	7,  // 22: aladdin.skill.v1.SkillService.GetCapabilities:output_type -> aladdin.skill.v1.GetCapabilitiesResponse
-	9,  // 23: aladdin.skill.v1.SkillService.ListSkills:output_type -> aladdin.skill.v1.ListSkillsResponse
-	11, // 24: aladdin.skill.v1.SkillService.GetSkill:output_type -> aladdin.skill.v1.GetSkillResponse
-	13, // 25: aladdin.skill.v1.SkillService.GetSkillFile:output_type -> aladdin.skill.v1.GetSkillFileResponse
-	15, // 26: aladdin.skill.v1.SkillService.ListSkillVersions:output_type -> aladdin.skill.v1.ListSkillVersionsResponse
-	17, // 27: aladdin.skill.v1.SkillService.SetSkillFavorite:output_type -> aladdin.skill.v1.SetSkillFavoriteResponse
-	19, // 28: aladdin.skill.v1.SkillAdminService.ImportSkill:output_type -> aladdin.skill.v1.ImportSkillResponse
-	21, // 29: aladdin.skill.v1.SkillAdminService.ResyncSkill:output_type -> aladdin.skill.v1.ResyncSkillResponse
-	23, // 30: aladdin.skill.v1.SkillAdminService.SetCurrentSkillVersion:output_type -> aladdin.skill.v1.SetCurrentSkillVersionResponse
-	25, // 31: aladdin.skill.v1.SkillAdminService.UpdateSkillMetadata:output_type -> aladdin.skill.v1.UpdateSkillMetadataResponse
-	27, // 32: aladdin.skill.v1.SkillAdminService.DeleteSkill:output_type -> aladdin.skill.v1.DeleteSkillResponse
-	22, // [22:33] is the sub-list for method output_type
-	11, // [11:22] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	34, // 11: aladdin.skill.v1.BeginSkillCoverUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
+	0,  // 12: aladdin.skill.v1.CommitSkillCoverUploadResponse.skill:type_name -> aladdin.skill.v1.Skill
+	0,  // 13: aladdin.skill.v1.DeleteSkillCoverResponse.skill:type_name -> aladdin.skill.v1.Skill
+	6,  // 14: aladdin.skill.v1.SkillService.GetCapabilities:input_type -> aladdin.skill.v1.GetCapabilitiesRequest
+	8,  // 15: aladdin.skill.v1.SkillService.ListSkills:input_type -> aladdin.skill.v1.ListSkillsRequest
+	10, // 16: aladdin.skill.v1.SkillService.GetSkill:input_type -> aladdin.skill.v1.GetSkillRequest
+	12, // 17: aladdin.skill.v1.SkillService.GetSkillFile:input_type -> aladdin.skill.v1.GetSkillFileRequest
+	14, // 18: aladdin.skill.v1.SkillService.ListSkillVersions:input_type -> aladdin.skill.v1.ListSkillVersionsRequest
+	16, // 19: aladdin.skill.v1.SkillService.SetSkillFavorite:input_type -> aladdin.skill.v1.SetSkillFavoriteRequest
+	18, // 20: aladdin.skill.v1.SkillAdminService.ImportSkill:input_type -> aladdin.skill.v1.ImportSkillRequest
+	20, // 21: aladdin.skill.v1.SkillAdminService.ResyncSkill:input_type -> aladdin.skill.v1.ResyncSkillRequest
+	22, // 22: aladdin.skill.v1.SkillAdminService.SetCurrentSkillVersion:input_type -> aladdin.skill.v1.SetCurrentSkillVersionRequest
+	24, // 23: aladdin.skill.v1.SkillAdminService.UpdateSkillMetadata:input_type -> aladdin.skill.v1.UpdateSkillMetadataRequest
+	26, // 24: aladdin.skill.v1.SkillAdminService.DeleteSkill:input_type -> aladdin.skill.v1.DeleteSkillRequest
+	28, // 25: aladdin.skill.v1.SkillAdminService.BeginSkillCoverUpload:input_type -> aladdin.skill.v1.BeginSkillCoverUploadRequest
+	30, // 26: aladdin.skill.v1.SkillAdminService.CommitSkillCoverUpload:input_type -> aladdin.skill.v1.CommitSkillCoverUploadRequest
+	32, // 27: aladdin.skill.v1.SkillAdminService.DeleteSkillCover:input_type -> aladdin.skill.v1.DeleteSkillCoverRequest
+	7,  // 28: aladdin.skill.v1.SkillService.GetCapabilities:output_type -> aladdin.skill.v1.GetCapabilitiesResponse
+	9,  // 29: aladdin.skill.v1.SkillService.ListSkills:output_type -> aladdin.skill.v1.ListSkillsResponse
+	11, // 30: aladdin.skill.v1.SkillService.GetSkill:output_type -> aladdin.skill.v1.GetSkillResponse
+	13, // 31: aladdin.skill.v1.SkillService.GetSkillFile:output_type -> aladdin.skill.v1.GetSkillFileResponse
+	15, // 32: aladdin.skill.v1.SkillService.ListSkillVersions:output_type -> aladdin.skill.v1.ListSkillVersionsResponse
+	17, // 33: aladdin.skill.v1.SkillService.SetSkillFavorite:output_type -> aladdin.skill.v1.SetSkillFavoriteResponse
+	19, // 34: aladdin.skill.v1.SkillAdminService.ImportSkill:output_type -> aladdin.skill.v1.ImportSkillResponse
+	21, // 35: aladdin.skill.v1.SkillAdminService.ResyncSkill:output_type -> aladdin.skill.v1.ResyncSkillResponse
+	23, // 36: aladdin.skill.v1.SkillAdminService.SetCurrentSkillVersion:output_type -> aladdin.skill.v1.SetCurrentSkillVersionResponse
+	25, // 37: aladdin.skill.v1.SkillAdminService.UpdateSkillMetadata:output_type -> aladdin.skill.v1.UpdateSkillMetadataResponse
+	27, // 38: aladdin.skill.v1.SkillAdminService.DeleteSkill:output_type -> aladdin.skill.v1.DeleteSkillResponse
+	29, // 39: aladdin.skill.v1.SkillAdminService.BeginSkillCoverUpload:output_type -> aladdin.skill.v1.BeginSkillCoverUploadResponse
+	31, // 40: aladdin.skill.v1.SkillAdminService.CommitSkillCoverUpload:output_type -> aladdin.skill.v1.CommitSkillCoverUploadResponse
+	33, // 41: aladdin.skill.v1.SkillAdminService.DeleteSkillCover:output_type -> aladdin.skill.v1.DeleteSkillCoverResponse
+	28, // [28:42] is the sub-list for method output_type
+	14, // [14:28] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_aladdin_skill_v1_skill_proto_init() }
@@ -1946,7 +2302,7 @@ func file_aladdin_skill_v1_skill_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aladdin_skill_v1_skill_proto_rawDesc), len(file_aladdin_skill_v1_skill_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

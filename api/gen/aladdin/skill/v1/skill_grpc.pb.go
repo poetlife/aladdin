@@ -438,6 +438,9 @@ const (
 	SkillAdminService_SetCurrentSkillVersion_FullMethodName = "/aladdin.skill.v1.SkillAdminService/SetCurrentSkillVersion"
 	SkillAdminService_UpdateSkillMetadata_FullMethodName    = "/aladdin.skill.v1.SkillAdminService/UpdateSkillMetadata"
 	SkillAdminService_DeleteSkill_FullMethodName            = "/aladdin.skill.v1.SkillAdminService/DeleteSkill"
+	SkillAdminService_BeginSkillCoverUpload_FullMethodName  = "/aladdin.skill.v1.SkillAdminService/BeginSkillCoverUpload"
+	SkillAdminService_CommitSkillCoverUpload_FullMethodName = "/aladdin.skill.v1.SkillAdminService/CommitSkillCoverUpload"
+	SkillAdminService_DeleteSkillCover_FullMethodName       = "/aladdin.skill.v1.SkillAdminService/DeleteSkillCover"
 )
 
 // SkillAdminServiceClient is the client API for SkillAdminService service.
@@ -499,6 +502,25 @@ type SkillAdminServiceClient interface {
 	// "哪些对象还在被引用"要一次全量对账才答得上来，因此与 galaxy 的孤儿对象回收
 	// 合并处理。不可逆。
 	DeleteSkill(ctx context.Context, in *DeleteSkillRequest, opts ...grpc.CallOption) (*DeleteSkillResponse, error)
+	// 开始一次封面上传：签发一份直传凭证。
+	//
+	// **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
+	// 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+	//
+	// 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
+	// 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
+	// docs/design/skill/catalog.md 的"封面"）。
+	BeginSkillCoverUpload(ctx context.Context, in *BeginSkillCoverUploadRequest, opts ...grpc.CallOption) (*BeginSkillCoverUploadResponse, error)
+	// 提交一次封面上传：核对字节确实到了，把技能指向它。
+	//
+	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
+	// Head：不存在即失败，字节数超过上限即失败并删除对象。
+	CommitSkillCoverUpload(ctx context.Context, in *CommitSkillCoverUploadRequest, opts ...grpc.CallOption) (*CommitSkillCoverUploadResponse, error)
+	// 移除封面。没有封面时也成功（幂等）。
+	//
+	// 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
+	DeleteSkillCover(ctx context.Context, in *DeleteSkillCoverRequest, opts ...grpc.CallOption) (*DeleteSkillCoverResponse, error)
 }
 
 type skillAdminServiceClient struct {
@@ -553,6 +575,36 @@ func (c *skillAdminServiceClient) DeleteSkill(ctx context.Context, in *DeleteSki
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteSkillResponse)
 	err := c.cc.Invoke(ctx, SkillAdminService_DeleteSkill_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *skillAdminServiceClient) BeginSkillCoverUpload(ctx context.Context, in *BeginSkillCoverUploadRequest, opts ...grpc.CallOption) (*BeginSkillCoverUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginSkillCoverUploadResponse)
+	err := c.cc.Invoke(ctx, SkillAdminService_BeginSkillCoverUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *skillAdminServiceClient) CommitSkillCoverUpload(ctx context.Context, in *CommitSkillCoverUploadRequest, opts ...grpc.CallOption) (*CommitSkillCoverUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommitSkillCoverUploadResponse)
+	err := c.cc.Invoke(ctx, SkillAdminService_CommitSkillCoverUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *skillAdminServiceClient) DeleteSkillCover(ctx context.Context, in *DeleteSkillCoverRequest, opts ...grpc.CallOption) (*DeleteSkillCoverResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteSkillCoverResponse)
+	err := c.cc.Invoke(ctx, SkillAdminService_DeleteSkillCover_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -618,6 +670,25 @@ type SkillAdminServiceServer interface {
 	// "哪些对象还在被引用"要一次全量对账才答得上来，因此与 galaxy 的孤儿对象回收
 	// 合并处理。不可逆。
 	DeleteSkill(context.Context, *DeleteSkillRequest) (*DeleteSkillResponse, error)
+	// 开始一次封面上传：签发一份直传凭证。
+	//
+	// **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
+	// 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+	//
+	// 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
+	// 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
+	// docs/design/skill/catalog.md 的"封面"）。
+	BeginSkillCoverUpload(context.Context, *BeginSkillCoverUploadRequest) (*BeginSkillCoverUploadResponse, error)
+	// 提交一次封面上传：核对字节确实到了，把技能指向它。
+	//
+	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
+	// Head：不存在即失败，字节数超过上限即失败并删除对象。
+	CommitSkillCoverUpload(context.Context, *CommitSkillCoverUploadRequest) (*CommitSkillCoverUploadResponse, error)
+	// 移除封面。没有封面时也成功（幂等）。
+	//
+	// 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
+	DeleteSkillCover(context.Context, *DeleteSkillCoverRequest) (*DeleteSkillCoverResponse, error)
 	mustEmbedUnimplementedSkillAdminServiceServer()
 }
 
@@ -642,6 +713,15 @@ func (UnimplementedSkillAdminServiceServer) UpdateSkillMetadata(context.Context,
 }
 func (UnimplementedSkillAdminServiceServer) DeleteSkill(context.Context, *DeleteSkillRequest) (*DeleteSkillResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSkill not implemented")
+}
+func (UnimplementedSkillAdminServiceServer) BeginSkillCoverUpload(context.Context, *BeginSkillCoverUploadRequest) (*BeginSkillCoverUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginSkillCoverUpload not implemented")
+}
+func (UnimplementedSkillAdminServiceServer) CommitSkillCoverUpload(context.Context, *CommitSkillCoverUploadRequest) (*CommitSkillCoverUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitSkillCoverUpload not implemented")
+}
+func (UnimplementedSkillAdminServiceServer) DeleteSkillCover(context.Context, *DeleteSkillCoverRequest) (*DeleteSkillCoverResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSkillCover not implemented")
 }
 func (UnimplementedSkillAdminServiceServer) mustEmbedUnimplementedSkillAdminServiceServer() {}
 func (UnimplementedSkillAdminServiceServer) testEmbeddedByValue()                           {}
@@ -754,6 +834,60 @@ func _SkillAdminService_DeleteSkill_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SkillAdminService_BeginSkillCoverUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginSkillCoverUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SkillAdminServiceServer).BeginSkillCoverUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SkillAdminService_BeginSkillCoverUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SkillAdminServiceServer).BeginSkillCoverUpload(ctx, req.(*BeginSkillCoverUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SkillAdminService_CommitSkillCoverUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitSkillCoverUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SkillAdminServiceServer).CommitSkillCoverUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SkillAdminService_CommitSkillCoverUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SkillAdminServiceServer).CommitSkillCoverUpload(ctx, req.(*CommitSkillCoverUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SkillAdminService_DeleteSkillCover_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSkillCoverRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SkillAdminServiceServer).DeleteSkillCover(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SkillAdminService_DeleteSkillCover_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SkillAdminServiceServer).DeleteSkillCover(ctx, req.(*DeleteSkillCoverRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SkillAdminService_ServiceDesc is the grpc.ServiceDesc for SkillAdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -780,6 +914,18 @@ var SkillAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteSkill",
 			Handler:    _SkillAdminService_DeleteSkill_Handler,
+		},
+		{
+			MethodName: "BeginSkillCoverUpload",
+			Handler:    _SkillAdminService_BeginSkillCoverUpload_Handler,
+		},
+		{
+			MethodName: "CommitSkillCoverUpload",
+			Handler:    _SkillAdminService_CommitSkillCoverUpload_Handler,
+		},
+		{
+			MethodName: "DeleteSkillCover",
+			Handler:    _SkillAdminService_DeleteSkillCover_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

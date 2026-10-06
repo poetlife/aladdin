@@ -28,6 +28,8 @@ type fakeRemote struct {
 	commit string
 	// files 是按提交存的树。
 	trees map[string]map[string]string
+	// blobs 是 FetchTree 走过的对象（假的标识 → 字节），供 FetchBlob 反查。
+	blobs map[string][]byte
 	// resolveErr / fetchErr 让测试指定一次远端失败。
 	resolveErr error
 	fetchErr   error
@@ -38,7 +40,11 @@ type fakeRemote struct {
 }
 
 func newFakeRemote() *fakeRemote {
-	return &fakeRemote{commit: testSHA, trees: map[string]map[string]string{}}
+	return &fakeRemote{
+		commit: testSHA,
+		trees:  map[string]map[string]string{},
+		blobs:  map[string][]byte{},
+	}
 }
 
 func (f *fakeRemote) setTree(commit string, files map[string]string) {
@@ -80,13 +86,36 @@ func (f *fakeRemote) FetchTree(_ context.Context, repo Repository, commit, subPa
 		}
 		relative := trimSubPath(path, subPath)
 		data := []byte(tree[path])
+		// 假的对象标识按**仓库内的路径**派生，与子路径无关：同一份字节在带子路径与
+		// 不带子路径的两次取回里是同一个对象，与真实实现一致（那边用的是 git 的 sha）。
+		sha := "sha-" + path
+		f.blobs[sha] = data
+		out.Blobs = append(out.Blobs, Blob{Path: relative, SHA: sha, Size: int64(len(data))})
 		if len(data) > MaxFileBytes || !isText(data) {
 			out.Skipped = append(out.Skipped, relative)
 			continue
 		}
 		out.Files = append(out.Files, FetchedFile{Path: relative, Data: data})
 	}
+	sort.Slice(out.Blobs, func(i, j int) bool { return out.Blobs[i].Path < out.Blobs[j].Path })
 	return out, nil
+}
+
+// FetchBlob 按 FetchTree 给过的标识取字节。
+//
+// 它存在的理由是**包外的东西要能按路径找**——目前唯一的消费方是封面：那一张多半
+// 正是被跳过的那类二进制，而它仍然得能被取回来（见 cover.go）。
+func (f *fakeRemote) FetchBlob(_ context.Context, _ Repository, sha string, maxBytes int64) ([]byte, error) {
+	data, ok := f.blobs[sha]
+	if !ok {
+		return nil, fmt.Errorf("%w: 没有这个对象", ErrRepositoryNotFound)
+	}
+	// 上限由调用方给，假实现照它执行：不执行的话，"取封面时错用了包里的单文件上限"
+	// 这条就漏过去了。
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%w: 取回的对象超过 %d 字节", ErrPackageInvalid, maxBytes)
+	}
+	return data, nil
 }
 
 func hasPrefixSegment(path, prefix string) bool {

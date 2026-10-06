@@ -13,6 +13,8 @@ import {
   Space,
   Tag,
   Typography,
+  Upload,
+  theme,
 } from 'antd'
 import { ArrowLeft, RefreshCw, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -25,6 +27,7 @@ import type { Skill, SkillVersion } from '../../gen/proto/aladdin/skill/v1/skill
 import { MONOSPACE } from '../../theme/monospace'
 import { AppModal } from '../../ui/AppModal'
 import { formatTime } from '../galaxy/format-time'
+import { SkillCover } from './SkillCover'
 
 /** SKILL.md 是包契约要求的那份清单文件，也是取用时默认要读的那一份。 */
 const MANIFEST_PATH = 'SKILL.md'
@@ -52,6 +55,7 @@ export function SkillDetailPage(): React.ReactNode {
   const skillId = params.skillId ?? ''
 
   const [form] = Form.useForm<MetadataFormValues>()
+  const { token } = theme.useToken()
   const [skill, setSkill] = useState<Skill | null>(null)
   const [versions, setVersions] = useState<SkillVersion[]>([])
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
@@ -134,6 +138,31 @@ export function SkillDetailPage(): React.ReactNode {
               刷新
             </Button>
             <PermissionGate require={PermissionCodes.SkillCatalogWrite}>
+              {/* 换封面走完三步（签发 → 直传 → 提交），都在 api/skill 里。这里只负责
+                  把文件递进去：**字节不经过服务端**，也不经过这个组件。 */}
+              <Upload
+                accept="image/png,image/jpeg,image/gif"
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  void runAction(async () => {
+                    await skillApi.updateCover(skill.id, file)
+                  })
+                  // 返回 false：上传由我们自己走那条直传链路，不让 antd 再发一次。
+                  return false
+                }}
+              >
+                <Button disabled={busy}>换封面</Button>
+              </Upload>
+              {skill.coverUrl !== '' && (
+                <Popconfirm
+                  title="移除这张封面？"
+                  description="技能本身与它的内容都不受影响。"
+                  okText="移除"
+                  onConfirm={() => void runAction(() => skillApi.deleteCover(skill.id))}
+                >
+                  <Button disabled={busy}>移除封面</Button>
+                </Popconfirm>
+              )}
               <Button
                 disabled={busy}
                 onClick={() => {
@@ -172,6 +201,12 @@ export function SkillDetailPage(): React.ReactNode {
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           {failure !== null && <Alert type="error" showIcon message={failure} />}
+
+          {/* 封面是说明层的一项，**不是包的内容**（见 docs/design/skill/catalog.md）：
+              所以它排在说明之前，而不混进下面那份文件清单里。 */}
+          <div style={{ borderRadius: token.borderRadius, overflow: 'hidden', maxWidth: 480 }}>
+            <SkillCover skill={skill} height={180} />
+          </div>
 
           <Typography.Paragraph>{skill.summary}</Typography.Paragraph>
 

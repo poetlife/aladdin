@@ -1,4 +1,5 @@
 import type { Skill } from '../gen/proto/aladdin/skill/v1/skill_pb'
+import { directUpload } from '../upload/direct-upload'
 import { skillAdminClient, skillClient } from './transport'
 
 /**
@@ -75,6 +76,44 @@ export async function importSkill(input: {
 /** 追远端：有新提交就产生新版本并生效。changed 为假表示远端没有变化。 */
 export async function resyncSkill(skillId: string) {
   return skillAdminClient().resyncSkill({ skillId })
+}
+
+/**
+ * 开始一次封面上传：签发一份直传凭证。
+ *
+ * **字节不经过服务端**：服务端只校验声明的类型与大小，真正的边界由存储侧按策略
+ * 执行。三步的顺序见 updateCover。
+ */
+export async function beginCoverUpload(skillId: string, contentType: string, sizeBytes: number) {
+  return skillAdminClient().beginSkillCoverUpload({ skillId, contentType, sizeBytes })
+}
+
+/** 提交一次封面上传：核对对象确实到了，把技能指向它。 */
+export async function commitCoverUpload(skillId: string) {
+  return skillAdminClient().commitSkillCoverUpload({ skillId })
+}
+
+/** 移除封面。没有封面时也成功（幂等）。 */
+export async function deleteCover(skillId: string) {
+  return skillAdminClient().deleteSkillCover({ skillId })
+}
+
+/**
+ * 换一张封面：**三步走完**——签发 → 直传 → 提交。
+ *
+ * 三步收在一处，是因为漏掉任何一步都会留下一个说不清的状态：只签发不提交是"桶上
+ * 有对象、技能没指向它"，只提交不直传是"技能指向一个空键"。凭证**用完即弃**，
+ * 不缓存、也不复用到别的上传（见 ../upload/direct-upload.ts）。
+ */
+export async function updateCover(skillId: string, file: File): Promise<Skill> {
+  const begin = await beginCoverUpload(skillId, file.type, file.size)
+  if (begin.upload === undefined) {
+    throw new Error('服务端没有返回直传凭证')
+  }
+  await directUpload(begin.upload, file, file.type)
+  // 提交回的是**服务端的那一份**：据此刷新，而不是在本地猜封面地址。
+  const done = await commitCoverUpload(skillId)
+  return done.skill!
 }
 
 /** 把当前指针切到某个已有版本。回滚只切指针，不改任何字节。 */

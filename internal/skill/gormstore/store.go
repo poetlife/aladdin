@@ -128,6 +128,7 @@ func (s *Store) CreateSkill(ctx context.Context, item skill.Skill) error {
 			ID:               item.ID,
 			Title:            item.Title,
 			Summary:          item.Summary,
+			CoverKey:         item.CoverKey,
 			SourceOwner:      item.Source.Owner,
 			SourceName:       item.Source.Name,
 			SourceRef:        item.Source.Ref,
@@ -275,6 +276,20 @@ func (s *Store) UpdateMetadata(ctx context.Context, skillID, title, summary stri
 			return err
 		}
 		return unavailable("更新技能说明层", err)
+	}
+	return nil
+}
+
+// SetCover 实现 skill.Store。
+func (s *Store) SetCover(ctx context.Context, skillID, coverKey string) error {
+	result := s.db.WithContext(ctx).Model(&database.SkillRecord{}).
+		Where("id = ?", skillID).
+		Updates(map[string]any{"cover_key": coverKey, "updated_at": time.Now()})
+	if result.Error != nil {
+		return unavailable("更新技能封面", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return skill.ErrSkillNotFound
 	}
 	return nil
 }
@@ -513,10 +528,11 @@ func encodeFiles(files []skill.File) ([]database.SkillFileRecord, error) {
 // toSkill 把记录折成领域类型。
 func toSkill(record database.SkillRecord, version database.SkillVersionRecord, tags []string) skill.Skill {
 	return skill.Skill{
-		ID:      record.ID,
-		Title:   record.Title,
-		Summary: record.Summary,
-		Tags:    tags,
+		ID:       record.ID,
+		Title:    record.Title,
+		Summary:  record.Summary,
+		CoverKey: record.CoverKey,
+		Tags:     tags,
 		Source: skill.Source{
 			Owner:   record.SourceOwner,
 			Name:    record.SourceName,

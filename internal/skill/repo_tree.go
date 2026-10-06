@@ -30,6 +30,32 @@ type Tree struct {
 	Files []FetchedFile
 	// Skipped 是被跳过的条目的包内路径（不是文本、或超过单文件上限的）。
 	Skipped []string
+	// Blobs 是子路径之下的**全部**文件对象（含被跳过的），按路径排序。
+	//
+	// 它存在的理由是"包外的东西要按路径找"——目前唯一的消费方是封面：封面多半
+	// 正是被跳过的那类二进制，而它仍然得能被取回来（见 cover.go）。有了这张表，
+	// 取封面不必再向远端问一次目录树。
+	Blobs []Blob
+}
+
+// Blob 是仓库里的一个文件对象，不论平台收不收它。
+type Blob struct {
+	// Path 是包内相对路径。
+	Path string
+	// SHA 是它在 git 里的对象标识。按它取字节，不按路径取。
+	SHA string
+	// Size 是字节数，取自目录树。
+	Size int64
+}
+
+// Blob 按路径取一条文件对象。第二个返回值为假表示这一棵里没有它。
+func (t Tree) Blob(path string) (Blob, bool) {
+	for _, blob := range t.Blobs {
+		if blob.Path == path {
+			return blob, true
+		}
+	}
+	return Blob{}, false
 }
 
 // repoTreeEntry 是 GitHub 目录树接口里的一条。
@@ -69,6 +95,8 @@ type repoPlan struct {
 	// 那一步才知道（见 GithubRemote.FetchTree）。超限的则这里就能判，于是那些
 	// 几十 MB 的示例图**一个请求都不发**。
 	Skipped []string
+	// Blobs 是子路径之下的全部文件对象，按路径排序。
+	Blobs []Blob
 }
 
 // planRepoTree 把一棵目录树折成一份取字节的计划（唯一入口）。
@@ -98,6 +126,7 @@ func planRepoTree(entries []repoTreeEntry, subPath string) (repoPlan, error) {
 			// 目录：正常，不是内容。
 			continue
 		}
+		plan.Blobs = append(plan.Blobs, Blob{Path: relative, SHA: entry.SHA, Size: entry.Size})
 		if entry.Size > MaxFileBytes {
 			plan.Skipped = append(plan.Skipped, relative)
 			continue
@@ -106,6 +135,7 @@ func planRepoTree(entries []repoTreeEntry, subPath string) (repoPlan, error) {
 	}
 	// 顺序固定：同样的一棵树在任何一次、任何一个实现里给出同样的清单。
 	sort.Slice(plan.Files, func(i, j int) bool { return plan.Files[i].Path < plan.Files[j].Path })
+	sort.Slice(plan.Blobs, func(i, j int) bool { return plan.Blobs[i].Path < plan.Blobs[j].Path })
 	sort.Strings(plan.Skipped)
 	return plan, nil
 }

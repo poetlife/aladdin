@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	skillv1 "github.com/poetlife/aladdin/api/gen/aladdin/skill/v1"
+	"github.com/poetlife/aladdin/internal/imagetype"
 	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/skill"
 	"github.com/poetlife/aladdin/internal/tagging"
@@ -165,6 +166,7 @@ func toProtoSkill(view skill.View, detail bool) *skillv1.Skill {
 		Summary:    item.EffectiveSummary(),
 		Tags:       item.Tags,
 		Favorited:  view.Favorited,
+		CoverUrl:   view.CoverURL,
 		FileCount:  fitUint32(int64(len(item.Current.Files))),
 		TotalBytes: fitUint64(item.Current.TotalBytes()),
 		Usage: &skillv1.SkillUsage{
@@ -241,6 +243,13 @@ func toSkillConnectError(err error) error {
 	case errors.Is(err, skill.ErrPackageInvalid):
 		// 消息里点名了那一处（哪一个路径、违反了哪一条），因此原样透出。
 		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
+	case errors.Is(err, skill.ErrCoverNotAllowed),
+		errors.Is(err, imagetype.ErrTypeNotAllowed):
+		// 消息里点名了那一条路径或那一个类型，因此原样透出。
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
+	case errors.Is(err, skill.ErrCoverTooLarge):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("封面不能超过 %d MiB", imagetype.MaxBytes/(1024*1024)))
 	case errors.Is(err, skill.ErrTitleTooLong):
 		return connect.NewError(connect.CodeInvalidArgument,
 			fmt.Errorf("技能标题不能超过 %d 个字", skill.MaxTitleRunes))

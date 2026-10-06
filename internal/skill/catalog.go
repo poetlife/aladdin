@@ -92,6 +92,12 @@ type View struct {
 	Favorited bool
 	// Usage 是最近 30 天的使用量。**只有计数，没有"谁"**。
 	Usage Usage
+	// CoverURL 是封面的短时读取地址。空串表示没有封面（或这个部署没有对象存储），
+	// 界面据此渲染占位。
+	//
+	// 它**不在 Skill 上**：地址是每次读取时签发的，落进领域对象只会让人以为它是一个
+	// 可以存下来的取值。
+	CoverURL string
 }
 
 // ListResult 是一次列表的结论。
@@ -142,11 +148,10 @@ func (s *Service) ListSkills(ctx context.Context, subjectID string, filter Filte
 		if !matchesFilter(item, filter.Query, wanted, filter.FavoritedOnly, favorites) {
 			continue
 		}
-		matched = append(matched, View{
-			Skill:     item,
-			Favorited: favorites[item.ID],
-			Usage:     usage[item.ID],
-		})
+		view := s.ViewOf(ctx, item)
+		view.Favorited = favorites[item.ID]
+		view.Usage = usage[item.ID]
+		matched = append(matched, view)
 	}
 	sortViews(matched)
 
@@ -171,7 +176,10 @@ func (s *Service) GetSkill(ctx context.Context, subjectID, skillID string) (View
 	if err != nil {
 		return View{}, err
 	}
-	return View{Skill: item, Favorited: favorites[skillID], Usage: usage[skillID]}, nil
+	view := s.ViewOf(ctx, item)
+	view.Favorited = favorites[skillID]
+	view.Usage = usage[skillID]
+	return view, nil
 }
 
 // FileContent 是一次取用的结果。
@@ -238,6 +246,11 @@ type ImportParams struct {
 	Summary string
 	// Tags 是初始标签。
 	Tags []string
+	// CoverPath 是可选的封面来源：**包内的一条图片路径**。
+	//
+	// 它单独被取回来（多半正是被跳过的那类二进制），存成封面。**不进文件清单**：
+	// 封面是说明层的一项，不是包的内容（见 cover.go）。
+	CoverPath string
 }
 
 // Import 从远端纳管一个新技能（唯一入口）。
@@ -267,21 +280,35 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 	if err != nil {
 		return Skill{}, err
 	}
-	pkg, skipped, err := s.fetchPackage(ctx, repo, commit, subPath)
+	pkg, tree, err := s.fetchPackage(ctx, repo, commit, subPath)
 	if err != nil {
 		return Skill{}, err
+	}
+	// 封面在**落地之前**取回来并校验完：取不到就是整次纳管失败，与别的校验同一条
+	// ——不留下"技能进来了、只是没有封面"这种要人去猜的状态（见 onboarding.md）。
+	var cover Cover
+	if params.CoverPath != "" {
+		cover, err = s.pickCover(ctx, repo, tree, params.CoverPath)
+		if err != nil {
+			return Skill{}, err
+		}
 	}
 
 	skillID, err := NewSkillID()
 	if err != nil {
 		return Skill{}, err
 	}
-	version, err := s.newVersion(skillID, commit, pkg, len(skipped))
+	version, err := s.newVersion(skillID, commit, pkg, len(tree.Skipped))
 	if err != nil {
 		return Skill{}, err
 	}
 	if err := s.writeObjects(ctx, pkg); err != nil {
 		return Skill{}, err
+	}
+	if params.CoverPath != "" {
+		if err := s.writeCover(ctx, skillID, cover); err != nil {
+			return Skill{}, err
+		}
 	}
 
 	item := Skill{
@@ -293,7 +320,8 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 			Owner: repo.Owner, Name: repo.Name,
 			Ref: ref, SubPath: subPath, Commit: commit,
 		},
-		Current: version,
+		CoverKey: coverKeyFor(skillID, params.CoverPath),
+		Current:  version,
 	}
 	if err := s.store.CreateSkill(ctx, item); err != nil {
 		return Skill{}, err
@@ -303,7 +331,7 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 		zap.String("repository", repo.Owner+"/"+repo.Name),
 		zap.String("commit", commit),
 		zap.Int("files", len(version.Files)),
-		zap.Int("skipped_files", len(skipped)))
+		zap.Int("skipped_files", len(tree.Skipped)))
 	return item, nil
 }
 
@@ -340,11 +368,11 @@ func (s *Service) Resync(ctx context.Context, skillID string) (Skill, bool, erro
 	if commit == current.Source.Commit {
 		return current, false, nil
 	}
-	pkg, skipped, err := s.fetchPackage(ctx, repo, commit, subPath)
+	pkg, tree, err := s.fetchPackage(ctx, repo, commit, subPath)
 	if err != nil {
 		return Skill{}, false, err
 	}
-	version, err := s.newVersion(skillID, commit, pkg, len(skipped))
+	version, err := s.newVersion(skillID, commit, pkg, len(tree.Skipped))
 	if err != nil {
 		return Skill{}, false, err
 	}
@@ -360,7 +388,7 @@ func (s *Service) Resync(ctx context.Context, skillID string) (Skill, bool, erro
 		zap.String("skill_id", skillID),
 		zap.String("commit", commit),
 		zap.Int("files", len(version.Files)),
-		zap.Int("skipped_files", len(skipped)))
+		zap.Int("skipped_files", len(tree.Skipped)))
 	updated, err := s.store.GetSkill(ctx, skillID)
 	if err != nil {
 		return Skill{}, false, err
@@ -402,11 +430,20 @@ func (s *Service) UpdateMetadata(ctx context.Context, skillID, title, summary st
 // 删的是**行**：技能、版本、标签、收藏与使用记录一起消失，而桶上的字节不删
 // （见 package.go 的 ContentObjectKey）。
 func (s *Service) Delete(ctx context.Context, skillID string) error {
-	if _, err := s.store.GetSkill(ctx, skillID); err != nil {
+	current, err := s.store.GetSkill(ctx, skillID)
+	if err != nil {
 		return err
 	}
 	if err := s.store.DeleteSkill(ctx, skillID); err != nil {
 		return err
+	}
+	// **封面对象跟着删**：这个键由这一个技能独占，不像内容对象那样可能被别处引用
+	// （内容对象按摘要共享，一个都不删）。尽力而为——库里的行才是权威，删对象失败
+	// 只留下一个无从被引用的孤儿。
+	if current.CoverKey != "" && s.objects != nil {
+		if err := s.objects.Delete(ctx, current.CoverKey); err != nil {
+			s.logger.Warn("删除封面对象失败，技能已删除", zap.String("skill_id", skillID))
+		}
 	}
 	s.logger.Info("技能删除", zap.String("skill_id", skillID))
 	return nil
@@ -441,16 +478,27 @@ func parseSource(repositoryURL, ref, subPath string) (Repository, string, string
 // 第二个返回值是被跳过的条目（二进制与超单文件上限的）：平台只分发文本，因此
 // 真实仓库里那些示例图一类的东西不进包——但**它们进了版本行上的一个计数**，
 // 于是"平台里的包比上游少几个文件"是一件看得见的事（见 Tree 与 onboarding.md）。
-func (s *Service) fetchPackage(ctx context.Context, repo Repository, commit, subPath string) (Package, []string, error) {
+func (s *Service) fetchPackage(ctx context.Context, repo Repository, commit, subPath string) (Package, Tree, error) {
 	tree, err := s.remote.FetchTree(ctx, repo, commit, subPath)
 	if err != nil {
-		return Package{}, nil, err
+		return Package{}, Tree{}, err
 	}
 	pkg, err := BuildPackage(tree.Files)
 	if err != nil {
-		return Package{}, nil, err
+		return Package{}, Tree{}, err
 	}
-	return pkg, tree.Skipped, nil
+	return pkg, tree, nil
+}
+
+// coverKeyFor 返回这次纳管应当写进技能行的封面键。
+//
+// 它把"这一条技能的封面键"收在一处：写对象与写行用的是同一个值，分两处拼的表现是
+// 一个技能指向别人的封面。
+func coverKeyFor(skillID, coverPath string) string {
+	if coverPath == "" {
+		return ""
+	}
+	return CoverKey(skillID)
 }
 
 // newVersion 从一份已校验的包造出一个版本。

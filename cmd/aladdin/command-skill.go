@@ -316,7 +316,7 @@ func setSkillFavorite(cmd *cobra.Command, skillID string, favorited bool) error 
 }
 
 func newSkillAddCommand() *cobra.Command {
-	var ref, subPath, title, summary string
+	var ref, subPath, title, summary, coverPath string
 	var tags []string
 
 	cmd := &cobra.Command{
@@ -332,7 +332,12 @@ func newSkillAddCommand() *cobra.Command {
 必填（description 就是"这个技能什么时候该被用上"）；其余文件必须是文本。上限
 是 200 个文件、单文件 256 KiB、合计 2 MiB。
 
-**校验失败不留任何痕迹**：库里没有新行，桶上也没有为它写的新对象。`,
+**校验失败不留任何痕迹**：库里没有新行，桶上也没有为它写的新对象。
+
+--cover 给一条**包内**的图片路径（如 examples/cover.png），它会被单独取回来存成
+技能的展示图。**它不进文件清单**——技能包只收文本，封面是说明层的一项；因此这条
+路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。取不到就是整次纳管
+失败，不会留下一个"只是没有封面"的技能。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, _, admin, done, err := skillCall()
@@ -348,6 +353,7 @@ func newSkillAddCommand() *cobra.Command {
 				Title:         title,
 				Summary:       summary,
 				Tags:          tags,
+				CoverPath:     coverPath,
 			}))
 			if err != nil {
 				return err
@@ -364,6 +370,7 @@ func newSkillAddCommand() *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "标题（留空则用 SKILL.md 的 name）")
 	cmd.Flags().StringVar(&summary, "summary", "", "简介（留空则用 SKILL.md 的 description）")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "标签（可重复）")
+	cmd.Flags().StringVar(&coverPath, "cover", "", "包内的一张图片路径，作为技能封面")
 
 	requirePermission(cmd, rbac.PermissionSkillCatalogWrite)
 	return cmd

@@ -3168,6 +3168,148 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.skill.v1.DeleteSkillResponse'
+  /aladdin.skill.v1.SkillAdminService/BeginSkillCoverUpload:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: skill.catalog.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.skill.v1.SkillAdminService
+      summary: BeginSkillCoverUpload
+      description: |-
+        **鉴权**：需要权限 `skill.catalog.write`；作用域取自凭证的默认作用域。
+
+        开始一次封面上传：签发一份直传凭证。
+
+         **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
+         校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
+         这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+
+         一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
+         而不是内容对象那种按摘要寻址、不可变、共享的字节（见
+         docs/design/skill/catalog.md 的"封面"）。
+      operationId: aladdin.skill.v1.SkillAdminService.BeginSkillCoverUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.skill.v1.BeginSkillCoverUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.skill.v1.BeginSkillCoverUploadResponse'
+  /aladdin.skill.v1.SkillAdminService/CommitSkillCoverUpload:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: skill.catalog.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.skill.v1.SkillAdminService
+      summary: CommitSkillCoverUpload
+      description: |-
+        **鉴权**：需要权限 `skill.catalog.write`；作用域取自凭证的默认作用域。
+
+        提交一次封面上传：核对字节确实到了，把技能指向它。
+
+         签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
+         Head：不存在即失败，字节数超过上限即失败并删除对象。
+      operationId: aladdin.skill.v1.SkillAdminService.CommitSkillCoverUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.skill.v1.CommitSkillCoverUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.skill.v1.CommitSkillCoverUploadResponse'
+  /aladdin.skill.v1.SkillAdminService/DeleteSkillCover:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: skill.catalog.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.skill.v1.SkillAdminService
+      summary: DeleteSkillCover
+      description: |-
+        **鉴权**：需要权限 `skill.catalog.write`；作用域取自凭证的默认作用域。
+
+        移除封面。没有封面时也成功（幂等）。
+
+         它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
+      operationId: aladdin.skill.v1.SkillAdminService.DeleteSkillCover
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.skill.v1.DeleteSkillCoverRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.skill.v1.DeleteSkillCoverResponse'
   /aladdin.telemetry.v1.TelemetryService/ReportEvents:
     post:
       x-aladdin-auth:
@@ -5533,6 +5675,75 @@ components:
          显示名只用于展示，可改，且不参与判定、不参与匹配。
 
          全局（根）不是一条登记记录：它永远可用、不可创建也不可删除。
+    aladdin.skill.v1.BeginSkillCoverUploadRequest:
+      type: object
+      properties:
+        skillId:
+          type: string
+          title: skill_id
+        contentType:
+          type: string
+          title: content_type
+          description: |-
+            上传方声明的类型。服务端只校验它在白名单内——白名单里没有任何可执行类型，
+             而这正是这套链路能成立的原因。
+        sizeBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: size_bytes
+          description: 上传方声明的字节数。服务端按它早退（省一次白传），真正的边界由存储侧执行。
+      title: BeginSkillCoverUploadRequest
+      additionalProperties: false
+    aladdin.skill.v1.BeginSkillCoverUploadResponse:
+      type: object
+      properties:
+        upload:
+          allOf:
+            - title: upload
+              description: |-
+                直传凭证。**只允许写、只对这个技能的封面这一个键有效、短时有效**，且允许
+                 覆盖（封面是"当前这一张"）。
+            - $ref: '#/components/schemas/aladdin.objectstore.v1.DirectUploadCredential'
+      title: BeginSkillCoverUploadResponse
+      additionalProperties: false
+    aladdin.skill.v1.CommitSkillCoverUploadRequest:
+      type: object
+      properties:
+        skillId:
+          type: string
+          title: skill_id
+      title: CommitSkillCoverUploadRequest
+      additionalProperties: false
+    aladdin.skill.v1.CommitSkillCoverUploadResponse:
+      type: object
+      properties:
+        skill:
+          allOf:
+            - title: skill
+              description: 提交之后的那一份技能，省掉一次读取：调用方多半正要刷新卡片上的那张图。
+            - $ref: '#/components/schemas/aladdin.skill.v1.Skill'
+      title: CommitSkillCoverUploadResponse
+      additionalProperties: false
+    aladdin.skill.v1.DeleteSkillCoverRequest:
+      type: object
+      properties:
+        skillId:
+          type: string
+          title: skill_id
+      title: DeleteSkillCoverRequest
+      additionalProperties: false
+    aladdin.skill.v1.DeleteSkillCoverResponse:
+      type: object
+      properties:
+        skill:
+          allOf:
+            - title: skill
+            - $ref: '#/components/schemas/aladdin.skill.v1.Skill'
+      title: DeleteSkillCoverResponse
+      additionalProperties: false
     aladdin.skill.v1.DeleteSkillRequest:
       type: object
       properties:
@@ -5636,6 +5847,18 @@ components:
             type: string
           title: tags
           description: 可选的初始标签。
+        coverPath:
+          type: string
+          title: cover_path
+          description: |-
+            可选的封面来源：**包内的一条图片路径**（如 `examples/cover.png`）。
+
+             服务端把这一条单独取回来、校验后存成封面。**它不进文件清单**——封面是说明层
+             的一项，不是包的内容（见 docs/design/skill/catalog.md 的"封面"）。因此这条
+             路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。
+
+             取不到、或类型与字节不符时**整次纳管失败**，与别的校验同一条：不留下"技能
+             进来了、只是没有封面"这种要人去猜的状态。
       title: ImportSkillRequest
       additionalProperties: false
     aladdin.skill.v1.ImportSkillResponse:
@@ -5856,6 +6079,18 @@ components:
           description: |-
             当前版本的文件清单（路径 → 字节数 + 内容摘要）。**不含正文**
              （见 GetSkillFile）。
+        coverUrl:
+          type: string
+          title: cover_url
+          description: |-
+            封面的**短时读取地址**，列表与详情都给。空串表示这个技能没有封面，界面据此
+             渲染占位（标题首字 + 中性底），而不是去取一张不存在的图。
+
+             它是**预签名地址**：短时有效，过期后重新读一次就有新的。签名是本地计算、
+             不发网络请求，因此列表里 N 条技能不产生 N 次往返。
+
+             **封面不是包的内容**：它属于说明层，不进文件清单、不进版本、不参与取用
+             （见 docs/design/skill/catalog.md 的"封面"）。
       title: Skill
       additionalProperties: false
       description: |-

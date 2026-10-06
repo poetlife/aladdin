@@ -4,6 +4,8 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { DirectUploadCredential } from "../../objectstore/v1/upload_pb";
+import { file_aladdin_objectstore_v1_upload } from "../../objectstore/v1/upload_pb";
 import { file_aladdin_rbac_v1_annotations } from "../../rbac/v1/annotations_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -11,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/skill/v1/skill.proto.
  */
 export const file_aladdin_skill_v1_skill: GenFile = /*@__PURE__*/
-  fileDesc("ChxhbGFkZGluL3NraWxsL3YxL3NraWxsLnByb3RvEhBhbGFkZGluLnNraWxsLnYxIpoDCgVTa2lsbBIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJEgwKBHRhZ3MYBCADKAkSEQoJZmF2b3JpdGVkGAUgASgIEhIKCmZpbGVfY291bnQYBiABKA0SEwoLdG90YWxfYnl0ZXMYByABKAQSKwoFdXNhZ2UYCCABKAsyHC5hbGFkZGluLnNraWxsLnYxLlNraWxsVXNhZ2USFgoOdGl0bGVfb3ZlcnJpZGUYCSABKAkSGAoQc3VtbWFyeV9vdmVycmlkZRgKIAEoCRIMCgRuYW1lGAsgASgJEhMKC2Rlc2NyaXB0aW9uGAwgASgJEhoKEmN1cnJlbnRfdmVyc2lvbl9pZBgNIAEoCRIiChpjdXJyZW50X3ZlcnNpb25fY3JlYXRlZF9hdBgOIAEoCRItCgZzb3VyY2UYDyABKAsyHS5hbGFkZGluLnNraWxsLnYxLlNraWxsU291cmNlEioKBWZpbGVzGBAgAygLMhsuYWxhZGRpbi5za2lsbC52MS5Ta2lsbEZpbGUiVAoLU2tpbGxTb3VyY2USFgoOcmVwb3NpdG9yeV91cmwYASABKAkSCwoDcmVmGAIgASgJEhAKCHN1Yl9wYXRoGAMgASgJEg4KBmNvbW1pdBgEIAEoCSI9CglTa2lsbEZpbGUSDAoEcGF0aBgBIAEoCRISCgpzaXplX2J5dGVzGAIgASgEEg4KBmRpZ2VzdBgDIAEoCSKPAQoMU2tpbGxWZXJzaW9uEgoKAmlkGAEgASgJEg4KBmNvbW1pdBgCIAEoCRISCgpmaWxlX2NvdW50GAMgASgNEhMKC3RvdGFsX2J5dGVzGAQgASgEEhIKCmNyZWF0ZWRfYXQYBSABKAkSDwoHY3VycmVudBgGIAEoCBIVCg1za2lwcGVkX2ZpbGVzGAcgASgNIkgKClNraWxsVXNhZ2USEAoIdXNlX2RheXMYASABKA0SEgoKdXNlcl9jb3VudBgCIAEoDRIUCgxsYXN0X3VzZWRfYXQYAyABKAkiigEKEVNraWxsQ2FwYWJpbGl0aWVzEhcKD2NhdGFsb2dfZW5hYmxlZBgBIAEoCBIWCg5pbXBvcnRfZW5hYmxlZBgCIAEoCBIRCgltYXhfZmlsZXMYAyABKA0SFgoObWF4X2ZpbGVfYnl0ZXMYBCABKA0SGQoRbWF4X3BhY2thZ2VfYnl0ZXMYBSABKA0iGAoWR2V0Q2FwYWJpbGl0aWVzUmVxdWVzdCJUChdHZXRDYXBhYmlsaXRpZXNSZXNwb25zZRI5CgxjYXBhYmlsaXRpZXMYASABKAsyIy5hbGFkZGluLnNraWxsLnYxLlNraWxsQ2FwYWJpbGl0aWVzIkgKEUxpc3RTa2lsbHNSZXF1ZXN0Eg0KBXF1ZXJ5GAEgASgJEgwKBHRhZ3MYAiADKAkSFgoOZmF2b3JpdGVkX29ubHkYAyABKAgiaAoSTGlzdFNraWxsc1Jlc3BvbnNlEicKBnNraWxscxgBIAMoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwSFgoOYXZhaWxhYmxlX3RhZ3MYAiADKAkSEQoJdHJ1bmNhdGVkGAMgASgIIiMKD0dldFNraWxsUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCSI6ChBHZXRTa2lsbFJlc3BvbnNlEiYKBXNraWxsGAEgASgLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbCI1ChNHZXRTa2lsbEZpbGVSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEgwKBHBhdGgYAiABKAkiRQoUR2V0U2tpbGxGaWxlUmVzcG9uc2USDwoHY29udGVudBgBIAEoDBIMCgRwYXRoGAIgASgJEg4KBmRpZ2VzdBgDIAEoCSIsChhMaXN0U2tpbGxWZXJzaW9uc1JlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkiTQoZTGlzdFNraWxsVmVyc2lvbnNSZXNwb25zZRIwCgh2ZXJzaW9ucxgBIAMoCzIeLmFsYWRkaW4uc2tpbGwudjEuU2tpbGxWZXJzaW9uIj4KF1NldFNraWxsRmF2b3JpdGVSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhEKCWZhdm9yaXRlZBgCIAEoCCIaChhTZXRTa2lsbEZhdm9yaXRlUmVzcG9uc2UieQoSSW1wb3J0U2tpbGxSZXF1ZXN0EhYKDnJlcG9zaXRvcnlfdXJsGAEgASgJEgsKA3JlZhgCIAEoCRIQCghzdWJfcGF0aBgDIAEoCRINCgV0aXRsZRgEIAEoCRIPCgdzdW1tYXJ5GAUgASgJEgwKBHRhZ3MYBiADKAkiPQoTSW1wb3J0U2tpbGxSZXNwb25zZRImCgVza2lsbBgBIAEoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwiJgoSUmVzeW5jU2tpbGxSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJIk4KE1Jlc3luY1NraWxsUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsEg8KB2NoYW5nZWQYAiABKAgiRQodU2V0Q3VycmVudFNraWxsVmVyc2lvblJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSEgoKdmVyc2lvbl9pZBgCIAEoCSJICh5TZXRDdXJyZW50U2tpbGxWZXJzaW9uUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIlwKGlVwZGF0ZVNraWxsTWV0YWRhdGFSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEg0KBXRpdGxlGAIgASgJEg8KB3N1bW1hcnkYAyABKAkSDAoEdGFncxgEIAMoCSJFChtVcGRhdGVTa2lsbE1ldGFkYXRhUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIiYKEkRlbGV0ZVNraWxsUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCSIVChNEZWxldGVTa2lsbFJlc3BvbnNlMv4FCgxTa2lsbFNlcnZpY2UScwoPR2V0Q2FwYWJpbGl0aWVzEiguYWxhZGRpbi5za2lsbC52MS5HZXRDYXBhYmlsaXRpZXNSZXF1ZXN0GikuYWxhZGRpbi5za2lsbC52MS5HZXRDYXBhYmlsaXRpZXNSZXNwb25zZSILkAIBkIgnA6CIJwESdgoKTGlzdFNraWxscxIjLmFsYWRkaW4uc2tpbGwudjEuTGlzdFNraWxsc1JlcXVlc3QaJC5hbGFkZGluLnNraWxsLnYxLkxpc3RTa2lsbHNSZXNwb25zZSIdkAIBiognEnNraWxsLmNhdGFsb2cucmVhZJCIJwMScAoIR2V0U2tpbGwSIS5hbGFkZGluLnNraWxsLnYxLkdldFNraWxsUmVxdWVzdBoiLmFsYWRkaW4uc2tpbGwudjEuR2V0U2tpbGxSZXNwb25zZSIdkAIBiognEnNraWxsLmNhdGFsb2cucmVhZJCIJwMSeQoMR2V0U2tpbGxGaWxlEiUuYWxhZGRpbi5za2lsbC52MS5HZXRTa2lsbEZpbGVSZXF1ZXN0GiYuYWxhZGRpbi5za2lsbC52MS5HZXRTa2lsbEZpbGVSZXNwb25zZSIaiognEnNraWxsLmNhdGFsb2cucmVhZJCIJwMSiwEKEUxpc3RTa2lsbFZlcnNpb25zEiouYWxhZGRpbi5za2lsbC52MS5MaXN0U2tpbGxWZXJzaW9uc1JlcXVlc3QaKy5hbGFkZGluLnNraWxsLnYxLkxpc3RTa2lsbFZlcnNpb25zUmVzcG9uc2UiHZACAYqIJxJza2lsbC5jYXRhbG9nLnJlYWSQiCcDEoUBChBTZXRTa2lsbEZhdm9yaXRlEikuYWxhZGRpbi5za2lsbC52MS5TZXRTa2lsbEZhdm9yaXRlUmVxdWVzdBoqLmFsYWRkaW4uc2tpbGwudjEuU2V0U2tpbGxGYXZvcml0ZVJlc3BvbnNlIhqKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAzKrBQoRU2tpbGxBZG1pblNlcnZpY2USdwoLSW1wb3J0U2tpbGwSJC5hbGFkZGluLnNraWxsLnYxLkltcG9ydFNraWxsUmVxdWVzdBolLmFsYWRkaW4uc2tpbGwudjEuSW1wb3J0U2tpbGxSZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDEncKC1Jlc3luY1NraWxsEiQuYWxhZGRpbi5za2lsbC52MS5SZXN5bmNTa2lsbFJlcXVlc3QaJS5hbGFkZGluLnNraWxsLnYxLlJlc3luY1NraWxsUmVzcG9uc2UiG4qIJxNza2lsbC5jYXRhbG9nLndyaXRlkIgnAxKYAQoWU2V0Q3VycmVudFNraWxsVmVyc2lvbhIvLmFsYWRkaW4uc2tpbGwudjEuU2V0Q3VycmVudFNraWxsVmVyc2lvblJlcXVlc3QaMC5hbGFkZGluLnNraWxsLnYxLlNldEN1cnJlbnRTa2lsbFZlcnNpb25SZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDEo8BChNVcGRhdGVTa2lsbE1ldGFkYXRhEiwuYWxhZGRpbi5za2lsbC52MS5VcGRhdGVTa2lsbE1ldGFkYXRhUmVxdWVzdBotLmFsYWRkaW4uc2tpbGwudjEuVXBkYXRlU2tpbGxNZXRhZGF0YVJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSdwoLRGVsZXRlU2tpbGwSJC5hbGFkZGluLnNraWxsLnYxLkRlbGV0ZVNraWxsUmVxdWVzdBolLmFsYWRkaW4uc2tpbGwudjEuRGVsZXRlU2tpbGxSZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDQj5aPGdpdGh1Yi5jb20vcG9ldGxpZmUvYWxhZGRpbi9hcGkvZ2VuL2FsYWRkaW4vc2tpbGwvdjE7c2tpbGx2MWIGcHJvdG8z", [file_aladdin_rbac_v1_annotations]);
+  fileDesc("ChxhbGFkZGluL3NraWxsL3YxL3NraWxsLnByb3RvEhBhbGFkZGluLnNraWxsLnYxIq0DCgVTa2lsbBIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJEgwKBHRhZ3MYBCADKAkSEQoJZmF2b3JpdGVkGAUgASgIEhIKCmZpbGVfY291bnQYBiABKA0SEwoLdG90YWxfYnl0ZXMYByABKAQSKwoFdXNhZ2UYCCABKAsyHC5hbGFkZGluLnNraWxsLnYxLlNraWxsVXNhZ2USFgoOdGl0bGVfb3ZlcnJpZGUYCSABKAkSGAoQc3VtbWFyeV9vdmVycmlkZRgKIAEoCRIMCgRuYW1lGAsgASgJEhMKC2Rlc2NyaXB0aW9uGAwgASgJEhoKEmN1cnJlbnRfdmVyc2lvbl9pZBgNIAEoCRIiChpjdXJyZW50X3ZlcnNpb25fY3JlYXRlZF9hdBgOIAEoCRItCgZzb3VyY2UYDyABKAsyHS5hbGFkZGluLnNraWxsLnYxLlNraWxsU291cmNlEioKBWZpbGVzGBAgAygLMhsuYWxhZGRpbi5za2lsbC52MS5Ta2lsbEZpbGUSEQoJY292ZXJfdXJsGBEgASgJIlQKC1NraWxsU291cmNlEhYKDnJlcG9zaXRvcnlfdXJsGAEgASgJEgsKA3JlZhgCIAEoCRIQCghzdWJfcGF0aBgDIAEoCRIOCgZjb21taXQYBCABKAkiPQoJU2tpbGxGaWxlEgwKBHBhdGgYASABKAkSEgoKc2l6ZV9ieXRlcxgCIAEoBBIOCgZkaWdlc3QYAyABKAkijwEKDFNraWxsVmVyc2lvbhIKCgJpZBgBIAEoCRIOCgZjb21taXQYAiABKAkSEgoKZmlsZV9jb3VudBgDIAEoDRITCgt0b3RhbF9ieXRlcxgEIAEoBBISCgpjcmVhdGVkX2F0GAUgASgJEg8KB2N1cnJlbnQYBiABKAgSFQoNc2tpcHBlZF9maWxlcxgHIAEoDSJICgpTa2lsbFVzYWdlEhAKCHVzZV9kYXlzGAEgASgNEhIKCnVzZXJfY291bnQYAiABKA0SFAoMbGFzdF91c2VkX2F0GAMgASgJIooBChFTa2lsbENhcGFiaWxpdGllcxIXCg9jYXRhbG9nX2VuYWJsZWQYASABKAgSFgoOaW1wb3J0X2VuYWJsZWQYAiABKAgSEQoJbWF4X2ZpbGVzGAMgASgNEhYKDm1heF9maWxlX2J5dGVzGAQgASgNEhkKEW1heF9wYWNrYWdlX2J5dGVzGAUgASgNIhgKFkdldENhcGFiaWxpdGllc1JlcXVlc3QiVAoXR2V0Q2FwYWJpbGl0aWVzUmVzcG9uc2USOQoMY2FwYWJpbGl0aWVzGAEgASgLMiMuYWxhZGRpbi5za2lsbC52MS5Ta2lsbENhcGFiaWxpdGllcyJIChFMaXN0U2tpbGxzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIMCgR0YWdzGAIgAygJEhYKDmZhdm9yaXRlZF9vbmx5GAMgASgIImgKEkxpc3RTa2lsbHNSZXNwb25zZRInCgZza2lsbHMYASADKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsEhYKDmF2YWlsYWJsZV90YWdzGAIgAygJEhEKCXRydW5jYXRlZBgDIAEoCCIjCg9HZXRTa2lsbFJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkiOgoQR2V0U2tpbGxSZXNwb25zZRImCgVza2lsbBgBIAEoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwiNQoTR2V0U2tpbGxGaWxlUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRIMCgRwYXRoGAIgASgJIkUKFEdldFNraWxsRmlsZVJlc3BvbnNlEg8KB2NvbnRlbnQYASABKAwSDAoEcGF0aBgCIAEoCRIOCgZkaWdlc3QYAyABKAkiLAoYTGlzdFNraWxsVmVyc2lvbnNSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJIk0KGUxpc3RTa2lsbFZlcnNpb25zUmVzcG9uc2USMAoIdmVyc2lvbnMYASADKAsyHi5hbGFkZGluLnNraWxsLnYxLlNraWxsVmVyc2lvbiI+ChdTZXRTa2lsbEZhdm9yaXRlUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRIRCglmYXZvcml0ZWQYAiABKAgiGgoYU2V0U2tpbGxGYXZvcml0ZVJlc3BvbnNlIo0BChJJbXBvcnRTa2lsbFJlcXVlc3QSFgoOcmVwb3NpdG9yeV91cmwYASABKAkSCwoDcmVmGAIgASgJEhAKCHN1Yl9wYXRoGAMgASgJEg0KBXRpdGxlGAQgASgJEg8KB3N1bW1hcnkYBSABKAkSDAoEdGFncxgGIAMoCRISCgpjb3Zlcl9wYXRoGAcgASgJIj0KE0ltcG9ydFNraWxsUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIiYKElJlc3luY1NraWxsUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCSJOChNSZXN5bmNTa2lsbFJlc3BvbnNlEiYKBXNraWxsGAEgASgLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbBIPCgdjaGFuZ2VkGAIgASgIIkUKHVNldEN1cnJlbnRTa2lsbFZlcnNpb25SZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhIKCnZlcnNpb25faWQYAiABKAkiSAoeU2V0Q3VycmVudFNraWxsVmVyc2lvblJlc3BvbnNlEiYKBXNraWxsGAEgASgLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbCJcChpVcGRhdGVTa2lsbE1ldGFkYXRhUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJEgwKBHRhZ3MYBCADKAkiRQobVXBkYXRlU2tpbGxNZXRhZGF0YVJlc3BvbnNlEiYKBXNraWxsGAEgASgLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbCImChJEZWxldGVTa2lsbFJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkiFQoTRGVsZXRlU2tpbGxSZXNwb25zZSJaChxCZWdpblNraWxsQ292ZXJVcGxvYWRSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhQKDGNvbnRlbnRfdHlwZRgCIAEoCRISCgpzaXplX2J5dGVzGAMgASgEIl8KHUJlZ2luU2tpbGxDb3ZlclVwbG9hZFJlc3BvbnNlEj4KBnVwbG9hZBgBIAEoCzIuLmFsYWRkaW4ub2JqZWN0c3RvcmUudjEuRGlyZWN0VXBsb2FkQ3JlZGVudGlhbCIxCh1Db21taXRTa2lsbENvdmVyVXBsb2FkUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCSJICh5Db21taXRTa2lsbENvdmVyVXBsb2FkUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIisKF0RlbGV0ZVNraWxsQ292ZXJSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJIkIKGERlbGV0ZVNraWxsQ292ZXJSZXNwb25zZRImCgVza2lsbBgBIAEoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwy/gUKDFNraWxsU2VydmljZRJzCg9HZXRDYXBhYmlsaXRpZXMSKC5hbGFkZGluLnNraWxsLnYxLkdldENhcGFiaWxpdGllc1JlcXVlc3QaKS5hbGFkZGluLnNraWxsLnYxLkdldENhcGFiaWxpdGllc1Jlc3BvbnNlIguQAgGQiCcDoIgnARJ2CgpMaXN0U2tpbGxzEiMuYWxhZGRpbi5za2lsbC52MS5MaXN0U2tpbGxzUmVxdWVzdBokLmFsYWRkaW4uc2tpbGwudjEuTGlzdFNraWxsc1Jlc3BvbnNlIh2QAgGKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxJwCghHZXRTa2lsbBIhLmFsYWRkaW4uc2tpbGwudjEuR2V0U2tpbGxSZXF1ZXN0GiIuYWxhZGRpbi5za2lsbC52MS5HZXRTa2lsbFJlc3BvbnNlIh2QAgGKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxJ5CgxHZXRTa2lsbEZpbGUSJS5hbGFkZGluLnNraWxsLnYxLkdldFNraWxsRmlsZVJlcXVlc3QaJi5hbGFkZGluLnNraWxsLnYxLkdldFNraWxsRmlsZVJlc3BvbnNlIhqKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxKLAQoRTGlzdFNraWxsVmVyc2lvbnMSKi5hbGFkZGluLnNraWxsLnYxLkxpc3RTa2lsbFZlcnNpb25zUmVxdWVzdBorLmFsYWRkaW4uc2tpbGwudjEuTGlzdFNraWxsVmVyc2lvbnNSZXNwb25zZSIdkAIBiognEnNraWxsLmNhdGFsb2cucmVhZJCIJwMShQEKEFNldFNraWxsRmF2b3JpdGUSKS5hbGFkZGluLnNraWxsLnYxLlNldFNraWxsRmF2b3JpdGVSZXF1ZXN0GiouYWxhZGRpbi5za2lsbC52MS5TZXRTa2lsbEZhdm9yaXRlUmVzcG9uc2UiGoqIJxJza2lsbC5jYXRhbG9nLnJlYWSQiCcDMucIChFTa2lsbEFkbWluU2VydmljZRJ3CgtJbXBvcnRTa2lsbBIkLmFsYWRkaW4uc2tpbGwudjEuSW1wb3J0U2tpbGxSZXF1ZXN0GiUuYWxhZGRpbi5za2lsbC52MS5JbXBvcnRTa2lsbFJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSdwoLUmVzeW5jU2tpbGwSJC5hbGFkZGluLnNraWxsLnYxLlJlc3luY1NraWxsUmVxdWVzdBolLmFsYWRkaW4uc2tpbGwudjEuUmVzeW5jU2tpbGxSZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDEpgBChZTZXRDdXJyZW50U2tpbGxWZXJzaW9uEi8uYWxhZGRpbi5za2lsbC52MS5TZXRDdXJyZW50U2tpbGxWZXJzaW9uUmVxdWVzdBowLmFsYWRkaW4uc2tpbGwudjEuU2V0Q3VycmVudFNraWxsVmVyc2lvblJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSjwEKE1VwZGF0ZVNraWxsTWV0YWRhdGESLC5hbGFkZGluLnNraWxsLnYxLlVwZGF0ZVNraWxsTWV0YWRhdGFSZXF1ZXN0Gi0uYWxhZGRpbi5za2lsbC52MS5VcGRhdGVTa2lsbE1ldGFkYXRhUmVzcG9uc2UiG4qIJxNza2lsbC5jYXRhbG9nLndyaXRlkIgnAxJ3CgtEZWxldGVTa2lsbBIkLmFsYWRkaW4uc2tpbGwudjEuRGVsZXRlU2tpbGxSZXF1ZXN0GiUuYWxhZGRpbi5za2lsbC52MS5EZWxldGVTa2lsbFJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSlQEKFUJlZ2luU2tpbGxDb3ZlclVwbG9hZBIuLmFsYWRkaW4uc2tpbGwudjEuQmVnaW5Ta2lsbENvdmVyVXBsb2FkUmVxdWVzdBovLmFsYWRkaW4uc2tpbGwudjEuQmVnaW5Ta2lsbENvdmVyVXBsb2FkUmVzcG9uc2UiG4qIJxNza2lsbC5jYXRhbG9nLndyaXRlkIgnAxKYAQoWQ29tbWl0U2tpbGxDb3ZlclVwbG9hZBIvLmFsYWRkaW4uc2tpbGwudjEuQ29tbWl0U2tpbGxDb3ZlclVwbG9hZFJlcXVlc3QaMC5hbGFkZGluLnNraWxsLnYxLkNvbW1pdFNraWxsQ292ZXJVcGxvYWRSZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDEoYBChBEZWxldGVTa2lsbENvdmVyEikuYWxhZGRpbi5za2lsbC52MS5EZWxldGVTa2lsbENvdmVyUmVxdWVzdBoqLmFsYWRkaW4uc2tpbGwudjEuRGVsZXRlU2tpbGxDb3ZlclJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwNCPlo8Z2l0aHViLmNvbS9wb2V0bGlmZS9hbGFkZGluL2FwaS9nZW4vYWxhZGRpbi9za2lsbC92MTtza2lsbHYxYgZwcm90bzM", [file_aladdin_objectstore_v1_upload, file_aladdin_rbac_v1_annotations]);
 
 /**
  * Skill 是目录里的一条技能。
@@ -139,6 +141,20 @@ export type Skill = Message<"aladdin.skill.v1.Skill"> & {
    * @generated from field: repeated aladdin.skill.v1.SkillFile files = 16;
    */
   files: SkillFile[];
+
+  /**
+   * 封面的**短时读取地址**，列表与详情都给。空串表示这个技能没有封面，界面据此
+   * 渲染占位（标题首字 + 中性底），而不是去取一张不存在的图。
+   *
+   * 它是**预签名地址**：短时有效，过期后重新读一次就有新的。签名是本地计算、
+   * 不发网络请求，因此列表里 N 条技能不产生 N 次往返。
+   *
+   * **封面不是包的内容**：它属于说明层，不进文件清单、不进版本、不参与取用
+   * （见 docs/design/skill/catalog.md 的"封面"）。
+   *
+   * @generated from field: string cover_url = 17;
+   */
+  coverUrl: string;
 };
 
 /**
@@ -678,6 +694,20 @@ export type ImportSkillRequest = Message<"aladdin.skill.v1.ImportSkillRequest"> 
    * @generated from field: repeated string tags = 6;
    */
   tags: string[];
+
+  /**
+   * 可选的封面来源：**包内的一条图片路径**（如 `examples/cover.png`）。
+   *
+   * 服务端把这一条单独取回来、校验后存成封面。**它不进文件清单**——封面是说明层
+   * 的一项，不是包的内容（见 docs/design/skill/catalog.md 的"封面"）。因此这条
+   * 路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。
+   *
+   * 取不到、或类型与字节不符时**整次纳管失败**，与别的校验同一条：不留下"技能
+   * 进来了、只是没有封面"这种要人去猜的状态。
+   *
+   * @generated from field: string cover_path = 7;
+   */
+  coverPath: string;
 };
 
 /**
@@ -868,6 +898,128 @@ export type DeleteSkillResponse = Message<"aladdin.skill.v1.DeleteSkillResponse"
  */
 export const DeleteSkillResponseSchema: GenMessage<DeleteSkillResponse> = /*@__PURE__*/
   messageDesc(file_aladdin_skill_v1_skill, 27);
+
+/**
+ * @generated from message aladdin.skill.v1.BeginSkillCoverUploadRequest
+ */
+export type BeginSkillCoverUploadRequest = Message<"aladdin.skill.v1.BeginSkillCoverUploadRequest"> & {
+  /**
+   * @generated from field: string skill_id = 1;
+   */
+  skillId: string;
+
+  /**
+   * 上传方声明的类型。服务端只校验它在白名单内——白名单里没有任何可执行类型，
+   * 而这正是这套链路能成立的原因。
+   *
+   * @generated from field: string content_type = 2;
+   */
+  contentType: string;
+
+  /**
+   * 上传方声明的字节数。服务端按它早退（省一次白传），真正的边界由存储侧执行。
+   *
+   * @generated from field: uint64 size_bytes = 3;
+   */
+  sizeBytes: bigint;
+};
+
+/**
+ * Describes the message aladdin.skill.v1.BeginSkillCoverUploadRequest.
+ * Use `create(BeginSkillCoverUploadRequestSchema)` to create a new message.
+ */
+export const BeginSkillCoverUploadRequestSchema: GenMessage<BeginSkillCoverUploadRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 28);
+
+/**
+ * @generated from message aladdin.skill.v1.BeginSkillCoverUploadResponse
+ */
+export type BeginSkillCoverUploadResponse = Message<"aladdin.skill.v1.BeginSkillCoverUploadResponse"> & {
+  /**
+   * 直传凭证。**只允许写、只对这个技能的封面这一个键有效、短时有效**，且允许
+   * 覆盖（封面是"当前这一张"）。
+   *
+   * @generated from field: aladdin.objectstore.v1.DirectUploadCredential upload = 1;
+   */
+  upload?: DirectUploadCredential | undefined;
+};
+
+/**
+ * Describes the message aladdin.skill.v1.BeginSkillCoverUploadResponse.
+ * Use `create(BeginSkillCoverUploadResponseSchema)` to create a new message.
+ */
+export const BeginSkillCoverUploadResponseSchema: GenMessage<BeginSkillCoverUploadResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 29);
+
+/**
+ * @generated from message aladdin.skill.v1.CommitSkillCoverUploadRequest
+ */
+export type CommitSkillCoverUploadRequest = Message<"aladdin.skill.v1.CommitSkillCoverUploadRequest"> & {
+  /**
+   * @generated from field: string skill_id = 1;
+   */
+  skillId: string;
+};
+
+/**
+ * Describes the message aladdin.skill.v1.CommitSkillCoverUploadRequest.
+ * Use `create(CommitSkillCoverUploadRequestSchema)` to create a new message.
+ */
+export const CommitSkillCoverUploadRequestSchema: GenMessage<CommitSkillCoverUploadRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 30);
+
+/**
+ * @generated from message aladdin.skill.v1.CommitSkillCoverUploadResponse
+ */
+export type CommitSkillCoverUploadResponse = Message<"aladdin.skill.v1.CommitSkillCoverUploadResponse"> & {
+  /**
+   * 提交之后的那一份技能，省掉一次读取：调用方多半正要刷新卡片上的那张图。
+   *
+   * @generated from field: aladdin.skill.v1.Skill skill = 1;
+   */
+  skill?: Skill | undefined;
+};
+
+/**
+ * Describes the message aladdin.skill.v1.CommitSkillCoverUploadResponse.
+ * Use `create(CommitSkillCoverUploadResponseSchema)` to create a new message.
+ */
+export const CommitSkillCoverUploadResponseSchema: GenMessage<CommitSkillCoverUploadResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 31);
+
+/**
+ * @generated from message aladdin.skill.v1.DeleteSkillCoverRequest
+ */
+export type DeleteSkillCoverRequest = Message<"aladdin.skill.v1.DeleteSkillCoverRequest"> & {
+  /**
+   * @generated from field: string skill_id = 1;
+   */
+  skillId: string;
+};
+
+/**
+ * Describes the message aladdin.skill.v1.DeleteSkillCoverRequest.
+ * Use `create(DeleteSkillCoverRequestSchema)` to create a new message.
+ */
+export const DeleteSkillCoverRequestSchema: GenMessage<DeleteSkillCoverRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 32);
+
+/**
+ * @generated from message aladdin.skill.v1.DeleteSkillCoverResponse
+ */
+export type DeleteSkillCoverResponse = Message<"aladdin.skill.v1.DeleteSkillCoverResponse"> & {
+  /**
+   * @generated from field: aladdin.skill.v1.Skill skill = 1;
+   */
+  skill?: Skill | undefined;
+};
+
+/**
+ * Describes the message aladdin.skill.v1.DeleteSkillCoverResponse.
+ * Use `create(DeleteSkillCoverResponseSchema)` to create a new message.
+ */
+export const DeleteSkillCoverResponseSchema: GenMessage<DeleteSkillCoverResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 33);
 
 /**
  * SkillService 是**技能目录的读面**：找到技能、看清它是什么、把正文取走。
@@ -1089,6 +1241,49 @@ export const SkillAdminService: GenService<{
     methodKind: "unary";
     input: typeof DeleteSkillRequestSchema;
     output: typeof DeleteSkillResponseSchema;
+  },
+  /**
+   * 开始一次封面上传：签发一份直传凭证。
+   *
+   * **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
+   * 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
+   * 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+   *
+   * 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
+   * 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
+   * docs/design/skill/catalog.md 的"封面"）。
+   *
+   * @generated from rpc aladdin.skill.v1.SkillAdminService.BeginSkillCoverUpload
+   */
+  beginSkillCoverUpload: {
+    methodKind: "unary";
+    input: typeof BeginSkillCoverUploadRequestSchema;
+    output: typeof BeginSkillCoverUploadResponseSchema;
+  },
+  /**
+   * 提交一次封面上传：核对字节确实到了，把技能指向它。
+   *
+   * 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
+   * Head：不存在即失败，字节数超过上限即失败并删除对象。
+   *
+   * @generated from rpc aladdin.skill.v1.SkillAdminService.CommitSkillCoverUpload
+   */
+  commitSkillCoverUpload: {
+    methodKind: "unary";
+    input: typeof CommitSkillCoverUploadRequestSchema;
+    output: typeof CommitSkillCoverUploadResponseSchema;
+  },
+  /**
+   * 移除封面。没有封面时也成功（幂等）。
+   *
+   * 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
+   *
+   * @generated from rpc aladdin.skill.v1.SkillAdminService.DeleteSkillCover
+   */
+  deleteSkillCover: {
+    methodKind: "unary";
+    input: typeof DeleteSkillCoverRequestSchema;
+    output: typeof DeleteSkillCoverResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_aladdin_skill_v1_skill, 1);

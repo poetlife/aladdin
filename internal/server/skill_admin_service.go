@@ -40,12 +40,13 @@ func (s *SkillAdminService) ImportSkill(ctx context.Context, req *connect.Reques
 		Title:         req.Msg.GetTitle(),
 		Summary:       req.Msg.GetSummary(),
 		Tags:          req.Msg.GetTags(),
+		CoverPath:     req.Msg.GetCoverPath(),
 	})
 	if err != nil {
 		return nil, toSkillConnectError(err)
 	}
 	return connect.NewResponse(&skillv1.ImportSkillResponse{
-		Skill: toProtoSkill(skill.View{Skill: item}, true),
+		Skill: toProtoSkill(s.skills.ViewOf(ctx, item), true),
 	}), nil
 }
 
@@ -59,7 +60,7 @@ func (s *SkillAdminService) ResyncSkill(ctx context.Context, req *connect.Reques
 		return nil, toSkillConnectError(err)
 	}
 	return connect.NewResponse(&skillv1.ResyncSkillResponse{
-		Skill:   toProtoSkill(skill.View{Skill: item}, true),
+		Skill:   toProtoSkill(s.skills.ViewOf(ctx, item), true),
 		Changed: changed,
 	}), nil
 }
@@ -74,7 +75,7 @@ func (s *SkillAdminService) SetCurrentSkillVersion(ctx context.Context, req *con
 		return nil, toSkillConnectError(err)
 	}
 	return connect.NewResponse(&skillv1.SetCurrentSkillVersionResponse{
-		Skill: toProtoSkill(skill.View{Skill: item}, true),
+		Skill: toProtoSkill(s.skills.ViewOf(ctx, item), true),
 	}), nil
 }
 
@@ -89,7 +90,59 @@ func (s *SkillAdminService) UpdateSkillMetadata(ctx context.Context, req *connec
 		return nil, toSkillConnectError(err)
 	}
 	return connect.NewResponse(&skillv1.UpdateSkillMetadataResponse{
-		Skill: toProtoSkill(skill.View{Skill: item}, true),
+		Skill: toProtoSkill(s.skills.ViewOf(ctx, item), true),
+	}), nil
+}
+
+// BeginSkillCoverUpload 实现 SkillAdminService：签发一份封面上传的直传凭证。
+//
+// **字节不经过本服务端**（见 docs/design/objectstore/README.md）：服务端只校验
+// **声明的**类型与大小，真正的边界由存储侧按策略执行。
+func (s *SkillAdminService) BeginSkillCoverUpload(ctx context.Context, req *connect.Request[skillv1.BeginSkillCoverUploadRequest]) (*connect.Response[skillv1.BeginSkillCoverUploadResponse], error) {
+	if _, err := callerSubject(ctx); err != nil {
+		return nil, err
+	}
+	credential, err := s.skills.BeginCoverUpload(ctx, req.Msg.GetSkillId(),
+		req.Msg.GetContentType(), int64(req.Msg.GetSizeBytes())) //nolint:gosec // proto 是 uint64，领域层要 int64；上面限了上限
+	if err != nil {
+		return nil, toSkillConnectError(err)
+	}
+	// 只记声明的类型与大小，**不记凭证本身**：把凭证写进日志等于把一次写入的能力
+	// 留在了日志文件里（与头像那一处同一条）。
+	s.logger.Info("已签发技能封面直传凭证",
+		zap.String("skill_id", req.Msg.GetSkillId()),
+		zap.String("content_type", req.Msg.GetContentType()),
+		zap.Uint64("declared_bytes", req.Msg.GetSizeBytes()))
+	return connect.NewResponse(&skillv1.BeginSkillCoverUploadResponse{
+		Upload: toProtoUpload(credential),
+	}), nil
+}
+
+// CommitSkillCoverUpload 实现 SkillAdminService：核对对象确实到了，把技能指向它。
+func (s *SkillAdminService) CommitSkillCoverUpload(ctx context.Context, req *connect.Request[skillv1.CommitSkillCoverUploadRequest]) (*connect.Response[skillv1.CommitSkillCoverUploadResponse], error) {
+	if _, err := callerSubject(ctx); err != nil {
+		return nil, err
+	}
+	item, err := s.skills.CommitCoverUpload(ctx, req.Msg.GetSkillId())
+	if err != nil {
+		return nil, toSkillConnectError(err)
+	}
+	return connect.NewResponse(&skillv1.CommitSkillCoverUploadResponse{
+		Skill: toProtoSkill(s.skills.ViewOf(ctx, item), true),
+	}), nil
+}
+
+// DeleteSkillCover 实现 SkillAdminService。没有封面时也成功（幂等）。
+func (s *SkillAdminService) DeleteSkillCover(ctx context.Context, req *connect.Request[skillv1.DeleteSkillCoverRequest]) (*connect.Response[skillv1.DeleteSkillCoverResponse], error) {
+	if _, err := callerSubject(ctx); err != nil {
+		return nil, err
+	}
+	item, err := s.skills.ClearCover(ctx, req.Msg.GetSkillId())
+	if err != nil {
+		return nil, toSkillConnectError(err)
+	}
+	return connect.NewResponse(&skillv1.DeleteSkillCoverResponse{
+		Skill: toProtoSkill(s.skills.ViewOf(ctx, item), true),
 	}), nil
 }
 

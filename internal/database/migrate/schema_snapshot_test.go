@@ -136,6 +136,7 @@ table skill_versions
   skill_id text pk=false null=true
   skipped_files integer pk=false null=true
 table skills
+  cover_key text pk=false null=true
   created_at datetime pk=false null=true
   current_version_id text pk=false null=true
   id text pk=true null=true

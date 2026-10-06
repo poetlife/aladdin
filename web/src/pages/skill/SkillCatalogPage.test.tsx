@@ -47,6 +47,10 @@ vi.mock('../../api/skill', () => ({
   setCurrentVersion: vi.fn(),
   updateMetadata: vi.fn(),
   deleteSkill: vi.fn(),
+  beginCoverUpload: vi.fn(),
+  commitCoverUpload: vi.fn(),
+  deleteCover: vi.fn(),
+  updateCover: vi.fn(),
 }))
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -172,6 +176,34 @@ describe('目录页', () => {
     )
     const container = await renderCatalog()
     expect(container.textContent).toContain('技能目录不可用')
+  })
+
+  // 封面：有图就出图，没有就出占位（首字 + 中性底）。**占位由界面生成**，平台里
+  // 没有"默认图"这类二进制资源（见 docs/design/skill/catalog.md 的"封面"）。
+  it('有封面时渲染图，没有时渲染占位', async () => {
+    vi.mocked(skillApi.listSkills).mockResolvedValue(
+      create(ListSkillsResponseSchema, {
+        skills: [
+          create(SkillSchema, {
+            id: 'skl_a',
+            title: '单色出图',
+            coverUrl: 'https://example.test/c.png',
+          }),
+          create(SkillSchema, { id: 'skl_b', title: '无封面' }),
+        ],
+        availableTags: [],
+      }),
+    )
+    const container = await renderCatalog()
+
+    const img = container.querySelector('img')
+    expect(img?.getAttribute('src')).toBe('https://example.test/c.png')
+
+    // 占位是图旁边那个 aria-hidden 的块，内容是首字。
+    const placeholders = Array.from(container.querySelectorAll('div[aria-hidden]')).filter(
+      (node) => node.textContent === '无',
+    )
+    expect(placeholders).toHaveLength(1)
   })
 
   it('空目录给出与权限相符的提示', async () => {

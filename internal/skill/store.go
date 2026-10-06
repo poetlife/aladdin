@@ -50,6 +50,11 @@ type Store interface {
 	// **它不碰内容层任何一项**：当前版本、文件清单与所有字节在改动前后逐字不变。
 	UpdateMetadata(ctx context.Context, skillID, title, summary string, tags []string) error
 
+	// SetCover 设置或清空一个技能的封面键。空串表示清空。
+	//
+	// 它只改说明层的那一列：对象本身的写入与删除在服务层（见 cover.go）。
+	SetCover(ctx context.Context, skillID, coverKey string) error
+
 	// DeleteSkill 删掉技能、它的版本、标签、收藏与使用记录。
 	//
 	// **它不删桶上的字节**：内容对象按摘要全局共享，同一份字节可能正被别处引用

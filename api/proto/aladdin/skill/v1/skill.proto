@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package aladdin.skill.v1;
 
+import "aladdin/objectstore/v1/upload.proto";
 import "aladdin/rbac/v1/annotations.proto";
 
 option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/skill/v1;skillv1";
@@ -176,6 +177,37 @@ service SkillAdminService {
     option (aladdin.rbac.v1.required_permission) = "skill.catalog.write";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
+
+  // 开始一次封面上传：签发一份直传凭证。
+  //
+  // **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
+  // 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
+  // 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+  //
+  // 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
+  // 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
+  // docs/design/skill/catalog.md 的"封面"）。
+  rpc BeginSkillCoverUpload(BeginSkillCoverUploadRequest) returns (BeginSkillCoverUploadResponse) {
+    option (aladdin.rbac.v1.required_permission) = "skill.catalog.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 提交一次封面上传：核对字节确实到了，把技能指向它。
+  //
+  // 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
+  // Head：不存在即失败，字节数超过上限即失败并删除对象。
+  rpc CommitSkillCoverUpload(CommitSkillCoverUploadRequest) returns (CommitSkillCoverUploadResponse) {
+    option (aladdin.rbac.v1.required_permission) = "skill.catalog.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 移除封面。没有封面时也成功（幂等）。
+  //
+  // 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
+  rpc DeleteSkillCover(DeleteSkillCoverRequest) returns (DeleteSkillCoverResponse) {
+    option (aladdin.rbac.v1.required_permission) = "skill.catalog.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
 }
 
 // Skill 是目录里的一条技能。
@@ -233,6 +265,16 @@ message Skill {
   // 当前版本的文件清单（路径 → 字节数 + 内容摘要）。**不含正文**
   // （见 GetSkillFile）。
   repeated SkillFile files = 16;
+
+  // 封面的**短时读取地址**，列表与详情都给。空串表示这个技能没有封面，界面据此
+  // 渲染占位（标题首字 + 中性底），而不是去取一张不存在的图。
+  //
+  // 它是**预签名地址**：短时有效，过期后重新读一次就有新的。签名是本地计算、
+  // 不发网络请求，因此列表里 N 条技能不产生 N 次往返。
+  //
+  // **封面不是包的内容**：它属于说明层，不进文件清单、不进版本、不参与取用
+  // （见 docs/design/skill/catalog.md 的"封面"）。
+  string cover_url = 17;
 }
 
 // SkillSource 是一个技能的内容从哪来。
@@ -386,6 +428,15 @@ message ImportSkillRequest {
   string summary = 5;
   // 可选的初始标签。
   repeated string tags = 6;
+  // 可选的封面来源：**包内的一条图片路径**（如 `examples/cover.png`）。
+  //
+  // 服务端把这一条单独取回来、校验后存成封面。**它不进文件清单**——封面是说明层
+  // 的一项，不是包的内容（见 docs/design/skill/catalog.md 的"封面"）。因此这条
+  // 路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。
+  //
+  // 取不到、或类型与字节不符时**整次纳管失败**，与别的校验同一条：不留下"技能
+  // 进来了、只是没有封面"这种要人去猜的状态。
+  string cover_path = 7;
 }
 
 message ImportSkillResponse {
@@ -430,3 +481,35 @@ message DeleteSkillRequest {
 }
 
 message DeleteSkillResponse {}
+
+message BeginSkillCoverUploadRequest {
+  string skill_id = 1;
+  // 上传方声明的类型。服务端只校验它在白名单内——白名单里没有任何可执行类型，
+  // 而这正是这套链路能成立的原因。
+  string content_type = 2;
+  // 上传方声明的字节数。服务端按它早退（省一次白传），真正的边界由存储侧执行。
+  uint64 size_bytes = 3;
+}
+
+message BeginSkillCoverUploadResponse {
+  // 直传凭证。**只允许写、只对这个技能的封面这一个键有效、短时有效**，且允许
+  // 覆盖（封面是"当前这一张"）。
+  aladdin.objectstore.v1.DirectUploadCredential upload = 1;
+}
+
+message CommitSkillCoverUploadRequest {
+  string skill_id = 1;
+}
+
+message CommitSkillCoverUploadResponse {
+  // 提交之后的那一份技能，省掉一次读取：调用方多半正要刷新卡片上的那张图。
+  Skill skill = 1;
+}
+
+message DeleteSkillCoverRequest {
+  string skill_id = 1;
+}
+
+message DeleteSkillCoverResponse {
+  Skill skill = 1;
+}

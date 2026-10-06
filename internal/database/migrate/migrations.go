@@ -31,5 +31,6 @@ func migrations() []*gormigrate.Migration {
 		migration0011GalaxyContentSlots,
 		migration0012ClientEvents,
 		migration0013SkillCatalog,
+		migration0014SkillCover,
 	}
 }

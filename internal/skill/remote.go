@@ -36,6 +36,17 @@ type Remote interface {
 	// **成本只随平台要收的东西增长**：目录树先给一遍（一次请求），只有要收的
 	// 条目才去取字节，因此"上游有多大"不影响这次纳管的内存与请求数（见 Tree）。
 	FetchTree(ctx context.Context, repo Repository, commit, subPath string) (Tree, error)
+
+	// FetchBlob 按 git 对象标识取回一条文件的字节，maxBytes 是**这一次**允许的上限。
+	//
+	// **它是"包外的东西"的入口**，目前唯一的消费方是封面：那一张多半正是被跳过的
+	// 二进制，而它仍然得能被取回来。标识来自 FetchTree 给的那张表，因此这里不需要
+	// 也不接受路径——拼地址的那一处仍然只有本文件。
+	//
+	// **上限由调用方给**，因为两个消费方的上限不是同一个：包里的条目受包契约的单
+	// 文件上限约束，而封面是包外的一张图，受它自己那一档约束。写死其中一个的表现是
+	// "这张封面明明在上限内，却被按包里的规矩拒了"。
+	FetchBlob(ctx context.Context, repo Repository, sha string, maxBytes int64) ([]byte, error)
 }
 
 const (
@@ -122,13 +133,13 @@ func (g *GithubRemote) FetchTree(ctx context.Context, repo Repository, commit, s
 	if err != nil {
 		return Tree{}, err
 	}
-	tree := Tree{Skipped: plan.Skipped}
+	tree := Tree{Skipped: plan.Skipped, Blobs: plan.Blobs}
 	var expanded int64
 	for _, blob := range plan.Files {
 		if len(tree.Files) >= MaxFiles {
 			return Tree{}, fmt.Errorf("%w: 文件数超过上限 %d", ErrPackageInvalid, MaxFiles)
 		}
-		data, err := g.fetchBlob(ctx, repo, blob.SHA)
+		data, err := g.fetchBlob(ctx, repo, blob.SHA, MaxFileBytes)
 		if err != nil {
 			return Tree{}, err
 		}
@@ -169,11 +180,16 @@ func (g *GithubRemote) planTree(ctx context.Context, repo Repository, commit, su
 	return planRepoTree(payload.Tree, subPath)
 }
 
+// FetchBlob 实现 Remote。
+func (g *GithubRemote) FetchBlob(ctx context.Context, repo Repository, sha string, maxBytes int64) ([]byte, error) {
+	return g.fetchBlob(ctx, repo, sha, maxBytes)
+}
+
 // fetchBlob 取一条对象的字节。
 //
 // **按 sha 取，不按路径取**：sha 是固定长度的十六进制，拼不出别的东西来；而路径
 // 要拼进 URL，多一处转义就多一处可能拼错的地方。
-func (g *GithubRemote) fetchBlob(ctx context.Context, repo Repository, sha string) ([]byte, error) {
+func (g *GithubRemote) fetchBlob(ctx context.Context, repo Repository, sha string, maxBytes int64) ([]byte, error) {
 	path := fmt.Sprintf("/repos/%s/%s/git/blobs/%s",
 		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), url.PathEscape(sha))
 	resp, err := g.do(ctx, path, githubRawAccept)
@@ -185,12 +201,12 @@ func (g *GithubRemote) fetchBlob(ctx context.Context, repo Repository, sha strin
 		return nil, err
 	}
 	// 单条字节的上限在这里就生效：读多一个字节即判超限，而不是先把整条收下来。
-	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxFileBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("%w: 读取对象失败: %w", ErrRemoteUnavailable, err)
 	}
-	if len(data) > MaxFileBytes {
-		return nil, fmt.Errorf("%w: 取回的对象超过单文件上限 %d 字节", ErrPackageInvalid, MaxFileBytes)
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%w: 取回的对象超过 %d 字节", ErrPackageInvalid, maxBytes)
 	}
 	return data, nil
 }

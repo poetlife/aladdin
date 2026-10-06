@@ -128,6 +128,18 @@ func (m *MemoryStore) UpdateMetadata(_ context.Context, skillID, title, summary 
 	return nil
 }
 
+// SetCover 实现 Store。
+func (m *MemoryStore) SetCover(_ context.Context, skillID, coverKey string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	item, ok := m.skills[skillID]
+	if !ok {
+		return ErrSkillNotFound
+	}
+	item.CoverKey = coverKey
+	return nil
+}
+
 // DeleteSkill 实现 Store。
 func (m *MemoryStore) DeleteSkill(_ context.Context, skillID string) error {
 	m.mu.Lock()

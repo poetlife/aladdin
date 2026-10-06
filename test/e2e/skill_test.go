@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 
@@ -44,10 +46,16 @@ type fakeSkillRemote struct {
 	mu     sync.Mutex
 	commit string
 	trees  map[string]map[string]string
+	// blobs 是 FetchTree 走过的对象（假的标识 → 字节），供 FetchBlob 反查。
+	blobs map[string][]byte
 }
 
 func newFakeSkillRemote() *fakeSkillRemote {
-	return &fakeSkillRemote{commit: skillCommit1, trees: map[string]map[string]string{}}
+	return &fakeSkillRemote{
+		commit: skillCommit1,
+		trees:  map[string]map[string]string{},
+		blobs:  map[string][]byte{},
+	}
 }
 
 func (f *fakeSkillRemote) setTree(commit string, files map[string]string) {
@@ -92,9 +100,36 @@ func (f *fakeSkillRemote) FetchTree(_ context.Context, repo skill.Repository, co
 			continue
 		}
 		relative := strings.TrimPrefix(strings.TrimPrefix(path, subPath), "/")
-		out.Files = append(out.Files, skill.FetchedFile{Path: relative, Data: []byte(tree[path])})
+		data := []byte(tree[path])
+		sha := "sha-" + path
+		f.setBlob(sha, data)
+		out.Blobs = append(out.Blobs, skill.Blob{Path: relative, SHA: sha, Size: int64(len(data))})
+		// 与真实实现同一条规则：不是文本的条目**跳过并点名**，不进包（见
+		// docs/design/skill/onboarding.md）。
+		if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
+			out.Skipped = append(out.Skipped, relative)
+			continue
+		}
+		out.Files = append(out.Files, skill.FetchedFile{Path: relative, Data: data})
 	}
 	return out, nil
+}
+
+func (f *fakeSkillRemote) setBlob(sha string, data []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blobs[sha] = data
+}
+
+// FetchBlob 按 FetchTree 给过的标识取字节（封面的那条路要用）。
+func (f *fakeSkillRemote) FetchBlob(_ context.Context, _ skill.Repository, sha string, maxBytes int64) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.blobs[sha]
+	if !ok {
+		return nil, fmt.Errorf("%w: 没有这个对象", skill.ErrRepositoryNotFound)
+	}
+	return data, nil
 }
 
 // commandWithHome 构造一条把 HOME 钉在指定目录上的命令。
@@ -116,6 +151,9 @@ func commandWithHome(t *testing.T, home, binary string, args ...string) *exec.Cm
 	cmd.Env = append(env, "HOME="+home)
 	return cmd
 }
+
+// coverPNG 是一段最小的 PNG：八个字节的签名加一点内容。魔数核对只看文件头。
+var coverPNG = []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R'}
 
 // skillTree 造一棵合法的技能包。
 func skillTree(description string) map[string]string {
@@ -422,6 +460,102 @@ func TestSkillImportRejectsNonGithubAddress(t *testing.T) {
 		})); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("地址 %q 的结论 = %v", address, err)
 		}
+	}
+}
+
+// 封面：纳管时从仓库取一张 → 卡片拿得到地址 → 界面换一张 → 移除。
+//
+// 它是**说明层的一项**，因此这一条同时要确认：封面进去了，而文件清单里没有它。
+func TestSkillCoverEndToEnd(t *testing.T) {
+	h := startServer(t, rbac.RoleSkillCurator, testScope)
+	h.skillRemote.setTree(skillCommit1, map[string]string{
+		"SKILL.md":  "---\nname: mono-color\ndescription: 出图。\n---\n\n正文。\n",
+		"cover.png": string(coverPNG),
+	})
+
+	reader, admin := skillClients(t, h, testToken, testScope)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	resp, err := admin.ImportSkill(ctx, connect.NewRequest(&skillv1.ImportSkillRequest{
+		RepositoryUrl: "https://github.com/" + skillOwner + "/" + skillRepo,
+		CoverPath:     "cover.png",
+		Tags:          []string{"出图"},
+	}))
+	if err != nil {
+		t.Fatalf("带封面纳管失败: %v", err)
+	}
+	item := resp.Msg.GetSkill()
+	if item.GetCoverUrl() == "" {
+		t.Fatal("纳管之后没有拿到封面地址")
+	}
+	// **封面不是包的内容**：文件清单里只有那份文本。
+	for _, file := range item.GetFiles() {
+		if file.GetPath() == "cover.png" {
+			t.Error("封面进了文件清单")
+		}
+	}
+	if len(item.GetFiles()) != 1 {
+		t.Errorf("文件清单 = %d 条，期望 1 条", len(item.GetFiles()))
+	}
+
+	// 列表里也给地址（卡片要显示图）。
+	list, err := reader.ListSkills(ctx, connect.NewRequest(&skillv1.ListSkillsRequest{}))
+	if err != nil {
+		t.Fatalf("列出失败: %v", err)
+	}
+	if list.Msg.GetSkills()[0].GetCoverUrl() == "" {
+		t.Error("列表里没有封面地址")
+	}
+
+	// 界面换一张：签发 → 直传 → 提交。
+	begin, err := admin.BeginSkillCoverUpload(ctx, connect.NewRequest(&skillv1.BeginSkillCoverUploadRequest{
+		SkillId: item.GetId(), ContentType: "image/png", SizeBytes: uint64(len(coverPNG)),
+	}))
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	credential := begin.Msg.GetUpload()
+	if credential == nil || credential.GetKey() == "" {
+		t.Fatal("没有返回直传凭证")
+	}
+	// 直传那一步在真实链路里由浏览器把字节写进桶；装配里没有真桶，因此这里直接
+	// 写进假存储（与资产那些用例同一条）。
+	h.objects.SimulateUpload(credential.GetKey(), coverPNG)
+	committed, err := admin.CommitSkillCoverUpload(ctx, connect.NewRequest(&skillv1.CommitSkillCoverUploadRequest{
+		SkillId: item.GetId(),
+	}))
+	if err != nil {
+		t.Fatalf("提交失败: %v", err)
+	}
+	if committed.Msg.GetSkill().GetCoverUrl() == "" {
+		t.Error("换完之后没有封面地址")
+	}
+
+	// 移除。
+	cleared, err := admin.DeleteSkillCover(ctx, connect.NewRequest(&skillv1.DeleteSkillCoverRequest{
+		SkillId: item.GetId(),
+	}))
+	if err != nil {
+		t.Fatalf("移除失败: %v", err)
+	}
+	if cleared.Msg.GetSkill().GetCoverUrl() != "" {
+		t.Error("移除之后仍有封面地址")
+	}
+
+	// **写权限是封面那道门。** 创作者能读目录，但换封面的三个方法一律被拒——
+	// 它改的是目录内容，与"读"不是一回事。
+	creatorToken, _ := injectSubject(t, h, rbac.RoleGalaxyAuthor, "e2e-skill-cover-reader")
+	_, creatorAdmin := skillClients(t, h, creatorToken, testScope)
+	if _, err := creatorAdmin.BeginSkillCoverUpload(ctx, connect.NewRequest(&skillv1.BeginSkillCoverUploadRequest{
+		SkillId: item.GetId(), ContentType: "image/png", SizeBytes: 8,
+	})); err == nil {
+		t.Error("没有写权限的主体签发了封面上传凭证")
+	}
+	if _, err := creatorAdmin.DeleteSkillCover(ctx, connect.NewRequest(&skillv1.DeleteSkillCoverRequest{
+		SkillId: item.GetId(),
+	})); err == nil {
+		t.Error("没有写权限的主体移除了封面")
 	}
 }
 

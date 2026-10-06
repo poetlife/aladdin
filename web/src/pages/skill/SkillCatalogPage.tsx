@@ -4,12 +4,14 @@ import {
   Button,
   Card,
   Checkbox,
+  Col,
   Empty,
   Form,
   Input,
-  List,
   Popconfirm,
+  Row,
   Select,
+  Skeleton,
   Space,
   Tag,
   Typography,
@@ -23,6 +25,7 @@ import { PermissionGate, usePermission } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
 import type { Skill, SkillCapabilities } from '../../gen/proto/aladdin/skill/v1/skill_pb'
 import { AppModal } from '../../ui/AppModal'
+import { SkillCover } from './SkillCover'
 
 interface ImportFormValues {
   repositoryUrl: string
@@ -231,87 +234,93 @@ export function SkillCatalogPage(): React.ReactNode {
             <Alert type="warning" showIcon message="结果被截断，请用关键词或标签缩小范围" />
           )}
 
-          <List
-            loading={loading}
-            dataSource={skills}
-            locale={{
-              emptyText: (
-                <Empty
-                  description={
-                    canCurate ? '目录还是空的。用「从 GitHub 纳管」放进来第一个。' : '没有匹配的技能。'
-                  }
-                />
-              ),
-            }}
-            renderItem={(item) => (
-              <List.Item
-                actions={[
-                  <Button
-                    key="favorite"
-                    type="text"
+          {loading ? (
+            <Skeleton active paragraph={{ rows: 4 }} />
+          ) : skills.length === 0 ? (
+            <Empty
+              description={
+                canCurate ? '目录还是空的。用「从 GitHub 纳管」放进来第一个。' : '没有匹配的技能。'
+              }
+            />
+          ) : (
+            /* 卡片网格：技能之间的差别首先是"看起来是什么样"，一排排读文字读不出
+               这件事。列数交给 antd 的响应式栅格，不自己算断点（与外壳那条同取向）。 */
+            <Row gutter={[16, 16]}>
+              {skills.map((item) => (
+                <Col key={item.id} xs={24} sm={12} lg={8} xxl={6}>
+                  <Card
                     size="small"
-                    loading={busyId === item.id}
-                    icon={<Star size={16} fill={item.favorited ? 'currentColor' : 'none'} />}
-                    onClick={() => void toggleFavorite(item)}
-                  >
-                    {item.favorited ? '已收藏' : '收藏'}
-                  </Button>,
-                  ...(canCurate
-                    ? [
-                        <Button
-                          key="sync"
-                          type="text"
-                          size="small"
-                          disabled={busyId !== null}
-                          onClick={() => void runAction(item.id, () => skillApi.resyncSkill(item.id))}
-                        >
-                          同步
-                        </Button>,
-                        <Popconfirm
-                          key="delete"
-                          title="删除这个技能？"
-                          description="版本、标签、收藏与使用记录一起消失，不可撤销。"
-                          okText="删除"
-                          okButtonProps={{ danger: true }}
-                          onConfirm={() => void runAction(item.id, () => skillApi.deleteSkill(item.id))}
-                        >
-                          <Button type="text" size="small" danger icon={<Trash2 size={16} />} />
-                        </Popconfirm>,
-                      ]
-                    : []),
-                ]}
-              >
-                <List.Item.Meta
-                  title={<Link to={`/skills/${item.id}`}>{item.title}</Link>}
-                  description={
-                    <Space direction="vertical" size={4}>
-                      {/* 简介在列表里**压到两行**：技能的 description 是写给 agent 判断
-                          "该不该用"的，动辄几百字，原样铺开会把列表变成文字墙，而列表
-                          是拿来一眼扫的。全文在详情页。 */}
-                      <Typography.Paragraph
-                        type="secondary"
-                        ellipsis={{ rows: 2 }}
-                        style={{ marginBottom: 0 }}
+                    hoverable
+                    cover={<SkillCover skill={item} />}
+                    actions={[
+                      <Button
+                        key="favorite"
+                        type="text"
+                        size="small"
+                        loading={busyId === item.id}
+                        icon={<Star size={16} fill={item.favorited ? 'currentColor' : 'none'} />}
+                        onClick={() => void toggleFavorite(item)}
                       >
-                        {item.summary}
-                      </Typography.Paragraph>
-                      <Space wrap size={4}>
-                        {item.tags.map((tag) => (
-                          <Tag key={tag}>{tag}</Tag>
-                        ))}
-                        <Typography.Text type="secondary">
-                          {item.fileCount} 个文件
-                          {item.usage !== undefined && item.usage.useDays > 0
-                            ? ` · 最近 30 天：${item.usage.useDays} 个人日 / ${item.usage.userCount} 人`
-                            : ''}
-                        </Typography.Text>
-                      </Space>
-                    </Space>
-                  }
-                />
-              </List.Item>
-            )}
-          />
+                        {item.favorited ? '已收藏' : '收藏'}
+                      </Button>,
+                      ...(canCurate
+                        ? [
+                            <Button
+                              key="sync"
+                              type="text"
+                              size="small"
+                              disabled={busyId !== null}
+                              onClick={() => void runAction(item.id, () => skillApi.resyncSkill(item.id))}
+                            >
+                              同步
+                            </Button>,
+                            <Popconfirm
+                              key="delete"
+                              title="删除这个技能？"
+                              description="版本、标签、收藏与使用记录一起消失，不可撤销。"
+                              okText="删除"
+                              okButtonProps={{ danger: true }}
+                              onConfirm={() => void runAction(item.id, () => skillApi.deleteSkill(item.id))}
+                            >
+                              <Button type="text" size="small" danger icon={<Trash2 size={16} />} />
+                            </Popconfirm>,
+                          ]
+                        : []),
+                    ]}
+                  >
+                    <Card.Meta
+                      title={<Link to={`/skills/${item.id}`}>{item.title}</Link>}
+                      description={
+                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                          {/* 简介在列表里**压到两行**：技能的 description 是写给 agent
+                              判断"该不该用"的，动辄几百字，原样铺开会把卡片撑成一堵墙，
+                              而卡片是拿来一眼扫的。全文在详情页。 */}
+                          <Typography.Paragraph
+                            type="secondary"
+                            ellipsis={{ rows: 2 }}
+                            style={{ marginBottom: 0 }}
+                          >
+                            {item.summary}
+                          </Typography.Paragraph>
+                          <Space wrap size={4}>
+                            {item.tags.map((tag) => (
+                              <Tag key={tag}>{tag}</Tag>
+                            ))}
+                          </Space>
+                          <Typography.Text type="secondary">
+                            {item.fileCount} 个文件
+                            {item.usage !== undefined && item.usage.useDays > 0
+                              ? ` · 最近 30 天：${item.usage.useDays} 个人日 / ${item.usage.userCount} 人`
+                              : ''}
+                          </Typography.Text>
+                        </Space>
+                      }
+                    />
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+          )}
         </Space>
       </Card>
 

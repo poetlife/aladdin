@@ -49,6 +49,10 @@ vi.mock('../../api/skill', () => ({
   setCurrentVersion: vi.fn(),
   updateMetadata: vi.fn(),
   deleteSkill: vi.fn(),
+  beginCoverUpload: vi.fn(),
+  commitCoverUpload: vi.fn(),
+  deleteCover: vi.fn(),
+  updateCover: vi.fn(),
 }))
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -188,6 +192,18 @@ describe('详情页', () => {
     const container = await renderDetail()
     expect(container.textContent).not.toContain('切到这一版')
     expect(container.textContent).not.toContain('改说明层')
+  })
+
+  it('有写权限时可以换封面；这一份没有封面，就不给「移除封面」', async () => {
+    vi.mocked(identityApi.getSessionPermissions).mockResolvedValue(
+      create(GetSessionPermissionsResponseSchema, {
+        scope: '',
+        permissions: [PermissionCodes.SkillCatalogRead, PermissionCodes.SkillCatalogWrite],
+      }),
+    )
+    const container = await renderDetail()
+    expect(container.textContent).toContain('换封面')
+    expect(container.textContent).not.toContain('移除封面')
   })
 
   it('有写权限时列出全部版本并标出当前那一版', async () => {
