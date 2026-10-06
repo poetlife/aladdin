@@ -28,7 +28,7 @@ import type { ModalProps } from 'antd'
  * `styles` 由本组件独占，因此从入参里去掉：两个地方都能设高度，就等于两个地方都能
  * 把它设错。
  */
-export function AppModal({ className, rootClassName, children, ...rest }: Omit<ModalProps, 'styles'>): React.ReactNode {
+export function AppModal({ children, ...rest }: Omit<ModalProps, 'styles'>): React.ReactNode {
   const { token } = theme.useToken()
   const horizontal = token.paddingContentHorizontalLG
 
@@ -45,8 +45,6 @@ export function AppModal({ className, rootClassName, children, ...rest }: Omit<M
   return (
     <Modal
       {...rest}
-      className={className}
-      rootClassName={rootClassName}
       styles={{
         // 视口减去顶部偏移（antd 自己的 top=100px）与底部留白（padding-bottom=24px），
         // 再留一点余量：**宁可比能给的高度小一点，也不要大到又撑出整屏滚动**。
