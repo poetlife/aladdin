@@ -141,13 +141,14 @@ func (s *Store) CreateSkill(ctx context.Context, item skill.Skill) error {
 			return err
 		}
 		version := database.SkillVersionRecord{
-			ID:          item.Current.ID,
-			SkillID:     item.ID,
-			Commit:      item.Current.Commit,
-			Name:        item.Current.Name,
-			Description: item.Current.Description,
-			Files:       files,
-			CreatedAt:   item.Current.CreatedAt,
+			ID:           item.Current.ID,
+			SkillID:      item.ID,
+			Commit:       item.Current.Commit,
+			Name:         item.Current.Name,
+			Description:  item.Current.Description,
+			Files:        files,
+			SkippedFiles: item.Current.SkippedFiles,
+			CreatedAt:    item.Current.CreatedAt,
 		}
 		if err := tx.Create(&version).Error; err != nil {
 			return err

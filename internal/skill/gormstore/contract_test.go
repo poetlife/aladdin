@@ -56,7 +56,10 @@ func testVersion(id, skillID string, at time.Time) skill.Version {
 			{Path: "SKILL.md", Digest: "a" + repeat("0", 63), SizeBytes: 42},
 			{Path: "palette.md", Digest: "b" + repeat("0", 63), SizeBytes: 7},
 		},
-		CreatedAt: at,
+		// 非零：这一列在两个写入路径上都要落得下去。取零值当夹具的话，漏掉一处的
+		// 实现会照样通过——而那正是它上次漏掉的原因。
+		SkippedFiles: 3,
+		CreatedAt:    at,
 	}
 }
 
@@ -107,6 +110,9 @@ func TestStoreRoundTrip(t *testing.T) {
 			}
 			if got.Current.Description != "单色印刷风出图。" {
 				t.Errorf("description = %q", got.Current.Description)
+			}
+			if got.Current.SkippedFiles != 3 {
+				t.Errorf("跳过的条数 = %d，期望 3（创建这条路上丢了？）", got.Current.SkippedFiles)
 			}
 
 			items, err := store.ListSkills(ctx)
@@ -168,6 +174,9 @@ func TestStoreVersionsAreImmutableAndOrdered(t *testing.T) {
 			}
 			if got.Source.Commit != source.Commit {
 				t.Errorf("追加之后记录的提交 = %q", got.Source.Commit)
+			}
+			if got.Current.SkippedFiles != 3 {
+				t.Errorf("追加之后的跳过条数 = %d，期望 3", got.Current.SkippedFiles)
 			}
 
 			versions, err := store.ListVersions(ctx, "skl_a")
