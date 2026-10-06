@@ -43,6 +43,16 @@ afterEach(async () => {
 })
 
 describe('主站壳', () => {
+  // **首屏不留空白。** 壳要问服务端"这条分享地址对应哪一条内容地址"，这一问往返期间
+  // 页面上什么都没有——访客看到的就是一段不知道是在加载还是坏了的空白。
+  it('解析期间显示加载态，不留空白', async () => {
+    vi.mocked(galaxyApi.resolveSharedPage).mockReturnValue(new Promise<never>(() => {}))
+
+    const container = await renderAt('/g/p1')
+
+    expect(container.textContent).toContain('正在加载内容')
+  })
+
   // 壳只做一件事：把**整条分享路径**交给服务端解析，再把给出的内容地址放进 iframe。
   // 传整条路径而不是（工程，槽，路径）三元组——槽（`docs` 那一段）的判定只有服务端
   // 一处，前端不做第二份形状解析。

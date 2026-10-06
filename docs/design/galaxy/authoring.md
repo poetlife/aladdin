@@ -103,6 +103,7 @@
 - **内容的脚本仍然进不了这一页**：iframe 不给 `allow-same-origin`，而发布域与主应用不同源（见 [publication.md](publication.md)）。隔离由这两条一起保证。
 - **预览里的资产是私有区的短时预签名地址**（见 [asset-library.md](asset-library.md)）：那一页长时间开着时，图片可能在地址过期后显示不出来。刷新预览即得到新地址——与头像"重新读取档案即得到新地址"同源。
 - **凭证是短时的、随地址走**：预览态接受"地址是凭证"这一取舍，因此**未发布的草稿与资产里不得承载秘密**，草稿地址也不得被当作分享链接长期使用。这两条要出现在界面上，而不是留给用户猜。
+- **预览与壳共用同一条加载态**：这一块在内容到达之前有加载提示，超过时限仍未加载完时提示改成不遮挡正文的可重试状态条（见 [publication.md](publication.md) 的"主站壳"）。它随交付内容的那一帧一起定义，因此两处不可能"一个有一个没有"。
 
 **预览不做审查、不做裁剪**：内容写什么就渲染什么。引用坏了就显示坏的——这一页的即时提示（见下）是另一个渠道，预览不因为"知道这处有问题"就替用户藏起来。**"预览看起来对"与"发布能成功"是两件事**，把它们混起来会让用户以为预览通过就等于发布通过。
 
@@ -163,6 +164,7 @@
 | 预览文档不由应用源服务 | 用户内容只经沙箱 iframe 从**发布域**上的预览通道进入；应用源上不存在一个返回用户内容的地址（前端测试 + 代码审查） |
 | 预览可单独打开 | 预览有一条独立路由，单独打开时渲染的是同一份草稿，且沙箱属性与内嵌时一致（前端测试） |
 | 预览也有灯箱 | 工作台里的预览与单独打开的预览页都消费同一条通道消息并开灯箱，两处的隔离与沙箱属性一致（前端测试） |
+| 预览首屏不留空白 | 内容未到达时这一块有加载提示；超过时限仍未加载完时撤掉遮罩、只留可重试的状态条，正文不再被盖住（前端测试） |
 | 网页端不改内容 | 源码视图是只读的；接口面上不存在从网页端写内容的调用（前端测试 + `internal/server` 测试） |
 | 撤回在工作台找得到 | 已发布且持有发布权限时，状态条上地址旁有一个**按钮级**的撤回，二次确认后才调用；不持有发布权限时不渲染（前端测试） |
 | 撤回在列表找得到 | 工程列表"状态"列里，每一条已发布的槽都在地址旁带撤回；权限与二次确认与工作台一致，取消不产生调用（前端测试） |
@@ -205,7 +207,7 @@
 | 单独打开的预览页 | [web/src/pages/galaxy/PreviewPage.tsx](../../../web/src/pages/galaxy/PreviewPage.tsx) |
 | 源码视图（文件树、选中那一份的就地渲染） | [web/src/pages/galaxy/SourceView.tsx](../../../web/src/pages/galaxy/SourceView.tsx) |
 | 一份资产的字节怎么呈现（图片 / 视频 / 音频） | [web/src/pages/galaxy/AssetMedia.tsx](../../../web/src/pages/galaxy/AssetMedia.tsx) |
-| 预览 iframe 的沙箱属性，以及它的接入桥接收端 | [web/src/pages/galaxy/SandboxFrame.tsx](../../../web/src/pages/galaxy/SandboxFrame.tsx) |
+| 预览 iframe 的沙箱属性、它的加载态，以及它的接入桥接收端 | [web/src/pages/galaxy/SandboxFrame.tsx](../../../web/src/pages/galaxy/SandboxFrame.tsx) |
 | 接入桥的消息形状与校验（宿主侧的唯一入口） | [web/src/pages/galaxy/frame-channel.ts](../../../web/src/pages/galaxy/frame-channel.ts) |
 | 状态条（草稿 → 版本 → 发布，含校验结论、已发布时的地址与撤回） | [web/src/pages/galaxy/LifecycleStrip.tsx](../../../web/src/pages/galaxy/LifecycleStrip.tsx) |
 | 顶栏（存版本、选择哪一版发布、打开资产与版本两个面板） | [web/src/pages/galaxy/WorkbenchTopBar.tsx](../../../web/src/pages/galaxy/WorkbenchTopBar.tsx) |
