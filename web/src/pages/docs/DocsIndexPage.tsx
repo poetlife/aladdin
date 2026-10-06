@@ -1,5 +1,5 @@
 import { Card, Space, Typography, theme } from 'antd'
-import { BookOpen, ChevronRight, FileJson, Sparkles, Terminal } from 'lucide-react'
+import { BookOpen, ChevronRight, FileJson, Sparkles, Terminal, Waypoints } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 /**
@@ -42,6 +42,17 @@ export function DocsIndexPage(): React.ReactNode {
               icon={<Sparkles size={18} />}
               title="创作与发布"
               blurb="写一份 HTML，用记号引用素材，发布成别人能打开的页面"
+            />
+          </Link>
+
+          {/* 这一章与上面两章不同的地方：它写的是"页面长在什么上"，不是"你要做什么"
+              ——文档页里的图片能点开，作者一行都不用写。它存在的理由是那条通道是一份
+              对外契约，协议取值从 frame-channel.ts 取（见 docs-area.md）。 */}
+          <Link to="/docs/frame-bridge">
+            <EntryRow
+              icon={<Waypoints size={18} />}
+              title="页面与外壳的通道"
+              blurb="文档页里的图片点开就是它：一条有版本的消息通道，以及两侧各判什么"
             />
           </Link>
 

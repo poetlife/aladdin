@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { FRAME_CHANNEL, FRAME_CHANNEL_VERSION } from './frame-channel'
 import { SandboxFrame } from './SandboxFrame'
 
 // React 19 要求显式声明这是 act 环境，否则每次 render 都会打印警告。
@@ -65,5 +66,89 @@ describe('沙箱 iframe', () => {
     const container = await renderFrame('https://pub.example.com/g/prj_x')
 
     expect(iframe(container).getAttribute('title')).toBe('发布页')
+  })
+})
+
+/** 一条约定的图片预览消息。`source` 由调用方给：这一条通道的判据就是它。 */
+function imagePreview(source: MessageEventSource | null): MessageEvent {
+  return new MessageEvent('message', {
+    data: {
+      channel: FRAME_CHANNEL,
+      version: FRAME_CHANNEL_VERSION,
+      type: 'image-preview',
+      payload: {
+        images: [
+          { src: 'https://pub.example.com/a.png', alt: '甲' },
+          { src: 'https://bucket.example.com/b.png', alt: '乙' },
+        ],
+        index: 1,
+      },
+    },
+    source,
+  })
+}
+
+/** 灯箱里有没有出现这张图：预览渲染在宿主页面上，因此在 document.body 里找。 */
+function lightboxShows(src: string): boolean {
+  return document.body.querySelector(`img[src="${src}"]`) !== null
+}
+
+describe('接入桥（文档页 → 宿主）', () => {
+  // 被点的那一张由宿主画到自己的页面上——这正是"灯箱在宿主侧"的样子。
+  it('文档页发来预览请求后，宿主打开灯箱并显示被点的那一张', async () => {
+    const container = await renderFrame('https://pub.example.com/g/prj_x/docs/index.html')
+
+    await act(async () => {
+      window.dispatchEvent(imagePreview(iframe(container).contentWindow))
+    })
+
+    expect(lightboxShows('https://bucket.example.com/b.png')).toBe(true)
+  })
+
+  // **起点由宿主给，且图仍按文档顺序排。** 这一条钉住的是"被点的那张是第 2 张"：
+  // 如果改成把被点的图轮转到队首（受控下标写不回去时的绕法），上一张会在打开时
+  // 就是灰的——明明还有第 1 张可看。
+  it('从被点的那一张开起，且上一张仍可翻回去', async () => {
+    const container = await renderFrame('https://pub.example.com/g/prj_x/docs/index.html')
+
+    await act(async () => {
+      window.dispatchEvent(imagePreview(iframe(container).contentWindow))
+    })
+
+    const progress = document.querySelector('.ant-image-preview-progress')
+    expect(progress?.textContent, '计数不是文档顺序里的位置').toBe('2 / 2')
+
+    const prev = document.querySelector('.ant-image-preview-switch-prev')
+    expect(prev, '没有上一张按钮').not.toBeNull()
+    expect(prev?.className, '打开时上一张就是灰的').not.toContain('disabled')
+  })
+
+  // **只认自己那一帧。** 不透明源的 origin 是 `null`，认不出是谁发的，
+  // 因此判据只能是帧本身（见 SandboxFrame.tsx）。
+  it('来自别处的同类消息被丢弃', async () => {
+    await renderFrame('https://pub.example.com/g/prj_x/docs/index.html')
+
+    await act(async () => {
+      window.dispatchEvent(imagePreview(window))
+    })
+
+    expect(lightboxShows('https://bucket.example.com/b.png')).toBe(false)
+  })
+
+  // 信封之外一律忽略：类型不认识就当没收到。
+  it('认不出类型的消息不产生任何效果', async () => {
+    const container = await renderFrame('https://pub.example.com/g/prj_x/docs/index.html')
+    const event = imagePreview(iframe(container).contentWindow)
+
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { ...(event.data as object), type: 'something-else' },
+          source: iframe(container).contentWindow,
+        }),
+      )
+    })
+
+    expect(lightboxShows('https://bucket.example.com/b.png')).toBe(false)
   })
 })

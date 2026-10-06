@@ -19,6 +19,7 @@
 | 权限码是否已登记 | 权限目录 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
 | 前端当前会话是否持有某权限码（仅用于展示裁剪） | `usePermission()` | [web/src/auth/use-permission.ts](../web/src/auth/use-permission.ts) |
 | 当前视口是否为窄屏（手机），及窄屏断点的取值 | `useNarrowViewport()` / `NARROW_MEDIA_QUERY` | [web/src/layouts/use-narrow-viewport.ts](../web/src/layouts/use-narrow-viewport.ts) |
+| 交付用户内容的 iframe 的沙箱属性（**含不含 `allow-same-origin` 决定它是否落在不透明源上**；参数里不留可传入属性的口子） | `SandboxFrame` | [web/src/pages/galaxy/SandboxFrame.tsx](../web/src/pages/galaxy/SandboxFrame.tsx) |
 | 一个 RPC 方法需要认证 / 需要哪个权限码 | `rbac.Resolve` | [internal/rbac/annotation.go](../internal/rbac/annotation.go) |
 | 数据库后端类型的合法取值 | `database.ParseDialect` | [internal/database/dialect.go](../internal/database/dialect.go) |
 | 该读哪一个配置文件（显式指定 > 环境变量 > 默认位置） | `config.locateFile` | [internal/config/file.go](../internal/config/file.go) |
@@ -139,6 +140,7 @@
 |---------|---------|---------|
 | 接口契约与消息定义（服务端 + 前端类型） | proto 定义，经 `buf generate` 同时派生出 Go 与 TS 两侧代码 | [api/proto/](../api/proto/) |
 | 拒绝原因枚举（Go / TypeScript / CLI 三端同源） | [api/proto/aladdin/rbac/v1/errors.proto](../api/proto/aladdin/rbac/v1/errors.proto) | 由 `buf generate` 派生，三端均引用生成常量 |
+| 文档页 ↔ 宿主之间消息的形状（通道名、协议版本、消息类型；页面侧那一段由服务端渲染进产物） | 接入桥协议；**共享的是形状，代码因跨语言各一份，不得出现第三种形状** | [internal/galaxy/doc_frame_bridge.go](../internal/galaxy/doc_frame_bridge.go) / [web/src/pages/galaxy/frame-channel.ts](../web/src/pages/galaxy/frame-channel.ts) |
 | 权限码全集（Go 常量与前端常量同源） | 权限目录，经 `make gen` 双向派生 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
 | 客户端事件的类型、动作允许清单与字段（Go / TypeScript 两端同源） | proto 定义，经 `buf generate` 派生 | [api/proto/aladdin/telemetry/v1/telemetry.proto](../api/proto/aladdin/telemetry/v1/telemetry.proto) |
 | 一个动作的日志取值、是否允许匿名、可携带哪些属性 | 动作策略表 | [internal/telemetry/actions.go](../internal/telemetry/actions.go) |

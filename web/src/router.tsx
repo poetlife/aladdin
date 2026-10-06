@@ -16,6 +16,7 @@ import { SubjectBindingsPage } from './pages/SubjectBindingsPage'
 import { PermissionCodes } from './gen/permission-codes'
 import { CliPage } from './pages/docs/CliPage'
 import { DocsIndexPage } from './pages/docs/DocsIndexPage'
+import { FrameBridgePage } from './pages/docs/FrameBridgePage'
 import { GalaxyPage } from './pages/docs/GalaxyPage'
 import { ProjectEditorPage } from './pages/galaxy/ProjectEditorPage'
 import { ProjectListPage } from './pages/galaxy/ProjectListPage'
@@ -78,6 +79,10 @@ export const router = createBrowserRouter([
           { path: '/docs', element: <DocsIndexPage /> },
           { path: '/docs/cli', element: <CliPage /> },
           { path: '/docs/galaxy', element: <GalaxyPage /> },
+          // 页面与外壳的通道。它与前两章不同的地方在于：讲的是"页面长在什么上"，
+          // 不是"你要做什么"——协议取值从 frame-channel.ts 取，不手抄
+          //（见 docs/design/web/docs-area.md）。
+          { path: '/docs/frame-bridge', element: <FrameBridgePage /> },
           {
             element: <RequirePermission require={[PermissionCodes.RbacRoleRead]} />,
             children: [
