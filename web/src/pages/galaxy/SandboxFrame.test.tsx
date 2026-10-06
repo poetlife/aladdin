@@ -20,6 +20,13 @@ async function renderFrame(url: string): Promise<HTMLElement> {
   return container
 }
 
+/** 换一条地址重渲染，模拟预览被重新取了一次。 */
+async function rerenderFrame(url: string): Promise<void> {
+  await act(async () => {
+    root?.render(<SandboxFrame url={url} title="发布页" />)
+  })
+}
+
 function iframe(container: HTMLElement): HTMLIFrameElement {
   const element = container.querySelector('iframe')
   expect(element, '没有渲染出 iframe').not.toBeNull()
@@ -121,6 +128,22 @@ describe('接入桥（文档页 → 宿主）', () => {
     const prev = document.querySelector('.ant-image-preview-switch-prev')
     expect(prev, '没有上一张按钮').not.toBeNull()
     expect(prev?.className, '打开时上一张就是灰的').not.toContain('disabled')
+  })
+
+  // **预览地址刷新不该把已经打开的灯箱关掉。** 预览地址带的是**短时凭证**，每次重取
+  // 都是一张新票、一个新字符串，而内容一个字没变——工作台在窗口重新获得焦点时就会
+  // 重取一次。把灯箱的寿命挂在这条地址上，表现就是"点开的图闪一下就没了"。
+  it('预览地址刷新后，已打开的灯箱不被关掉', async () => {
+    const container = await renderFrame('https://pub.example.com/g/p/tok1/prj_x/docs/')
+
+    await act(async () => {
+      window.dispatchEvent(imagePreview(iframe(container).contentWindow))
+    })
+    expect(lightboxShows('https://bucket.example.com/b.png')).toBe(true)
+
+    await rerenderFrame('https://pub.example.com/g/p/tok2/prj_x/docs/')
+
+    expect(lightboxShows('https://bucket.example.com/b.png'), '刷新预览把灯箱关掉了').toBe(true)
   })
 
   // **只认自己那一帧。** 不透明源的 origin 是 `null`，认不出是谁发的，

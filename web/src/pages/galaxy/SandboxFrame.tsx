@@ -54,10 +54,13 @@ export function SandboxFrame({ url, title, height = 420 }: SandboxFrameProps): R
   const frame = useRef<HTMLIFrameElement>(null)
   const [preview, setPreview] = useState<FrameImagePreview | null>(null)
 
-  // 换一条地址就是换一份内容：上一份内容里点出来的那张图不该留在屏上。
-  useEffect(() => {
-    setPreview(null)
-  }, [url])
+  // **灯箱的寿命不跟 `url` 走。** 想当然的写法是"地址换了就丢掉上一份内容里点出来的
+  // 那张图"，但预览地址带的是**短时凭证**：每次重取都是一张新票、一个新字符串，而
+  // 内容一个字都没变。工作台在窗口重新获得焦点时就会重取一次（见 ProjectEditorPage
+  // 的 reloadWhenVisible），于是那条规则的表现变成了"点开的图闪一下就被关掉"。
+  //
+  // 灯箱是模态的，关它的人是用户；它也盖住了整个界面，所以"内容换了而灯箱还开着"
+  // 这件事在界面上发生不了。
 
   useEffect(() => {
     function onMessage(event: MessageEvent): void {
