@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -66,6 +67,15 @@ type MethodRule struct {
 	Reason string
 }
 
+// ErrUnknownProcedure 表示这个过程名根本不对应任何已注册的 RPC 方法：路径形状
+// 不对（`/`、`/nope` 这类），或者指向一个不存在的服务 / 方法。
+//
+// **它与"方法存在、但没写鉴权注解"是两回事。** 后者（KindDenied）是服务端漏写
+// 注解，属于服务端缺陷；前者是调用方把地址打错了。调用方据此给出**不同的错误码**
+// ——混成同一个，会让一次地址打错在面板上呈现为服务端故障，也会让排障的人去找
+// 一个并不存在的漏写注解（见 docs/design/rbac/server-permissions.md 的"拒绝语义"）。
+var ErrUnknownProcedure = errors.New("未知的 RPC 过程名")
+
 // Resolve 从 RPC 过程名解析出鉴权规则。
 //
 // procedure 形如 "/aladdin.rbac.v1.RBACService/GetRole"。这个格式对三种
@@ -119,15 +129,15 @@ func MethodDescriptor(procedure string) (protoreflect.MethodDescriptor, error) {
 
 	desc, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(service))
 	if err != nil {
-		return nil, fmt.Errorf("未找到服务描述符 %s: %w", service, err)
+		return nil, fmt.Errorf("%w：未找到服务描述符 %s（%w）", ErrUnknownProcedure, service, err)
 	}
 	serviceDesc, ok := desc.(protoreflect.ServiceDescriptor)
 	if !ok {
-		return nil, fmt.Errorf("%s 不是服务描述符", service)
+		return nil, fmt.Errorf("%w：%s 不是服务描述符", ErrUnknownProcedure, service)
 	}
 	methodDesc := serviceDesc.Methods().ByName(protoreflect.Name(method))
 	if methodDesc == nil {
-		return nil, fmt.Errorf("服务 %s 上不存在方法 %s", service, method)
+		return nil, fmt.Errorf("%w：服务 %s 上不存在方法 %s", ErrUnknownProcedure, service, method)
 	}
 	return methodDesc, nil
 }
@@ -153,7 +163,7 @@ func splitProcedure(procedure string) (string, string, error) {
 	trimmed := strings.TrimPrefix(procedure, "/")
 	service, method, ok := strings.Cut(trimmed, "/")
 	if !ok || service == "" || method == "" {
-		return "", "", fmt.Errorf("非法的 RPC 过程名 %q", procedure)
+		return "", "", fmt.Errorf("%w %q", ErrUnknownProcedure, procedure)
 	}
 	return service, method, nil
 }

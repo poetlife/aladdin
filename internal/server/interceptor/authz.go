@@ -88,6 +88,11 @@ func (i authorizerInterceptor) WrapStreamingClient(next connect.StreamingClientF
 func (a *Authorizer) decide(ctx context.Context, procedure string, header http.Header, requestMessage any) error {
 	rule, err := rbac.Resolve(procedure)
 	if err != nil {
+		// "这个地址不是 RPC 方法"与"方法漏写注解"是两回事，错误码也不同
+		// （见 docs/design/rbac/server-permissions.md 的"拒绝语义"）。
+		if errors.Is(err, rbac.ErrUnknownProcedure) {
+			return RejectUnknownProcedure(procedure)
+		}
 		return DenyByAnnotation(procedure, err.Error())
 	}
 	if rule.Kind == rbac.KindDenied {
