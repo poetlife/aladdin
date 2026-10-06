@@ -126,8 +126,17 @@ export function SkillDetailPage(): React.ReactNode {
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Card
         title={
-          <Space>
-            <Link to="/skills">
+          <Space align="center">
+            {/*
+             * `display: flex` 不是装饰，`inline-flex` 也不行：`<a>` 只要还是**行内**级
+             * 的盒子，就按基线落座，而行盒在基线下面还留着一截下沉空间——图标于是
+             * 坐在文字中线的上方约 2px。立成块级之后它的高度就是图标的高度，外层
+             * Space 才是在两个等高的小盒之间居中，那条线才对得上。
+             *
+             * 工作台顶栏的返回用的是 antd Button（它自带对齐），这里是个纯链接，
+             * 因此这一条得自己写。
+             */}
+            <Link to="/skills" aria-label="返回技能目录" style={{ display: 'flex' }}>
               <ArrowLeft size={16} />
             </Link>
             {skill.title}
