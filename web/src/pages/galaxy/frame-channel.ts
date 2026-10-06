@@ -16,6 +16,14 @@ export const FRAME_CHANNEL = 'aladdin/frame'
 /** 协议版本。与服务端 `FrameChannelVersion` 是同一个值；收方不认识的版本一律忽略。 */
 export const FRAME_CHANNEL_VERSION = 1
 
+/**
+ * 页面 → 外壳：用户点了正文里的一张图。
+ *
+ * 这一条也是**站内文档区那一章要写的取值来源**——那一页讲的就是这个协议，
+ * 因此它从这里取，不另抄一份（见 docs/design/web/docs-area.md）。
+ */
+export const FRAME_IMAGE_PREVIEW_TYPE = 'image-preview'
+
 /** 正文里的一张图：地址与替代文本。 */
 export interface FrameImage {
   src: string
@@ -60,7 +68,7 @@ export function parseFrameImagePreview(data: unknown): FrameImagePreview | null 
   if (data.channel !== FRAME_CHANNEL || data.version !== FRAME_CHANNEL_VERSION) {
     return null
   }
-  if (data.type !== 'image-preview') {
+  if (data.type !== FRAME_IMAGE_PREVIEW_TYPE) {
     return null
   }
 
