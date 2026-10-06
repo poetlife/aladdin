@@ -521,6 +521,15 @@ func TestValidate(t *testing.T) {
 			c.PublicBaseURL = "https://app.example.com"
 			galaxyOn(c, "https://pages.example.net")
 		}, true},
+		// 回环上的 http：本地开发没有证书，发布域与主站地址取同一条例外
+		// （仅回环，非回环主机上的 http 仍然被拒——见上面"发布域不是绝对地址"
+		// 那一族的取值校验）。服务端构造发布地址时按同一条规则再判一次。
+		{"发布域是回环上的 http", func(c *ServerConfig) {
+			galaxyOn(c, "http://127.0.0.1:9090")
+		}, true},
+		{"发布域是非回环主机上的 http", func(c *ServerConfig) {
+			galaxyOn(c, "http://pub.example.com")
+		}, false},
 		{"发布域给了而主站对外地址为空", func(c *ServerConfig) {
 			galaxyOn(c, "https://pub.example.com")
 			c.PublicBaseURL = ""
