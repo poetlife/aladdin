@@ -285,7 +285,16 @@ export function SkillCatalogPage(): React.ReactNode {
                   title={<Link to={`/skills/${item.id}`}>{item.title}</Link>}
                   description={
                     <Space direction="vertical" size={4}>
-                      <Typography.Text type="secondary">{item.summary}</Typography.Text>
+                      {/* 简介在列表里**压到两行**：技能的 description 是写给 agent 判断
+                          "该不该用"的，动辄几百字，原样铺开会把列表变成文字墙，而列表
+                          是拿来一眼扫的。全文在详情页。 */}
+                      <Typography.Paragraph
+                        type="secondary"
+                        ellipsis={{ rows: 2 }}
+                        style={{ marginBottom: 0 }}
+                      >
+                        {item.summary}
+                      </Typography.Paragraph>
                       <Space wrap size={4}>
                         {item.tags.map((tag) => (
                           <Tag key={tag}>{tag}</Tag>

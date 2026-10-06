@@ -196,10 +196,10 @@ description: 单色/双色编辑印刷风出图。当用户要…时使用。
 | 名称 | 仓库 | 子路径 | 形态与用来验证什么 |
 |------|------|--------|------------------|
 | mono-color | [`yanliudesign/mono-color-skill`](https://github.com/yanliudesign/mono-color-skill) | 仓库根 | 一个仓库就是一个 skill（`SKILL.md` 在根），另带几十 MB 示例图。验证"二进制被跳过而正文照收" |
-| brandkit | [`Leonxlnx/taste-skill`](https://github.com/Leonxlnx/taste-skill) | `skills/brandkit` | 仓库根是**一个集合**（`assets/`、`research/`、`scripts/`、`skills/`），技能在 `skills/` 下面。验证"子路径把仓库收窄成一个包" |
+| design-taste-frontend | [`Leonxlnx/taste-skill`](https://github.com/Leonxlnx/taste-skill) | `skills/taste-skill` | 仓库根是**一个集合**——`skills/` 底下并排放着 **13 个技能**（`brandkit`、`brutalist-skill`、`redesign-skill`…），技能名写在各自的 `SKILL.md` 里。验证"子路径把仓库收窄成一个包"，以及"一个仓库可以纳管出多个技能" |
 | impeccable | [`pbakaus/impeccable`](https://github.com/pbakaus/impeccable) | `.agent/skills/impeccable` | 仓库是**一整个产品**（Rust crates、浏览器扩展、VS Code 扩展、文档站，近四千个文件），技能埋在 agent 约定目录里。验证同一件事的极端情形 |
 
-**三件里两件必须给子路径**，这不是凑巧：社区里的 skill 仓库越来越多地长成"一个产品仓库，顺带装一个技能"。因此子路径不是可选参数，而是这条路能不能用起来的关键——`--path` 填错的表现是"这个仓库纳管不进来，它明明在"，所以**地址给错、子路径没给时的错误信息要点出这一点**（见下面的"可验证性"：缺 `SKILL.md` 时点名它）。
+**三件里两件必须给子路径**，而且其中一件的仓库里并排放着十三个技能——一次纳管只收其中一个，要收别的就在**同一条来源**上加 `--path` 再来一次（它们会成为各自独立的技能）。这不是凑巧：社区里的 skill 仓库越来越多地长成"一个产品仓库，顺带装一个技能"。因此子路径不是可选参数，而是这条路能不能用起来的关键——`--path` 填错的表现是"这个仓库纳管不进来，它明明在"，所以**地址给错、子路径没给时的错误信息要点出这一点**（见下面的"可验证性"：缺 `SKILL.md` 时点名它）。
 
 **首批不写进代码，也不写进种子数据。** 平台不该在内置数据里替部署决定"目录里有什么"——那是管理员的决定，而纳管本身就是他要走的那条路。
 

@@ -46,6 +46,16 @@ const (
 	remoteTimeout = 30 * time.Second
 	// githubAPIBase 是 GitHub REST API 的根。
 	githubAPIBase = "https://api.github.com"
+	// jsonResponseMaxBytes 是**元数据响应**的读上限。
+	//
+	// 1 MiB 是给仓库、提交这类小响应留的余量；唯一一个大的是目录树——`recursive=1`
+	// 会把整棵树的每一条都回过来，一个近四千文件的仓库轻松越过 1 MiB。**那个上限
+	// 太小，表现是 "unexpected EOF"**：JSON 读到一半被截断，而错误信息指向解析，
+	// 看不出是"响应比我们以为的大"。
+	//
+	// 取 16 MiB 仍然是个界：GitHub 自己对递归目录树有 7 MB / 十万条的上限，超过就
+	// 回一个 `truncated`（那条由本文件当成拒绝处理），所以真实响应到不了这里。
+	jsonResponseMaxBytes = 16 << 20
 	// githubUserAgent 是请求头里的标识。GitHub 拒绝没有 User-Agent 的请求。
 	githubUserAgent = "aladdin"
 	// githubAccept 是**元数据请求**（仓库、提交、目录树）的媒体类型。
@@ -211,7 +221,7 @@ func (g *GithubRemote) getJSON(ctx context.Context, path string, out any) error 
 	if err := classifyStatus(resp.StatusCode, g.token != ""); err != nil {
 		return err
 	}
-	decoder := json.NewDecoder(io.LimitReader(resp.Body, 1<<20))
+	decoder := json.NewDecoder(io.LimitReader(resp.Body, jsonResponseMaxBytes))
 	if err := decoder.Decode(out); err != nil {
 		return fmt.Errorf("%w: 远端返回的不是预期的 JSON: %w", ErrRemoteUnavailable, err)
 	}
