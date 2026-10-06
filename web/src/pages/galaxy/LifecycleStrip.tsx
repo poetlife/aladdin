@@ -162,7 +162,7 @@ export function LifecycleStrip({
 
       {publishEnabled && (
         <>
-          <Divider type="vertical" style={{ margin: 0 }} />
+          <Divider orientation="vertical" style={{ margin: 0 }} />
           {slot?.published === true ? (
             published
           ) : (
