@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/poetlife/aladdin/internal/idgen"
 )
 
 // 预览通道：草稿整组按发布的路径形状，从发布域上一条带**短时凭证**的地址上给出。
@@ -78,7 +80,7 @@ func (g PreviewGrant) Expired(now time.Time) bool { return !now.Before(g.Expires
 //
 // 它是这条通道上唯一保密的那一段：不可猜（128 位随机），不带头缀，也不承载任何
 // 可读信息。
-func NewPreviewGrantToken() (string, error) { return newID("") }
+func NewPreviewGrantToken() (string, error) { return idgen.New("") }
 
 // PreviewRoot 返回**某一个槽**在预览态下的**站点根路径**。
 //

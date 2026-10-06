@@ -45,7 +45,10 @@
 | 一处引用（记号、文档间链接、站点内路径）解析成什么地址 | 引用的解析入口（发布态给发布根下的绝对地址、预览态给预览根下的绝对地址；两处共用同一处"落在哪一条条目上"的判断，预览那处只是不因坏引用而失败） | [internal/galaxy/link_resolver.go](../internal/galaxy/link_resolver.go) |
 | 预览里草稿按哪条地址取字节（路径形状、短时凭证、"发布根换成预览根"） | 预览通道的路径与凭证入口 | [internal/galaxy/preview.go](../internal/galaxy/preview.go) |
 | 一个路径是不是文件组里的一条条目，以及它是文本还是资产（发布态取字节的分派） | 文件组的集合成员查询（只查表，不解析路径） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
-| 内容对象的键（按内容摘要寻址）与"仅当不存在时写入" | 内容对象的写入入口（含写入后的摘要核对） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
+| 内容对象的键（按内容摘要寻址） | 键的派生入口（galaxy 按工程前缀、skill 按 `skills/text/`） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) / [internal/skill/package.go](../internal/skill/package.go) |
+| 一个内容对象怎么算摘要、怎么判形状、怎么写入（**仅当不存在时写入**，写入前核对摘要） | 内容对象的公共规则（galaxy 的产物与 skill 的纳管共用） | [internal/objectstore/content.go](../internal/objectstore/content.go) |
+| 一条相对路径的形状合法性（相对、URL 非保留字符集、无 `.` / `..` / 空段、长度上限） | `relpath.Valid`（galaxy 文件组的条目与 skill 包内路径、来源子路径共用） | [internal/relpath/relpath.go](../internal/relpath/relpath.go) |
+| 不可猜标识的分配（取多少熵、怎么编码） | `idgen.New`；前缀由调用方给（galaxy 的工程 / 版本 / 资产、skill 的技能 / 版本） | [internal/idgen/idgen.go](../internal/idgen/idgen.go) |
 | 发布态文本条目的响应形状（内容类型、`ETag`、可缓存性） | 发布态的文本响应入口 | [internal/server/galaxy_public.go](../internal/server/galaxy_public.go) |
 | 一个文件是文本还是资产（扩展名白名单，**取值按内容槽不同**） | 文本类型白名单（唯一入口，命令行与服务端共用同一张表） | [internal/galaxy/content_slot.go](../internal/galaxy/content_slot.go) |
 | 文档站的导航（取哪些文件、按什么序、标题从哪里来） | 导航的派生入口（只取 markdown） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
@@ -59,10 +62,13 @@
 | 一份内容能不能发布（引用完整性 + 体积与文件数上限） | `galaxy` 的校验入口（**编辑器提示与发布前置校验共用**，不得在前端复写） | [internal/galaxy/validate.go](../internal/galaxy/validate.go) |
 | 一个版本引用了哪些资产 | 文件组里资产条目的读取入口（不解析正文） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
 | 一个资产标识是否属于某个工程 | 资产的归属查询（唯一入口，发布校验与删除拦阻共用） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
-| 一个标签串的归一化与合法性（trim、小写、去重、长度与数量上限） | 标签归一化入口（三端只能消费它的结论，不得各自再判一份） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
+| 一个标签串的归一化与合法性（trim、小写、去重、长度与数量上限） | `tagging.Normalize`（galaxy 资产的标签与 skill 目录的标签共用；三端只能消费它的结论，不得各自再判一份） | [internal/tagging/tagging.go](../internal/tagging/tagging.go) |
 | 一个工程是不是该主体的（资源归属） | galaxy 的归属校验唯一入口 | [internal/galaxy/ownership.go](../internal/galaxy/ownership.go) |
 | 发布态允许从哪个来源取资源、以及允许谁嵌入（记号解析出的地址与内容安全策略同源；含发布根与帧祖先的派生） | 公开域的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | 一份短码或设备码是否已获批准、是否已被交付 | `deviceLogins`（状态流转与交付） | [internal/server/device_logins.go](../internal/server/device_logins.go) |
+| 一个远端地址是不是一个可纳管的仓库（**只认 github.com 的仓库根形状**，决定出站请求的目标） | `skill.ParseRepositoryURL`（引用与子路径各有一处：`ParseRef` / `ParseSubPath`） | [internal/skill/source.go](../internal/skill/source.go) |
+| 一份远端内容是不是一个合法的技能包（必需文件、路径、文本、上限） | `skill.BuildPackage` | [internal/skill/package.go](../internal/skill/package.go) |
+| 一个技能对外的有效标题与有效简介（说明层留空时回退到当前版本 SKILL.md 的两项） | `Skill.EffectiveTitle` / `Skill.EffectiveSummary` | [internal/skill/skill.go](../internal/skill/skill.go) |
 | 本机二进制相对最新发布是旧是新（要不要升级） | 严格版本的解析与比较入口 | [internal/upgrade/version.go](../internal/upgrade/version.go) |
 
 > **配置不得成为权限的来源**。主体、角色、权限码、作用域一律不得由配置提供；默认作用域只能来自主体的绑定关系。见 [docs/design/config/README.md](design/config/README.md)。
@@ -98,6 +104,9 @@
 | 过期会话行的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
 | 超出保留期的客户端事件行的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
 | 读侧时间窗折算成半开区间 `[from, to)` | `telemetry.WindowRange` | [internal/telemetry/window.go](../internal/telemetry/window.go) |
+| 一棵仓库目录树折成"取哪些字节、跳过哪些"的计划（子路径、链接与子模块的拒绝、超单文件上限的跳过） | `planRepoTree` | [internal/skill/repo_tree.go](../internal/skill/repo_tree.go) |
+| `SKILL.md` 的 frontmatter 解析（name / description） | `skill.ParseManifest` | [internal/skill/package.go](../internal/skill/package.go) |
+| 使用统计里"哪一天"的折算（两个存储实现共用） | `skill.UsageDay` | [internal/skill/skill.go](../internal/skill/skill.go) |
 
 > **链路标识只用 OTel 的传播实现**。仓库里不保留任何自研的 trace_id 生成、注入或继承逻辑：那会与 `traceparent` 形成两套并存的标识，而它们迟早会不一致（见 [docs/observability.md](observability.md)）。
 
@@ -130,6 +139,8 @@
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
 | 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh` | [deploy/deploy.sh](../deploy/deploy.sh) |
 | 本地开发环境的拉起（服务端 + 前端，同起同停） | `make dev`；两边的命令与种子配置各只有一处来源（`DEV_SERVER_CMD` / `WEB_DEV_CMD`），`dev` 与 `dev-server` / `web-dev` 都引用它们 | [Makefile](../Makefile) |
+| 技能纳管 / 同步 / 回滚 / 删除的留痕（含来源与提交标识，**不含正文**） | `skill.Service` 的对应方法 | [internal/skill/catalog.go](../internal/skill/catalog.go) |
+| 超出保留期的技能使用日次的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
 | 本机命令行的替换（原子、按符号链接指向的真实文件） | `upgrade` 的替换入口 | [internal/upgrade/replace.go](../internal/upgrade/replace.go) |
 
 ## 数据源类（Data Sources）
@@ -154,7 +165,7 @@
 | 工程、文件清单（草稿与版本）、资产与发布产物清单的持久化数据 | galaxy 的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) / [internal/galaxy/gormstore/](../internal/galaxy/gormstore/) |
 | 直传凭证里那条策略长什么样（动作、资源、类型与长度条件） | 策略的构造入口 | [internal/objectstore/cosupload/policy.go](../internal/objectstore/cosupload/policy.go) |
 | 公开区的对象与它的地址 | 上架入口（公开区唯一的写入口，按（工程，内容摘要，类型）幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
-| 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用） | [internal/galaxy/project.go](../internal/galaxy/project.go) |
+| 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用）；随机部分取自 `idgen.New` | [internal/galaxy/project.go](../internal/galaxy/project.go) |
 | 表结构与迁移清单（库里长什么样） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/schema.go](../internal/database/schema.go) / [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |
 | 服务端配置（监听地址、日志级别与路径） | 服务端 `config.yml` + `config.local.yml`，经 `config.LoadServer` 读取 | [internal/config/load.go](../internal/config/load.go) |
 | CLI 配置（目标地址、超时、输出详细度） | CLI `config.yml` + `config.local.yml`，经 `config.LoadCLI` 读取 | [internal/config/load.go](../internal/config/load.go) |
@@ -164,4 +175,10 @@
 | 发布产物清单与校验和（自更新的唯一来源） | `upgrade` 的发布源读取入口 | [internal/upgrade/release.go](../internal/upgrade/release.go) |
 | 发行版产物的命名与平台清单（**自更新与界面上的下载命令两处都消费**） | [docs/release.md](release.md) 记录的对外契约；平台取自 Makefile 的 `PLATFORMS` | [Makefile](../Makefile) |
 | 界面里的等宽字体栈（代码块、可编辑正文） | `MONOSPACE` | [web/src/theme/monospace.ts](../web/src/theme/monospace.ts) |
+| 弹窗的高度约束、滚动行为与滚动条落在哪一侧（内容比窗口高时滚的是内容区，不是整屏遮罩；头尾与内容三块的横向边界重合） | `AppModal`（**不再从 antd 直接引 `Modal`**） | [web/src/ui/AppModal.tsx](../web/src/ui/AppModal.tsx) |
+| 技能、版本、标签、收藏与使用日次的持久化数据 | `skill.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/skill/store.go](../internal/skill/store.go) / [internal/skill/gormstore/](../internal/skill/gormstore/store.go) |
+| 远端技能内容的拉取出口（解析引用、取回一棵树；**测试注入假实现**） | `skill.Remote` 接口 | [internal/skill/remote.go](../internal/skill/remote.go) |
+| 技能目录的接口契约（读面与维护面的划分、权限码、作用域来源） | proto 定义，经 `buf generate` 派生两端代码 | [api/proto/aladdin/skill/v1/skill.proto](../api/proto/aladdin/skill/v1/skill.proto) |
+| 一份字节能不能当**展示小图**（收哪些格式、上限多大、扩展名与文件头怎么判） | `imagetype`（**头像与技能封面共用一份**；它与 galaxy 资产的素材白名单**不是同一个判断**，不合并，理由见该包说明） | [internal/imagetype/imagetype.go](../internal/imagetype/imagetype.go) |
+| 技能封面的对象键（按技能标识、允许覆盖） | `skill.CoverKey` | [internal/skill/cover.go](../internal/skill/cover.go) |
 | 代码生成与静态检查工具的版本（本机安装与 CI 缓存 key 都由此派生） | Makefile 的 `TOOLS` 清单 | [Makefile](../Makefile) |

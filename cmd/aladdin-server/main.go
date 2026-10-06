@@ -24,6 +24,8 @@ import (
 	profilegormstore "github.com/poetlife/aladdin/internal/profile/gormstore"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
+	"github.com/poetlife/aladdin/internal/skill"
+	skillgormstore "github.com/poetlife/aladdin/internal/skill/gormstore"
 	telemetrygormstore "github.com/poetlife/aladdin/internal/telemetry/gormstore"
 )
 
@@ -187,6 +189,14 @@ func run() error {
 	}, server.TelemetryStores{
 		// 事件表与其它表同库同连接：写侧记进去的与读侧查出来的必须是同一份数据。
 		Events: telemetrygormstore.New(store.DB()),
+	}, server.SkillStores{
+		Catalog: skillgormstore.New(store.DB()),
+		// 技能的内容对象与 galaxy 的资产在**同一个桶**里，靠 `skills/` 那一段
+		// 前缀并排：服务端自己读写它们，不经过直传。
+		Objects: objects,
+		// 远端拉取：生产实现是 GitHub。凭据可空——空是常态，匿名也能纳管公开
+		// 仓库，只是限频额度低（见 docs/design/skill/onboarding.md 的"远端凭据"）。
+		Remote: skill.NewGithubRemote(cfg.Skill.GithubToken),
 	})
 
 	// 引导先于种子：它只在存储里一条绑定都没有时生效，而种子会写入绑定。

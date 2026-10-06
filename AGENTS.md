@@ -31,6 +31,7 @@
 | 个人档案 | [docs/design/profile/](docs/design/profile/README.md) | 主体的展示信息（昵称、头像、简介）：存放、下发与边界 |
 | 对象存储直传 | [docs/design/objectstore/](docs/design/objectstore/README.md) | 上传的公共链路：签发临时凭证、客户端直传、提交核对；类型与大小由存储侧策略强制 |
 | galaxy 创作与发布 | [docs/design/galaxy/](docs/design/galaxy/README.md) | 用户创作工程（多版本）、管理资产、发布成一个可公开访问的站点（`static` 内容原样服务、`docs` 渲染成多页）：引用完整性、公开匿名、渲染隔离 |
+| 平台 Skill 目录 | [docs/design/skill/](docs/design/skill/README.md) | 平台治理的技能目录：管理员从 GitHub 纳管（快照、同步、回滚、标签）、创作者与 agent 检索并**取用而不落盘** |
 | 服务端推送（事件通道） | [docs/design/events/](docs/design/events/README.md) | 一个资源的状态变化怎么通知到别的客户端：订阅粒度、至多一次与重连补洞、吊销窗口、心跳与反向代理要求 |
 | Web 界面 | [docs/design/web/](docs/design/web/README.md) | 呈现机制：主题（亮/暗/跟随系统）、图标与动效的来源、外壳结构、站内文档区，窄屏见 [responsive.md](docs/design/web/responsive.md) |
 | UI/UX 设计指导 | [docs/design/uiux/](docs/design/uiux/README.md) | 前端界面取舍：信息层级、间距节奏、空态与失败、文案、破坏性操作 |

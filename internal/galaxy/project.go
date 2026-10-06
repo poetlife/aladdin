@@ -26,7 +26,6 @@ package galaxy
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -36,6 +35,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/poetlife/aladdin/internal/idgen"
 	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/watch"
 )
@@ -358,39 +358,24 @@ type MutableStore interface {
 
 // 标识前缀。**唯一入口**是本文件的分配函数：工程标识与资产标识由创建入口
 // 分配，分配即冻结、永不复用——与主体标识同一条约定。
+//
+// 随机部分从哪来、取多少熵由 `idgen` 决定（那里是全部标识分配的公共入口），
+// 这里只声明"哪一类标识长什么前缀"。
 const (
 	projectIDPrefix     = "prj_"
 	versionIDPrefix     = "ver_"
 	assetIDPrefix       = "ast_"
 	publicationIDPrefix = "pub_"
-
-	// idEntropyBytes 是标识里随机部分的字节数。
-	//
-	// 128 位不可猜：工程标识是发布地址的一部分，而发布态是公开匿名的——
-	// "地址即凭据"的全部强度都落在这几个字节上。
-	idEntropyBytes = 16
 )
 
 // NewProjectID 分配一个工程标识（唯一入口）。
-func NewProjectID() (string, error) { return newID(projectIDPrefix) }
+func NewProjectID() (string, error) { return idgen.New(projectIDPrefix) }
 
 // newVersionID 分配一个版本标识（唯一入口）。
-func newVersionID() (string, error) { return newID(versionIDPrefix) }
+func newVersionID() (string, error) { return idgen.New(versionIDPrefix) }
 
 // newAssetID 分配一个资产标识（唯一入口）。
-func newAssetID() (string, error) { return newID(assetIDPrefix) }
-
-// newID 从密码学随机源取一段熵并编码。
-//
-// 用 base64url 而不是十六进制：同样的字节数下它更短，而标识会出现在发布地址
-// 里，短一点对所有人可读。
-func newID(prefix string) (string, error) {
-	buf := make([]byte, idEntropyBytes)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("分配标识失败: %w", err)
-	}
-	return prefix + base64.RawURLEncoding.EncodeToString(buf), nil
-}
+func newAssetID() (string, error) { return idgen.New(assetIDPrefix) }
 
 // PublicationID 返回（工程，版本）确定的那条发布记录的标识（唯一入口）。
 //
@@ -399,7 +384,7 @@ func newID(prefix string) (string, error) {
 // 否则同一次发布会产生第二条记录（见 publish.go 的"检查点与恢复"）。
 func PublicationID(projectID, versionID string) string {
 	sum := sha256.Sum256([]byte(projectID + "\x00" + versionID))
-	return publicationIDPrefix + base64.RawURLEncoding.EncodeToString(sum[:idEntropyBytes])
+	return publicationIDPrefix + base64.RawURLEncoding.EncodeToString(sum[:idgen.EntropyBytes])
 }
 
 // Capabilities 是当前部署下创作能力的边界。

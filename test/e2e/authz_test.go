@@ -41,6 +41,7 @@ import (
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
+	skillgormstore "github.com/poetlife/aladdin/internal/skill/gormstore"
 	telemetrygormstore "github.com/poetlife/aladdin/internal/telemetry/gormstore"
 )
 
@@ -71,6 +72,12 @@ type harness struct {
 	objects *objectstore.MemoryStore
 	// public 是公开区的假存储，用来断言"只上架了被引用的资产"。
 	public *galaxy.MemoryPublicStore
+	// skillRemote 是技能目录的假远端。
+	//
+	// 端到端用例要能**指定远端返回什么**（哪一棵树、哪个提交），因此它必须从
+	// 装配里露出来。真实实现对真实 GitHub 发请求，那不在端到端测试的范围里
+	// （见 docs/design/skill/onboarding.md 的可验证性表）。
+	skillRemote *fakeSkillRemote
 	// publishBase 是发布域的取值，bucket 是发布物素材所在的桶——**公开区与
 	// 私有区共用它**，因此断言对外地址与响应头里的允许来源时用的是同一个主机。
 	// appBase 是主站的对外地址，**分享地址落在它上面**。
@@ -161,6 +168,8 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 		t.Fatalf("构造发布地址失败: %v", err)
 	}
 
+	skillRemote := newFakeSkillRemote()
+
 	// 认证模块的存储同样落在真实连接上：会话与身份别名是这条链路上的
 	// 一等数据，用内存实现在这里等于把"表没建、写入没落盘"挡在测试之外。
 	identityStore := identitygormstore.NewIdentityStore(store.DB())
@@ -185,6 +194,13 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 		// 客户端事件同样落在真实连接上：管理面用例要验证"上报进去的能查出来"，
 		// 用内存实现会把"表没建、写入没落盘"挡在测试之外。
 		Events: telemetrygormstore.New(store.DB()),
+	}, server.SkillStores{
+		// 技能目录的表同样落在真实连接上，理由与上面几处相同。
+		Catalog: skillgormstore.New(store.DB()),
+		Objects: objects,
+		// **远端拉取注入假实现**：端到端测试不访问任何网络（见
+		// docs/design/skill/onboarding.md 的可验证性表）。
+		Remote: skillRemote,
 	})
 	if err := srv.Store().PutSubject(context.Background(), rbac.Subject{
 		ID: testSubject, Type: rbac.SubjectTypeUser, DefaultScope: scope,
@@ -231,6 +247,7 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 		address:     lis.Addr().String(),
 		logs:        logs,
 		objects:     objects,
+		skillRemote: skillRemote,
 		public:      public,
 		publishBase: publishBase,
 		appBase:     appBase,

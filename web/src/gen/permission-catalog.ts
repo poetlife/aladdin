@@ -27,5 +27,7 @@ export const PermissionCatalog: readonly PermissionCatalogEntry[] = [
   { code: 'galaxy.project.publish', description: '发布与撤回发布。唯一一个让内容离开私有边界的动作' },
   { code: 'galaxy.asset.read', description: '读取自己工程下的资产列表与读取地址' },
   { code: 'galaxy.asset.write', description: '上传与删除工程资产' },
+  { code: 'skill.catalog.read', description: '检索平台技能目录、读取技能正文、收藏技能。只读' },
+  { code: 'skill.catalog.write', description: '从远端纳管技能、同步、回滚，修改说明层与标签。删除属不可逆操作' },
   { code: '*', description: '全部权限。仅保留给系统管理员角色，不得授予其他角色' },
 ]

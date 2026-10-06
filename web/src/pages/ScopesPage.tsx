@@ -6,7 +6,6 @@ import {
   Empty,
   Form,
   Input,
-  Modal,
   Popconfirm,
   Space,
   Table,
@@ -20,6 +19,7 @@ import { messageOf, traceIdOf } from '../api/errors'
 import { PermissionGate, useAnyPermission, useSession } from '../auth'
 import { PermissionCodes } from '../gen/permission-codes'
 import { useScopes } from '../rbac'
+import { AppModal } from '../ui/AppModal'
 import type { Scope } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
 
 interface CreateFormValues {
@@ -254,7 +254,7 @@ export function ScopesPage(): React.ReactNode {
         </PermissionGate>
       </Card>
 
-      <Modal
+      <AppModal
         title={renaming === null ? '改显示名' : `改 ${renaming.path} 的显示名`}
         open={renaming !== null}
         confirmLoading={renameBusy}
@@ -272,7 +272,7 @@ export function ScopesPage(): React.ReactNode {
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
           路径不可更改。显示名只用于展示，不参与任何判定。
         </Typography.Paragraph>
-      </Modal>
+      </AppModal>
     </Space>
   )
 }

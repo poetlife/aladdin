@@ -52,6 +52,12 @@ const (
 	// PermissionGalaxyAssetWrite 上传与删除工程资产
 	PermissionGalaxyAssetWrite PermissionCode = "galaxy.asset.write"
 
+	// PermissionSkillCatalogRead 检索平台技能目录、读取技能正文、收藏技能。只读
+	PermissionSkillCatalogRead PermissionCode = "skill.catalog.read"
+
+	// PermissionSkillCatalogWrite 从远端纳管技能、同步、回滚，修改说明层与标签。删除属不可逆操作
+	PermissionSkillCatalogWrite PermissionCode = "skill.catalog.write"
+
 	// PermissionAll 全部权限。仅保留给系统管理员角色，不得授予其他角色
 	PermissionAll PermissionCode = "*"
 )
@@ -73,6 +79,8 @@ var AllPermissionCodes = []PermissionCode{
 	PermissionGalaxyProjectPublish,
 	PermissionGalaxyAssetRead,
 	PermissionGalaxyAssetWrite,
+	PermissionSkillCatalogRead,
+	PermissionSkillCatalogWrite,
 	PermissionAll,
 }
 
@@ -92,6 +100,9 @@ const (
 
 	// RoleGalaxyAuthor 创作者
 	RoleGalaxyAuthor = "galaxy.author"
+
+	// RoleSkillCurator 技能管理员
+	RoleSkillCurator = "skill.curator"
 )
 
 // BuiltinRoles 是内置角色定义，由权限目录派生。
@@ -159,6 +170,18 @@ var BuiltinRoles = []RoleDefinition{
 			PermissionGalaxyProjectPublish,
 			PermissionGalaxyAssetRead,
 			PermissionGalaxyAssetWrite,
+			PermissionSkillCatalogRead,
+		},
+		Inherits:              nil,
+		MutuallyExclusiveWith: nil,
+	},
+	{
+		ID:          RoleSkillCurator,
+		DisplayName: "技能管理员",
+		Builtin:     true,
+		Permissions: []PermissionCode{
+			PermissionSkillCatalogRead,
+			PermissionSkillCatalogWrite,
 		},
 		Inherits:              nil,
 		MutuallyExclusiveWith: nil,

@@ -223,21 +223,16 @@ func (s *Service) writeArtifacts(ctx context.Context, project Project, versionMa
 	return manifest, newObjects, nil
 }
 
-// writeContentObject **仅当对象不存在时**写入一个内容对象（唯一入口）。
+// writeContentObject **仅当对象不存在时**写入一个内容对象。
 //
 // 第二个返回值表示这次是否真的写了。摘要是寻址键，因此"这一份产物是不是新的"
 // 是一个只看键就能回答的问题——重复发布同一个版本不产生任何新字节。
+//
+// **实现只有一处**：`objectstore.PutContentObject`。skill 从远端取回的字节写的是
+// 同一个东西（见 docs/design/skill/onboarding.md），两处各写一份的表现是其中
+// 一处漏掉了"仅当不存在时写入"。
 func (s *Service) writeContentObject(ctx context.Context, projectID, digest string, data []byte) (bool, error) {
-	key := ContentObjectKey(projectID, digest)
-	if _, err := s.assets.Head(ctx, key); err == nil {
-		return false, nil
-	} else if !errors.Is(err, objectstore.ErrObjectNotFound) {
-		return false, err
-	}
-	if err := s.assets.Put(ctx, key, objectstore.NeutralContentType, data); err != nil {
-		return false, err
-	}
-	return true, nil
+	return objectstore.PutContentObject(ctx, s.assets, ContentObjectKey(projectID, digest), digest, data)
 }
 
 // sortStrings 是一个不含依赖的字典序排序（产物路径的顺序要固定，好让同样的

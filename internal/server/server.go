@@ -31,6 +31,7 @@ import (
 	identityv1connect "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
 	profilev1connect "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1/profilev1connect"
 	rbacv1connect "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
+	skillv1connect "github.com/poetlife/aladdin/api/gen/aladdin/skill/v1/skillv1connect"
 	telemetryv1connect "github.com/poetlife/aladdin/api/gen/aladdin/telemetry/v1/telemetryv1connect"
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/galaxy"
@@ -40,6 +41,7 @@ import (
 	"github.com/poetlife/aladdin/internal/profile"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
+	"github.com/poetlife/aladdin/internal/skill"
 	"github.com/poetlife/aladdin/internal/telemetry"
 	"github.com/poetlife/aladdin/internal/watch"
 )
@@ -62,6 +64,9 @@ type Server struct {
 	// **启动时的保留期回收**：那件事发生在监听之前，早于任何请求，因此拿不到
 	// 通过请求路径装配的实例。
 	clientEvents telemetry.Store
+	// skillCatalog 与 clientEvents 同理：保留在服务端上不是为了读接口（那个服务
+	// 自己拿着它），而是为了**启动时的保留期回收**——那件事发生在监听之前。
+	skillCatalog *skill.Service
 
 	httpServer *http.Server
 }
@@ -126,6 +131,21 @@ type TelemetryStores struct {
 	Events telemetry.Store
 }
 
+// SkillStores 是技能目录的存储与远端拉取，由入口进程构造后传入。
+//
+// 与其它模块同理：五张表由同一份迁移建好，因此它的实现必须长在同一条连接上。
+// 远端拉取在这里是一个**接口**：测试注入假实现，因此契约测试不访问网络（见
+// docs/design/skill/onboarding.md 的可验证性表）。
+type SkillStores struct {
+	// Catalog 是技能、版本、标签、收藏与使用记录的持久化存储。
+	Catalog skill.Store
+	// Objects 是内容对象的读写入口。**为 nil 表示没有配置对象存储**：技能目录
+	// 整体不可用——它的字节没有地方放（与 galaxy 的资产同一条降级取向）。
+	Objects objectstore.Store
+	// Remote 是远端拉取的出口。为 nil 表示装配缺失（生产上总是有）。
+	Remote skill.Remote
+}
+
 // galaxyReadMaxBytes 是创作服务的单条消息读上限。
 //
 // 必须显式设：connect-go 的默认是**不限制大小**，而请求体由客户端决定大小。
@@ -145,7 +165,7 @@ const galaxyReadMaxBytes = 1 << 20
 //
 // metrics 为 nil 时不记录请求指标；遥测的 provider 生命周期由调用方
 // （入口进程）管理，服务端只消费它建好的全局实现。
-func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores, prof ProfileStores, gal GalaxyStores, tel TelemetryStores) *Server {
+func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Metrics, store rbac.MutableStore, ident IdentityStores, prof ProfileStores, gal GalaxyStores, tel TelemetryStores, skills SkillStores) *Server {
 	engine := rbac.NewEngine(store, logger, metrics)
 	machine := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
@@ -306,6 +326,24 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		NewTelemetryAdminService(tel.Events), opts...)
 	register(telemetryAdminPath, telemetryAdminHandler)
 
+	// 技能目录。**它的字节与 galaxy 的资产在同一个桶里**，靠 `skills/` 那一段
+	// 前缀并排；远端拉取是本模块唯一一条出站请求路径，目标由来源的形状白名单
+	// 决定（见 skill/source.go）。
+	//
+	// 没有配置对象存储时它与 galaxy 的资产一样整体不可用，而其余模块照常——前端
+	// 据此不渲染入口（见 GetCapabilities），而不是渲染一个点了报错的控件。
+	skillCore := skill.NewService(skill.Deps{
+		Store:   skills.Catalog,
+		Objects: skills.Objects,
+		Remote:  skills.Remote,
+		Logger:  logger,
+	})
+	skillPath, skillHandler := skillv1connect.NewSkillServiceHandler(NewSkillService(skillCore, logger), opts...)
+	register(skillPath, skillHandler)
+	skillAdminPath, skillAdminHandler := skillv1connect.NewSkillAdminServiceHandler(
+		NewSkillAdminService(skillCore, logger), opts...)
+	register(skillAdminPath, skillAdminHandler)
+
 	// 发布地址：浏览器直连的非 RPC 入口。它**不经过鉴权**（发布态公开匿名，
 	// 地址即凭据），因此必须登记在 middleware 的浏览器直连清单里，否则会在
 	// rbac.Resolve 之前被当成一个没有注解的方法拦下。
@@ -323,6 +361,8 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		eventsv1connect.EventsServiceName,
 		telemetryv1connect.TelemetryServiceName,
 		telemetryv1connect.TelemetryAdminServiceName,
+		skillv1connect.SkillServiceName,
+		skillv1connect.SkillAdminServiceName,
 	}
 	healthPath, healthHandler := grpchealth.NewHandler(grpchealth.NewStaticChecker(serviceNames...))
 	register(healthPath, healthHandler)
@@ -378,6 +418,7 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		machine:      machine,
 		sessions:     ident.Sessions,
 		clientEvents: tel.Events,
+		skillCatalog: skillCore,
 		httpServer:   httpServer,
 	}
 }
@@ -397,6 +438,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// 回收超出保留期的客户端事件行，然后才开门。与上面同理：正确性不依赖它
 	// （读取一律带时间条件），它只负责不让事件表无限增长。
 	s.reclaimOldClientEvents(ctx)
+
+	// 回收超出保留期的技能使用日次，然后才开门。与上面两处同形同理由：使用量
+	// 读侧本来就带 30 天窗口，因此正确性不依赖它，它只负责不让那张表无限增长。
+	s.reclaimSkillUsage(ctx)
 
 	var lc net.ListenConfig
 	lis, err := lc.Listen(ctx, "tcp", s.cfg.Address)
@@ -499,5 +544,18 @@ func (s *Server) reclaimOldClientEvents(ctx context.Context) {
 	}
 	if removed > 0 {
 		s.logger.Info("已回收超期客户端事件", zap.Int64("removed", removed))
+	}
+}
+
+// reclaimSkillUsage 回收超出保留期的技能使用日次。
+//
+// 与上面两处同形，理由也一样：只在启动时跑一次，不引入后台循环。**保留期多留
+// 一天**（见 skill.UsageRetention）——"最近 30 天"这个口径不该在日界上少算一格。
+func (s *Server) reclaimSkillUsage(ctx context.Context) {
+	if s.skillCatalog == nil {
+		return
+	}
+	if err := s.skillCatalog.PurgeUsage(ctx); err != nil {
+		s.logger.Warn("回收超期技能使用记录失败，服务照常启动", zap.Error(err))
 	}
 }

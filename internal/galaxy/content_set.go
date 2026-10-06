@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/objectstore"
+	"github.com/poetlife/aladdin/internal/relpath"
 )
 
 // 整组与单份的体积上限、文件数上限。
@@ -26,8 +26,6 @@ const (
 	MaxFileSetBytes = 16 << 20
 	// MaxFiles 是整组的文件数上限。
 	MaxFiles = 1000
-	// maxPathBytes 是单条路径的长度上限。
-	maxPathBytes = 512
 )
 
 var (
@@ -215,49 +213,13 @@ func NormalizeManifest(entries []Entry) (Manifest, error) {
 	return manifest, nil
 }
 
-// ValidEntryPath 判定一条条目路径合不合形状（唯一入口）。
+// ValidEntryPath 判定一条条目路径合不合形状。
 //
-// 规则（见 docs/design/galaxy/site-model.md）：相对路径、以 `/` 分隔、受限于
-// URL 安全字符集、不含 `..`、不以 `/` 开头或结尾、不含空段。
-//
-// **字符集不是风格偏好，是地址的约束**：路径会成为公开地址的一部分。把字符集
-// 收在 URL 的非保留字符里，等于顺带消掉"同一个文件有两种写法"
-// （`%2E` 与 `.`）这条只能靠规范化去覆盖的问题——而规范化一旦缺席，集合成员
-// 测试就会既容纳又漏掉某些写法。
+// **实现只有一处**：`relpath.Valid`。skill 一个包里的路径与来源里的子路径走的是
+// 同一个判断，两处各写一份的表现是"命令行以为这条路径能给，服务端拒了它"（见
+// docs/ssot-registry.md）。规则本身见 relpath 包与 docs/design/galaxy/site-model.md。
 func ValidEntryPath(entryPath string) bool {
-	if entryPath == "" || len(entryPath) > maxPathBytes {
-		return false
-	}
-	if strings.HasPrefix(entryPath, "/") || strings.HasSuffix(entryPath, "/") {
-		return false
-	}
-	for _, segment := range strings.Split(entryPath, "/") {
-		if segment == "" || segment == "." || segment == ".." {
-			return false
-		}
-		for i := 0; i < len(segment); i++ {
-			if !isPathByte(segment[i]) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// isPathByte 判定一个字节能不能出现在条目路径里。
-//
-// 它是 RFC 3986 的 unreserved 字符集（字母、数字、`-`、`.`、`_`、`~`）。刻意
-// 不收 `%`：收了它就得处理百分号编码的等价性，而那是集合成员测试最容易被绕过
-// 的地方。
-func isPathByte(b byte) bool {
-	switch {
-	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z', b >= '0' && b <= '9':
-		return true
-	case b == '-' || b == '_' || b == '.' || b == '~':
-		return true
-	default:
-		return false
-	}
+	return relpath.Valid(entryPath)
 }
 
 // contentTypeRules 是签发内容对象直传凭证用的类型规则（唯一入口）。

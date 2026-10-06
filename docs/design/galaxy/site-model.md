@@ -330,6 +330,7 @@
 | 职责 | 文件路径 |
 |------|---------|
 | 文件组与路径约束的领域类型 | [internal/galaxy/content_set.go](../../../internal/galaxy/content_set.go) |
+| 条目路径的形状校验（**与 skill 的包内路径共用同一条**） | [internal/relpath/relpath.go](../../../internal/relpath/relpath.go) |
 | 内容槽的语义（入口解析、文本类型白名单、保留段） | [internal/galaxy/content_slot.go](../../../internal/galaxy/content_slot.go) |
 | 一处引用解析成什么地址（发布态与预览态都给站点根下的路径；预览那处只是不因坏引用而失败） | [internal/galaxy/link_resolver.go](../../../internal/galaxy/link_resolver.go) |
 | 发布态按路径服务与资产条目重定向 | [internal/server/galaxy_public.go](../../../internal/server/galaxy_public.go) |

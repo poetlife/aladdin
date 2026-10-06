@@ -108,6 +108,7 @@ func newRootCommand() *cobra.Command {
 		newRoleCommand(),
 		newScopeCommand(),
 		newGalaxyCommand(),
+		newSkillCommand(),
 	)
 	return root
 }

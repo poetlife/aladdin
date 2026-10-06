@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/identity"
+	"github.com/poetlife/aladdin/internal/imagetype"
 	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
@@ -343,14 +344,14 @@ func TestBeginAvatarUploadChecksDeclaredType(t *testing.T) {
 // （或反过来），而用户看到的是一句无法归因的失败。
 func assertAvatarRules(t *testing.T, rules []objectstore.TypeRule) {
 	t.Helper()
-	if len(rules) != len(avatarAllowedTypes) {
-		t.Fatalf("规则 %d 条，期望与白名单一样多（%d）", len(rules), len(avatarAllowedTypes))
+	if len(rules) != len(imagetype.Allowed()) {
+		t.Fatalf("规则 %d 条，期望与白名单一样多（%d）", len(rules), len(imagetype.Allowed()))
 	}
 	got := map[string]int64{}
 	for _, rule := range rules {
 		got[rule.ContentType] = rule.MaxBytes
 	}
-	for _, contentType := range avatarAllowedTypes {
+	for _, contentType := range imagetype.Allowed() {
 		if got[contentType] != AvatarMaxBytes {
 			t.Errorf("%s 的上限 = %d，期望 %d", contentType, got[contentType], AvatarMaxBytes)
 		}

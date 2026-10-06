@@ -368,6 +368,7 @@
 |------|---------|
 | 发布流程的四个阶段与检查点 | [internal/galaxy/publish.go](../../../internal/galaxy/publish.go) |
 | 文件组与路径约束的领域类型 | [internal/galaxy/content_set.go](../../../internal/galaxy/content_set.go) |
+| 内容对象的摘要、形状校验与"仅当不存在时写入" | [internal/objectstore/content.go](../../../internal/objectstore/content.go) |
 | 内容槽的语义、入口解析与文本类型白名单 | [internal/galaxy/content_slot.go](../../../internal/galaxy/content_slot.go) |
 | 校验规则集合（唯一入口）与解析 | [internal/galaxy/validate.go](../../../internal/galaxy/validate.go) |
 | markdown 渲染与文档间引用解析 | [internal/galaxy/doc_render.go](../../../internal/galaxy/doc_render.go) |

@@ -114,6 +114,40 @@ table sessions
   subject_id text pk=false null=true
   subject_type text pk=false null=true
   token_hash text pk=true null=true
+table skill_favorites
+  created_at datetime pk=false null=true
+  skill_id text pk=true null=true
+  subject_id text pk=true null=true
+table skill_tags
+  skill_id text pk=true null=true
+  tag text pk=true null=true
+table skill_usage_daily
+  day text pk=true null=true
+  skill_id text pk=true null=true
+  subject_id text pk=true null=true
+  used_at datetime pk=false null=true
+table skill_versions
+  commit text pk=false null=true
+  created_at datetime pk=false null=true
+  description text pk=false null=true
+  files text pk=false null=true
+  id text pk=true null=true
+  name text pk=false null=true
+  skill_id text pk=false null=true
+  skipped_files integer pk=false null=true
+table skills
+  cover_key text pk=false null=true
+  created_at datetime pk=false null=true
+  current_version_id text pk=false null=true
+  id text pk=true null=true
+  source_commit text pk=false null=true
+  source_name text pk=false null=true
+  source_owner text pk=false null=true
+  source_ref text pk=false null=true
+  source_sub_path text pk=false null=true
+  summary text pk=false null=true
+  title text pk=false null=true
+  updated_at datetime pk=false null=true
 table subject_profiles
   avatar_key text pk=false null=true
   bio text pk=false null=true

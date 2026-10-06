@@ -53,8 +53,8 @@ const (
 	EnvGalaxyPublishBaseURL = "ALADDIN_GALAXY_PUBLISH_BASE_URL"
 	// EnvCOSSecretID 与 EnvCOSSecretKey 是头像存储的子账号密钥。
 	//
-	// **它们与 EnvGithubClientSecret 是本仓库仅有的两组"只有环境变量、没有
-	// 配置键"的取值**，与开发种子旁路同类：一个开关一旦能写进配置文件，它就会
+	// **它们与 EnvGithubClientSecret、EnvGithubToken 是本仓库仅有的三组"只有
+	// 环境变量、没有配置键"的取值**，与开发种子旁路同类：一个开关一旦能写进配置文件，它就会
 	// 在某个人手上的生产环境里被写进去。配置文件会进版本库、进镜像、被贴给
 	// 别人排查问题，而凭证不可以（见 docs/design/config/credentials.md）。
 	// 这里是**环境变量名**，不是凭证值——gosec 按名字里的单词误报了。
@@ -67,6 +67,14 @@ const (
 	//
 	// 与 COS 密钥同理：**只有环境变量，没有配置键**。
 	EnvGithubClientSecret = "ALADDIN_GITHUB_CLIENT_SECRET" //nolint:gosec // 取值是变量名本身
+	// EnvGithubToken 是技能目录**从远端拉取**时使用的凭据（可空）。
+	//
+	// 与 COS 密钥同理：**只有环境变量，没有配置键**（见 EnvCOSSecretID）。
+	//
+	// 它与登录用的 EnvGithubClientSecret 是两件事：那个换的是"这个人是谁"，
+	// 这个换的是"平台能不能把某一份远端内容拿进来"。它是**平台侧的出站凭据**，
+	// 与任何调用者的身份无关——拿不到它不影响任何人读目录、取用技能。
+	EnvGithubToken = "ALADDIN_GITHUB_TOKEN" //nolint:gosec // 取值是变量名本身
 	// EnvPublicBaseURL 是服务端的对外地址，用于构造重定向型登录的回调与回跳地址。
 	EnvPublicBaseURL = "ALADDIN_PUBLIC_BASE_URL"
 
@@ -145,6 +153,22 @@ type DatabaseConfig struct {
 	// DSN 是连接串。**可能含口令，因此不得进日志**——
 	// 它的地位与 CLI 的凭证文件相同（见 docs/design/config/README.md）。
 	DSN string
+}
+
+// SkillConfig 是技能目录**从远端拉取**所需的凭据。
+//
+// **它可以整体为空**，而且空是常态：匿名访问也能纳管公开仓库，只是限频额度低。
+// 因此这里没有"半套配置"这回事，也就没有对应的校验。
+type SkillConfig struct {
+	// GithubToken 提高限频额度，并让私有仓库可读。
+	//
+	// **只从环境变量来，没有对应的配置键**（见 EnvGithubToken）。因此它也
+	// **不得进日志**——描述本模块的配置时不要把它整体丢进日志。
+	//
+	// **它不是权限**，也不是配置项意义上的"开关"：它只影响平台能不能把某一份
+	// 远端内容拿进来，不影响任何人读目录、取用技能（见
+	// docs/design/skill/onboarding.md 的"远端凭据"）。
+	GithubToken string
 }
 
 // COSConfig 描述头像存放的对象存储。
@@ -278,6 +302,8 @@ type ServerConfig struct {
 	COS COSConfig
 	// Galaxy 是 galaxy 发布所需的存储与对外地址。零值表示未启用发布。
 	Galaxy GalaxyConfig
+	// Skill 是技能目录远端拉取所需的凭据。零值是合法配置。
+	Skill SkillConfig
 	// GoogleClientID 是 Google 登录用的客户端标识；为空表示未启用该登录方式。
 	//
 	// 它**不是秘密**：这个值明文出现在浏览器里，是这类登录方式的设计前提，
