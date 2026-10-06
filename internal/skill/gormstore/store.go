@@ -248,7 +248,7 @@ func (s *Store) SetCurrentVersion(ctx context.Context, skillID, versionID string
 	return nil
 }
 
-// UpdateMetadata 实现 skill.Store。**它不碰内容层任何一项。**
+// UpdateMetadata 实现 skill.Store：改说明层，**它不碰内容层任何一项**。
 func (s *Store) UpdateMetadata(ctx context.Context, skillID, title, summary string, tags []string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&database.SkillRecord{}).

@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserCog,
+  Wand2,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -63,6 +64,9 @@ const NAV: NavEntry[] = [
   { path: '/galaxy', label: '创作', icon: <Sparkles size={ICON_SIZE} />, permission: PermissionCodes.GalaxyProjectRead },
   // 个人资料不需要权限码：它只作用于自己（见 docs/design/profile/README.md）。
   { path: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
+  // 平台技能目录。它与创作面并列而不是收在它里面：技能由平台维护、对所有创作者
+  // 可用，而工程是"我自己的东西"（见 docs/design/skill/README.md）。
+  { path: '/skills', label: '技能', icon: <Wand2 size={ICON_SIZE} />, permission: PermissionCodes.SkillCatalogRead },
   // 权限管理这一组：角色定义是"有哪些角色"，人员授权是"谁被授了哪个角色"。
   // 两者同属一件事，因此收在一个分组里，而不是平铺成两个看不出关系的入口。
   { path: '/access/roles', label: '角色定义', icon: <ShieldCheck size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacRoleRead },

@@ -212,6 +212,26 @@ skill 模块补上这一块：**真相源在平台**，管理员从远端仓库�
 | 孤儿字节回收 | 暂不做（**已定**，与 galaxy 合并处理） | 需要一个对账动作；内容对象按摘要全局共享，回收要按引用计数或对账 |
 | 全文 / 语义检索 | 暂不做（**已定**） | 引入索引与一套相关性排序，还要回答"排序变了算不算功能变更" |
 
+## 代码实现索引
+
+> 以下为代码位置索引，便于在 spec 与实现之间导航。索引内容随代码变化更新。
+
+| 职责 | 文件路径 |
+|------|---------|
+| 领域类型、上限常量、权限以外的全部错误取值 | [internal/skill/skill.go](../../../internal/skill/skill.go) |
+| 目录行为：纳管、同步、回滚、说明层、收藏、检索、使用量 | [internal/skill/catalog.go](../../../internal/skill/catalog.go) |
+| 持久化契约与内存实现 | [internal/skill/store.go](../../../internal/skill/store.go) / [internal/skill/memory_store.go](../../../internal/skill/memory_store.go) |
+| 持久化的 SQL 实现与契约测试 | [internal/skill/gormstore/](../../../internal/skill/gormstore/store.go) |
+| 表结构与迁移 | [internal/database/schema.go](../../../internal/database/schema.go) / [internal/database/migrate/migration_0013_skill_catalog.go](../../../internal/database/migrate/migration_0013_skill_catalog.go) |
+| 接口与权限码（读面 / 维护面） | [api/proto/aladdin/skill/v1/skill.proto](../../../api/proto/aladdin/skill/v1/skill.proto) |
+| 权限码与内置角色 | [api/permissions/catalog.yaml](../../../api/permissions/catalog.yaml) |
+| 读面 / 维护面的 RPC 实现与错误映射 | [internal/server/skill_service.go](../../../internal/server/skill_service.go) / [internal/server/skill_admin_service.go](../../../internal/server/skill_admin_service.go) |
+| 服务端装配与启动回收 | [internal/server/server.go](../../../internal/server/server.go) |
+| 命令行 | [cmd/aladdin/command-skill.go](../../../cmd/aladdin/command-skill.go) |
+| 目录页与详情页 | [web/src/pages/skill/SkillCatalogPage.tsx](../../../web/src/pages/skill/SkillCatalogPage.tsx) / [web/src/pages/skill/SkillDetailPage.tsx](../../../web/src/pages/skill/SkillDetailPage.tsx) |
+| 前端调用封装 | [web/src/api/skill.ts](../../../web/src/api/skill.ts) |
+| 远端凭据的读取（只从环境变量） | [internal/config/config.go](../../../internal/config/config.go) / [internal/config/load.go](../../../internal/config/load.go) |
+
 ---
 
 > spec 是功能行为的唯一信源，代码是实现的唯一信源。

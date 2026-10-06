@@ -28,20 +28,20 @@ func TestValidAccepts(t *testing.T) {
 
 func TestValidRejects(t *testing.T) {
 	cases := map[string]string{
-		"空路径":      "",
-		"绝对路径":     "/etc/passwd",
-		"结尾斜杠":     "a/",
-		"空段":       "a//b",
-		"当前目录段":    "a/./b",
-		"上跳段":      "a/../b",
-		"只有一个上跳段":  "..",
-		"超长":       strings.Repeat("a", relpath.MaxBytes+1),
-		"含空格":      "a b",
-		"含百分号":     "a%2Eb",
-		"含反斜杠":     `a\b`,
-		"含查询串分隔符":  "a?b",
-		"含控制字符":    "a\nb",
-		"含冒号":      "a:b",
+		"空路径":     "",
+		"绝对路径":    "/etc/passwd",
+		"结尾斜杠":    "a/",
+		"空段":      "a//b",
+		"当前目录段":   "a/./b",
+		"上跳段":     "a/../b",
+		"只有一个上跳段": "..",
+		"超长":      strings.Repeat("a", relpath.MaxBytes+1),
+		"含空格":     "a b",
+		"含百分号":    "a%2Eb",
+		"含反斜杠":    `a\b`,
+		"含查询串分隔符": "a?b",
+		"含控制字符":   "a\nb",
+		"含冒号":     "a:b",
 		// 字符集是 URL 的非保留字符，因此非 ASCII 段一律被拒。这是一条**已知
 		// 代价**：上游仓库里一个中文文件名会让那份内容纳管不进来，而错误信息
 		// 会点名那个路径。放宽它要同时回答"同一个字的两种 Unicode 写法算不算

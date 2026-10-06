@@ -20,6 +20,8 @@ import { FrameBridgePage } from './pages/docs/FrameBridgePage'
 import { GalaxyPage } from './pages/docs/GalaxyPage'
 import { ProjectEditorPage } from './pages/galaxy/ProjectEditorPage'
 import { ProjectListPage } from './pages/galaxy/ProjectListPage'
+import { SkillCatalogPage } from './pages/skill/SkillCatalogPage'
+import { SkillDetailPage } from './pages/skill/SkillDetailPage'
 import { PreviewPage } from './pages/galaxy/PreviewPage'
 import { PublishedPage } from './pages/galaxy/PublishedPage'
 
@@ -113,6 +115,16 @@ export const router = createBrowserRouter([
           {
             element: <RequirePermission require={[PermissionCodes.TelemetryRead]} />,
             children: [{ path: '/admin/telemetry', element: <TelemetryPage /> }],
+          },
+          // 平台技能目录。基础权限是 `skill.catalog.read`——目录与详情同属一块
+          // 能力；纳管、同步、回滚与删除在页面内部按 `skill.catalog.write` 裁剪
+          // （见 docs/design/skill/README.md）。
+          {
+            element: <RequirePermission require={[PermissionCodes.SkillCatalogRead]} />,
+            children: [
+              { path: '/skills', element: <SkillCatalogPage /> },
+              { path: '/skills/:skillId', element: <SkillDetailPage /> },
+            ],
           },
           // galaxy 创作面。基础权限是 `galaxy.project.read`——列表与编辑器
           // 同属一块能力；编辑器内部的写/发布/资产入口再按各自权限码裁剪。

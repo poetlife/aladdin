@@ -173,6 +173,18 @@
 | 收藏的分组 / 备注 | 暂不做（**未定**） | 收藏从一个标记变成一个小型收藏夹，需要自己的界面与上限 |
 | 使用明细的保留期可配 | 不做，固定 30 天（**已定**） | 会让"这个部署的使用量口径是几天"变成一个要在别处解释的事实 |
 
+## 代码实现索引
+
+> 以下为代码位置索引，便于在 spec 与实现之间导航。索引内容随代码变化更新。
+
+| 职责 | 文件路径 |
+|------|---------|
+| 有效取值（回退）、说明层归一化与使用量口径 | [internal/skill/skill.go](../../../internal/skill/skill.go) |
+| 检索、排序、候选标签、收藏与使用日次 | [internal/skill/catalog.go](../../../internal/skill/catalog.go) |
+| 标签归一化（**与 galaxy 资产共用同一处**） | [internal/tagging/tagging.go](../../../internal/tagging/tagging.go) |
+| 持久化契约与两个实现 | [internal/skill/store.go](../../../internal/skill/store.go) / [internal/skill/gormstore/store.go](../../../internal/skill/gormstore/store.go) |
+| 目录页与详情页 | [web/src/pages/skill/SkillCatalogPage.tsx](../../../web/src/pages/skill/SkillCatalogPage.tsx) / [web/src/pages/skill/SkillDetailPage.tsx](../../../web/src/pages/skill/SkillDetailPage.tsx) |
+
 ---
 
 > spec 是功能行为的唯一信源，代码是实现的唯一信源。

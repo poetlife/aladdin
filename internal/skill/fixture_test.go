@@ -38,8 +38,6 @@ type fakeRemote struct {
 	resolved []string
 	// fetched 记录取回时收到的地址三元组，供"取字节地址由服务端拼"那条断言使用。
 	fetched []string
-	// links / dirs 让测试构造非常规压缩包。
-	archiveOverride []byte
 }
 
 func newFakeRemote() *fakeRemote {

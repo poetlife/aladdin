@@ -201,7 +201,7 @@ func ParseManifest(data []byte) (Manifest, error) {
 	}
 	var parsed manifestFrontmatter
 	if err := yaml.Unmarshal([]byte(block), &parsed); err != nil {
-		return Manifest{}, fmt.Errorf("%w: %s 的 frontmatter 不是合法 YAML: %v",
+		return Manifest{}, fmt.Errorf("%w: %s 的 frontmatter 不是合法 YAML: %w",
 			ErrPackageInvalid, ManifestPath, err)
 	}
 

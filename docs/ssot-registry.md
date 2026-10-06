@@ -66,6 +66,9 @@
 | 一个工程是不是该主体的（资源归属） | galaxy 的归属校验唯一入口 | [internal/galaxy/ownership.go](../internal/galaxy/ownership.go) |
 | 发布态允许从哪个来源取资源、以及允许谁嵌入（记号解析出的地址与内容安全策略同源；含发布根与帧祖先的派生） | 公开域的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | 一份短码或设备码是否已获批准、是否已被交付 | `deviceLogins`（状态流转与交付） | [internal/server/device_logins.go](../internal/server/device_logins.go) |
+| 一个远端地址是不是一个可纳管的仓库（**只认 github.com 的仓库根形状**，决定出站请求的目标） | `skill.ParseRepositoryURL`（引用与子路径各有一处：`ParseRef` / `ParseSubPath`） | [internal/skill/source.go](../internal/skill/source.go) |
+| 一份远端内容是不是一个合法的技能包（必需文件、路径、文本、上限） | `skill.BuildPackage` | [internal/skill/package.go](../internal/skill/package.go) |
+| 一个技能对外的有效标题与有效简介（说明层留空时回退到当前版本 SKILL.md 的两项） | `Skill.EffectiveTitle` / `Skill.EffectiveSummary` | [internal/skill/skill.go](../internal/skill/skill.go) |
 | 本机二进制相对最新发布是旧是新（要不要升级） | 严格版本的解析与比较入口 | [internal/upgrade/version.go](../internal/upgrade/version.go) |
 
 > **配置不得成为权限的来源**。主体、角色、权限码、作用域一律不得由配置提供；默认作用域只能来自主体的绑定关系。见 [docs/design/config/README.md](design/config/README.md)。
@@ -101,6 +104,9 @@
 | 过期会话行的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
 | 超出保留期的客户端事件行的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
 | 读侧时间窗折算成半开区间 `[from, to)` | `telemetry.WindowRange` | [internal/telemetry/window.go](../internal/telemetry/window.go) |
+| 一个仓库压缩包解成一棵文件树（含路径逃逸与链接的拒绝） | `readRepoArchive` | [internal/skill/repo_archive.go](../internal/skill/repo_archive.go) |
+| `SKILL.md` 的 frontmatter 解析（name / description） | `skill.ParseManifest` | [internal/skill/package.go](../internal/skill/package.go) |
+| 使用统计里"哪一天"的折算（两个存储实现共用） | `skill.UsageDay` | [internal/skill/skill.go](../internal/skill/skill.go) |
 
 > **链路标识只用 OTel 的传播实现**。仓库里不保留任何自研的 trace_id 生成、注入或继承逻辑：那会与 `traceparent` 形成两套并存的标识，而它们迟早会不一致（见 [docs/observability.md](observability.md)）。
 
@@ -133,6 +139,8 @@
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
 | 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh` | [deploy/deploy.sh](../deploy/deploy.sh) |
 | 本地开发环境的拉起（服务端 + 前端，同起同停） | `make dev`；两边的命令与种子配置各只有一处来源（`DEV_SERVER_CMD` / `WEB_DEV_CMD`），`dev` 与 `dev-server` / `web-dev` 都引用它们 | [Makefile](../Makefile) |
+| 技能纳管 / 同步 / 回滚 / 删除的留痕（含来源与提交标识，**不含正文**） | `skill.Service` 的对应方法 | [internal/skill/catalog.go](../internal/skill/catalog.go) |
+| 超出保留期的技能使用日次的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
 | 本机命令行的替换（原子、按符号链接指向的真实文件） | `upgrade` 的替换入口 | [internal/upgrade/replace.go](../internal/upgrade/replace.go) |
 
 ## 数据源类（Data Sources）
@@ -167,4 +175,7 @@
 | 发布产物清单与校验和（自更新的唯一来源） | `upgrade` 的发布源读取入口 | [internal/upgrade/release.go](../internal/upgrade/release.go) |
 | 发行版产物的命名与平台清单（**自更新与界面上的下载命令两处都消费**） | [docs/release.md](release.md) 记录的对外契约；平台取自 Makefile 的 `PLATFORMS` | [Makefile](../Makefile) |
 | 界面里的等宽字体栈（代码块、可编辑正文） | `MONOSPACE` | [web/src/theme/monospace.ts](../web/src/theme/monospace.ts) |
+| 技能、版本、标签、收藏与使用日次的持久化数据 | `skill.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/skill/store.go](../internal/skill/store.go) / [internal/skill/gormstore/](../internal/skill/gormstore/store.go) |
+| 远端技能内容的拉取出口（解析引用、取回一棵树；**测试注入假实现**） | `skill.Remote` 接口 | [internal/skill/remote.go](../internal/skill/remote.go) |
+| 技能目录的接口契约（读面与维护面的划分、权限码、作用域来源） | proto 定义，经 `buf generate` 派生两端代码 | [api/proto/aladdin/skill/v1/skill.proto](../api/proto/aladdin/skill/v1/skill.proto) |
 | 代码生成与静态检查工具的版本（本机安装与 CI 缓存 key 都由此派生） | Makefile 的 `TOOLS` 清单 | [Makefile](../Makefile) |

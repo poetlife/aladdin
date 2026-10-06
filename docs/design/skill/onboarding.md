@@ -217,6 +217,22 @@ description: 单色/双色编辑印刷风出图。当用户要…时使用。
 | 原地换来源 | 不做，改为重新纳管（**已定**，见"来源不可改"） | 版本与来源的对应关系、回滚语义都要重新论证 |
 | 纳管进度的可见性 | 不做（**已定**）。一次请求一次结论，界面给的是"进行中"而不是百分比 | 要走长程任务那一套（阶段、检查点、恢复） |
 
+## 代码实现索引
+
+> 以下为代码位置索引，便于在 spec 与实现之间导航。索引内容随代码变化更新。
+
+| 职责 | 文件路径 |
+|------|---------|
+| 来源的形状白名单（地址、引用、子路径） | [internal/skill/source.go](../../../internal/skill/source.go) |
+| 远端拉取的契约与 GitHub 实现 | [internal/skill/remote.go](../../../internal/skill/remote.go) |
+| 仓库压缩包的解析（路径、链接、上限） | [internal/skill/repo_archive.go](../../../internal/skill/repo_archive.go) |
+| 包契约：必需文件、路径、文本判据、frontmatter 与上限 | [internal/skill/package.go](../../../internal/skill/package.go) |
+| 纳管、同步、回滚与删除的流程 | [internal/skill/catalog.go](../../../internal/skill/catalog.go) |
+| 内容对象的写入（按摘要、仅当不存在时） | [internal/objectstore/content.go](../../../internal/objectstore/content.go) |
+| 路径形状校验 | [internal/relpath/relpath.go](../../../internal/relpath/relpath.go) |
+| 标识分配 | [internal/idgen/idgen.go](../../../internal/idgen/idgen.go) |
+| 远端凭据只从环境变量读 | [internal/config/load.go](../../../internal/config/load.go) |
+
 ---
 
 > spec 是功能行为的唯一信源，代码是实现的唯一信源。

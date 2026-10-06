@@ -102,11 +102,14 @@ var (
 	// ErrAssetNotesTooLong 表示备注超过长度上限。
 	ErrAssetNotesTooLong = errors.New("资产备注过长")
 
-	// ErrAssetTagInvalid 与 ErrAssetTooManyTags 是**同一个值的两个名字**：标签
-	// 规则只有一处实现（tagging），这里只是让 galaxy 的调用方按"资产标签"读到它。
-	// 它们不是两份定义——把上面那两行抄一遍就会漂移，而漂移的表现是"这个标签
-	// 在技能那边合法、在资产这边不合法"。
-	ErrAssetTagInvalid  = tagging.ErrInvalid
+	// ErrAssetTagInvalid 表示某个标签不合法（空串、含控制字符或路径分隔符、超长）。
+	//
+	// 它与 ErrAssetTooManyTags 是**同一个值的两个名字**：标签规则只有一处实现
+	// （tagging），这里只是让 galaxy 的调用方按"资产标签"读到它。它们不是两份
+	// 定义——把上面那两行抄一遍就会漂移，而漂移的表现是"这个标签在技能那边
+	// 合法、在资产这边不合法"。
+	ErrAssetTagInvalid = tagging.ErrInvalid
+	// ErrAssetTooManyTags 表示标签数量超过上限。见 ErrAssetTagInvalid。
 	ErrAssetTooManyTags = tagging.ErrTooMany
 )
 

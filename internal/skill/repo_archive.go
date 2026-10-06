@@ -29,7 +29,7 @@ import (
 func readRepoArchive(r io.Reader, subPath string) ([]FetchedFile, error) {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
-		return nil, fmt.Errorf("%w: 压缩包读不开: %v", ErrRemoteUnavailable, err)
+		return nil, fmt.Errorf("%w: 压缩包读不开: %w", ErrRemoteUnavailable, err)
 	}
 	defer func() { _ = gz.Close() }()
 
@@ -44,7 +44,7 @@ func readRepoArchive(r io.Reader, subPath string) ([]FetchedFile, error) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: 压缩包解析失败: %v", ErrRemoteUnavailable, err)
+			return nil, fmt.Errorf("%w: 压缩包解析失败: %w", ErrRemoteUnavailable, err)
 		}
 
 		relative, keep, err := archiveEntryPath(header, subPath)
@@ -61,7 +61,7 @@ func readRepoArchive(r io.Reader, subPath string) ([]FetchedFile, error) {
 		}
 		data, err := io.ReadAll(io.LimitReader(reader, header.Size))
 		if err != nil {
-			return nil, fmt.Errorf("%w: 读取压缩包条目失败: %v", ErrRemoteUnavailable, err)
+			return nil, fmt.Errorf("%w: 读取压缩包条目失败: %w", ErrRemoteUnavailable, err)
 		}
 		files = append(files, FetchedFile{Path: relative, Data: data})
 	}
@@ -84,7 +84,9 @@ func archiveEntryPath(header *tar.Header, subPath string) (string, bool, error) 
 	case tar.TypeSymlink, tar.TypeLink:
 		return "", false, fmt.Errorf("%w: 压缩包里含链接 %q，技能包必须是一棵自足的树",
 			ErrPackageInvalid, name)
-	case tar.TypeReg, tar.TypeRegA:
+	case tar.TypeReg:
+		// 归档里的零值型的普通文件由标准库的读取器归一成 TypeReg（见
+		// archive/tar 的 Reader.next），因此这里不必再列一次。
 	default:
 		// 设备节点、管道、字符设备：都不该出现在一个技能包里。
 		return "", false, fmt.Errorf("%w: 压缩包里含非常规条目 %q",

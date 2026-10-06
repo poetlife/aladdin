@@ -148,7 +148,7 @@ func (g *GithubRemote) getJSON(ctx context.Context, path string, out any) error 
 	}
 	decoder := json.NewDecoder(io.LimitReader(resp.Body, 1<<20))
 	if err := decoder.Decode(out); err != nil {
-		return fmt.Errorf("%w: 远端返回的不是预期的 JSON: %v", ErrRemoteUnavailable, err)
+		return fmt.Errorf("%w: 远端返回的不是预期的 JSON: %w", ErrRemoteUnavailable, err)
 	}
 	return nil
 }
@@ -157,7 +157,7 @@ func (g *GithubRemote) getJSON(ctx context.Context, path string, out any) error 
 func (g *GithubRemote) do(ctx context.Context, path, accept string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubAPIBase+path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrRemoteUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrRemoteUnavailable, err)
 	}
 	req.Header.Set("Accept", accept)
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -167,7 +167,7 @@ func (g *GithubRemote) do(ctx context.Context, path, accept string) (*http.Respo
 	}
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrRemoteUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrRemoteUnavailable, err)
 	}
 	return resp, nil
 }

@@ -149,6 +149,20 @@
 | 本地缓存与离线可用 | 暂不做（**已定**） | 会让"平台里看到的"与"取到的是不是同一份"需要一个限定条件 |
 | 命令行的交互式浏览 | 暂不做（**未定**） | 一个 TUI；与"stdout 只有内容"这条分界的关系要重新论证 |
 
+## 代码实现索引
+
+> 以下为代码位置索引，便于在 spec 与实现之间导航。索引内容随代码变化更新。
+
+| 职责 | 文件路径 |
+|------|---------|
+| 取用与检索的接口契约 | [api/proto/aladdin/skill/v1/skill.proto](../../../api/proto/aladdin/skill/v1/skill.proto) |
+| 命令行（取用侧与维护侧） | [cmd/aladdin/command-skill.go](../../../cmd/aladdin/command-skill.go) |
+| 命令的权限声明与构建期校验 | [cmd/aladdin/permission-decl.go](../../../cmd/aladdin/permission-decl.go) |
+| 取用（使用量的计量点）与正文读取 | [internal/skill/catalog.go](../../../internal/skill/catalog.go) |
+| 服务端取用侧的 RPC 实现 | [internal/server/skill_service.go](../../../internal/server/skill_service.go) |
+| 前端调用封装（**没有任何一条会写文件的路径**） | [web/src/api/skill.ts](../../../web/src/api/skill.ts) |
+| 「不落盘」的端到端断言 | [test/e2e/skill_test.go](../../../test/e2e/skill_test.go) |
+
 ---
 
 > spec 是功能行为的唯一信源，代码是实现的唯一信源。

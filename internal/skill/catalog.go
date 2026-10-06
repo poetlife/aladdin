@@ -588,5 +588,5 @@ func mapObjectError(err error) error {
 	if errors.Is(err, objectstore.ErrObjectNotFound) {
 		return fmt.Errorf("%w: 内容对象不存在", ErrPackageInvalid)
 	}
-	return fmt.Errorf("%w: %v", ErrObjectStoreUnavailable, err)
+	return fmt.Errorf("%w: %w", ErrObjectStoreUnavailable, err)
 }

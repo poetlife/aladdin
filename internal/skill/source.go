@@ -49,7 +49,7 @@ func ParseRepositoryURL(raw string) (Repository, error) {
 
 	parsed, err := url.Parse(value)
 	if err != nil {
-		return Repository{}, fmt.Errorf("%w: %v", ErrRepositoryInvalid, err)
+		return Repository{}, fmt.Errorf("%w: %w", ErrRepositoryInvalid, err)
 	}
 	if parsed.User != nil || parsed.Port() != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return Repository{}, fmt.Errorf("%w: 地址不得带用户信息、端口、查询串或片段", ErrRepositoryInvalid)

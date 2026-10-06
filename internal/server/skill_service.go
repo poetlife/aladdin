@@ -44,9 +44,9 @@ func (s *SkillService) GetCapabilities(ctx context.Context, _ *connect.Request[s
 		Capabilities: &skillv1.SkillCapabilities{
 			CatalogEnabled:  capabilities.CatalogEnabled,
 			ImportEnabled:   capabilities.ImportEnabled,
-			MaxFiles:        uint32(capabilities.MaxFiles),
-			MaxFileBytes:    uint32(capabilities.MaxFileBytes),
-			MaxPackageBytes: uint32(capabilities.MaxPackageBytes),
+			MaxFiles:        fitUint32(int64(capabilities.MaxFiles)),
+			MaxFileBytes:    fitUint32(int64(capabilities.MaxFileBytes)),
+			MaxPackageBytes: fitUint32(int64(capabilities.MaxPackageBytes)),
 		},
 	}), nil
 }
@@ -131,8 +131,8 @@ func (s *SkillService) ListSkillVersions(ctx context.Context, req *connect.Reque
 		resp.Versions = append(resp.Versions, &skillv1.SkillVersion{
 			Id:         version.ID,
 			Commit:     version.Commit,
-			FileCount:  uint32(len(version.Files)),
-			TotalBytes: uint64(version.TotalBytes()),
+			FileCount:  fitUint32(int64(len(version.Files))),
+			TotalBytes: fitUint64(version.TotalBytes()),
 			CreatedAt:  formatSkillTime(version.CreatedAt),
 			Current:    version.ID == view.Current.ID,
 		})
@@ -164,11 +164,11 @@ func toProtoSkill(view skill.View, detail bool) *skillv1.Skill {
 		Summary:    item.EffectiveSummary(),
 		Tags:       item.Tags,
 		Favorited:  view.Favorited,
-		FileCount:  uint32(len(item.Current.Files)),
-		TotalBytes: uint64(item.Current.TotalBytes()),
+		FileCount:  fitUint32(int64(len(item.Current.Files))),
+		TotalBytes: fitUint64(item.Current.TotalBytes()),
 		Usage: &skillv1.SkillUsage{
-			UseDays:    uint32(view.Usage.UseDays),
-			UserCount:  uint32(view.Usage.Users),
+			UseDays:    fitUint32(int64(view.Usage.UseDays)),
+			UserCount:  fitUint32(int64(view.Usage.Users)),
 			LastUsedAt: formatSkillTime(view.Usage.LastUsedAt),
 		},
 	}
@@ -191,7 +191,7 @@ func toProtoSkill(view skill.View, detail bool) *skillv1.Skill {
 	for _, file := range item.Current.Files {
 		out.Files = append(out.Files, &skillv1.SkillFile{
 			Path:      file.Path,
-			SizeBytes: uint64(file.SizeBytes),
+			SizeBytes: fitUint64(file.SizeBytes),
 			Digest:    file.Digest,
 		})
 	}

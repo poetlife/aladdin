@@ -7,6 +7,7 @@ import { GalaxyService } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { IdentityService } from '../gen/proto/aladdin/identity/v1/identity_pb'
 import { ProfileService } from '../gen/proto/aladdin/profile/v1/profile_pb'
 import { RBACService } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
+import { SkillAdminService, SkillService } from '../gen/proto/aladdin/skill/v1/skill_pb'
 import { TelemetryAdminService } from '../gen/proto/aladdin/telemetry/v1/telemetry_admin_pb'
 import { TelemetryService } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 
@@ -190,6 +191,21 @@ export function eventsClient() {
  */
 export function telemetryClient() {
   return createClient(TelemetryService, getTransport())
+}
+
+/**
+ * 技能目录**读面**的客户端。
+ *
+ * 与下面那个维护面客户端是两个描述符：读要 skill.catalog.read，写要
+ * skill.catalog.write（见 docs/design/skill/README.md）。
+ */
+export function skillClient() {
+  return createClient(SkillService, getTransport())
+}
+
+/** 技能目录**维护面**的客户端。 */
+export function skillAdminClient() {
+  return createClient(SkillAdminService, getTransport())
 }
 
 /**
