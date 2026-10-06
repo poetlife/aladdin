@@ -47,12 +47,16 @@ describe('AppModal', () => {
     expect(dialog?.style.display).toBe('flex')
     expect(dialog?.style.flexDirection).toBe('column')
 
-    // 滚动层必须**贴到弹窗内缘**。antd 把整圈内边距挂在容器上，容器一滚，滚动条
-    // 就画在那圈内边距里侧——一根悬在弹窗里的柱子。所以容器的内边距必须是 0，
-    // 内边距改由滚动层里面那一层承担。
-    expect(dialog?.style.padding).toBe('0px')
+    // 滚动层必须**铺到容器内边距之外**，滚动条才贴得到弹窗内缘；否则它画在那圈
+    // 内边距里侧，成了一根悬在弹窗里的柱子。
+    //
+    // 铺的方式是负外边距，而**不是**把容器的内边距清零：容器的内边距决定头尾的横向
+    // 位置，清零就得在别处再补一遍——补出来的那一份与滚动层不是同一条边界，于是又
+    // 回到"从标题右缘外面冒出一根柱子"。
+    expect(dialog?.style.padding).toBe('')
 
     const body = document.body.querySelector<HTMLElement>('.ant-modal-body')
+    expect(body?.getAttribute('style')).toContain('margin-inline')
     expect(body?.style.overflowY).toBe('auto')
     // 少了 min-height:0，这个 flex:1 在内容超长时根本不收缩——滚动也就落不到
     // 这里，整屏那层又开始滚。这一条是那个坑的钉子。

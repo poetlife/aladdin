@@ -13,11 +13,11 @@ import type { ModalProps } from 'antd'
  *
  * 两件事合起来就是"这个弹窗的滚动条坏了"。
  *
- * 把高度约束挪到弹窗自己身上还不够，**还得把内边距挪个位置**：antd 把整个弹窗的
- * 内边距挂在**容器**上，因此只要容器里的某一层去滚，滚动条就画在那圈内边距的里侧
- * ——一根悬在弹窗里的深色柱子，离弹窗外缘 24px，既不贴着边也不属于任何东西。
- * 所以这里让容器与滚动层都不留内边距，内边距由里面一层普通 `div` 承担：滚动条贴
- * 着弹窗内缘，与页面其余地方的滚动条长得一样。
+ * 把高度约束挪到弹窗自己身上还不够，**滚动条画在哪一侧也是要管的**。antd 把整个
+ * 弹窗的内边距挂在**容器**上，于是容器里任何一层去滚，滚动条都落在它自己的内边距里
+ * 侧：一处既不贴着弹窗外缘、也不属于任何内容的悬浮柱子。所以头、内容、尾三块一起
+ * 用负的横向外边距铺到弹窗边缘，再各自把内边距加回来；滚动层的内边距由它里面那层
+ * `div` 承担——它自己必须留白为零，否则滚动条又缩回去了。
  *
  * **它存在的理由是这件事必须无法被忘记。** 此前它在工作台的两个面板上被单独解过
  * 一次（一个本地常量），而"单独解一次"的下场就是别的弹窗继续踩同一个坑：靠每个
@@ -30,10 +30,17 @@ import type { ModalProps } from 'antd'
  */
 export function AppModal({ className, rootClassName, children, ...rest }: Omit<ModalProps, 'styles'>): React.ReactNode {
   const { token } = theme.useToken()
-  // 内边距的取值全部来自 token，不写死像素：换主题算法时它们跟着变，而"弹窗的
-  // 内边距与卡片的一致"这件事不需要有人记得。
   const horizontal = token.paddingContentHorizontalLG
-  const vertical = token.paddingMD
+
+  // 头、内容、尾都**横向铺满弹窗**，各自再把自己的内边距加回来。
+  //
+  // 三块必须一起铺：只让内容区铺出去，它就会比上面那一条标题窄 24px，滚动条从标题
+  // 右缘外面"冒出来"——那道台阶看着像渲染坏了，而它其实是两条边界对不上。一起铺
+  // 之后三块的左右边界重合，滚动条是这条边界的一部分，不再是插进来的东西。
+  //
+  // 内边距**不能加在内容区自己身上**：滚动条画在滚动容器的内边距里侧，加回去就又
+  // 成了悬在里面的一根柱子。所以内容区的内边距由它里面那一层承担。
+  const bleed: React.CSSProperties = { marginInline: `calc(-1 * ${horizontal}px)` }
 
   return (
     <Modal
@@ -47,18 +54,17 @@ export function AppModal({ className, rootClassName, children, ...rest }: Omit<M
           maxHeight: 'calc(100dvh - 160px)',
           display: 'flex',
           flexDirection: 'column',
-          padding: 0,
         },
-        // 头尾的内边距由这里补回来（原来由容器给），它们不参与滚动。
-        header: { flex: 'none', padding: `${vertical}px ${horizontal}px 0` },
+        // 头尾不参与滚动，内边距直接加在它们身上。
+        header: { flex: 'none', ...bleed, paddingInline: horizontal },
         // `minHeight: 0` 不能少：flex 子项的默认最小高度是它的内容高度，少了这一条，
         // 下面这个 `flex: 1` 在内容超长时根本不收缩，滚动也就落不到这里。
-        body: { flex: '1 1 auto', minHeight: 0, overflowY: 'auto' },
-        footer: { flex: 'none', padding: `0 ${horizontal}px ${vertical}px` },
+        body: { flex: '1 1 auto', minHeight: 0, overflowY: 'auto', ...bleed },
+        footer: { flex: 'none', ...bleed, paddingInline: horizontal },
       }}
     >
-      {/* 这一层承担原来挂在容器上的内边距。放在滚动层**里面**，滚动条才贴得到边。 */}
-      <div style={{ padding: `${vertical}px ${horizontal}px` }}>{children}</div>
+      {/* 横向内边距由这一层补回来，滚动条才贴得到弹窗内缘。 */}
+      <div style={{ paddingInline: horizontal }}>{children}</div>
     </Modal>
   )
 }
