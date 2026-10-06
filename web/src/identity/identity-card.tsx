@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Alert, Button, Card, Divider, Flex, Listy, Popconfirm, Skeleton, Space, Tag, Typography } from 'antd'
-import { KeyRound, Link2 } from 'lucide-react'
+import { KeyRound } from 'lucide-react'
 
 import * as identityApi from '../api/identity'
 import { messageOf } from '../api/errors'
+import { GithubMark } from '../auth/github-mark'
 import { GoogleSignInButton } from '../auth/google-sign-in-button'
 import type { AuthMethod, Identity } from '../gen/proto/aladdin/identity/v1/identity_pb'
 
@@ -196,7 +197,7 @@ export function IdentityCard(): React.ReactNode {
                       <Button
                         key={method.source}
                         href="/auth/github/start?purpose=bind"
-                        icon={<Link2 size={16} />}
+                        icon={<GithubMark size={16} />}
                         loading={busy}
                       >
                         绑定 GitHub

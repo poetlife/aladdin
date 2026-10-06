@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Alert, Button, Card, Divider, Form, Input, Space, Typography, theme } from 'antd'
-import { KeyRound, Lamp, LogIn } from 'lucide-react'
+import { KeyRound, Lamp } from 'lucide-react'
 
 import * as identityApi from '../api/identity'
 import { messageOf, traceIdOf } from '../api/errors'
-import { GoogleSignInButton, useSession } from '../auth'
+import { GithubMark, GoogleSignInButton, useSession } from '../auth'
 import { Action, Result, Surface } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../telemetry/track'
 
@@ -117,6 +117,7 @@ export function LoginPage(): React.ReactNode {
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
             <GoogleSignInButton
               clientId={google.clientId}
+              size="large"
               onCredential={(idToken) => void handleGoogleCredential(idToken)}
             />
           </div>
@@ -125,7 +126,13 @@ export function LoginPage(): React.ReactNode {
         {github !== undefined && (
           // 整页跳转，不是一次 RPC：GitHub 的授权码必须由服务端用客户端密钥
           // 换取，因此这条路绕不开浏览器导航。
-          <Button href="/auth/github/start" block icon={<LogIn size={16} />} style={{ marginBottom: 8 }}>
+          <Button
+            href="/auth/github/start"
+            block
+            size="large"
+            icon={<GithubMark size={18} />}
+            style={{ marginBottom: 8 }}
+          >
             使用 GitHub 登录
           </Button>
         )}
@@ -155,7 +162,7 @@ export function LoginPage(): React.ReactNode {
               autoComplete="off"
             />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block loading={submitting || status === 'loading'}>
+          <Button type="primary" htmlType="submit" block size="large" loading={submitting || status === 'loading'}>
             登录
           </Button>
         </Form>

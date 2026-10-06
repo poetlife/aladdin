@@ -77,32 +77,62 @@ function loadGoogleIdentity(): Promise<void> {
 }
 
 /**
+ * 挂载 Google 登录按钮所需的参数。
+ *
+ * `scheme`：GIS 的按钮配色是渲染时定死的，外部的明暗变量进不去，只能在渲染时
+ * 选一个内置主题。暗色用 `outline_dark`（深底浅边），与 antd 在暗色下的默认按钮
+ * 最接近；亮色用 `outline`。**没有"跟随 CSS"这一档**，因此主题变化必须重新挂载
+ * 按钮，而不是改个类名（见 google-sign-in-button.tsx）。
+ *
+ * `size`：GIS 的档位名与 antd 不同（large/medium/small，没有 middle），但尺寸对得上
+ * （40/32/24）。调用方按 antd 的档位决定，由组件折算成这里的名字。
+ *
+ * `borderRadius` / `fontSize`：GIS 的按钮带着自己的一套观感（4px 圆角、14px 字号），
+ * 站在周围全是站点尺寸的界面上会显得小一号。它**只提供 `rectangular`（4px）与
+ * `pill` 两种形状**，也没有字号这一档，所以这两项只能由调用方把站点的值传进来，
+ * 由这里盖上去。
+ *
+ * `signal`：让调用方撤销一次尚未完成的挂载。挂载要等脚本加载，是异步的；期间
+ * 组件可能已经卸载或重挂（开发期 StrictMode 每次都这么走），迟到的这一次若不
+ * 作废，就会和后一次各画一个按钮。
+ */
+export interface GoogleButtonOptions {
+  clientId: string
+  onCredential: (idToken: string) => void
+  scheme: 'light' | 'dark'
+  size: 'large' | 'medium'
+  borderRadius: number
+  fontSize: number
+  signal?: AbortSignal
+}
+
+/**
  * 在给定容器里挂载 Google 登录按钮。
  *
  * 拿到身份令牌后回调 `onCredential`——由调用方交给服务端，这里不碰它。
  */
-export async function mountGoogleButton(
-  parent: HTMLElement,
-  clientId: string,
-  onCredential: (idToken: string) => void,
-): Promise<void> {
+export async function mountGoogleButton(parent: HTMLElement, options: GoogleButtonOptions): Promise<void> {
   await loadGoogleIdentity()
+
+  if (options.signal?.aborted === true) {
+    return
+  }
 
   const api = googleIdentityServices()
   if (api === undefined) {
     throw new Error('Google 登录脚本已加载但未就绪')
   }
 
-  if (initializedClientId !== clientId) {
+  if (initializedClientId !== options.clientId) {
     api.accounts.id.initialize({
-      client_id: clientId,
+      client_id: options.clientId,
       callback: (response) => {
         currentHandler?.(response.credential)
       },
     })
-    initializedClientId = clientId
+    initializedClientId = options.clientId
   }
-  currentHandler = onCredential
+  currentHandler = options.onCredential
 
   // GIS 只接受 200–400 的像素宽度，且不接受百分比。桌面端维持原来的 380；
   // 量不到容器宽度时（clientWidth 为 0，例如尚未布局的环境）同样按 380 处理，
@@ -111,9 +141,21 @@ export async function mountGoogleButton(
   const width = available > 0 ? Math.min(380, Math.max(200, available)) : 380
 
   api.accounts.id.renderButton(parent, {
-    theme: 'outline',
-    size: 'large',
+    theme: options.scheme === 'dark' ? 'outline_dark' : 'outline',
+    size: options.size,
     text: 'signin_with',
     width,
   })
+
+  // 把站点的圆角与字号盖到 GIS 画的按钮上，并裁掉它内部的高亮层，否则会出现
+  // 内外两套圆角。按钮是 GIS 渲染出来的普通 DOM（不是 iframe）才做得到这件事。
+  // 找不到按钮就不动它：一次第三方结构调整最多让圆角与字号退回 GIS 默认，
+  // 不该让按钮消失。
+  const button = parent.querySelector<HTMLElement>('[role="button"]')
+  if (button !== null) {
+    button.style.borderRadius = `${String(options.borderRadius)}px`
+    button.style.overflow = 'hidden'
+    // 字号设在按钮上即可：GIS 的文字节点不自己声明字号，会继承下去。
+    button.style.fontSize = `${String(options.fontSize)}px`
+  }
 }
