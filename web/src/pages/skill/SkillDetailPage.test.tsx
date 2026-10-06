@@ -108,10 +108,10 @@ beforeEach(() => {
         }),
         usage: create(SkillUsageSchema, { useDays: 0, userCount: 0 }),
         fileCount: 2,
-        totalBytes: 128,
+        totalBytes: 128n,
         files: [
-          create(SkillFileSchema, { path: 'SKILL.md', sizeBytes: 100, digest: 'a'.repeat(64) }),
-          create(SkillFileSchema, { path: 'palette.md', sizeBytes: 28, digest: 'b'.repeat(64) }),
+          create(SkillFileSchema, { path: 'SKILL.md', sizeBytes: 100n, digest: 'a'.repeat(64) }),
+          create(SkillFileSchema, { path: 'palette.md', sizeBytes: 28n, digest: 'b'.repeat(64) }),
         ],
       }),
     }),

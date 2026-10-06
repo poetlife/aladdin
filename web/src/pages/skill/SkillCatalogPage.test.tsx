@@ -65,7 +65,7 @@ function skill(id: string, title: string, favorited = false) {
     tags: ['出图'],
     favorited,
     fileCount: 2,
-    totalBytes: 128,
+    totalBytes: 128n,
     usage: create(SkillUsageSchema, { useDays: 3, userCount: 2 }),
   })
 }

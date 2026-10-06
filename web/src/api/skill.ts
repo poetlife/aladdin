@@ -53,14 +53,20 @@ export async function setFavorite(skillId: string, favorited: boolean) {
   return skillClient().setSkillFavorite({ skillId, favorited })
 }
 
-/** 从远端纳管一个技能。地址只接受 github.com 的仓库根形状。 */
+/**
+ * 从远端纳管一个技能。地址只接受 github.com 的仓库根形状。
+ *
+ * 五项可选项都显式接受 `undefined`（`exactOptionalPropertyTypes` 下 `?` 单用不
+ * 允许显式传 undefined）：表单里没填的项 validateFields 给的正是 undefined，
+ * 而这里对"没给"与"给了 undefined"本来就一视同仁——都回落到服务端的默认取值。
+ */
 export async function importSkill(input: {
   repositoryUrl: string
-  ref?: string
-  subPath?: string
-  title?: string
-  summary?: string
-  tags?: string[]
+  ref?: string | undefined
+  subPath?: string | undefined
+  title?: string | undefined
+  summary?: string | undefined
+  tags?: string[] | undefined
 }): Promise<Skill> {
   const resp = await skillAdminClient().importSkill({
     repositoryUrl: input.repositoryUrl,
@@ -85,7 +91,11 @@ export async function resyncSkill(skillId: string) {
  * 执行。三步的顺序见 updateCover。
  */
 export async function beginCoverUpload(skillId: string, contentType: string, sizeBytes: number) {
-  return skillAdminClient().beginSkillCoverUpload({ skillId, contentType, sizeBytes })
+  return skillAdminClient().beginSkillCoverUpload({
+    skillId,
+    contentType,
+    sizeBytes: BigInt(sizeBytes),
+  })
 }
 
 /** 提交一次封面上传：核对对象确实到了，把技能指向它。 */
