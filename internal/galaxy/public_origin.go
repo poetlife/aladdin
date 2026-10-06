@@ -38,6 +38,9 @@ type PublicOrigin struct {
 	app    *url.URL
 }
 
+// IsZero 表示没有配置发布域。零值不是一条可用的发布配置。
+func (o PublicOrigin) IsZero() bool { return o.assets == nil || o.page == nil }
+
 // NewPublicOrigin 解析桶地址、发布域与主站的对外地址。
 //
 // 三者都必须是绝对地址、有主机名、不带用户信息、不带查询串与 fragment、路径为空
@@ -51,11 +54,11 @@ type PublicOrigin struct {
 // 给出（ReleaseObjectKey）。这一层只管主机，因为内容安全策略的来源表达式也只
 // 到主机（见 AllowedSource）。
 func NewPublicOrigin(bucketURL, publishBaseURL, appBaseURL string) (PublicOrigin, error) {
-	assets, err := parseOrigin("桶地址", bucketURL)
+	assets, err := parseOrigin("桶地址", bucketURL, false)
 	if err != nil {
 		return PublicOrigin{}, err
 	}
-	page, err := parseOrigin("发布域", publishBaseURL)
+	page, err := parseOrigin("发布域", publishBaseURL, true)
 	if err != nil {
 		return PublicOrigin{}, err
 	}
@@ -66,48 +69,25 @@ func NewPublicOrigin(bucketURL, publishBaseURL, appBaseURL string) (PublicOrigin
 	return PublicOrigin{assets: assets, page: page, app: app}, nil
 }
 
-// parseOrigin 是"一个地址能不能当作来源"的唯一判据。
-func parseOrigin(what, raw string) (*url.URL, error) {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s不是合法地址: %w", what, err)
-	}
-	if parsed.Scheme != "https" || parsed.Host == "" {
-		return nil, fmt.Errorf("%s必须是带主机名的 https 地址，当前是 %q", what, raw)
-	}
-	if parsed.User != nil {
-		return nil, fmt.Errorf("%s不得带用户信息，当前是 %q", what, raw)
-	}
-	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, fmt.Errorf("%s不得带查询串或 fragment，当前是 %q", what, raw)
-	}
-	if path := strings.TrimSuffix(parsed.Path, "/"); path != "" {
-		return nil, fmt.Errorf("%s的路径必须为空或只有 /，当前是 %q", what, raw)
-	}
-	parsed.Path = ""
-	parsed.RawPath = ""
-	return parsed, nil
-}
-
-// IsZero 表示没有配置发布域。零值不是一条可用的发布配置。
-func (o PublicOrigin) IsZero() bool { return o.assets == nil || o.page == nil }
-
-// parseAppOrigin 解析主站的对外地址，空串返回 nil（未配置发布时的常态）。
+// parseOrigin 是"一个地址能不能当作来源"的**唯一判据**：形状检查只此一处，
+// 调用方之间唯一的差别是 scheme 那一条，由 allowLoopbackHTTP 给出。
 //
-// 它比 parseOrigin 宽一档：**本地回环主机允许 http**。这与配置里
-// `public_base_url` 的取值要求是同一条（见 internal/config 的 checkOriginShape），
-// 那一处允许它是因为本地开发没有证书。这里跟着放宽不是松懈——主站地址只用来
-// 拼分享地址与写 `frame-ancestors`，两者在 http 下都成立；而"发布域与主站不同源"
-// 这条安全约束因此也没有被放松（两张地址仍然必须落在不同的站点上）。
-func parseAppOrigin(what, raw string) (*url.URL, error) {
-	if raw == "" {
-		return nil, nil
-	}
+// 形状要求：绝对地址、有主机名、不带用户信息、不带查询串与 fragment、路径为空
+// 或只有 `/`。
+//
+// **协议默认必须是 https。** allowLoopbackHTTP 为真时额外放行"本地回环主机上的
+// http"。发布域取这个例外：本地开发里它就是一台本机服务，没有证书，写死 https
+// 会让本地根本验证不了发布与预览；而回环上没有网络中间人，明文不构成新的暴露面。
+// 这与 internal/config 的 checkOriginShape 是同一条规则——那一处
+// `public_base_url` 与 `galaxy_publish_base_url` 都取这个例外。
+//
+// **桶地址不取**：它是对象存储的对外端点，没有"本机上的桶"这种情形。
+func parseOrigin(what, raw string, allowLoopbackHTTP bool) (*url.URL, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%s不是合法地址: %w", what, err)
 	}
-	if parsed.Host == "" {
+	if parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("%s必须是带主机名的绝对地址，当前是 %q", what, raw)
 	}
 	if parsed.User != nil {
@@ -119,15 +99,29 @@ func parseAppOrigin(what, raw string) (*url.URL, error) {
 	if path := strings.TrimSuffix(parsed.Path, "/"); path != "" {
 		return nil, fmt.Errorf("%s的路径必须为空或只有 /，当前是 %q", what, raw)
 	}
-	// 与 internal/config 的 checkOriginShape 同形：先算出"这是回环上的 http"，
-	// 再判它是不是唯一被放行的非 https 情形。
-	loopbackHTTP := parsed.Scheme == "http" && loopback.IsHost(parsed.Hostname())
+	loopbackHTTP := allowLoopbackHTTP && parsed.Scheme == "http" && loopback.IsHost(parsed.Hostname())
 	if parsed.Scheme != "https" && !loopbackHTTP {
-		return nil, fmt.Errorf("%s必须是 https（仅本地回环主机允许 http），当前是 %q", what, raw)
+		// 例外只在取它的那些调用方身上才提，否则消息会替桶地址许下一个它没有的宽度。
+		if allowLoopbackHTTP {
+			return nil, fmt.Errorf("%s必须是 https（仅本地回环主机允许 http），当前是 %q", what, raw)
+		}
+		return nil, fmt.Errorf("%s必须是 https，当前是 %q", what, raw)
 	}
 	parsed.Path = ""
 	parsed.RawPath = ""
 	return parsed, nil
+}
+
+// parseAppOrigin 解析主站的对外地址。
+//
+// 它与发布域取的是同一条 scheme 规则（parseOrigin 的 allowLoopbackHTTP），
+// 差别只有"空串表示未配置"这一条：未启用发布时主站地址可以不给，而发布域
+// 必须给出才能启用——两者都由调用方的前提保证。
+func parseAppOrigin(what, raw string) (*url.URL, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	return parseOrigin(what, raw, true)
 }
 
 // SiteRoot 返回**某一个内容槽**的**发布根路径**。

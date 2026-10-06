@@ -93,17 +93,38 @@ func TestZeroOriginHasNoAddresses(t *testing.T) {
 	}
 }
 
-// 主站对外地址允许本地回环上的 http（与配置里那一条取值要求一致：本地开发没有
-// 证书），而桶地址与发布域仍然必须是 https。
-func TestAppOriginAllowsLoopbackHTTP(t *testing.T) {
-	origin, err := NewPublicOrigin(testBucketOrigin, testPageOrigin, "http://localhost:5173")
-	if err != nil {
-		t.Fatalf("回环上的 http 主站地址被拒: %v", err)
-	}
-	if got := origin.ShareURL("prj_x", SlotSite); got != "http://localhost:5173/g/prj_x" {
-		t.Errorf("分享地址 = %q", got)
-	}
-	if _, err := NewPublicOrigin(testBucketOrigin, "http://pages.example.com", testAppOrigin); err == nil {
-		t.Error("非回环主机上的 http 发布域被接受了")
-	}
+// 主站对外地址与**发布域**都允许本地回环上的 http——与配置里那条取值要求一致：
+// 本地开发没有证书，写死 https 会让发布与预览在本机根本跑不起来。回环上没有
+// 网络中间人，明文不构成新的暴露面。
+//
+// **桶地址不在此列**：它是对象存储的对外端点，没有"本机上的桶"这种情形。
+func TestLoopbackHTTPException(t *testing.T) {
+	t.Run("主站对外地址", func(t *testing.T) {
+		origin, err := NewPublicOrigin(testBucketOrigin, testPageOrigin, "http://localhost:5173")
+		if err != nil {
+			t.Fatalf("回环上的 http 主站地址被拒: %v", err)
+		}
+		if got := origin.ShareURL("prj_x", SlotSite); got != "http://localhost:5173/g/prj_x" {
+			t.Errorf("分享地址 = %q", got)
+		}
+	})
+
+	t.Run("发布域", func(t *testing.T) {
+		origin, err := NewPublicOrigin(testBucketOrigin, "http://127.0.0.1:9090", testAppOrigin)
+		if err != nil {
+			t.Fatalf("回环上的 http 发布域被拒: %v", err)
+		}
+		if got := origin.ContentURL("prj_x", SlotSite); got != "http://127.0.0.1:9090/g/prj_x" {
+			t.Errorf("内容地址 = %q", got)
+		}
+	})
+
+	t.Run("非回环主机上的 http 仍被拒", func(t *testing.T) {
+		if _, err := NewPublicOrigin(testBucketOrigin, "http://pages.example.com", testAppOrigin); err == nil {
+			t.Error("非回环主机上的 http 发布域被接受了")
+		}
+		if _, err := NewPublicOrigin("http://127.0.0.1:9000", testPageOrigin, testAppOrigin); err == nil {
+			t.Error("回环上的 http 桶地址被接受了")
+		}
+	})
 }
