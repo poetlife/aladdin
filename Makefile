@@ -227,7 +227,15 @@ run: ## 启动服务端
 
 # 开发环境的两条命令各自只有一处来源：单独起用 dev-server / web-dev，
 # 一起起用 dev，三者引用的都是下面这两个变量，不存在第二份拷贝。
-DEV_SERVER_CMD := ALADDIN_DEV_SEED=1 ALADDIN_DEV_TOKEN=dev-token ALADDIN_DEV_SUBJECT=dev-user ALADDIN_DEV_ROLE=system.admin ALADDIN_DEV_SCOPE=tenant/acme ALADDIN_LOG_LEVEL=debug go run ./cmd/aladdin-server
+#
+# 起服务端前先加载 .env.local（在 .gitignore 里，不进版本库）：本机的密钥
+# ——对象存储的两项密钥——只能来自环境变量，配置文件会进版本库、进镜像，
+# 凭证不可以（见 docs/design/config/README.md）。它是生产端
+# /opt/aladdin/secrets.env 在开发机上的对应物；文件不存在时照常起，只是没有
+# 对象存储可用。非密钥的本地改动（如 cos_bucket_url）仍写 config.local.yml。
+DEV_ENV_LOAD   := set -a; [ ! -f .env.local ] || . ./.env.local; set +a;
+
+DEV_SERVER_CMD := $(DEV_ENV_LOAD) ALADDIN_DEV_SEED=1 ALADDIN_DEV_TOKEN=dev-token ALADDIN_DEV_SUBJECT=dev-user ALADDIN_DEV_ROLE=system.admin ALADDIN_DEV_SCOPE=tenant/acme ALADDIN_LOG_LEVEL=debug go run ./cmd/aladdin-server
 WEB_DEV_CMD    := cd web && npm run dev
 
 .PHONY: dev-server
