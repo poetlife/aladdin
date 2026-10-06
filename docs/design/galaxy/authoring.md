@@ -162,6 +162,7 @@
 | 校验失败不冒充"内容有问题" | 校验请求失败时呈现为"校验未完成"，且预览与版本、资产照常可用（前端测试） |
 | 预览文档不由应用源服务 | 用户内容只经沙箱 iframe 从**发布域**上的预览通道进入；应用源上不存在一个返回用户内容的地址（前端测试 + 代码审查） |
 | 预览可单独打开 | 预览有一条独立路由，单独打开时渲染的是同一份草稿，且沙箱属性与内嵌时一致（前端测试） |
+| 预览也有灯箱 | 工作台里的预览与单独打开的预览页都消费同一条通道消息并开灯箱，两处的隔离与沙箱属性一致（前端测试） |
 | 网页端不改内容 | 源码视图是只读的；接口面上不存在从网页端写内容的调用（前端测试 + `internal/server` 测试） |
 | 撤回在工作台找得到 | 已发布且持有发布权限时，状态条上地址旁有一个**按钮级**的撤回，二次确认后才调用；不持有发布权限时不渲染（前端测试） |
 | 撤回在列表找得到 | 工程列表"状态"列里，每一条已发布的槽都在地址旁带撤回；权限与二次确认与工作台一致，取消不产生调用（前端测试） |
@@ -188,7 +189,7 @@
 | 决策 | 推荐默认 | 替换影响范围 |
 |------|---------|-------------|
 | 网页端编辑内容 | 暂不做，内容的写入只有命令行（**未定**） | 要放开就得引入"单条替换"这种写入形状，并配一条基线校验防两个入口互盖；只读视图要重做成编辑视图 |
-| 预览的运行时错误回传（`postMessage` 通道） | 暂不做（**未定**） | 需要一条受控的预览↔宿主页面通道，且它本身是一个需要论证边界的攻击面 |
+| 宿主 → 文档页的消息（含预览的运行时错误回传） | 通道与信封已就位（见 [site-model.md](site-model.md) 的"平台接入桥"）；v1 只定义了页面 → 宿主的那一种，反向仍暂不做（**未定**） | 加一种类型即可，通道本身与它的边界不必再论证一次 |
 | 语法高亮 | 暂不做（**未定**） | 只读源码视图的呈现细节，不影响任何行为约定 |
 | 网页端整组送取（上传一个目录） | 暂不做，交给命令行（**未定**） | 只影响界面；命令行已是主入口 |
 | 内容体积上限的取值 | 定为发布校验的一部分，具体数值实现时确定（**未定**） | 只影响写入与发布校验 |
@@ -203,7 +204,8 @@
 | 单独打开的预览页 | [web/src/pages/galaxy/PreviewPage.tsx](../../../web/src/pages/galaxy/PreviewPage.tsx) |
 | 源码视图（文件树、选中那一份的就地渲染） | [web/src/pages/galaxy/SourceView.tsx](../../../web/src/pages/galaxy/SourceView.tsx) |
 | 一份资产的字节怎么呈现（图片 / 视频 / 音频） | [web/src/pages/galaxy/AssetMedia.tsx](../../../web/src/pages/galaxy/AssetMedia.tsx) |
-| 预览 iframe 的沙箱属性 | [web/src/pages/galaxy/PreviewFrame.tsx](../../../web/src/pages/galaxy/PreviewFrame.tsx) |
+| 预览 iframe 的沙箱属性，以及它的接入桥接收端 | [web/src/pages/galaxy/SandboxFrame.tsx](../../../web/src/pages/galaxy/SandboxFrame.tsx) |
+| 接入桥的消息形状与校验（宿主侧的唯一入口） | [web/src/pages/galaxy/frame-channel.ts](../../../web/src/pages/galaxy/frame-channel.ts) |
 | 状态条（草稿 → 版本 → 发布，含校验结论、已发布时的地址与撤回） | [web/src/pages/galaxy/LifecycleStrip.tsx](../../../web/src/pages/galaxy/LifecycleStrip.tsx) |
 | 顶栏（存版本、选择哪一版发布、打开资产与版本两个面板） | [web/src/pages/galaxy/WorkbenchTopBar.tsx](../../../web/src/pages/galaxy/WorkbenchTopBar.tsx) |
 | 资产面板（上传、查看、复制引用、删除、改标题 / 标签 / 备注、按标签筛选） | [web/src/pages/galaxy/AssetLibrary.tsx](../../../web/src/pages/galaxy/AssetLibrary.tsx) |

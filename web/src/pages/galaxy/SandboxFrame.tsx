@@ -1,4 +1,8 @@
+import { useEffect, useRef, useState } from 'react'
 import { theme } from 'antd'
+
+import { parseFrameImagePreview, type FrameImagePreview } from './frame-channel'
+import { FrameImageLightbox } from './FrameImageLightbox'
 
 interface SandboxFrameProps {
   /**
@@ -39,24 +43,56 @@ interface SandboxFrameProps {
  * 这是页面能取到自己那些文件的前提：一份 `srcdoc` 文档没有地址，页内的相对地址
  * 与站点绝对地址都没有可解析的基准——于是"有样式等于碰巧、图片全裂"。地址落在
  * **发布域**上，因此与主应用不同源，隔离不受影响。
+ *
+ * **它同时是接入桥的宿主。** 文档页里点了图会发来一条消息，这一处收下并交给宿主侧
+ * 的灯箱（见 frame-channel.ts）。**灯箱画在宿主页面上，不在 iframe 里**：只有落在
+ * 宿主上才盖得住整个视口。协议与边界见 docs/design/galaxy/site-model.md 的
+ * "平台接入桥"。
  */
 export function SandboxFrame({ url, title, height = 420 }: SandboxFrameProps): React.ReactNode {
   const { token } = theme.useToken()
+  const frame = useRef<HTMLIFrameElement>(null)
+  const [preview, setPreview] = useState<FrameImagePreview | null>(null)
+
+  // 换一条地址就是换一份内容：上一份内容里点出来的那张图不该留在屏上。
+  useEffect(() => {
+    setPreview(null)
+  }, [url])
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent): void {
+      // **只认自己那一帧。** 不透明源的 `event.origin` 是字符串 `null`，而任何沙箱
+      // 帧都是 `null`，那个值认不出是谁发的；能回答"是谁发的"的只有帧本身。
+      if (event.source !== frame.current?.contentWindow) {
+        return
+      }
+      const request = parseFrameImagePreview(event.data)
+      if (request !== null) {
+        setPreview(request)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
 
   return (
-    <iframe
-      title={title}
-      // 逐字写死沙箱属性：不得出现 allow-same-origin，见上方注释。
-      sandbox="allow-scripts"
-      src={url}
-      style={{
-        width: '100%',
-        height,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: token.borderRadius,
-        // 不给内容注入任何样式（见 spec）：底色交给浏览器默认，主站不参与。
-        display: 'block',
-      }}
-    />
+    <>
+      <iframe
+        ref={frame}
+        title={title}
+        // 逐字写死沙箱属性：不得出现 allow-same-origin，见上方注释。
+        sandbox="allow-scripts"
+        src={url}
+        style={{
+          width: '100%',
+          height,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          borderRadius: token.borderRadius,
+          // 不给内容注入任何样式（见 spec）：底色交给浏览器默认，主站不参与。
+          display: 'block',
+        }}
+      />
+      <FrameImageLightbox request={preview} onClose={() => setPreview(null)} />
+    </>
   )
 }

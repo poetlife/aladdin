@@ -213,9 +213,15 @@ func TestDocsRenderAndNavigation(t *testing.T) {
 	if !strings.Contains(nav, "入门") {
 		t.Error("导航里没有那份文档的标题")
 	}
-	// **产物里不出现 aladdin 编写的脚本。**
-	if strings.Contains(string(index), "<script") {
-		t.Error("产物里出现了服务端注入的脚本")
+	// **页面里只有那一段平台接入桥。** 出现第二处 `<script>` 就意味着有别的脚本
+	// 被注入了进来。按槽的分界是：`site` 槽一个字节都不加（那条由
+	// TestStaticArtifactsAreByteIdentical 钉住），`docs` 槽只加这一段常量。
+	// 断言"恰好等于常量"同时证明了桥里不含任何用户内容。
+	if count := strings.Count(string(index), "<script"); count != 1 {
+		t.Errorf("文档产物里的 <script> 有 %d 处，期望恰好 1 处（接入桥）", count)
+	}
+	if !strings.Contains(string(index), frameBridgeTag()) {
+		t.Error("文档产物里的那一段不是接入桥")
 	}
 	// 标题取每份的首个一级标题。
 	if !strings.Contains(string(index), "<title>首页</title>") {

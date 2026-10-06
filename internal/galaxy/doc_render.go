@@ -25,7 +25,7 @@ import (
 //
 // **升级渲染器时必须把它加一。** 忘了加的表现是：一份以旧规则发布过的版本，
 // 在升级后重新发布得到了不同的产物，而没有任何地方提示这件事发生了。
-const RenderRulesVersion = 3
+const RenderRulesVersion = 4
 
 // Doc 是一份渲染好的文档页。
 //
@@ -606,9 +606,12 @@ type sitePage struct {
 
 // renderSitePage 把一页文档拼成完整的 HTML 文档。
 //
-// 这是本模块**唯一**一处服务端生成标记的地方，而它只生成外壳、侧栏、目录与样式：
-// 正文逐字来自渲染结果，且**产物里不出现 aladdin 编写的脚本**——页内跳转靠锚点、
-// 目录高亮靠 CSS，都不靠脚本。
+// 这是本模块**唯一**一处服务端生成标记的地方，而它只生成外壳、侧栏、目录、样式与
+// **接入桥**（见 doc_frame_bridge.go）：**正文逐字来自渲染结果**。页内跳转靠锚点、
+// 目录高亮靠 CSS，灯箱交给宿主——页里那段脚本只发一条消息，不接管页面。
+//
+// `site` 槽不走这里：那条路逐字交付用户的整站，aladdin 一个字节都不加（见
+// docs/design/galaxy/site-model.md）。
 func renderSitePage(page sitePage) []byte {
 	title := page.Title
 	if page.SiteTitle != "" && page.SiteTitle != page.Title {
@@ -641,7 +644,11 @@ func renderSitePage(page sitePage) []byte {
 	out.Write(page.Body)
 	out.WriteString("</div>\n")
 	out.WriteString(page.TOC)
-	out.WriteString("</main>\n</div>\n</body>\n</html>\n")
+	out.WriteString("</main>\n</div>\n")
+	// 接入桥放在正文之后：它不改变页面结构，也不该出现在任何"壳与正文谁先谁后"
+	// 的断言中间。
+	out.WriteString(frameBridgeTag())
+	out.WriteString("</body>\n</html>\n")
 	return out.Bytes()
 }
 
