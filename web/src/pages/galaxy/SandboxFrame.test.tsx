@@ -76,6 +76,99 @@ describe('沙箱 iframe', () => {
   })
 })
 
+/**
+ * spec 里的量级：超过 10 秒仍未 `load` 就撤掉遮罩（见
+ * docs/design/galaxy/publication.md 的"主站壳"）。这里照着 spec 写字面量而不是引
+ * 组件的常量——改了那个量级而没改 spec，这条就该红。
+ */
+const SPEC_COVER_TIMEOUT_MS = 10_000
+
+/** 让这一帧"加载完了"。jsdom 不真去取那条地址，因此事件由测试自己发。 */
+async function fireLoad(container: HTMLElement): Promise<void> {
+  await act(async () => {
+    iframe(container).dispatchEvent(new Event('load'))
+  })
+}
+
+describe('加载态', () => {
+  // 内容还没到的那一段不能是一片空白：访客得知道是在加载，不是坏了。
+  it('load 之前有加载态，load 之后撤掉', async () => {
+    const container = await renderFrame('https://pub.example.com/g/prj_x')
+
+    expect(container.textContent, '内容还没到时什么都没有').toContain('正在加载内容')
+
+    await fireLoad(container)
+
+    expect(container.textContent).not.toContain('正在加载内容')
+    // 加载完成后不留任何痕迹：正常的那条路上不能多出一层东西。
+    expect(container.textContent).not.toContain('内容还在加载')
+  })
+
+  // **遮罩只铺到内容开始出现为止。** `load` 要等文档连同全部子资源都取完，而正文通常
+  // 早就渲染出来了；再盖着不透明的遮罩，挡住的恰恰是已经能看的内容。
+  it('到点仍未 load 时撤掉遮罩，只留一条可重试的状态条', async () => {
+    vi.useFakeTimers()
+    try {
+      const container = await renderFrame('https://pub.example.com/g/prj_x')
+
+      // 到点之前仍然是遮罩——这一档不是"等一会儿就撤"。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SPEC_COVER_TIMEOUT_MS - 1)
+      })
+      expect(container.textContent, '还没到点就把遮罩撤了').toContain('正在加载内容')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1)
+      })
+
+      expect(container.textContent, '到点后遮罩还盖着').not.toContain('正在加载内容')
+      expect(container.textContent).toContain('内容还在加载')
+      // antd 在按钮文字的汉字之间插空格，因此按去空格后的文本比。
+      expect(container.textContent?.replace(/\s/g, '')).toContain('重试')
+      // 状态条**不遮住这一帧**：正文照旧可见、可交互。
+      expect(container.querySelector('iframe'), '状态条把这一帧换掉了').not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // 重试是把**这一帧**重新取一次，而不是重新解析地址——地址没变，没到的是内容。
+  // 地址不变时只改 `src` 浏览器不会动，因此这里以"帧被重挂、加载态重新开始"为判据。
+  it('状态条上的重试让这一帧重新取一次', async () => {
+    vi.useFakeTimers()
+    try {
+      const container = await renderFrame('https://pub.example.com/g/prj_x')
+      const before = iframe(container)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SPEC_COVER_TIMEOUT_MS)
+      })
+
+      await act(async () => {
+        container.querySelector('button')?.click()
+      })
+
+      expect(iframe(container), '重试没有重新取这一帧').not.toBe(before)
+      expect(iframe(container).getAttribute('src')).toBe('https://pub.example.com/g/prj_x')
+      // 重新等起：遮罩回来了，而不是停在"还在加载"那条状态条上。
+      expect(container.textContent).toContain('正在加载内容')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // 换一条地址（工作台刷新预览）也要从头等起：上一份内容的加载态不属于新地址。
+  it('换一条地址后重新进入加载态', async () => {
+    const container = await renderFrame('https://pub.example.com/g/p/tok1/prj_x/')
+    await fireLoad(container)
+    expect(container.textContent).not.toContain('正在加载内容')
+
+    await rerenderFrame('https://pub.example.com/g/p/tok2/prj_x/')
+
+    expect(container.textContent).toContain('正在加载内容')
+  })
+})
+
 /** 一条约定的图片预览消息。`source` 由调用方给：这一条通道的判据就是它。 */
 function imagePreview(source: MessageEventSource | null): MessageEvent {
   return new MessageEvent('message', {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Flex, Skeleton, Typography } from 'antd'
+import { Alert, Button, Flex, Spin, Typography } from 'antd'
 import { useLocation } from 'react-router-dom'
 
 import * as galaxyApi from '../../api/galaxy'
@@ -71,7 +71,14 @@ function ShellBody({
 }): React.ReactNode {
   switch (state.status) {
     case 'loading':
-      return <Skeleton active paragraph={{ rows: 8 }} style={{ padding: 24 }} />
+      // 与内容那一帧里的加载态**同一句话**：对访客来说"壳还没问出地址在哪"与"内容还在
+      // 路上"是同一次等待，中间换一次措辞只会让人以为已经出了别的事。骨架在这里也说不
+      // 准形状——一条分享地址可能落在一个整站上，也可能落在一篇文档上。
+      return (
+        <Centered>
+          <Spin size="large" description="正在加载内容…" />
+        </Centered>
+      )
     case 'found':
       // 撑满：壳除了这一框没有别的内容。
       return <SandboxFrame url={state.contentUrl} title="已发布页面" height="100%" />

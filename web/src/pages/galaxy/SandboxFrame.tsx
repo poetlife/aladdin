@@ -1,8 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
-import { theme } from 'antd'
+import { Button, Flex, Spin, Typography, theme } from 'antd'
 
 import { parseFrameImagePreview, type FrameImagePreview } from './frame-channel'
 import { FrameImageLightbox } from './FrameImageLightbox'
+
+/**
+ * 铺在内容上的遮罩撤到哪一刻。
+ *
+ * 撤的是**遮罩**而不是"等待"：`load` 要等文档连同它的全部子资源都取完，而正文与排版
+ * 通常早就渲染出来了。在慢速网络里为一张大图继续盖着不透明的遮罩，挡住的恰恰是已经
+ * 能看的内容——比空着更糟。因此到点就撤，只留一条不遮挡正文的状态条（见
+ * docs/design/uiux/README.md 的"空态、加载与失败"）。
+ */
+const COVER_TIMEOUT_MS = 10_000
+
+/** 状态条上那句话里的秒数由上面那个量级派生，两处不会各写各的。 */
+const COVER_TIMEOUT_SECONDS = Math.round(COVER_TIMEOUT_MS / 1000)
+
+/** 内容到哪一步了：还在遮着、到点撤了遮罩、还是已经到齐。 */
+type FrameLoad = 'covering' | 'overdue' | 'loaded'
 
 interface SandboxFrameProps {
   /**
@@ -48,11 +64,31 @@ interface SandboxFrameProps {
  * 的灯箱（见 frame-channel.ts）。**灯箱画在宿主页面上，不在 iframe 里**：只有落在
  * 宿主上才盖得住整个视口。协议与边界见 docs/design/galaxy/site-model.md 的
  * "平台接入桥"。
+ *
+ * **它还负责这一块的加载态**，因为只有它知道这一帧什么时候到（`load`）。规则与理由
+ * 见 docs/design/galaxy/publication.md 的"主站壳"：`load` 之前铺一层遮罩，超过
+ * `COVER_TIMEOUT_MS` 仍未 `load` 就撤掉遮罩、只留一条可重试的状态条。**加载态与沙箱
+ * 属性一样只有这一处**——预览与壳各写一份的表现是"壳里补上了、工作台里的预览仍然
+ * 白着"。
  */
 export function SandboxFrame({ url, title, height = 420 }: SandboxFrameProps): React.ReactNode {
   const { token } = theme.useToken()
   const frame = useRef<HTMLIFrameElement>(null)
   const [preview, setPreview] = useState<FrameImagePreview | null>(null)
+  const [load, setLoad] = useState<FrameLoad>('covering')
+  // 重试要的是"这一帧再取一次"，而地址一个字都没变——只改 `src` 浏览器不会动。
+  // 把重试次数交给 `key`，帧因此重挂、重新发一次请求。
+  const [attempt, setAttempt] = useState(0)
+
+  // 地址换了或用户点了重试，都从头等起。计时器到点时若已经到过 `load`，这一档就
+  // 不再改写状态（`covering` 之外一律不动）。
+  useEffect(() => {
+    setLoad('covering')
+    const timer = window.setTimeout(() => {
+      setLoad((current) => (current === 'covering' ? 'overdue' : current))
+    }, COVER_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [url, attempt])
 
   // **灯箱的寿命不跟 `url` 走。** 想当然的写法是"地址换了就丢掉上一份内容里点出来的
   // 那张图"，但预览地址带的是**短时凭证**：每次重取都是一张新票、一个新字符串，而
@@ -80,22 +116,96 @@ export function SandboxFrame({ url, title, height = 420 }: SandboxFrameProps): R
 
   return (
     <>
-      <iframe
-        ref={frame}
-        title={title}
-        // 逐字写死沙箱属性：不得出现 allow-same-origin，见上方注释。
-        sandbox="allow-scripts"
-        src={url}
+      <div
         style={{
+          position: 'relative',
           width: '100%',
           height,
           border: `1px solid ${token.colorBorderSecondary}`,
           borderRadius: token.borderRadius,
-          // 不给内容注入任何样式（见 spec）：底色交给浏览器默认，主站不参与。
-          display: 'block',
+          // 圆角长在框上，帧自己的四个角是方的：裁掉，否则角上会露出四小块方角。
+          overflow: 'hidden',
         }}
-      />
+      >
+        <iframe
+          // 重挂是重试的实现方式，因此 `key` 只跟重试次数走；地址变了不必重挂，
+          // 改 `src` 本身就是一次导航。
+          key={attempt}
+          ref={frame}
+          title={title}
+          // 逐字写死沙箱属性：不得出现 allow-same-origin，见上方注释。
+          sandbox="allow-scripts"
+          src={url}
+          onLoad={() => setLoad('loaded')}
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            // 不给内容注入任何样式（见 spec）：底色交给浏览器默认，主站不参与。
+            display: 'block',
+          }}
+        />
+        {load === 'covering' && <LoadingCover />}
+        {load === 'overdue' && <LoadingOverdueBar onRetry={() => setAttempt((n) => n + 1)} />}
+      </div>
       <FrameImageLightbox request={preview} onClose={() => setPreview(null)} />
     </>
+  )
+}
+
+/**
+ * `load` 之前铺在帧上的遮罩。
+ *
+ * 它不透明是**有意的**：这一帧此刻是空的（浏览器还没拿到任何字节），把调用方的底色
+ * 透出来只会让"还没开始加载"和"内容就是一片空白"看起来一样。铺到内容开始出现为止
+ * 的分寸见上方 `COVER_TIMEOUT_MS`。
+ */
+function LoadingCover(): React.ReactNode {
+  const { token } = theme.useToken()
+  return (
+    <Flex
+      align="center"
+      justify="center"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: token.colorBgContainer,
+      }}
+    >
+      <Spin size="large" description="正在加载内容…" />
+    </Flex>
+  )
+}
+
+/**
+ * 到点仍未加载完时贴住框顶的一条状态条。
+ *
+ * **它不盖住正文。** 到这一刻页面多半已经渲染出来了，还在路上的是某些子资源；再盖着
+ * 不透明的东西就是把能看的内容重新藏回去。因此它只占一条，正文照旧可见、可交互。
+ */
+function LoadingOverdueBar({ onRetry }: { onRetry: () => void }): React.ReactNode {
+  const { token } = theme.useToken()
+  return (
+    <Flex
+      align="center"
+      gap={12}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        padding: '8px 12px',
+        background: token.colorBgElevated,
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+      }}
+    >
+      <Spin size="small" />
+      <Typography.Text type="secondary" style={{ flex: 1 }}>
+        内容还在加载，已经超过 {COVER_TIMEOUT_SECONDS} 秒。可以再等等，也可以重试一次。
+      </Typography.Text>
+      <Button size="small" onClick={onRetry}>
+        重试
+      </Button>
+    </Flex>
   )
 }
