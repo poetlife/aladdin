@@ -8,7 +8,6 @@ import {
   Form,
   Input,
   List,
-  Modal,
   Popconfirm,
   Select,
   Space,
@@ -24,6 +23,7 @@ import { PermissionGate } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
 import type { Skill, SkillVersion } from '../../gen/proto/aladdin/skill/v1/skill_pb'
 import { MONOSPACE } from '../../theme/monospace'
+import { AppModal } from '../../ui/AppModal'
 import { formatTime } from '../galaxy/format-time'
 
 /** SKILL.md 是包契约要求的那份清单文件，也是取用时默认要读的那一份。 */
@@ -294,7 +294,7 @@ export function SkillDetailPage(): React.ReactNode {
         </Card>
       </PermissionGate>
 
-      <Modal
+      <AppModal
         title="改说明层"
         open={editOpen}
         onCancel={() => setEditOpen(false)}
@@ -322,7 +322,7 @@ export function SkillDetailPage(): React.ReactNode {
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
           改说明层<Typography.Text strong>不改内容层任何一项</Typography.Text>：当前版本、文件清单与所有字节逐字不变。
         </Typography.Paragraph>
-      </Modal>
+      </AppModal>
     </Space>
   )
 }

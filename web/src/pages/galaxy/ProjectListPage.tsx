@@ -7,7 +7,6 @@ import {
   Empty,
   Form,
   Input,
-  Modal,
   Popconfirm,
   Space,
   Table,
@@ -23,6 +22,7 @@ import { messageOf, traceIdOf } from '../../api/errors'
 import { PermissionGate } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
 import { ContentSlot, type Project, type ProjectSlot } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { AppModal } from '../../ui/AppModal'
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../../telemetry/track'
 import { allSlots, slotDescription, slotLabel } from './content-slot'
@@ -332,7 +332,7 @@ export function ProjectListPage(): React.ReactNode {
         }}
       />
 
-      <Modal
+      <AppModal
         title="新建工程"
         open={createOpen}
         confirmLoading={creating}
@@ -373,7 +373,7 @@ export function ProjectListPage(): React.ReactNode {
             <Input.TextArea maxLength={280} rows={3} placeholder="随便写点什么" />
           </Form.Item>
         </Form>
-      </Modal>
+      </AppModal>
     </Card>
   )
 }

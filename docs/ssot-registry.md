@@ -175,6 +175,7 @@
 | 发布产物清单与校验和（自更新的唯一来源） | `upgrade` 的发布源读取入口 | [internal/upgrade/release.go](../internal/upgrade/release.go) |
 | 发行版产物的命名与平台清单（**自更新与界面上的下载命令两处都消费**） | [docs/release.md](release.md) 记录的对外契约；平台取自 Makefile 的 `PLATFORMS` | [Makefile](../Makefile) |
 | 界面里的等宽字体栈（代码块、可编辑正文） | `MONOSPACE` | [web/src/theme/monospace.ts](../web/src/theme/monospace.ts) |
+| 弹窗的高度约束与滚动行为（内容比窗口高时滚的是内容区，不是整屏遮罩） | `AppModal`（**不再从 antd 直接引 `Modal`**） | [web/src/ui/AppModal.tsx](../web/src/ui/AppModal.tsx) |
 | 技能、版本、标签、收藏与使用日次的持久化数据 | `skill.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/skill/store.go](../internal/skill/store.go) / [internal/skill/gormstore/](../internal/skill/gormstore/store.go) |
 | 远端技能内容的拉取出口（解析引用、取回一棵树；**测试注入假实现**） | `skill.Remote` 接口 | [internal/skill/remote.go](../internal/skill/remote.go) |
 | 技能目录的接口契约（读面与维护面的划分、权限码、作用域来源） | proto 定义，经 `buf generate` 派生两端代码 | [api/proto/aladdin/skill/v1/skill.proto](../api/proto/aladdin/skill/v1/skill.proto) |

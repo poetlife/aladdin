@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Empty, Flex, Modal, Segmented, Select, Skeleton, Space, Typography } from 'antd'
+import { Alert, Button, Empty, Flex, Segmented, Select, Skeleton, Space, Typography } from 'antd'
 import { ExternalLink, Eye, FileCode, RefreshCw } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
@@ -18,6 +18,7 @@ import {
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { useNarrowViewport } from '../../layouts/use-narrow-viewport'
 import { track } from '../../telemetry/track'
+import { AppModal } from '../../ui/AppModal'
 import { useWatch } from '../../watch/use-watch'
 import { projectTopic } from '../../watch/topics'
 import { AssetLibrary } from './AssetLibrary'
@@ -39,17 +40,6 @@ import { WorkbenchTopBar } from './WorkbenchTopBar'
  */
 const STAGE_MIN_HEIGHT = 240
 const NARROW_STAGE_MIN_HEIGHT = 360
-
-/**
- * 弹层内容自己滚动。
- *
- * 不给上限时，内容比视口高会把**父页面**撑长、由外面那层滚——弹层跟着整页跑，
- * 标题栏与遮罩都跟着动。给内容区一个上限让它内部滚，弹层才是一个稳定的框。
- */
-const PANEL_BODY_STYLE: React.CSSProperties = {
-  maxHeight: 'calc(100dvh - 220px)',
-  overflowY: 'auto',
-}
 
 /** 预览与源码是两个模式，共用这一块面积（见 authoring.md 的"这一页的形态"）。 */
 type StageMode = 'preview' | 'source'
@@ -715,14 +705,13 @@ export function ProjectEditorPage(): React.ReactNode {
    */
   const panels = (
     <>
-      <Modal
+      <AppModal
         title="资产"
         open={panel === 'assets'}
         onCancel={() => setPanel(null)}
         footer={null}
         width={860}
         destroyOnHidden
-        styles={{ body: PANEL_BODY_STYLE }}
       >
         <AssetLibrary
           projectId={project.id}
@@ -734,16 +723,15 @@ export function ProjectEditorPage(): React.ReactNode {
           canWrite={canWriteAssets}
           onChanged={() => loadAssets(assetFilter)}
         />
-      </Modal>
+      </AppModal>
 
-      <Modal
+      <AppModal
         title="版本"
         open={panel === 'versions'}
         onCancel={() => setPanel(null)}
         footer={null}
         width={640}
         destroyOnHidden
-        styles={{ body: PANEL_BODY_STYLE }}
       >
         <VersionList
           projectId={project.id}
@@ -752,7 +740,7 @@ export function ProjectEditorPage(): React.ReactNode {
           canWrite={canWrite}
           onChanged={() => reloadVersions(activeSlot)}
         />
-      </Modal>
+      </AppModal>
     </>
   )
 

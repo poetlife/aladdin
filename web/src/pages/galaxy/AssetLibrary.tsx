@@ -5,7 +5,6 @@ import {
   Empty,
   Form,
   Input,
-  Modal,
   Popconfirm,
   Select,
   Space,
@@ -22,6 +21,7 @@ import type { Asset, AssetKindLimit } from '../../gen/proto/aladdin/galaxy/v1/ga
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../../telemetry/track'
 import { sha256Hex } from '../../upload/content-digest'
+import { AppModal } from '../../ui/AppModal'
 import { directUpload } from '../../upload/direct-upload'
 import { describeBytes } from '../../format/bytes'
 import { AssetMedia, MEDIA_HEIGHT } from './AssetMedia'
@@ -334,7 +334,7 @@ export function AssetLibrary({
         </div>
       )}
 
-      <Modal
+      <AppModal
         title="编辑资产信息"
         open={editing !== null}
         onCancel={() => setEditing(null)}
@@ -386,7 +386,7 @@ export function AssetLibrary({
             <Input.TextArea rows={4} maxLength={NOTES_MAX_RUNES} showCount />
           </Form.Item>
         </Form>
-      </Modal>
+      </AppModal>
     </Space>
   )
 }

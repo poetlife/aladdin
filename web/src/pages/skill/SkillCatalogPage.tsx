@@ -8,7 +8,6 @@ import {
   Form,
   Input,
   List,
-  Modal,
   Popconfirm,
   Select,
   Space,
@@ -23,6 +22,7 @@ import { messageOf, traceIdOf } from '../../api/errors'
 import { PermissionGate, usePermission } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
 import type { Skill, SkillCapabilities } from '../../gen/proto/aladdin/skill/v1/skill_pb'
+import { AppModal } from '../../ui/AppModal'
 
 interface ImportFormValues {
   repositoryUrl: string
@@ -306,7 +306,7 @@ export function SkillCatalogPage(): React.ReactNode {
         </Space>
       </Card>
 
-      <Modal
+      <AppModal
         title="从 GitHub 纳管技能"
         open={importOpen}
         onCancel={() => setImportOpen(false)}
@@ -346,7 +346,7 @@ export function SkillCatalogPage(): React.ReactNode {
           )}
           {importError !== null && <Alert type="error" showIcon message={importError} />}
         </Form>
-      </Modal>
+      </AppModal>
     </Space>
   )
 }
