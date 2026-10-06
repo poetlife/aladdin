@@ -36,6 +36,10 @@ export const PermissionCodes = {
   GalaxyAssetRead: 'galaxy.asset.read',
   /** 上传与删除工程资产 */
   GalaxyAssetWrite: 'galaxy.asset.write',
+  /** 检索平台技能目录、读取技能正文、收藏技能。只读 */
+  SkillCatalogRead: 'skill.catalog.read',
+  /** 从远端纳管技能、同步、回滚，修改说明层与标签。删除属不可逆操作 */
+  SkillCatalogWrite: 'skill.catalog.write',
   /** 全部权限。仅保留给系统管理员角色，不得授予其他角色 */
   All: '*',
 } as const
@@ -53,6 +57,8 @@ export const BuiltinRoleIds = {
   Viewer: 'viewer',
   /** 创作者 */
   GalaxyAuthor: 'galaxy.author',
+  /** 技能管理员 */
+  SkillCurator: 'skill.curator',
 } as const
 
 export type BuiltinRoleId = (typeof BuiltinRoleIds)[keyof typeof BuiltinRoleIds]

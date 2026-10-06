@@ -42,6 +42,10 @@ permissions:
     description: "读取自己工程下的资产列表与读取地址"
   - code: "galaxy.asset.write"
     description: "上传与删除工程资产"
+  - code: "skill.catalog.read"
+    description: "检索平台技能目录、读取技能正文、收藏技能。只读"
+  - code: "skill.catalog.write"
+    description: "从远端纳管技能、同步、回滚，修改说明层与标签。删除属不可逆操作"
   - code: "*"
     description: "全部权限。仅保留给系统管理员角色，不得授予其他角色"
 
@@ -96,3 +100,15 @@ roles:
       - "galaxy.project.publish"
       - "galaxy.asset.read"
       - "galaxy.asset.write"
+      # 创作者要能选用平台技能，否则这个目录对他不存在。**只有读**：往目录里
+      # 放东西是 skill.curator 的事（见 docs/design/skill/README.md）。
+      - "skill.catalog.read"
+  # 技能目录的维护者。它与 galaxy.author 是两类人：前者决定目录里有什么，
+  # 后者在创作时选用。合成一码会让"让创作者用上技能"必然连带"让创作者能往
+  # 目录里塞东西"。
+  - id: "skill.curator"
+    display_name: "技能管理员"
+    builtin: true
+    permissions:
+      - "skill.catalog.read"
+      - "skill.catalog.write"
