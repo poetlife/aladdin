@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as identityApi from '../api/identity'
 import { SessionProvider } from '../auth'
+import { ThemeProvider } from '../theme'
 import { LoginPage } from './LoginPage'
 
 vi.mock('../api/identity', () => ({
@@ -40,11 +41,13 @@ async function renderLoginPage(): Promise<HTMLElement> {
   root = createRoot(container)
   await act(async () => {
     root?.render(
-      <MemoryRouter>
-        <SessionProvider>
-          <LoginPage />
-        </SessionProvider>
-      </MemoryRouter>,
+      <ThemeProvider>
+        <MemoryRouter>
+          <SessionProvider>
+            <LoginPage />
+          </SessionProvider>
+        </MemoryRouter>
+      </ThemeProvider>,
     )
   })
   return container
