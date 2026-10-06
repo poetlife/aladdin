@@ -512,6 +512,12 @@ type SkillVersionRecord struct {
 	// 路径反查版本"的查询，而读取永远要整棵树（校验、取用、界面上的文件列表）。
 	// 拆成关联表只会引入一次 join 与一套写入顺序。
 	Files []SkillFileRecord `gorm:"serializer:json;type:text"`
+	// SkippedFiles 是**上游有、而平台没收**的条目数。
+	//
+	// 平台只分发文本，因此真实仓库里那些示例图一类的东西不进包（见
+	// internal/skill/repo_tree.go）。这个计数让"平台里的包比上游少几个文件"
+	// 成为一件看得见的事——静默地少才是问题。
+	SkippedFiles int
 	// CreatedAt 是这一份从远端纳管进来的时刻。
 	CreatedAt time.Time
 }

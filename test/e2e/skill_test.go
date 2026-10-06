@@ -76,27 +76,25 @@ func (f *fakeSkillRemote) ResolveCommit(_ context.Context, repo skill.Repository
 	return f.commit, nil
 }
 
-func (f *fakeSkillRemote) FetchTree(_ context.Context, repo skill.Repository, commit, subPath string) ([]skill.FetchedFile, error) {
+func (f *fakeSkillRemote) FetchTree(_ context.Context, repo skill.Repository, commit, subPath string) (skill.Tree, error) {
 	tree, err := f.tree(commit)
 	if err != nil {
-		return nil, err
+		return skill.Tree{}, err
 	}
 	paths := make([]string, 0, len(tree))
 	for path := range tree {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
-	files := make([]skill.FetchedFile, 0, len(paths))
+	var out skill.Tree
 	for _, path := range paths {
 		if subPath != "" && path != subPath && !strings.HasPrefix(path, subPath+"/") {
 			continue
 		}
-		files = append(files, skill.FetchedFile{
-			Path: strings.TrimPrefix(strings.TrimPrefix(path, subPath), "/"),
-			Data: []byte(tree[path]),
-		})
+		relative := strings.TrimPrefix(strings.TrimPrefix(path, subPath), "/")
+		out.Files = append(out.Files, skill.FetchedFile{Path: relative, Data: []byte(tree[path])})
 	}
-	return files, nil
+	return out, nil
 }
 
 // commandWithHome 构造一条把 HOME 钉在指定目录上的命令。

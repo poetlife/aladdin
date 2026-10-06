@@ -30,19 +30,15 @@ type Remote interface {
 	// 限频是另一个（ErrRemoteUnavailable）——两者的应对不同：改引用，或者稍后重试。
 	ResolveCommit(ctx context.Context, repo Repository, ref string) (string, error)
 
-	// FetchTree 取回该提交下 subPath 之内的文件。subPath 为空表示仓库根。
+	// FetchTree 取回该提交下 subPath 之内的文本条目。subPath 为空表示仓库根。
 	//
 	// 返回的是**字节**，不是路径：远端实现把内容读进内存交出来，全程不落盘。
-	// 超出上限的压缩包与解压结果在这里就被截断并拒绝——上限的意义是让一次纳管的
-	// 最坏内存占用与最坏耗时都是有界的，而不是"看看远端有多大"。
-	FetchTree(ctx context.Context, repo Repository, commit, subPath string) ([]FetchedFile, error)
+	// **成本只随平台要收的东西增长**：目录树先给一遍（一次请求），只有要收的
+	// 条目才去取字节，因此"上游有多大"不影响这次纳管的内存与请求数（见 Tree）。
+	FetchTree(ctx context.Context, repo Repository, commit, subPath string) (Tree, error)
 }
 
 const (
-	// MaxArchiveBytes 是远端压缩包的字节上限。
-	MaxArchiveBytes = 32 << 20
-	// MaxExpandedBytes 是解压累计的字节上限。
-	MaxExpandedBytes = 8 << 20
 	// remoteTimeout 是单次远端请求的超时。
 	//
 	// 它管的是**一次请求**，不是整条纳管流程：给整条流程设总超时会把"远端慢"与
@@ -52,6 +48,14 @@ const (
 	githubAPIBase = "https://api.github.com"
 	// githubUserAgent 是请求头里的标识。GitHub 拒绝没有 User-Agent 的请求。
 	githubUserAgent = "aladdin"
+	// githubAccept 是**元数据请求**（仓库、提交、目录树）的媒体类型。
+	githubAccept = "application/vnd.github+json"
+	// githubRawAccept 是**取对象字节**时的媒体类型。
+	//
+	// **少了它，拿回来的是 JSON 而不是字节**：那一端点在默认媒体类型下回一个
+	// `{"content": "<base64>", ...}`，把那个当内容读下去的表现是"每一份文件都被
+	// 判成不是文本"——而错误信息会指向文件本身，看不出问题出在请求头上。
+	githubRawAccept = "application/vnd.github.raw"
 )
 
 // GithubRemote 是从 github.com 拉取的实现。
@@ -99,11 +103,70 @@ func (g *GithubRemote) ResolveCommit(ctx context.Context, repo Repository, ref s
 	return payload.SHA, nil
 }
 
-// FetchTree 实现 Remote。
-func (g *GithubRemote) FetchTree(ctx context.Context, repo Repository, commit, subPath string) ([]FetchedFile, error) {
-	path := fmt.Sprintf("/repos/%s/%s/tarball/%s",
+// FetchTree 实现 Remote：先问目录树，再逐条取要收的字节。
+//
+// 两步的理由见 repo_tree.go：成本只随**平台要收的东西**增长，而不是随上游仓库
+// 的大小增长。
+func (g *GithubRemote) FetchTree(ctx context.Context, repo Repository, commit, subPath string) (Tree, error) {
+	plan, err := g.planTree(ctx, repo, commit, subPath)
+	if err != nil {
+		return Tree{}, err
+	}
+	tree := Tree{Skipped: plan.Skipped}
+	var expanded int64
+	for _, blob := range plan.Files {
+		if len(tree.Files) >= MaxFiles {
+			return Tree{}, fmt.Errorf("%w: 文件数超过上限 %d", ErrPackageInvalid, MaxFiles)
+		}
+		data, err := g.fetchBlob(ctx, repo, blob.SHA)
+		if err != nil {
+			return Tree{}, err
+		}
+		// **"是不是文本"要到这一步才知道**：目录树只给大小，不给内容。不是文本
+		// 的跳过并点名，而不是让整份包作废（见 docs/design/skill/onboarding.md）。
+		if !isText(data) {
+			tree.Skipped = append(tree.Skipped, blob.Path)
+			continue
+		}
+		if expanded+int64(len(data)) > MaxPackageBytes {
+			return Tree{}, fmt.Errorf("%w: 取回的文本累计超过 %d 字节",
+				ErrPackageInvalid, MaxPackageBytes)
+		}
+		expanded += int64(len(data))
+		tree.Files = append(tree.Files, FetchedFile{Path: blob.Path, Data: data})
+	}
+	return tree, nil
+}
+
+// planTree 问出目录树并折成一份取字节的计划。
+func (g *GithubRemote) planTree(ctx context.Context, repo Repository, commit, subPath string) (repoPlan, error) {
+	var payload struct {
+		Tree      []repoTreeEntry `json:"tree"`
+		Truncated bool            `json:"truncated"`
+	}
+	path := fmt.Sprintf("/repos/%s/%s/git/trees/%s?recursive=1",
 		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), url.PathEscape(commit))
-	resp, err := g.do(ctx, path, "application/octet-stream")
+	if err := g.getJSON(ctx, path, &payload); err != nil {
+		return repoPlan{}, err
+	}
+	// `truncated` 表示这棵树大到一次给不完。**它是拒绝而不是尽力而为**：只拿到
+	// 一半的目录树会让纳管进来的包悄悄少一批文件，而那个"少"没有任何地方说得清。
+	if payload.Truncated {
+		return repoPlan{}, fmt.Errorf(
+			"%w: 仓库的目录树一次给不完（超过 GitHub 的上限），请用来源的子路径收窄范围",
+			ErrRemoteUnavailable)
+	}
+	return planRepoTree(payload.Tree, subPath)
+}
+
+// fetchBlob 取一条对象的字节。
+//
+// **按 sha 取，不按路径取**：sha 是固定长度的十六进制，拼不出别的东西来；而路径
+// 要拼进 URL，多一处转义就多一处可能拼错的地方。
+func (g *GithubRemote) fetchBlob(ctx context.Context, repo Repository, sha string) ([]byte, error) {
+	path := fmt.Sprintf("/repos/%s/%s/git/blobs/%s",
+		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), url.PathEscape(sha))
+	resp, err := g.do(ctx, path, githubRawAccept)
 	if err != nil {
 		return nil, err
 	}
@@ -111,13 +174,15 @@ func (g *GithubRemote) FetchTree(ctx context.Context, repo Repository, commit, s
 	if err := classifyStatus(resp.StatusCode, g.token != ""); err != nil {
 		return nil, err
 	}
-	// 压缩包的上限在这里就生效：读多一个字节即判超限，而不是先把整包收下来再数。
-	limited := io.LimitReader(resp.Body, MaxArchiveBytes+1)
-	files, err := readRepoArchive(limited, subPath)
+	// 单条字节的上限在这里就生效：读多一个字节即判超限，而不是先把整条收下来。
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxFileBytes+1))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: 读取对象失败: %w", ErrRemoteUnavailable, err)
 	}
-	return files, nil
+	if len(data) > MaxFileBytes {
+		return nil, fmt.Errorf("%w: 取回的对象超过单文件上限 %d 字节", ErrPackageInvalid, MaxFileBytes)
+	}
+	return data, nil
 }
 
 // defaultBranch 问出仓库的默认分支。
@@ -138,7 +203,7 @@ func (g *GithubRemote) defaultBranch(ctx context.Context, repo Repository) (stri
 
 // getJSON 取一段 JSON。
 func (g *GithubRemote) getJSON(ctx context.Context, path string, out any) error {
-	resp, err := g.do(ctx, path, "application/vnd.github+json")
+	resp, err := g.do(ctx, path, githubAccept)
 	if err != nil {
 		return err
 	}
@@ -154,8 +219,20 @@ func (g *GithubRemote) getJSON(ctx context.Context, path string, out any) error 
 }
 
 // do 发起一次请求。**地址由这里拼**：只有 API 根、路径段与认证，没有别的来源。
+//
+// gosec 会在下面两行报 SSRF（G704：请求地址由调用方输入汇入）。**这个结论在这里
+// 是已知且被处置的**，而不是误报——本模块的整条设计就是为了它：
+//
+//   - 调用方给的那个地址**从来不会**成为请求目标：它只在 ParseRepositoryURL 里被
+//     拆成（owner，repo）两段，每段走字符白名单（见 source.go）；
+//   - 拼进这里的路径只有那两段、一个引用、一个提交标识或一个 git 对象标识，全部
+//     经 url.PathEscape；
+//   - 前缀是常量 githubAPIBase，别的任何主机都到不了这一行。
+//
+// 抑制写在被报的那两行上，而不是在配置文件里关掉整条规则：后者会让这个仓库里
+// **将来**真正需要看见的同类问题一起消失。
 func (g *GithubRemote) do(ctx context.Context, path, accept string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubAPIBase+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubAPIBase+path, nil) //nolint:gosec // G704：地址由白名单过的两段拼成，见上
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrRemoteUnavailable, err)
 	}
@@ -165,7 +242,7 @@ func (g *GithubRemote) do(ctx context.Context, path, accept string) (*http.Respo
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
-	resp, err := g.client.Do(req)
+	resp, err := g.client.Do(req) //nolint:gosec // G704：同上
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrRemoteUnavailable, err)
 	}

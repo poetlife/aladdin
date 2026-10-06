@@ -129,12 +129,13 @@ func (s *SkillService) ListSkillVersions(ctx context.Context, req *connect.Reque
 	resp := &skillv1.ListSkillVersionsResponse{Versions: make([]*skillv1.SkillVersion, 0, len(versions))}
 	for _, version := range versions {
 		resp.Versions = append(resp.Versions, &skillv1.SkillVersion{
-			Id:         version.ID,
-			Commit:     version.Commit,
-			FileCount:  fitUint32(int64(len(version.Files))),
-			TotalBytes: fitUint64(version.TotalBytes()),
-			CreatedAt:  formatSkillTime(version.CreatedAt),
-			Current:    version.ID == view.Current.ID,
+			Id:           version.ID,
+			Commit:       version.Commit,
+			FileCount:    fitUint32(int64(len(version.Files))),
+			TotalBytes:   fitUint64(version.TotalBytes()),
+			CreatedAt:    formatSkillTime(version.CreatedAt),
+			Current:      version.ID == view.Current.ID,
+			SkippedFiles: fitUint32(int64(version.SkippedFiles)),
 		})
 	}
 	return connect.NewResponse(resp), nil

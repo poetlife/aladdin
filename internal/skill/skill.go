@@ -210,8 +210,14 @@ type Version struct {
 	Name        string
 	Description string
 	// Files 是这一份的文件清单（路径 → 内容摘要 + 字节数）。**不含正文**。
-	Files     []File
-	CreatedAt time.Time
+	Files []File
+	// SkippedFiles 是**上游有、而平台没收**的条目数。
+	//
+	// 平台只分发文本，因此真实仓库里那些示例图一类的东西不进包。这个计数让
+	// "平台里的包比上游少几个文件"成为一件看得见的事——静默地少才是问题（见
+	// docs/design/skill/onboarding.md 的"收得下的文件"）。
+	SkippedFiles int
+	CreatedAt    time.Time
 }
 
 // TotalBytes 返回这一份所有文件的字节总数。

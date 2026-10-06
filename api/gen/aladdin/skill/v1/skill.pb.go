@@ -364,7 +364,13 @@ type SkillVersion struct {
 	TotalBytes uint64 `protobuf:"varint,4,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
 	CreatedAt  string `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// 是否当前对外服务的那一份。
-	Current       bool `protobuf:"varint,6,opt,name=current,proto3" json:"current,omitempty"`
+	Current bool `protobuf:"varint,6,opt,name=current,proto3" json:"current,omitempty"`
+	// **上游有、而平台没收**的条目数。
+	//
+	// 平台只分发文本，因此真实仓库里那些示例图一类的东西不进包。这个计数让"平台
+	// 里的包比上游少几个文件"成为一件看得见的事——静默地少才是问题（见
+	// docs/design/skill/onboarding.md 的"收得下的文件"）。
+	SkippedFiles  uint32 `protobuf:"varint,7,opt,name=skipped_files,json=skippedFiles,proto3" json:"skipped_files,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -439,6 +445,13 @@ func (x *SkillVersion) GetCurrent() bool {
 		return x.Current
 	}
 	return false
+}
+
+func (x *SkillVersion) GetSkippedFiles() uint32 {
+	if x != nil {
+		return x.SkippedFiles
+	}
+	return 0
 }
 
 // SkillUsage 是一个技能的使用量（最近 30 天）。
@@ -1738,7 +1751,7 @@ const file_aladdin_skill_v1_skill_proto_rawDesc = "" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1d\n" +
 	"\n" +
 	"size_bytes\x18\x02 \x01(\x04R\tsizeBytes\x12\x16\n" +
-	"\x06digest\x18\x03 \x01(\tR\x06digest\"\xaf\x01\n" +
+	"\x06digest\x18\x03 \x01(\tR\x06digest\"\xd4\x01\n" +
 	"\fSkillVersion\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06commit\x18\x02 \x01(\tR\x06commit\x12\x1d\n" +
@@ -1748,7 +1761,8 @@ const file_aladdin_skill_v1_skill_proto_rawDesc = "" +
 	"totalBytes\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\tR\tcreatedAt\x12\x18\n" +
-	"\acurrent\x18\x06 \x01(\bR\acurrent\"h\n" +
+	"\acurrent\x18\x06 \x01(\bR\acurrent\x12#\n" +
+	"\rskipped_files\x18\a \x01(\rR\fskippedFiles\"h\n" +
 	"\n" +
 	"SkillUsage\x12\x19\n" +
 	"\buse_days\x18\x01 \x01(\rR\auseDays\x12\x1d\n" +

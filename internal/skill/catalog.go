@@ -267,7 +267,7 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 	if err != nil {
 		return Skill{}, err
 	}
-	pkg, err := s.fetchPackage(ctx, repo, commit, subPath)
+	pkg, skipped, err := s.fetchPackage(ctx, repo, commit, subPath)
 	if err != nil {
 		return Skill{}, err
 	}
@@ -276,7 +276,7 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 	if err != nil {
 		return Skill{}, err
 	}
-	version, err := s.newVersion(skillID, commit, pkg)
+	version, err := s.newVersion(skillID, commit, pkg, len(skipped))
 	if err != nil {
 		return Skill{}, err
 	}
@@ -302,7 +302,8 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 		zap.String("skill_id", skillID),
 		zap.String("repository", repo.Owner+"/"+repo.Name),
 		zap.String("commit", commit),
-		zap.Int("files", len(version.Files)))
+		zap.Int("files", len(version.Files)),
+		zap.Int("skipped_files", len(skipped)))
 	return item, nil
 }
 
@@ -339,11 +340,11 @@ func (s *Service) Resync(ctx context.Context, skillID string) (Skill, bool, erro
 	if commit == current.Source.Commit {
 		return current, false, nil
 	}
-	pkg, err := s.fetchPackage(ctx, repo, commit, subPath)
+	pkg, skipped, err := s.fetchPackage(ctx, repo, commit, subPath)
 	if err != nil {
 		return Skill{}, false, err
 	}
-	version, err := s.newVersion(skillID, commit, pkg)
+	version, err := s.newVersion(skillID, commit, pkg, len(skipped))
 	if err != nil {
 		return Skill{}, false, err
 	}
@@ -358,7 +359,8 @@ func (s *Service) Resync(ctx context.Context, skillID string) (Skill, bool, erro
 	s.logger.Info("技能同步",
 		zap.String("skill_id", skillID),
 		zap.String("commit", commit),
-		zap.Int("files", len(version.Files)))
+		zap.Int("files", len(version.Files)),
+		zap.Int("skipped_files", len(skipped)))
 	updated, err := s.store.GetSkill(ctx, skillID)
 	if err != nil {
 		return Skill{}, false, err
@@ -435,16 +437,24 @@ func parseSource(repositoryURL, ref, subPath string) (Repository, string, string
 }
 
 // fetchPackage 取回并校验一棵树。**它不写任何东西**——写上一步在校验通过之后。
-func (s *Service) fetchPackage(ctx context.Context, repo Repository, commit, subPath string) (Package, error) {
+//
+// 第二个返回值是被跳过的条目（二进制与超单文件上限的）：平台只分发文本，因此
+// 真实仓库里那些示例图一类的东西不进包——但**它们进了版本行上的一个计数**，
+// 于是"平台里的包比上游少几个文件"是一件看得见的事（见 Tree 与 onboarding.md）。
+func (s *Service) fetchPackage(ctx context.Context, repo Repository, commit, subPath string) (Package, []string, error) {
 	tree, err := s.remote.FetchTree(ctx, repo, commit, subPath)
 	if err != nil {
-		return Package{}, err
+		return Package{}, nil, err
 	}
-	return BuildPackage(tree)
+	pkg, err := BuildPackage(tree.Files)
+	if err != nil {
+		return Package{}, nil, err
+	}
+	return pkg, tree.Skipped, nil
 }
 
 // newVersion 从一份已校验的包造出一个版本。
-func (s *Service) newVersion(skillID, commit string, pkg Package) (Version, error) {
+func (s *Service) newVersion(skillID, commit string, pkg Package, skipped int) (Version, error) {
 	versionID, err := newVersionID()
 	if err != nil {
 		return Version{}, err
@@ -458,13 +468,14 @@ func (s *Service) newVersion(skillID, commit string, pkg Package) (Version, erro
 		})
 	}
 	return Version{
-		ID:          versionID,
-		SkillID:     skillID,
-		Commit:      commit,
-		Name:        pkg.Manifest.Name,
-		Description: pkg.Manifest.Description,
-		Files:       files,
-		CreatedAt:   s.now(),
+		ID:           versionID,
+		SkillID:      skillID,
+		Commit:       commit,
+		Name:         pkg.Manifest.Name,
+		Description:  pkg.Manifest.Description,
+		Files:        files,
+		SkippedFiles: skipped,
+		CreatedAt:    s.now(),
 	}, nil
 }
 

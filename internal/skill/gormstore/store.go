@@ -168,13 +168,14 @@ func (s *Store) AppendVersion(ctx context.Context, skillID string, version skill
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		record := database.SkillVersionRecord{
-			ID:          version.ID,
-			SkillID:     skillID,
-			Commit:      version.Commit,
-			Name:        version.Name,
-			Description: version.Description,
-			Files:       files,
-			CreatedAt:   version.CreatedAt,
+			ID:           version.ID,
+			SkillID:      skillID,
+			Commit:       version.Commit,
+			Name:         version.Name,
+			Description:  version.Description,
+			Files:        files,
+			SkippedFiles: version.SkippedFiles,
+			CreatedAt:    version.CreatedAt,
 		}
 		if err := tx.Create(&record).Error; err != nil {
 			return err
@@ -535,12 +536,13 @@ func toVersion(record database.SkillVersionRecord) skill.Version {
 		})
 	}
 	return skill.Version{
-		ID:          record.ID,
-		SkillID:     record.SkillID,
-		Commit:      record.Commit,
-		Name:        record.Name,
-		Description: record.Description,
-		Files:       files,
-		CreatedAt:   record.CreatedAt,
+		ID:           record.ID,
+		SkillID:      record.SkillID,
+		Commit:       record.Commit,
+		Name:         record.Name,
+		Description:  record.Description,
+		Files:        files,
+		SkippedFiles: record.SkippedFiles,
+		CreatedAt:    record.CreatedAt,
 	}
 }

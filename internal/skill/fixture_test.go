@@ -1,9 +1,6 @@
 package skill
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"sort"
@@ -57,14 +54,18 @@ func (f *fakeRemote) ResolveCommit(_ context.Context, repo Repository, ref strin
 	return f.commit, nil
 }
 
-func (f *fakeRemote) FetchTree(_ context.Context, repo Repository, commit, subPath string) ([]FetchedFile, error) {
+// FetchTree 按与真实实现**同一条规则**取材：留下文本，跳过二进制与超单文件上限的。
+//
+// 假实现与真实现分家的表现是"单元测试全绿、真纳管一个也进不来"——而那正是这条
+// 规则最该被守住的地方。
+func (f *fakeRemote) FetchTree(_ context.Context, repo Repository, commit, subPath string) (Tree, error) {
 	f.fetched = append(f.fetched, fmt.Sprintf("%s/%s@%s#%s", repo.Owner, repo.Name, commit, subPath))
 	if f.fetchErr != nil {
-		return nil, f.fetchErr
+		return Tree{}, f.fetchErr
 	}
 	tree, ok := f.trees[commit]
 	if !ok {
-		return nil, fmt.Errorf("%w: 没有这个提交", ErrRepositoryNotFound)
+		return Tree{}, fmt.Errorf("%w: 没有这个提交", ErrRepositoryNotFound)
 	}
 	paths := make([]string, 0, len(tree))
 	for path := range tree {
@@ -72,14 +73,20 @@ func (f *fakeRemote) FetchTree(_ context.Context, repo Repository, commit, subPa
 	}
 	sort.Strings(paths)
 
-	files := make([]FetchedFile, 0, len(paths))
+	var out Tree
 	for _, path := range paths {
 		if subPath != "" && path != subPath && !hasPrefixSegment(path, subPath) {
 			continue
 		}
-		files = append(files, FetchedFile{Path: trimSubPath(path, subPath), Data: []byte(tree[path])})
+		relative := trimSubPath(path, subPath)
+		data := []byte(tree[path])
+		if len(data) > MaxFileBytes || !isText(data) {
+			out.Skipped = append(out.Skipped, relative)
+			continue
+		}
+		out.Files = append(out.Files, FetchedFile{Path: relative, Data: data})
 	}
-	return files, nil
+	return out, nil
 }
 
 func hasPrefixSegment(path, prefix string) bool {
@@ -148,60 +155,4 @@ func (f *fixture) importOne(t *testing.T) Skill {
 		t.Fatalf("纳管失败: %v", err)
 	}
 	return item
-}
-
-// tarGz 造一个仓库压缩包。rootPrefix 是归档根（GitHub 用 `<owner>-<repo>-<sha>`）。
-func tarGz(t *testing.T, rootPrefix string, entries []tarEntry) []byte {
-	t.Helper()
-	var buffer bytes.Buffer
-	gz := gzip.NewWriter(&buffer)
-	writer := tar.NewWriter(gz)
-	for _, entry := range entries {
-		header := &tar.Header{
-			Name:     rootPrefix + "/" + entry.name,
-			Mode:     0o644,
-			Size:     int64(len(entry.data)),
-			Typeflag: entry.typeflag,
-			Linkname: entry.linkname,
-		}
-		if entry.typeflag == tar.TypeSymlink || entry.typeflag == tar.TypeDir {
-			header.Size = 0
-		}
-		if err := writer.WriteHeader(header); err != nil {
-			t.Fatalf("写压缩包头失败: %v", err)
-		}
-		if header.Size > 0 {
-			if _, err := writer.Write([]byte(entry.data)); err != nil {
-				t.Fatalf("写压缩包内容失败: %v", err)
-			}
-		}
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("关闭 tar 失败: %v", err)
-	}
-	if err := gz.Close(); err != nil {
-		t.Fatalf("关闭 gzip 失败: %v", err)
-	}
-	return buffer.Bytes()
-}
-
-type tarEntry struct {
-	name     string
-	data     string
-	typeflag byte
-	linkname string
-}
-
-// regular 是一条普通文件条目。
-func regular(name, data string) tarEntry {
-	return tarEntry{name: name, data: data, typeflag: tar.TypeReg}
-}
-
-// archiveFiles 把压缩包解回一个路径到内容的映射，便于断言。
-func archiveFiles(files []FetchedFile) map[string]string {
-	result := make(map[string]string, len(files))
-	for _, file := range files {
-		result[file.Path] = string(file.Data)
-	}
-	return result
 }

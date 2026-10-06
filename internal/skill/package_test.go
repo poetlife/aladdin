@@ -29,6 +29,9 @@ func TestBuildPackageAcceptsMinimalTree(t *testing.T) {
 // 收不收得下由"它是不是文本"决定，**不由"它像不像会被执行"决定**：平台从不执行
 // 它。按后者判会得到一条自相矛盾的规则——一份写着"运行 build.sh"的 README 与那个
 // build.sh 本身，没有任何理由前者收、后者不收。
+//
+// 二进制那半边在**取回**那一层被跳掉（见 readRepoArchive 的用例）；这里守的是
+// "万一漏了那次跳过，这一层也不能放它进库"。
 func TestBuildPackageAcceptsScriptsAndBinaryIsRejected(t *testing.T) {
 	script := "#!/bin/sh\nset -eu\necho 出图\n"
 	pkg, err := BuildPackage([]FetchedFile{

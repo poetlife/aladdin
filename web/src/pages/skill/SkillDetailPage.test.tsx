@@ -119,6 +119,7 @@ beforeEach(() => {
           id: 'skv_2',
           commit: 'abcdef1234567890abcdef1234567890abcdef12',
           fileCount: 2,
+          skippedFiles: 26,
           current: true,
           createdAt: '2026-10-06T13:00:00Z',
         }),
@@ -201,5 +202,7 @@ describe('详情页', () => {
     expect(container.textContent).toContain('skv_2')
     expect(container.textContent).toContain('当前')
     expect(container.textContent).toContain('切到这一版')
+    // 平台只收文本，上游的示例图一类不进包——**这件事必须看得见**。
+    expect(container.textContent).toContain('上游另有 26 个条目未收')
   })
 })

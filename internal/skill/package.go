@@ -161,7 +161,11 @@ func validatePackageFile(file FetchedFile) error {
 			ErrPackageInvalid, file.Path, len(file.Data), MaxFileBytes)
 	}
 	if !isText(file.Data) {
-		return fmt.Errorf("%w: %q 不是文本（含 NUL 字节或不是合法 UTF-8）",
+		// **这一条本不该在这里触发**：非文本的条目在取回时就被跳过了（见
+		// readRepoArchive）。留着它是为了让"包是文本"这条契约只有一个入口——
+		// 将来多一个取回实现时，漏掉那次跳过会在这一层立刻炸出来，而不是让一份
+		// 二进制静静地进库。
+		return fmt.Errorf("%w: %q 不是文本（取回时本应跳过它）",
 			ErrPackageInvalid, file.Path)
 	}
 	return nil

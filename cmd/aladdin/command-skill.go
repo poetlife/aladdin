@@ -244,8 +244,12 @@ func newSkillVersionsCommand() *cobra.Command {
 					marker = "* "
 				}
 				printf(cmd.OutOrStdout(), "%s%s  %s  %d 个文件  %s\n",
-					marker, version.GetId(), version.GetCommit()[:min(12, len(version.GetCommit()))],
+					marker, version.GetId(), shortCommit(version.GetCommit()),
 					version.GetFileCount(), version.GetCreatedAt())
+				if version.GetSkippedFiles() > 0 {
+					printf(cmd.OutOrStdout(), "      上游另有 %d 个条目未收（非文本）\n",
+						version.GetSkippedFiles())
+				}
 			}
 			return nil
 		},

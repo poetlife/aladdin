@@ -35,6 +35,31 @@ func TestImportCreatesSkillAndStoresBytes(t *testing.T) {
 	}
 }
 
+// 上游的二进制附件**跳过并计数**，而不是让整份包作废：真实仓库常把示例图与正文
+// 放在一起，整份拒收会让合格的内容也进不来；而"平台里的包比上游少几个文件"必须
+// 是一件看得见的事。
+func TestImportSkipsBinariesAndCountsThem(t *testing.T) {
+	f := newFixture(t)
+	f.remote.setTree(testSHA, map[string]string{
+		ManifestPath:     manifest("mono-color", "单色印刷风出图。"),
+		"palette.md":     "# 色板\n",
+		"examples/a.png": string([]byte{0x89, 'P', 'N', 'G', 0x00, 0x0d}),
+		"examples/b.png": string([]byte{0x89, 'P', 'N', 'G', 0x00, 0x0d}),
+	})
+	item, err := f.service.Import(context.Background(), ImportParams{
+		RepositoryURL: "https://github.com/" + testOwner + "/" + testRepo,
+	})
+	if err != nil {
+		t.Fatalf("带示例图的包被整体拒了: %v", err)
+	}
+	if len(item.Current.Files) != 2 {
+		t.Errorf("留下的文本 = %d 条，期望 2 条", len(item.Current.Files))
+	}
+	if item.Current.SkippedFiles != 2 {
+		t.Errorf("跳过的条数 = %d，期望 2", item.Current.SkippedFiles)
+	}
+}
+
 // 校验失败**不留任何痕迹**：库里没有新行，桶上也没有为它写的新对象。
 func TestImportLeavesNoTraceOnRejection(t *testing.T) {
 	f := newFixture(t)

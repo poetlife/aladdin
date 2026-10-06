@@ -280,6 +280,7 @@ export function SkillDetailPage(): React.ReactNode {
                   <Typography.Text code>{version.id}</Typography.Text>
                   <Typography.Text type="secondary">
                     {version.commit.slice(0, 12)} · {version.fileCount} 个文件
+                    {version.skippedFiles > 0 ? ` · 上游另有 ${version.skippedFiles} 个条目未收` : ''}
                     {formatTime(version.createdAt)}
                   </Typography.Text>
                 </Space>

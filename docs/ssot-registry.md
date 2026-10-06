@@ -104,7 +104,7 @@
 | 过期会话行的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
 | 超出保留期的客户端事件行的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |
 | 读侧时间窗折算成半开区间 `[from, to)` | `telemetry.WindowRange` | [internal/telemetry/window.go](../internal/telemetry/window.go) |
-| 一个仓库压缩包解成一棵文件树（含路径逃逸与链接的拒绝） | `readRepoArchive` | [internal/skill/repo_archive.go](../internal/skill/repo_archive.go) |
+| 一棵仓库目录树折成"取哪些字节、跳过哪些"的计划（子路径、链接与子模块的拒绝、超单文件上限的跳过） | `planRepoTree` | [internal/skill/repo_tree.go](../internal/skill/repo_tree.go) |
 | `SKILL.md` 的 frontmatter 解析（name / description） | `skill.ParseManifest` | [internal/skill/package.go](../internal/skill/package.go) |
 | 使用统计里"哪一天"的折算（两个存储实现共用） | `skill.UsageDay` | [internal/skill/skill.go](../internal/skill/skill.go) |
 
