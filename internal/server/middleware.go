@@ -250,6 +250,17 @@ func (m *authMiddleware) wrap(next http.Handler) http.Handler {
 
 		rule, err := rbac.Resolve(path)
 		if err != nil {
+			// **"这个地址不是 RPC 方法"与"方法漏写注解"是两回事**（见
+			// docs/design/rbac/server-permissions.md 的"拒绝语义"）。前者是
+			// 调用方把地址打错了——扫描器、拼错的路径、直接访问根路径都算；
+			// 后者的判据是"方法存在、注解不在"，那才是服务端缺陷。
+			//
+			// 混成一个码的代价很具体：一次地址打错会以"服务端方法注解缺失"
+			// 的名义回 500，排障的人于是去找一个并不存在的漏写注解。
+			if errors.Is(err, rbac.ErrUnknownProcedure) {
+				m.reject(w, r, interceptor.RejectUnknownProcedure(path))
+				return
+			}
 			m.reject(w, r, interceptor.DenyByAnnotation(path, err.Error()))
 			return
 		}

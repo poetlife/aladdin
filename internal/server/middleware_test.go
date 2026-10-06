@@ -162,6 +162,44 @@ func TestBrowserEntriesWouldOtherwiseBeDenied(t *testing.T) {
 	}
 }
 
+// **"地址不对应任何 RPC 方法"不是服务端故障。** 拼错的路径、扫描器、直接访问
+// 根路径都会落到这里；它们若以"服务端方法注解缺失"的名义回 500，一次地址打错
+// 就会在面板上呈现为服务端坏了，排障的人还会去找一个并不存在的漏写注解
+// （见 docs/design/rbac/server-permissions.md 的"拒绝语义"）。
+//
+// 另一半——"方法存在、注解漏写"仍须是服务端内部错误——由 catalog_test 的全量
+// 注解校验守着：真实方法不可能走到这一档。
+func TestUnknownPathIsNotAServerFault(t *testing.T) {
+	m := &authMiddleware{
+		authn:       interceptor.NewTokenAuthenticator(),
+		errorWriter: connect.NewErrorWriter(),
+		logger:      zap.NewNop(),
+	}
+
+	for _, path := range []string{"/", "/nope", "/aladdin.nope.v1.Missing/Do"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, path, nil)
+			// 指明 Connect 协议，错误体的形状才是确定的。
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			reached := false
+			m.wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true })).
+				ServeHTTP(rec, req)
+
+			if reached {
+				t.Fatal("未知路径被放行到了下一个 handler")
+			}
+			if rec.Code == http.StatusInternalServerError {
+				t.Errorf("未知路径回了 500（服务端故障），应当是未实现")
+			}
+			if body := rec.Body.String(); !strings.Contains(body, "unimplemented") {
+				t.Errorf("响应体里没有 unimplemented：%s", body)
+			}
+		})
+	}
+}
+
 // **流式响应对包装类型有一条硬要求：它必须自己实现 http.Flusher。**
 //
 // connect-go 取 Flusher 时做的是**直接的类型断言**（`w.(http.Flusher)`，见它
