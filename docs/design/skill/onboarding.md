@@ -191,15 +191,17 @@ description: 单色/双色编辑印刷风出图。当用户要…时使用。
 
 ### 首批纳管清单
 
-平台首批从 GitHub 纳管的三个来源（**由管理员在部署时导入，代码里不预置任何数据**）。它们同时是这条纳管流程的验证样本：三件的形态各不相同，各能覆盖到一处。
+平台首批从 GitHub 纳管的三个来源。它们同时是这条纳管流程的验证样本。
 
-| 名称 | 仓库 | 形态与用来验证什么 |
-|------|------|------------------|
-| mono-color | [`yanliudesign/mono-color-skill`](https://github.com/yanliudesign/mono-color-skill) | `SKILL.md` + `design-system/` + `evals/` + `scripts/`，**另带几十 MB 的示例图**。它验证"二进制被跳过而正文照收"——不跳过它就根本纳不进来 |
-| Taste-Skill | [`Leonxlnx/taste-skill`](https://github.com/Leonxlnx/taste-skill) | 前端审美与反模板化。验证"一份纯说明型技能"这条最短路径 |
-| Impeccable | [`pbakaus/impeccable`](https://github.com/pbakaus/impeccable) | 一套设计语汇与命令。验证"技能里有多个互相引用的文件"（用 `cat` 逐条取） |
+| 名称 | 仓库 | 子路径 | 形态与用来验证什么 |
+|------|------|--------|------------------|
+| mono-color | [`yanliudesign/mono-color-skill`](https://github.com/yanliudesign/mono-color-skill) | 仓库根 | 一个仓库就是一个 skill（`SKILL.md` 在根），另带几十 MB 示例图。验证"二进制被跳过而正文照收" |
+| brandkit | [`Leonxlnx/taste-skill`](https://github.com/Leonxlnx/taste-skill) | `skills/brandkit` | 仓库根是**一个集合**（`assets/`、`research/`、`scripts/`、`skills/`），技能在 `skills/` 下面。验证"子路径把仓库收窄成一个包" |
+| impeccable | [`pbakaus/impeccable`](https://github.com/pbakaus/impeccable) | `.agent/skills/impeccable` | 仓库是**一整个产品**（Rust crates、浏览器扩展、VS Code 扩展、文档站，近四千个文件），技能埋在 agent 约定目录里。验证同一件事的极端情形 |
 
-**首批不写进代码，也不写进种子数据。** 平台不该在内置数据里替部署决定"目录里有什么"——那是管理员的决定，而纳管本身就是他要走的那条路（见 [catalog.md](catalog.md) 的"标签不是一个全局字典"，同一条取向）。
+**三件里两件必须给子路径**，这不是凑巧：社区里的 skill 仓库越来越多地长成"一个产品仓库，顺带装一个技能"。因此子路径不是可选参数，而是这条路能不能用起来的关键——`--path` 填错的表现是"这个仓库纳管不进来，它明明在"，所以**地址给错、子路径没给时的错误信息要点出这一点**（见下面的"可验证性"：缺 `SKILL.md` 时点名它）。
+
+**首批不写进代码，也不写进种子数据。** 平台不该在内置数据里替部署决定"目录里有什么"——那是管理员的决定，而纳管本身就是他要走的那条路。
 
 **怎么打标签由管理员定。** 上面三件之外不再预置任何标签词表。
 
