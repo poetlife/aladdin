@@ -5,6 +5,7 @@ import {
   Card,
   Descriptions,
   Empty,
+  Flex,
   Form,
   Input,
   List,
@@ -16,7 +17,7 @@ import {
   Upload,
   theme,
 } from 'antd'
-import { ArrowLeft, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, CloudDownload, RefreshCw, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import * as skillApi from '../../api/skill'
@@ -133,11 +134,101 @@ export function SkillDetailPage(): React.ReactNode {
           </Space>
         }
         extra={
+          /*
+           * 页头只放**与"这一页"这个整体有关**的两颗：刷新（重新读一遍）与同步
+           * （追远端）。其余动作各回各的块——换封面挨着封面、改说明层挨着说明层、
+           * 删除收成图标。
+           *
+           * 六颗平铺在页头时，问题不只是挤：标题被压成几个字，而且**看不出哪一颗
+           * 在动哪一块**（见 docs/design/uiux/README.md 的"信息层级"）。
+           */
           <Space>
             <Button icon={<RefreshCw size={16} />} onClick={() => void load()}>
               刷新
             </Button>
             <PermissionGate require={PermissionCodes.SkillCatalogWrite}>
+              <Button
+                icon={<CloudDownload size={16} />}
+                disabled={busy}
+                onClick={() => void runAction(() => skillApi.resyncSkill(skill.id))}
+              >
+                同步
+              </Button>
+              {/* 破坏性操作按 uiux 的规矩**默认不突出**：收到只剩一个图标，确认框
+                  里说明后果。 */}
+              <Popconfirm
+                title="删除这个技能？"
+                description="版本、标签、收藏与使用记录一起消失，不可撤销。"
+                okText="删除"
+                okButtonProps={{ danger: true }}
+                onConfirm={() =>
+                  void runAction(async () => {
+                    await skillApi.deleteSkill(skill.id)
+                    navigate('/skills')
+                  })
+                }
+              >
+                <Button type="text" danger icon={<Trash2 size={16} />} disabled={busy} />
+              </Popconfirm>
+            </PermissionGate>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {failure !== null && <Alert type="error" showIcon message={failure} />}
+
+          {/* 封面与说明**并排**、放不下就换行（`wrap`，与断点无关的写法，见
+              docs/design/web/responsive.md）。封面是说明层的一项、**不是包的内容**，
+              所以它在说明这一块里，不混进下面那份文件清单。 */}
+          <Flex wrap gap={24} align="flex-start">
+            <div
+              style={{
+                flex: '0 1 280px',
+                minWidth: 200,
+                borderRadius: token.borderRadius,
+                overflow: 'hidden',
+              }}
+            >
+              <SkillCover skill={skill} height={168} />
+            </div>
+            <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+              <Typography.Paragraph>{skill.summary}</Typography.Paragraph>
+              <Descriptions size="small" column={2}>
+                <Descriptions.Item label="触发说明" span={2}>
+                  {skill.description}
+                </Descriptions.Item>
+                <Descriptions.Item label="标签" span={2}>
+                  {skill.tags.length === 0 ? '—' : skill.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+                </Descriptions.Item>
+                <Descriptions.Item label="来源" span={2}>
+                  {skill.source?.repositoryUrl}
+                  {skill.source?.ref !== '' ? ` @ ${skill.source?.ref}` : ''}
+                  {skill.source?.subPath !== '' ? ` / ${skill.source?.subPath}` : ''}
+                  <Typography.Text type="secondary">
+                    {' '}
+                    （提交 {skill.source?.commit.slice(0, 12)}）
+                  </Typography.Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="当前版本">
+                  {skill.currentVersionId}
+                  <Typography.Text type="secondary">
+                    {' '}
+                    {formatTime(skill.currentVersionCreatedAt)}
+                  </Typography.Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="使用量">
+                  {skill.usage !== undefined && skill.usage.useDays > 0
+                    ? `最近 30 天：${skill.usage.useDays} 个人日 / ${skill.usage.userCount} 人`
+                    : '最近 30 天没有人取用过'}
+                </Descriptions.Item>
+              </Descriptions>
+            </div>
+          </Flex>
+
+          {/* 说明层的三个可改项收成一排，**在这一块里**：它们改的都是上面这几项，
+              放到页头只会让"哪一颗在动哪一块"变成一个要猜的问题。 */}
+          <PermissionGate require={PermissionCodes.SkillCatalogWrite}>
+            <Space wrap size={4} style={{ borderTop: `1px solid ${token.colorSplit}`, paddingTop: 12 }}>
               {/* 换封面走完三步（签发 → 直传 → 提交），都在 api/skill 里。这里只负责
                   把文件递进去：**字节不经过服务端**，也不经过这个组件。 */}
               <Upload
@@ -151,7 +242,9 @@ export function SkillDetailPage(): React.ReactNode {
                   return false
                 }}
               >
-                <Button disabled={busy}>换封面</Button>
+                <Button type="text" size="small" disabled={busy}>
+                  {skill.coverUrl === '' ? '加一张封面' : '换封面'}
+                </Button>
               </Upload>
               {skill.coverUrl !== '' && (
                 <Popconfirm
@@ -160,10 +253,14 @@ export function SkillDetailPage(): React.ReactNode {
                   okText="移除"
                   onConfirm={() => void runAction(() => skillApi.deleteCover(skill.id))}
                 >
-                  <Button disabled={busy}>移除封面</Button>
+                  <Button type="text" size="small" disabled={busy}>
+                    移除封面
+                  </Button>
                 </Popconfirm>
               )}
               <Button
+                type="text"
+                size="small"
                 disabled={busy}
                 onClick={() => {
                   form.setFieldsValue({
@@ -176,69 +273,8 @@ export function SkillDetailPage(): React.ReactNode {
               >
                 改说明层
               </Button>
-              <Button disabled={busy} onClick={() => void runAction(() => skillApi.resyncSkill(skill.id))}>
-                同步
-              </Button>
-              <Popconfirm
-                title="删除这个技能？"
-                description="版本、标签、收藏与使用记录一起消失，不可撤销。"
-                okText="删除"
-                okButtonProps={{ danger: true }}
-                onConfirm={() =>
-                  void runAction(async () => {
-                    await skillApi.deleteSkill(skill.id)
-                    navigate('/skills')
-                  })
-                }
-              >
-                <Button danger icon={<Trash2 size={16} />} disabled={busy}>
-                  删除
-                </Button>
-              </Popconfirm>
-            </PermissionGate>
-          </Space>
-        }
-      >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          {failure !== null && <Alert type="error" showIcon message={failure} />}
-
-          {/* 封面是说明层的一项，**不是包的内容**（见 docs/design/skill/catalog.md）：
-              所以它排在说明之前，而不混进下面那份文件清单里。 */}
-          <div style={{ borderRadius: token.borderRadius, overflow: 'hidden', maxWidth: 480 }}>
-            <SkillCover skill={skill} height={180} />
-          </div>
-
-          <Typography.Paragraph>{skill.summary}</Typography.Paragraph>
-
-          <Descriptions size="small" column={2}>
-            <Descriptions.Item label="触发说明" span={2}>
-              {skill.description}
-            </Descriptions.Item>
-            <Descriptions.Item label="标签" span={2}>
-              {skill.tags.length === 0 ? '—' : skill.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
-            </Descriptions.Item>
-            <Descriptions.Item label="来源" span={2}>
-              {skill.source?.repositoryUrl}
-              {skill.source?.ref !== '' ? ` @ ${skill.source?.ref}` : ''}
-              {skill.source?.subPath !== '' ? ` / ${skill.source?.subPath}` : ''}
-              <Typography.Text type="secondary">
-                {' '}
-                （提交 {skill.source?.commit.slice(0, 12)}）
-              </Typography.Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="当前版本">
-              {skill.currentVersionId}
-              <Typography.Text type="secondary">
-                {' '}
-                {formatTime(skill.currentVersionCreatedAt)}
-              </Typography.Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="使用量">
-              {skill.usage !== undefined && skill.usage.useDays > 0
-                ? `最近 30 天：${skill.usage.useDays} 个人日 / ${skill.usage.userCount} 人`
-                : '最近 30 天没有人取用过'}
-            </Descriptions.Item>
-          </Descriptions>
+            </Space>
+          </PermissionGate>
         </Space>
       </Card>
 

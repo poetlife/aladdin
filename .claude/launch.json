@@ -4,7 +4,10 @@
     {
       "name": "aladdin-web",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-lc", "cd web && npm run dev"],
+      "runtimeArgs": [
+        "-lc",
+        "cd web && ALADDIN_API_TARGET=${ALADDIN_API_TARGET:-http://127.0.0.1:9191} npm run dev"
+      ],
       "port": 5173
     }
   ]

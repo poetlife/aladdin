@@ -194,7 +194,7 @@ describe('详情页', () => {
     expect(container.textContent).not.toContain('改说明层')
   })
 
-  it('有写权限时可以换封面；这一份没有封面，就不给「移除封面」', async () => {
+  it('有写权限时能加封面；这一份没有封面，就不给「移除封面」', async () => {
     vi.mocked(identityApi.getSessionPermissions).mockResolvedValue(
       create(GetSessionPermissionsResponseSchema, {
         scope: '',
@@ -202,7 +202,8 @@ describe('详情页', () => {
       }),
     )
     const container = await renderDetail()
-    expect(container.textContent).toContain('换封面')
+    // 没有封面时这颗按钮说的是它真正会做的事；有封面才叫「换封面」。
+    expect(container.textContent).toContain('加一张封面')
     expect(container.textContent).not.toContain('移除封面')
   })
 
