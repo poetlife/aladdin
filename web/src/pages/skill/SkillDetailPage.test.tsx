@@ -111,7 +111,7 @@ beforeEach(() => {
         totalBytes: 128n,
         files: [
           create(SkillFileSchema, { path: 'SKILL.md', sizeBytes: 100n, digest: 'a'.repeat(64) }),
-          create(SkillFileSchema, { path: 'palette.md', sizeBytes: 28n, digest: 'b'.repeat(64) }),
+          create(SkillFileSchema, { path: 'palette.md', sizeBytes: 1536n, digest: 'b'.repeat(64) }),
         ],
       }),
     }),
@@ -175,6 +175,14 @@ describe('详情页', () => {
       item.textContent?.includes('palette.md'),
     )
     expect(entry, '没有找到文件条目').not.toBeUndefined()
+    // 大小走 format/bytes 的那一个入口，而不是在这里另写一遍：1536 字节说「2 KB」
+    // （原样打字节数会是「1536 B」，这条就是照那个写的）。
+    expect(entry?.textContent).toContain('2 KB')
+    // 小于 1 KiB 的那一档说字节数，不折成「0 KB」——技能包里最常见的就是它。
+    const manifest = Array.from(container.querySelectorAll('li')).find((item) =>
+      item.textContent?.includes('SKILL.md'),
+    )
+    expect(manifest?.textContent).toContain('100 B')
 
     await act(async () => {
       entry?.click()
