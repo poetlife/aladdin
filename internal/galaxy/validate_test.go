@@ -354,3 +354,82 @@ func keysOf(m map[string][]byte) []string {
 	}
 	return keys
 }
+
+// docs 槽：raw HTML 里的记号在产物里是站点内路径，与 markdown 图片语法一视同仁。
+func TestDocsRawHTMLMarkersAreResolved(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProjectSlots(t, "文档站", SlotDocs)
+	asset := f.uploadAsset(t, project.ID, "image/png", "logo.png", []byte("png"))
+
+	f.pushDraftSlot(t, project.ID, SlotDocs, []Entry{
+		f.textEntry(t, project.ID, "index.md",
+			"# 首页\n\n<img src=\"asset://"+asset.ID+"\" alt=\"图\">\n"),
+		{Path: "logo.png", Kind: EntryKindAsset, AssetID: asset.ID},
+	})
+
+	report := f.reportSlot(t, project.ID, SlotDocs)
+	if !report.OK() {
+		t.Fatalf("raw HTML 里的记号落在条目上却被拒: %v", report.Messages())
+	}
+	page := string(f.buildArtifactsSlot(t, project.ID, SlotDocs)["index.html"])
+	if strings.Contains(page, PlaceholderScheme) {
+		t.Errorf("产物里还留着没解开的记号：%s", page)
+	}
+	if !strings.Contains(page, "/g/"+project.ID+"/docs/logo.png") {
+		t.Errorf("raw HTML 里的记号没有解成站点内路径：%s", page)
+	}
+}
+
+// docs 槽：raw HTML 里的取资源引用同样不得指向本文件组之外。
+//
+// 这一条以前是漏的：markdown 不经过"扫一遍源里的引用"那一趟，于是
+// `<img src="https://cdn…">` 可以一路发出去，直到读者的浏览器把它挡下。
+func TestDocsRawHTMLExternalResourceIsRejected(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProjectSlots(t, "文档站", SlotDocs)
+	f.pushDraftSlot(t, project.ID, SlotDocs, []Entry{
+		f.textEntry(t, project.ID, "index.md",
+			"# 首页\n\n<img src=\"https://cdn.example.com/a.png\">\n"),
+	})
+
+	report := f.reportSlot(t, project.ID, SlotDocs)
+	if report.OK() {
+		t.Fatal("raw HTML 里指向外部的资源引用被放过了")
+	}
+	if text := problems(report); !strings.Contains(text, "本文件组之外") {
+		t.Errorf("问题信息 %q 没有说明它指向了文件组之外", text)
+	}
+}
+
+// 复核落在**产物**上（唯一入口）：产物里残留的记号是一处失败，不是一张裂图。
+//
+// 它同时是发布前置校验与回读发布态之后的复核入口，因此这条直接钉住那个函数。
+func TestAuditArtifactsRejectsUnresolvedMarker(t *testing.T) {
+	report := AuditArtifacts("/g/prj_x/", map[string]bool{"index.html": true},
+		map[string][]byte{"index.html": []byte(`<img src="asset://ast_missing">`)})
+	if report.OK() {
+		t.Fatal("产物里残留的记号被放过了")
+	}
+	if report.Problems[0].Line != 1 {
+		t.Errorf("问题的行号 = %d，期望 1", report.Problems[0].Line)
+	}
+	if text := problems(report); !strings.Contains(text, "没有被解开") {
+		t.Errorf("问题信息 %q 没有说明记号没被解开", text)
+	}
+}
+
+// 复核的判据是产物清单里的路径：解开的地址、站点文件、资产条目都算落在里面，
+// 导航链接可以是任意地址。
+func TestAuditArtifactsAcceptsResolvedReferences(t *testing.T) {
+	report := AuditArtifacts("/g/prj_x/docs/",
+		map[string]bool{"index.html": true, "theme.css": true, "assets/ast_logo": true},
+		map[string][]byte{
+			"index.html": []byte(`<img src="/g/prj_x/docs/assets/ast_logo">` +
+				`<link rel="stylesheet" href="/g/prj_x/docs/theme.css">` +
+				`<a href="https://example.com">外部</a>`),
+			"theme.css": []byte("body{background:url(/g/prj_x/docs/assets/ast_logo)}"),
+		})
+	if !report.OK() {
+		t.Errorf("引用都落在产物清单里，却报错: %v", report.Messages())
+	}
+}

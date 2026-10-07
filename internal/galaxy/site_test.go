@@ -530,3 +530,79 @@ func TestSubstituteAssetMarkersIsVerbatim(t *testing.T) {
 		t.Fatalf("无记号的文本替换失败: %v", err)
 	}
 }
+
+// docs 槽：raw HTML 里的记号在**渲染这一趟**就被解开。
+//
+// 行内 HTML、块级 HTML 与其中的内联 CSS 三处都不经过 goldmark 的图片/链接节点，
+// 因此它们曾经是"记号原样进产物"的那一类——产物里留着一个浏览器解析不了的协议，
+// 表现是一张裂图（见 docs/design/galaxy/authoring.md）。
+func TestDocsSubstitutesMarkersInRawHTML(t *testing.T) {
+	const assetID = "ast_logo"
+	const resolved = "/g/prj_x/docs/assets/" + assetID
+	const src = "# 首页\n\n" +
+		"正文里一张 <img src=\"asset://" + assetID + "\" alt=\"图\"> 结束。\n\n" +
+		"<div style=\"background:url('asset://" + assetID + "')\">块级</div>\n\n" +
+		"<picture><source srcset=\"asset://" + assetID + " 2x\"></picture>\n"
+
+	doc, err := RenderDoc(
+		DocSource{Path: "index.md", Body: []byte(src)},
+		SiteLinker{Slot: SlotDocs, Manifest: docsAssetManifest(t, assetID), SiteRoot: "/g/prj_x/docs/"},
+	)
+	if err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	body := string(doc.Body)
+	if strings.Contains(body, PlaceholderScheme) {
+		t.Errorf("产物里还留着没解开的记号：%s", body)
+	}
+	if got := strings.Count(body, resolved); got != 3 {
+		t.Errorf("解开的地址有 %d 处，期望 3 处（行内属性、内联 CSS、srcset）：%s", got, body)
+	}
+}
+
+// 代码块、行内代码与正文散文里出现的记号是**给人看的文本**，不是一处引用：原样保留。
+//
+// 这一条是"替换只发生在会被浏览器拿去取字节或跳转的位置"的反面保证——否则一份
+// 讲解这个记号的文档会把自己的例子也改写掉。
+func TestDocsKeepsMarkersInProseAndCode(t *testing.T) {
+	const assetID = "ast_logo"
+	const src = "# 首页\n\n" +
+		"```html\n<img src=\"asset://" + assetID + "\">\n```\n\n" +
+		"行内代码 `<img src=\"asset://" + assetID + "\">` 与散文里的 asset://" + assetID + " 都原样保留。\n"
+
+	doc, err := RenderDoc(
+		DocSource{Path: "index.md", Body: []byte(src)},
+		SiteLinker{Slot: SlotDocs, Manifest: docsAssetManifest(t, assetID), SiteRoot: "/g/prj_x/docs/"},
+	)
+	if err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	if got := strings.Count(string(doc.Body), PlaceholderScheme+assetID); got != 3 {
+		t.Errorf("原样保留的记号有 %d 处，期望 3 处（代码块、行内代码、散文）：%s", got, doc.Body)
+	}
+}
+
+// `<asset://…>` 会被 markdown 当成一条自动链接，而自动链接不是一处可替换的位置：
+// 它必须是**显式失败**，而不是一个字面量 href 落到读者的浏览器里。
+func TestDocsRejectsMarkerAutolink(t *testing.T) {
+	const assetID = "ast_logo"
+	src := "# 首页\n\n看 <asset://" + assetID + "> 这一条。\n"
+
+	_, err := RenderDoc(
+		DocSource{Path: "index.md", Body: []byte(src)},
+		SiteLinker{Slot: SlotDocs, Manifest: docsAssetManifest(t, assetID), SiteRoot: "/g/prj_x/docs/"},
+	)
+	if err == nil {
+		t.Fatal("整段写成自动链接的记号被放过了")
+	}
+	if !strings.Contains(err.Error(), "自动链接") {
+		t.Errorf("错误信息 %q 没有说明它是一条自动链接", err)
+	}
+}
+
+// docsAssetManifest 造一份「入口 markdown + 一条按默认路径登记的资产条目」的清单。
+func docsAssetManifest(t *testing.T, assetID string) Manifest {
+	t.Helper()
+	manifest := docsManifest(t, map[string]string{"index.md": "# 首页\n"})
+	return append(manifest, Entry{Path: AssetMarkerPath(assetID), Kind: EntryKindAsset, AssetID: assetID})
+}

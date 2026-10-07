@@ -61,6 +61,7 @@
 | 上传方声明的类型能不能作为头像 | 头像的类型白名单（唯一入口；声明不等于验证，见直传） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
 | 上传方声明的类型能不能作为资产 | 资产的类型白名单与分档上限（唯一入口；声明不等于验证，见直传） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
 | 一份内容能不能发布（引用完整性 + 体积与文件数上限） | `galaxy` 的校验入口（**编辑器提示与发布前置校验共用**，不得在前端复写） | [internal/galaxy/validate.go](../internal/galaxy/validate.go) |
+| 产物里的一处取资源引用落在哪一条条目上、产物里有没有残留没解开的记号（**校验与回读发布态之后的复核共用**） | 产物复核入口（扫的是产物，不是源） | [internal/galaxy/artifact_audit.go](../internal/galaxy/artifact_audit.go) |
 | 一个版本引用了哪些资产 | 文件组里资产条目的读取入口（不解析正文） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
 | 一个资产标识是否属于某个工程 | 资产的归属查询（唯一入口，发布校验与删除拦阻共用） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
 | 一个标签串的归一化与合法性（trim、小写、去重、长度与数量上限） | `tagging.Normalize`（galaxy 资产的标签与 skill 目录的标签共用；三端只能消费它的结论，不得各自再判一份） | [internal/tagging/tagging.go](../internal/tagging/tagging.go) |

@@ -31,13 +31,16 @@
 
 ### 校验规则
 
-校验的规则集合**只有一个实现入口**（见 [README.md](README.md) 的"引用完整性的唯一入口"）。它的输入是**文件组**；`docs` 槽下还包含它渲染出的产物：
+校验的规则集合**只有一个实现入口**（见 [README.md](README.md) 的"引用完整性的唯一入口"）。它的输入是**文件组**，而**判据落在产物上**：`site` 槽的产物与源逐字相同，`docs` 槽的产物是渲染出来的那一份。
 
 | 规则 | 不满足时 |
 |------|---------|
-| 每一处取字节的引用都落在本文件组的**某一条条目**上（文本或资产） | 拒绝，指出那一处所在的文件与位置 |
+| **产物**里每一处取字节的引用都落在**产物清单**的某一条条目上（文本或资产） | 拒绝，指出那一处所在的文件与位置 |
+| **产物**里不残留没解开的记号（`asset://…`） | 拒绝，指出那一处所在的文件与位置 |
 | `docs` 槽下，每一处文档间链接都落在文件组里 | 拒绝，指出是哪一份文件的哪一处 |
 | 产物的总量与文件数不超过上限 | 拒绝，指出上限 |
+
+**上表的前两条判的是产物，不是源。** `site` 槽的产物与源逐字相同；`docs` 槽的产物是渲染出来的——记号的解开、文档间链接的改写都发生在那一趟里。因此"引用完整性"的判据只能落在产物上：源里那些记号本来就该是记号，而产物里再出现一个记号就说明有一处替换被漏掉了。这正是"漏掉解析必须是显式失败"的落点——它由校验拒绝，而不是由读者的浏览器控制台发现。
 
 **"引用完整性"要区分两类写法**，这是设计里最容易搞混的一处：
 
@@ -309,6 +312,7 @@
 | 文本不进公开区 | 上架阶段只为资产条目写公开区对象（`internal/galaxy` 测试 + 部署后冒烟） |
 | 外部引用被拒 | 内容里出现 `http(s)`、协议相对地址或 `data:` 形式的资源引用时发布失败，错误信息指出那一处（`internal/galaxy` 测试 + 端到端测试） |
 | 外部链接不被拒 | `<a href="https://example.com">` 在内容里时发布成功（`internal/galaxy` 测试） |
+| 未解开的记号被拒 | 一份产物里残留 `asset://…` 时被报成问题、发布因此失败，错误信息指出那一处（`internal/galaxy` 测试） |
 | 指向他工程 / 已删除资产被拒 | 发布失败且错误信息含该资产标识（`internal/galaxy` 测试） |
 | 草稿不可发布 | 无版本的工程发布被拒（`internal/galaxy` 测试） |
 | 只上架被引用的资产 | 资产库有 5 个资产、文件组引用 2 个时，公开区只新增 2 个（`internal/galaxy` 测试） |
@@ -388,6 +392,7 @@
 | 内容对象的摘要、形状校验与"仅当不存在时写入" | [internal/objectstore/content.go](../../../internal/objectstore/content.go) |
 | 内容槽的语义、入口解析与文本类型白名单 | [internal/galaxy/content_slot.go](../../../internal/galaxy/content_slot.go) |
 | 校验规则集合（唯一入口）与解析 | [internal/galaxy/validate.go](../../../internal/galaxy/validate.go) |
+| 产物里的取资源引用复核（唯一入口） | [internal/galaxy/artifact_audit.go](../../../internal/galaxy/artifact_audit.go) |
 | markdown 渲染与文档间引用解析 | [internal/galaxy/doc_render.go](../../../internal/galaxy/doc_render.go) |
 | 分享地址与内容地址的派生、允许来源 | [internal/galaxy/public_origin.go](../../../internal/galaxy/public_origin.go) |
 | 媒体上架（按（内容摘要，类型）幂等） | [internal/galaxy/promote.go](../../../internal/galaxy/promote.go) |
