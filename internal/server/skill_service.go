@@ -258,6 +258,15 @@ func toSkillConnectError(err error) error {
 			fmt.Errorf("技能简介不能超过 %d 个字", skill.MaxSummaryRunes))
 	case errors.Is(err, tagging.ErrInvalid), errors.Is(err, tagging.ErrTooMany):
 		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
+	case errors.Is(err, context.DeadlineExceeded):
+		// **调用方走了，不是远端挂了，也不是服务端处理失败。** 一次纳管的耗时随远端
+		// 仓库的文件数增长，因此"这次调用超过了调用方的超时"是这条路上真会发生的
+		// 结局；把它归成 Internal（默认分支）会让读日志的人去查一个不存在的代码缺陷，
+		// 归成 Unavailable 会让他去查一个没有故障的远端。
+		return connect.NewError(connect.CodeDeadlineExceeded,
+			errors.New("这次调用超过了调用方给的超时，纳管与同步可用更长的超时重试"))
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, errors.New("调用方结束了这次请求"))
 	default:
 		return connect.NewError(connect.CodeInternal, errors.New("服务端处理失败"))
 	}

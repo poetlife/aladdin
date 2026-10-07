@@ -52,6 +52,17 @@ type CLIFlags struct {
 	ConfigPath string
 	Address    string
 	Timeout    time.Duration
+	// BuiltinTimeout 是本次调用在**内置默认值**那一层要用的超时；零值表示
+	// DefaultTimeout。
+	//
+	// 它存在的理由是"默认值也要跟着命令的形态走"：纳管与同步的耗时随远端文件数
+	// 增长，拿一次普通调用的量级去管它们，会让命令在自己的正常耗时上超时（见
+	// DefaultSkillCatalogTimeout 与 docs/design/config/cli-config.md）。
+	//
+	// **它不是一层来源，只替换默认值。** 命令行参数、环境变量、本地覆盖与配置
+	// 文件照常覆盖它——把它当成一层，等于让"命令级默认"压过用户显式给出的取值，
+	// 而那正是这一项要避免的。
+	BuiltinTimeout time.Duration
 	// Debug 把日志级别提到 debug，等价于配置文件里的 log_level: debug。
 	Debug bool
 }
@@ -327,6 +338,12 @@ func LoadCLI(f CLIFlags) (CLIConfig, error) {
 	path, explicit := locateFile(f.ConfigPath, defaultPath)
 
 	cfg := DefaultCLI()
+	// 命令级默认只替换**默认值那一层**，因此它在所有来源叠加之前生效。放在后面
+	// 会压过用户显式给出的 timeout，而"命令级默认"正是最不该赢的那一个
+	// （见 CLIFlags.BuiltinTimeout）。
+	if f.BuiltinTimeout > 0 {
+		cfg.Timeout = f.BuiltinTimeout
+	}
 
 	primary, err := readFileLayer(path, explicit, parseCLIFile)
 	if err != nil {

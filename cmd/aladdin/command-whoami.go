@@ -15,7 +15,7 @@ func newWhoAmICommand() *cobra.Command {
 		Short: "打印当前凭证对应的主体",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := newClient()
+			c, err := newClient(0)
 			if err != nil {
 				return err
 			}

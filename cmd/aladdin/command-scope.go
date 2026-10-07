@@ -31,7 +31,7 @@ func newScopeListCommand() *cobra.Command {
 界面上显示为「全局」）。`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := newClient()
+			c, err := newClient(0)
 			if err != nil {
 				return err
 			}
@@ -87,7 +87,7 @@ func newScopeCreateCommand() *cobra.Command {
 				return err
 			}
 
-			c, err := newClient()
+			c, err := newClient(0)
 			if err != nil {
 				return err
 			}
@@ -136,7 +136,7 @@ func newScopeDeleteCommand() *cobra.Command {
 				return err
 			}
 
-			c, err := newClient()
+			c, err := newClient(0)
 			if err != nil {
 				return err
 			}

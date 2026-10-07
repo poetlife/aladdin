@@ -46,7 +46,7 @@ func newGalaxyCommand() *cobra.Command {
 // 凭证注入、超时与连接关闭对每条命令都一样，因此收在一处：漏掉其中任何一件的
 // 表现都是"这一条命令与别的不一样"，而那正是最难从现象反推的一类问题。
 func galaxyCall() (context.Context, galaxyv1connect.GalaxyServiceClient, func(), error) {
-	c, err := newClient()
+	c, err := newClient(0)
 	if err != nil {
 		return nil, nil, nil, err
 	}
