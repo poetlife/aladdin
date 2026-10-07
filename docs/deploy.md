@@ -316,6 +316,23 @@ nginx **不需要任何改动**：批准页 `/device` 是前端路由，落在 `
 
 用法是 `aladdin login`（不带 `--token`）。带 `--token` 时走的仍是机器凭证那条既有路径，两者不受彼此影响。
 
+### 13. 技能目录的远端凭据（可选）
+
+平台从 GitHub 纳管技能时要取远端内容，用的凭据是 `ALADDIN_GITHUB_TOKEN`（见 [design/skill/onboarding.md](design/skill/onboarding.md) 的"远端凭据"）。**不配也能用**：读写目录、取用技能都不受影响，只是远端访问走匿名额度。
+
+```bash
+[[ -e /opt/aladdin/secrets.env ]] || sudo install -o aladdin -g aladdin -m 0600 /dev/null /opt/aladdin/secrets.env
+sudo tee -a /opt/aladdin/secrets.env >/dev/null <<'EOF'
+ALADDIN_GITHUB_TOKEN=<只读的 Personal Access Token>
+EOF
+```
+
+与第 11 步同一条理由：**不写进 `config.yml`**，也不另起一份文件。重启服务后生效。
+
+> **不配的失败方式要认得出来。** 一次纳管要发 `1 + 文件数` 次远端请求（先问目录树，再逐条取要收的字节），而匿名额度是**每小时 60 次**——收一个几十个文件的仓库一次就用掉大半。因此现象是"头两个技能纳得进来，第三个开始一直失败"，那是限频，不是仓库地址或子路径的问题。要正经维护目录就得配它。
+
+Token 只用于**读公开仓库**，因此只读权限就够；纳管的默认形态本来就是公开仓库。
+
 ## 日常发布
 
 ```bash
