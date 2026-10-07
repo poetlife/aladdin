@@ -17,23 +17,26 @@
 
 门禁的范围只有一处定义：`.github/workflows/gate.yml`。CI 与发布都调它，**不复制步骤**——否则两份定义迟早漂移，例如有人只给其中一份加了前端测试。
 
-门禁依次执行：
+门禁是**四个并行 job**，它们是四段互不相干的检查：
 
-1. `make tools` —— 装代码生成与静态检查工具（必须先于下面两项）
-2. 断言 `golangci-lint` 存在
-3. `make lint`
-4. `make test`
-5. `make test-e2e`
-6. `make check-gen`
-7. `make web-ci` —— 按 lockfile 装前端依赖
-8. `make test-web`
-9. `make web-build`
+| job | 依次执行 |
+|-----|---------|
+| 静态检查与生成同步 | `make tools`（必须先于本 job 其余几步）→ 断言 `golangci-lint` 存在 → `make lint` → `make check-gen` → `make check-api-docs` |
+| 后端单元测试 | `make test` |
+| 端到端测试 | `make test-e2e` |
+| 前端 | `make web-ci`（按 lockfile 装依赖）→ `make test-web` → `make web-build` |
+
+四段之间没有依赖，串行的总时长是它们相加，并行是最慢的那一段。代价是每个 job 各自检出、各自恢复一遍缓存：**机器时间变多，墙钟时间变少**（见下面的"时间花在哪里"）。另一处收益是原先"所有 Go 步骤必须先于 `make web-ci`"这条脆弱约束消失了——前端独立成 job 之后，Go 的 job 里根本不存在 `node_modules`。
+
+一处有意的行为变化：并行的 job 默认不互相取消，**某个 job 失败时其余照常跑完**。这是要的——一次推送就能看到全部结论，而不是"修完 lint 才发现测试也红"。取消仍然发生在推送这一层：`ci.yml` 的 `concurrency` 会取消同一分支上过期的那次运行。
+
+三个 Go job 共用的"装 Go + 恢复缓存"抽在 [.github/actions/setup-go/action.yml](../.github/actions/setup-go/action.yml)：缓存的取法是**同一处判断**，抄三份就一定会各自漂移，而这里漂移的表现是"某天起只有其中一个 job 变慢"，没有任何一步会报错。
 
 工具版本只有一处来源：Makefile 的 `TOOLS`。全部钉到具体版本，不留 `@latest`——留一个，本机与 CI 就可能装到不同版本，失败还会发生在没人动过 proto 的日子里。`make tools` 逐个工具比对"二进制在不在 + 版本一不一致"，一致就跳过：`buf` 与 `golangci-lint` 都是大二进制，从源码编译合计 100s 上下，占了门禁一半的时间。
 
 ### 时间花在哪里
 
-门禁的成本大头是**编译**，不是测试本身。同一份代码在本机热缓存下：`make test` 0.8s、`make lint` 1.5s、`make test-e2e` 0.3s、前端两步各 2s 上下。CI 冷缓存下 `make test` 是 49s、`make lint` 是 30s。所以 `gate.yml` 里那两处缓存比任何步骤优化都重要：
+门禁的成本大头是**编译**，不是测试本身。同一份代码在本机热缓存下：`make test` 0.8s、`make lint` 1.5s、`make test-e2e` 0.3s、前端两步各 2s 上下。CI 冷缓存下 `make test` 是 49s、`make lint` 是 30s。所以那两处缓存比任何步骤优化都重要，它们的取法在三个 Go job 共用的 [.github/actions/setup-go/action.yml](../.github/actions/setup-go/action.yml)：
 
 - **Go 模块与构建缓存**（`~/go/pkg/mod` + `~/.cache/go-build`）。`setup-go` 自带的缓存 key 只看 `go.sum` 的哈希、且按 git ref 隔离、又没有回退，实测五条缓存条目里只有一条被复用过，因此关掉它，改用显式的 `actions/cache` 加 `restore-keys`。
 - **装好的工具**（`~/go/bin`）。key 取 Makefile 的哈希。**缓存 key 是派生物，不是第二份版本定义**；回退到旧缓存也安全，因为 `make tools` 会逐条比对版本戳记，只重装真正变了的那一个。
@@ -42,12 +45,15 @@
 
 **有意不缓存 `~/.cache/golangci-lint`**：那一个过期了可能让一条 finding 不再出现，而"少报一条"与"没有门禁"是一回事。判据是缓存过期后损失的是时间还是正确性——只损失时间的才缓存。
 
-两处顺序不能随手调换：
+**并行是照着实测数字拆的**。拆之前的实测构成（最近 20 次成功运行的平均值）：job 内 217s，加排队与收尾约 21s，合计约 3 分 58 秒。其中 Go 缓存恢复 19s、`make lint` 23s、`make test` 72s、`make test-e2e` 29s、前端三步合计 52s。`make test` 与前端三步之间没有任何依赖，却排在同一条队里——这就是拆分依据。
 
-- **`make tools` 先于 `make lint` 与 `make check-gen`**：前者要 `buf lint`，后者要 `buf generate`。
-- **Go 步骤全部先于 `make web-ci`**：`go test ./...` 会走进 `web/node_modules`，而 npm 包里是有自带 Go 文件的（`flatted` 就带一个）。先装前端依赖，等于把第三方 JS 依赖里的 Go 代码卷进 Go 检查——今天恰好能编过，但它不该成为门禁成立的前提。
+并行之后，关键路径换成最慢的那一个 job（后端单元测试：约 36s 检出与缓存 + 72s 测试），另外三段与之重叠。每个 job 都要各付一次约 20s 的 Go 缓存恢复（这份 817MB 的缓存下载约 6s、解压约 11s），它买到的是冷缓存下每个 job 多出来的 40~60s 编译。
 
-第 2 步值得单独说明：`make lint` 在本机缺 golangci-lint 时会**静默跳过**它。门禁里静默跳过等于没有门禁，所以这里显式断言，把"跳过"变成失败。golangci-lint 的版本随之收进 Makefile 的 `TOOLS`，不再由各人本机另行安装。
+一处顺序不能随手调换：**`make tools` 先于 `make lint` 与 `make check-gen` / `make check-api-docs`**（前者要 `buf lint`，后两者要 `buf generate`）。三者都在"静态检查与生成同步"这一个 job 内。
+
+原先还有一条"所有 Go 步骤先于 `make web-ci`"：`go test ./...` 会走进 `web/node_modules`，而 npm 包里是有自带 Go 文件的（`flatted` 就带一个）。先装前端依赖，等于把第三方 JS 依赖里的 Go 代码卷进 Go 检查——今天恰好能编过，但它不该成为门禁成立的前提。**拆分之后这条不再需要**：前端在另一个 job 里，Go 的 job 里不存在 `node_modules`。
+
+断言 `golangci-lint` 存在那一步值得单独说明：`make lint` 在本机缺 golangci-lint 时会**静默跳过**它。门禁里静默跳过等于没有门禁，所以这里显式断言，把"跳过"变成失败。golangci-lint 的版本随之收进 Makefile 的 `TOOLS`，不再由各人本机另行安装。
 
 发布流水线里门禁排在构建**之前**：门禁失败则后续 job 不执行，不会留下半个 Release。
 
@@ -133,7 +139,7 @@ grep -aqF -- "<注入值>" dist/aladdin || 中止
 先确认门禁在本地是绿的，再打 tag——否则推上去才发现失败，比本地发现更晚：
 
 ```bash
-make web-ci && make tools && make lint && make test && make test-e2e && make test-web && make check-gen
+make web-ci && make tools && make lint && make test && make test-e2e && make check-gen && make check-api-docs && make test-web
 ```
 
 本地验证产物（`VERSION` 换成等价于 tag 的值）：

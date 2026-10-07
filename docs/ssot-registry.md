@@ -186,3 +186,4 @@
 | 一份字节能不能当**展示小图**（收哪些格式、上限多大、扩展名与文件头怎么判） | `imagetype`（**头像与技能封面共用一份**；它与 galaxy 资产的素材白名单**不是同一个判断**，不合并，理由见该包说明） | [internal/imagetype/imagetype.go](../internal/imagetype/imagetype.go) |
 | 技能封面的对象键（按技能标识、允许覆盖） | `skill.CoverKey` | [internal/skill/cover.go](../internal/skill/cover.go) |
 | 代码生成与静态检查工具的版本（本机安装与 CI 缓存 key 都由此派生） | Makefile 的 `TOOLS` 清单 | [Makefile](../Makefile) |
+| 门禁里 Go 环境的准备（Go 版本的来源，以及模块 / 构建缓存与工具缓存的 key 与回退策略） | 复合动作（三个 Go job 共用一份） | [.github/actions/setup-go/action.yml](../.github/actions/setup-go/action.yml) |

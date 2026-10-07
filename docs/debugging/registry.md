@@ -17,6 +17,7 @@
 | `skill add` / `skill sync` 在 30 秒处被掐掉，报 `deadline_exceeded`，服务端日志却是 **503** | 取回是 `3 + 文件数` 次**串行**出站请求（约 0.7 秒一次），而 CLI 的默认超时是给一次普通调用的 30 秒——按 spec 的原样命令纳管首批三件，两件必然超时。那个 503 是调用方的 deadline 到期，不是远端故障 | [2026-10-07-skill-add-times-out-at-30s.md](records/2026-10-07-skill-add-times-out-at-30s.md) |
 | docs 槽发布出去的图片裂开、控制台报 `asset://…` 被 CSP 拦截，而 `validate` 与 `publish` 都说成功 | markdown 里 raw HTML 的记号没有任何一步经手替换（渲染器只改写图片/链接节点，引用扫描只跑非 markdown 文本）；复核改到**产物**上、替换点补到 raw HTML 才看得见 | [2026-10-07-docs-asset-marker-not-substituted.md](records/2026-10-07-docs-asset-marker-not-substituted.md) |
 | 工作台里在预览中点过一下，之后点外壳上任何按钮预览都整个重载 | 焦点落进本页自己的 iframe 再回到外壳，父窗口同样收到一对 `blur`/`focus`，被当成了"回到前台"；重取预览地址即新票，iframe 因此重新导航。那条兜底整条去掉了：连接的死活改由客户端**按心跳判活**（重连即 `RESYNC`），不再拿"用户有没有看向这一页"去猜"连接还活着没有" | [2026-10-07-preview-reloads-on-page-internal-focus.md](records/2026-10-07-preview-reloads-on-page-internal-focus.md) |
+| 感觉 CI 越来越慢，每次推送要等 4 分钟 | 不是变慢（近 10 次 212s 对更早 9 次 206s），是门禁九个步骤串行在同一个 job 里，总时长等于相加；`make test`(72s) 与前端三步(52s) 之间没有依赖 | [2026-10-07-ci-gate-serial-steps.md](records/2026-10-07-ci-gate-serial-steps.md) |
 
 ---
 

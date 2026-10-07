@@ -3,6 +3,27 @@
 # 常规 CI（PR / push main）与发布（tag）都调用本文件，而不是各自复制一份步骤：
 # 两份定义迟早漂移，例如有人只给其中一份加了前端测试。
 # 要调整门禁范围，只需改这里（见 docs/release.md 与 docs/ssot-registry.md）。
+#
+# 四个 job 之间没有依赖，所以并行跑。串行的总时长是四段相加，并行是最慢的那一段
+# （后端单元测试）——同一套检查，墙钟时间少一半。代价是每个 job 各自检出一次、
+# 各自恢复一遍缓存：这份开销本身也是并行的，不占关键路径，但机器时间确实变多
+# （见 docs/release.md 的"时间花在哪里"）。
+#
+# 基础镜像一律钉住版本。ubuntu-latest 会在 GitHub 轮换镜像时静默换掉整个运行环境，
+# 那是"某天门禁突然红了而没人改过代码"的典型来源；换镜像应当是一次有意的改动。
+# 这与 Makefile 里把工具钉到具体版本是同一条理由：版本升级是有意为之，
+# 不是自动发生的。
+#
+# 并行顺带消掉了原先两条"别随手调换"的顺序依赖里的一条：
+#   · `make tools` 先于 `make lint` 与 `make check-gen` / `make check-api-docs`
+#     —— 收在"静态检查与生成同步"这一个 job 内，仍然成立；
+#   · 所有 Go 步骤先于 `make web-ci` —— `go test ./...` 会走进 web/node_modules，
+#     而 npm 包里自带 Go 文件（flatted 就带一个）。前端现在在另一个 job 里，
+#     Go 那些 job 里根本不存在 node_modules，这条已经不可能被违反。
+#
+# 一处有意的行为变化：并行的 job 默认不互相取消，某个 job 失败时其余照常跑完。
+# 这是要的——一次推送就能看到全部结论，而不是"修完 lint 才发现测试也红"。
+# 取消仍然发生在**推送**这一层：ci.yml 的 concurrency 会取消同一分支上过期的那次。
 
 name: gate
 
@@ -13,11 +34,8 @@ permissions:
   contents: read
 
 jobs:
-  gate:
-    name: 门禁
-    # 钉住基础镜像版本。ubuntu-latest 会在 GitHub 轮换镜像时静默换掉整个运行环境，
-    # 那是"某天门禁突然红了而没人改过代码"的典型来源；换镜像应当是一次有意的改动。
-    # 这与 Makefile 里把工具钉到具体版本是同一条理由：版本升级是有意为之，不是自动发生的。
+  go-checks:
+    name: 门禁 · 静态检查与生成同步
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -28,69 +46,15 @@ jobs:
           # 浅克隆会让这个判断失真。
           fetch-depth: 0
 
-      - name: 安装 Go
-        uses: actions/setup-go@v7
+      - name: 准备 Go 环境
+        # 装 Go、恢复模块与构建缓存，以及已装好的工具。三个 Go job 共用这一个
+        # 动作，缓存的取法因此只有一处（理由见该文件）。
+        uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          # 关掉 setup-go 自带的缓存，改用下面那一步。它自带的缓存 key 只看
-          # go.sum 的哈希、且按 git ref 隔离，既没有回退 key 又被分支切分，
-          # 实测五条缓存条目里只有一条被复用过——等于没有缓存。
-          # 而 Go 的编译开销正是门禁的主要成本：热缓存下 make test 是 0.8s，
-          # 冷缓存下是 49s；make lint 是 1.5s 对 30s。
-          cache: false
+          tools: 'true'
 
-      - name: 缓存 Go 模块与构建缓存
-        # 相比 setup-go 自带的缓存，这里只多了一件事：restore-keys 回退。
-        # 回退在这里是安全的，而且比在别处更安全——GOMODCACHE 是不可变的
-        # 版本目录，GOCACHE 由输入哈希寻址，所以旧缓存只可能"没命中"，
-        # 不可能算出错误结果。它省掉的只有时间。
-        #
-        # key 用 go.sum 的哈希而不是提交号，与 setup-go 的默认取法一致：
-        # 同一个 key 只存一次，不会每跑一次就堆一个 800MB 的新条目。
-        # 代价是缓存停在首次保存时的那份，仓库自身的包仍要重编——
-        # 但编译开销的大头是 otel/gRPC/gorm 这些永不改变的三方依赖，
-        # 它们从头到尾都在缓存里。
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-${{ runner.os }}-
-
-      - name: 安装 Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: 缓存已装好的工具
-        # buf 与 golangci-lint 都是大二进制，从源码编译合计 100s 上下，
-        # 占了门禁的一半，而它们的版本只在 Makefile 的 TOOLS 里变。
-        #
-        # key 取 Makefile 的哈希：Makefile 一改 key 就变，最坏是多装一次，
-        # 不会读到旧工具。版本仍然只有 Makefile 一个来源——这里只是缓存 key，
-        # 不是第二份版本定义。
-        #
-        # restore-keys 回退到最近一次任意 key：命中旧缓存时，make tools 会逐条
-        # 比对版本戳记，只重装真正变了的那一个。这条回退之所以安全，正是因为
-        # 那个逐条比对存在；没有它，回退就等于允许门禁跑到旧版本的工具上。
-        #
-        # 有意不缓存 golangci-lint 自己的分析结果（~/.cache/golangci-lint）。
-        # 上面两个缓存过期了只是慢一点，那一个过期了可能让一条 finding 不再出现，
-        # 而门禁里"少报一条"和"没有门禁"是一回事。
-        uses: actions/cache@v6
-        with:
-          path: ~/go/bin
-          key: go-tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
-          restore-keys: go-tools-${{ runner.os }}-
-
-      # 顺序有两处依赖，别随手调换：
-      #   1. tools 必须先于 lint（buf lint）与 check-gen（buf generate）；
-      #   2. 所有 Go 步骤必须先于 web-ci —— `go test ./...` 会走进
-      #      web/node_modules，而那里有 npm 包自带 Go 文件（flatted 就是）。
-      #      先装前端依赖会把第三方 JS 依赖里的 Go 代码卷进 Go 检查。
+      # 顺序依赖：tools 必须先于 lint（buf lint）与 check-gen / check-api-docs
+      # （buf generate）。
       - name: 安装代码生成与静态检查工具
         run: make tools
 
@@ -107,17 +71,64 @@ jobs:
       - name: 静态检查
         run: make lint
 
-      - name: 后端单元测试（含竞态检测）
-        run: make test
-
-      - name: 端到端测试
-        run: make test-e2e
-
       - name: 生成产物同步校验
         run: make check-gen
 
       - name: OpenAPI 文档同步校验
         run: make check-api-docs
+
+  go-test:
+    name: 门禁 · 后端单元测试
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 准备 Go 环境
+        uses: ./.github/actions/setup-go
+
+      - name: 后端单元测试（含竞态检测）
+        run: make test
+
+  go-e2e:
+    name: 门禁 · 端到端测试
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 准备 Go 环境
+        uses: ./.github/actions/setup-go
+
+      # 端到端测试自带服务端（随机端口）、自带临时库，所以与另外两个 Go job
+      # 同时跑互不干扰。
+      - name: 端到端测试
+        run: make test-e2e
+
+  web:
+    name: 门禁 · 前端
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+        with:
+          # 这三步不看历史，取满历史只为让"检出"在所有 job 里是同一种形状——
+          # 多花不到一秒，好过每个 job 各有一个必须单独判断的理由。
+          fetch-depth: 0
+
+      - name: 安装 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - name: 安装前端依赖
         run: make web-ci
