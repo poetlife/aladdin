@@ -37,12 +37,15 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | `galaxy asset upload` / `delete` | 上传、删除资产 | `galaxy.asset.write` |
 | `galaxy asset update` | 改资产的展示标题、标签与备注 | `galaxy.asset.write` |
 | `galaxy publish` / `unpublish` | 发布某个槽的一个版本、撤回该槽的发布 | `galaxy.project.publish` |
+| `galaxy publication get` | 读回某个槽**当前发布**的产物清单（`--path` 取其中一份的字节） | `galaxy.project.read` |
+| `galaxy publication pull` | 把某个槽当前发布的产物整组写到本地目录 | `galaxy.project.read` |
+| `galaxy publication verify` | 按访客路径逐条复核当前发布的产物：字节与发布记录一致、引用都解开了、资产可达 | `galaxy.project.read` |
 
 工程、版本与资产的标识一律**显式给出**，都是命令的位置参数。**资产库里没有槽**：它是工程级的共享库，两个槽引用同一份资产。
 
 ### 内容槽怎么给
 
-**除 `project create` 与 `project slot add` 外，凡是碰内容或发布状态的命令都针对一个槽**（`draft` / `version` / `validate` / `publish` / `unpublish` / `project base`），用 `--slot site|docs` 给出。
+**除 `project create` 与 `project slot add` 外，凡是碰内容或发布状态的命令都针对一个槽**（`draft` / `version` / `validate` / `publish` / `unpublish` / `publication` / `project base`），用 `--slot site|docs` 给出。
 
 - **工程只有一个槽时可以省略**：命令行从 `project get` 读回启用了哪些槽，只有一个就用它。**这是省事的缺省，不是判定权威**——服务端始终要求显式的槽，缺省只发生在命令行这一侧。
 - **工程有两个槽时必须显式给出**：省略即报用法错误。这与"工程标识每次都显式给出"是同一条取向（见下）——两个槽存在时，"我这条命令打到了哪个槽"不该靠一个默认值来回答。
@@ -82,6 +85,22 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 字节数一律输出**原始数值**，不做人类可读换算：文件大小文案的唯一入口在网页端（见 [../../ssot-registry.md](../../ssot-registry.md)），在命令行另写一份就是第二个实现。
 
 **`validate` 在内容有问题时以非零状态退出**（不新占一个退出码，落在未分类失败那一档）。理由是脚本：一个校验入口的意义就是让 `validate && publish` 这样的写法成立，"有问题"必须是一个能被 shell 看见的结论，而不是一段只给人读的文字。
+
+### 回读发布态
+
+**`publish` 的返回值只说"发布成功了"，它证明不了产物里每一处引用都解开了。** 产物里的地址是渲染时补上的：源里、版本里都只有 `asset://` 记号，而 `version pull` 取回的正是源。因此命令行需要一条**读回发布态**的路——否则"这次发布到底交付了什么"只能靠读者的浏览器回答（见 [publication.md](publication.md) 的"回读发布态"）。
+
+| 命令 | 取回什么 |
+|------|---------|
+| `publication get` | 发布记录（含分享地址）与产物清单：产物路径 + 每一项在发布域上的地址；`--path` 给出其中一份时输出它的字节 |
+| `publication pull` | 整份发布物写到本地目录（文本与资产都取） |
+| `publication verify` | 逐条复核：文本产物的字节与发布记录里的摘要一致、产物里没有残留的记号、每一处取资源引用都落在产物清单上、每一条资产引用的发布态地址可达 |
+
+**三条都走访客走的那条地址**（`<发布域>/g/…`），取回来的字节与访客拿到的是同一份。这是它与 `version pull` 的分工：后者回答"我推上去的是什么"，前者回答"发出去的是什么"。
+
+**`verify` 复用的是发布前置校验那一份产物复核规则**，不在命令行另写一套引用扫描：两处各写一份的表现是"校验说没问题、复核说有问题"，而用户无法从任何一句话里知道该信哪个。它有问题时以非零状态退出，好让 `publish && publication verify` 成立；**取不回来是另一次失败**（发布域不可达、网络中断），以一条明确的错误结束，不伪装成"产物有问题"。
+
+**它要求能访问发布域**，而不只是 API 地址——这一条写在 [publication.md](publication.md) 的边界里。
 
 ### 危险操作
 
@@ -138,6 +157,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 - **不提供一次走完全流程的命令**（理由见上）。
 - **不内含打包器。** 命令行不解析构建配置、不改写产物里的引用，只把发布根交给构建命令、把产物搬上去（见 [site-model.md](site-model.md)）。
 - **不做字节数的可读格式化**（理由见上）。
+- **回读那一组要求能访问发布域。** `publication get --path` / `pull` / `verify` 取的是访客走的那条地址，因此 CLI 所在的网络要能到发布域，而不只是 API 地址（理由见 [publication.md](publication.md) 的边界）。
 
 ## 可验证性与长程执行
 
@@ -158,6 +178,10 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 发布根不自己拼 | `project base` 的输出与服务端在**内容地址**里用的发布根一致（`cmd/aladdin` 测试 + 端到端测试） |
 | 分享地址是主站那一条 | `publish` 回显的 `published_url` 以主站对外地址开头，与 `project base` 的输出不同（`cmd/aladdin` 测试） |
 | 发布地址匿名可达 | 用命令行子进程跑完建工程 → 存草稿 → 存版本 → 发布，再不携带任何凭证取发布地址（端到端测试） |
+| 回读走发布域那条路 | `publication get --path` 取回的字节与发布域上那条地址给出的逐字相同；`pull` 写出的目录与之逐字相同（`cmd/aladdin` 测试） |
+| 回读的是发布记录 | `publication get` 列出的清单与发布记录一致，地址落在发布域的槽根下（端到端测试 + `internal/galaxy` 测试） |
+| 复核逐条报问题 | 残留记号、字节与摘要不符、资产不可达各自被报出来并以非零状态退出；三者都自洽时退出码为零（`cmd/aladdin` 测试） |
+| 复核不另写一套扫描 | `publication verify` 调用的是发布前置校验那一处产物复核入口（代码审查 + `cmd/aladdin` 测试） |
 
 > **直传的 PUT 不在自动化覆盖内。** 测试装配里的对象存储是内存假实现，凭证指向真实的存储主机——没有真桶可写。"桶真的照做了策略"只能在部署后冒烟里验，这条边界与 [../objectstore/README.md](../objectstore/README.md) 写的是同一处。**不会为了测试给生产代码加一个"换地址"的开关**：那正是 [AGENTS.md](../../../AGENTS.md) 第 7 条禁止的那类开关。
 
@@ -181,6 +205,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 版本与校验 | [cmd/aladdin/command-galaxy-version.go](../../../cmd/aladdin/command-galaxy-version.go) |
 | 资产与上传编排 | [cmd/aladdin/command-galaxy-asset.go](../../../cmd/aladdin/command-galaxy-asset.go) |
 | 发布与撤回 | [cmd/aladdin/command-galaxy-publish.go](../../../cmd/aladdin/command-galaxy-publish.go) |
+| 回读发布态与逐条复核 | [cmd/aladdin/command-galaxy-publication.go](../../../cmd/aladdin/command-galaxy-publication.go) |
 | 文件组的读写与目录上送（唯一入口） | [cmd/aladdin/galaxy-content.go](../../../cmd/aladdin/galaxy-content.go) |
 | 命令行侧直传（唯一实现） | [cmd/aladdin/direct-upload.go](../../../cmd/aladdin/direct-upload.go) |
 | 命令的权限声明与静态检查 | [cmd/aladdin/permission-decl.go](../../../cmd/aladdin/permission-decl.go) |

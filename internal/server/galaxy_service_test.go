@@ -53,15 +53,20 @@ func TestGalaxyInterfaceHasNoOwnerTarget(t *testing.T) {
 //
 // 工程标识不可猜是发布态匿名可读的唯一防线，而任何枚举入口都会把它降级成
 // "打开就能逛"。
+//
+// **发布记录按（工程，槽）读是允许的**（GetPublication）：它读的是调用者自己的
+// 一个槽**当前发出去的那一份**，范围由归属而不是由请求里的筛选项决定，没有任何
+// "一次给多条"的形状——回读发布态是发布者核对产物的手段（见
+// docs/design/galaxy/publication.md 的"回读发布态"）。
 func TestGalaxyInterfaceHasNoEnumerationEntry(t *testing.T) {
 	// 这些子串出现在方法名里就说明多了一个枚举入口。
 	forbidden := []string{
-		"All",         // ListAllProjects 之类
-		"ByName",      // 名称不是查找键
-		"Name",        // GetProjectByName
-		"Search",      // 搜索即枚举
-		"Publication", // 发布记录不出现在接口面上：对外只剩一个地址
-		"Published",   // ListPublishedProjects
+		"All",          // ListAllProjects 之类
+		"ByName",       // 名称不是查找键
+		"Name",         // GetProjectByName
+		"Search",       // 搜索即枚举
+		"Publications", // 复数即"一次给多条"，那是列举
+		"Published",    // ListPublishedProjects
 	}
 
 	methods := galaxyv1.File_aladdin_galaxy_v1_galaxy_proto.Services().Get(0).Methods()
@@ -142,6 +147,7 @@ func TestGalaxyMethodsAreClassified(t *testing.T) {
 		"CommitContentUpload": rbac.PermissionGalaxyProjectWrite,
 		"ValidateDraft":       rbac.PermissionGalaxyProjectRead,
 		"PreviewDraft":        rbac.PermissionGalaxyProjectRead,
+		"GetPublication":      rbac.PermissionGalaxyProjectRead,
 	}
 	for method, want := range cases {
 		rule, err := rbac.Resolve("/" + serviceName + "/" + method)

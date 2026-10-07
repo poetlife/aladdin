@@ -56,6 +56,7 @@
 | 一个工程有哪些内容槽、每个槽的入口路径与地址，以及哪一段路径是保留段 | 内容槽的解析入口（槽的合法取值、入口、保留段共用这一处判断） | [internal/galaxy/content_slot.go](../internal/galaxy/content_slot.go) |
 | 一个工程的发布根（构建时注入与发布态地址共用，**按槽派生**；槽根带结尾斜杠，不带时由交付入口 301 过去） | 发布根的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | 一个已发布槽的**分享地址**（主站包装）与**内容地址**（发布域），以及主站壳解析它时用的那一处判断 | 发布地址的派生入口（两者同一处派生，客户端不拼） | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
+| 一个槽**当前发布**的产物清单，以及每一条在**访客路径**上的地址（回读发布态） | 发布态的读取入口（清单取自发布记录、不重算；地址与主站壳同一处拼接） | [internal/galaxy/publish.go](../internal/galaxy/publish.go) / [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | markdown 到 HTML 的渲染（`docs` 槽） | 文档渲染入口（确定性的唯一实现，发布时使用） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
 | 发布产物交付时的内容安全策略 | CSP 响应头的构造入口 | [internal/galaxy/csp.go](../internal/galaxy/csp.go) |
 | 上传方声明的类型能不能作为头像 | 头像的类型白名单（唯一入口；声明不等于验证，见直传） | [internal/profile/avatar.go](../internal/profile/avatar.go) |

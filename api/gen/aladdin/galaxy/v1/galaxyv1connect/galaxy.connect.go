@@ -101,6 +101,9 @@ const (
 	GalaxyServicePublishProcedure = "/aladdin.galaxy.v1.GalaxyService/Publish"
 	// GalaxyServiceUnpublishProcedure is the fully-qualified name of the GalaxyService's Unpublish RPC.
 	GalaxyServiceUnpublishProcedure = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
+	// GalaxyServiceGetPublicationProcedure is the fully-qualified name of the GalaxyService's
+	// GetPublication RPC.
+	GalaxyServiceGetPublicationProcedure = "/aladdin.galaxy.v1.GalaxyService/GetPublication"
 	// GalaxyServiceResolveSharedPageProcedure is the fully-qualified name of the GalaxyService's
 	// ResolveSharedPage RPC.
 	GalaxyServiceResolveSharedPageProcedure = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
@@ -270,6 +273,20 @@ type GalaxyServiceClient interface {
 	// 撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
 	// 收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
 	Unpublish(context.Context, *connect.Request[v1.UnpublishRequest]) (*connect.Response[v1.UnpublishResponse], error)
+	// 读回**某个槽当前发布**的那一份产物清单：发布记录、路径、以及每一项在**访客
+	// 路径**上的读取地址。
+	//
+	// 它是"发布成功了"这件事的核对入口。发布物里的地址是渲染时补上的（源里、版本
+	// 里都只有 `asset://` 记号），因此只拿着 Publish 的返回值证明不了引用都解开了。
+	// 清单就是发布时落库的那一条记录——**不是重新算一遍**，因此它回答的正是"现在
+	// 发出去的是什么"。
+	//
+	// **未发布不是错误**：那时 publication 与 entries 都为空，与 published_url
+	// 为空是同一条取向。
+	//
+	// 它是**归属内的读**（发布者核对自己的产物），因此要 `galaxy.project.read` 与
+	// 工程归属；发布态本身仍是公开匿名的，那是发布域那条 HTTP 入口的事。
+	GetPublication(context.Context, *connect.Request[v1.GetPublicationRequest]) (*connect.Response[v1.GetPublicationResponse], error)
 	// 把一条**主站分享路径**解析成它在发布域上的内容地址。
 	//
 	// 主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
@@ -449,6 +466,13 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(galaxyServiceMethods.ByName("Unpublish")),
 			connect.WithClientOptions(opts...),
 		),
+		getPublication: connect.NewClient[v1.GetPublicationRequest, v1.GetPublicationResponse](
+			httpClient,
+			baseURL+GalaxyServiceGetPublicationProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("GetPublication")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		resolveSharedPage: connect.NewClient[v1.ResolveSharedPageRequest, v1.ResolveSharedPageResponse](
 			httpClient,
 			baseURL+GalaxyServiceResolveSharedPageProcedure,
@@ -484,6 +508,7 @@ type galaxyServiceClient struct {
 	updateAsset         *connect.Client[v1.UpdateAssetRequest, v1.UpdateAssetResponse]
 	publish             *connect.Client[v1.PublishRequest, v1.PublishResponse]
 	unpublish           *connect.Client[v1.UnpublishRequest, v1.UnpublishResponse]
+	getPublication      *connect.Client[v1.GetPublicationRequest, v1.GetPublicationResponse]
 	resolveSharedPage   *connect.Client[v1.ResolveSharedPageRequest, v1.ResolveSharedPageResponse]
 }
 
@@ -605,6 +630,11 @@ func (c *galaxyServiceClient) Publish(ctx context.Context, req *connect.Request[
 // Unpublish calls aladdin.galaxy.v1.GalaxyService.Unpublish.
 func (c *galaxyServiceClient) Unpublish(ctx context.Context, req *connect.Request[v1.UnpublishRequest]) (*connect.Response[v1.UnpublishResponse], error) {
 	return c.unpublish.CallUnary(ctx, req)
+}
+
+// GetPublication calls aladdin.galaxy.v1.GalaxyService.GetPublication.
+func (c *galaxyServiceClient) GetPublication(ctx context.Context, req *connect.Request[v1.GetPublicationRequest]) (*connect.Response[v1.GetPublicationResponse], error) {
+	return c.getPublication.CallUnary(ctx, req)
 }
 
 // ResolveSharedPage calls aladdin.galaxy.v1.GalaxyService.ResolveSharedPage.
@@ -776,6 +806,20 @@ type GalaxyServiceHandler interface {
 	// 撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
 	// 收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
 	Unpublish(context.Context, *connect.Request[v1.UnpublishRequest]) (*connect.Response[v1.UnpublishResponse], error)
+	// 读回**某个槽当前发布**的那一份产物清单：发布记录、路径、以及每一项在**访客
+	// 路径**上的读取地址。
+	//
+	// 它是"发布成功了"这件事的核对入口。发布物里的地址是渲染时补上的（源里、版本
+	// 里都只有 `asset://` 记号），因此只拿着 Publish 的返回值证明不了引用都解开了。
+	// 清单就是发布时落库的那一条记录——**不是重新算一遍**，因此它回答的正是"现在
+	// 发出去的是什么"。
+	//
+	// **未发布不是错误**：那时 publication 与 entries 都为空，与 published_url
+	// 为空是同一条取向。
+	//
+	// 它是**归属内的读**（发布者核对自己的产物），因此要 `galaxy.project.read` 与
+	// 工程归属；发布态本身仍是公开匿名的，那是发布域那条 HTTP 入口的事。
+	GetPublication(context.Context, *connect.Request[v1.GetPublicationRequest]) (*connect.Response[v1.GetPublicationResponse], error)
 	// 把一条**主站分享路径**解析成它在发布域上的内容地址。
 	//
 	// 主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
@@ -951,6 +995,13 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(galaxyServiceMethods.ByName("Unpublish")),
 		connect.WithHandlerOptions(opts...),
 	)
+	galaxyServiceGetPublicationHandler := connect.NewUnaryHandler(
+		GalaxyServiceGetPublicationProcedure,
+		svc.GetPublication,
+		connect.WithSchema(galaxyServiceMethods.ByName("GetPublication")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	galaxyServiceResolveSharedPageHandler := connect.NewUnaryHandler(
 		GalaxyServiceResolveSharedPageProcedure,
 		svc.ResolveSharedPage,
@@ -1007,6 +1058,8 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 			galaxyServicePublishHandler.ServeHTTP(w, r)
 		case GalaxyServiceUnpublishProcedure:
 			galaxyServiceUnpublishHandler.ServeHTTP(w, r)
+		case GalaxyServiceGetPublicationProcedure:
+			galaxyServiceGetPublicationHandler.ServeHTTP(w, r)
 		case GalaxyServiceResolveSharedPageProcedure:
 			galaxyServiceResolveSharedPageHandler.ServeHTTP(w, r)
 		default:
@@ -1112,6 +1165,10 @@ func (UnimplementedGalaxyServiceHandler) Publish(context.Context, *connect.Reque
 
 func (UnimplementedGalaxyServiceHandler) Unpublish(context.Context, *connect.Request[v1.UnpublishRequest]) (*connect.Response[v1.UnpublishResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.Unpublish is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) GetPublication(context.Context, *connect.Request[v1.GetPublicationRequest]) (*connect.Response[v1.GetPublicationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.GetPublication is not implemented"))
 }
 
 func (UnimplementedGalaxyServiceHandler) ResolveSharedPage(context.Context, *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error) {

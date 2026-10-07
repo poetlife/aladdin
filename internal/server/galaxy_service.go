@@ -512,6 +512,37 @@ func (s *GalaxyService) Unpublish(ctx context.Context, req *connect.Request[gala
 	return connect.NewResponse(&galaxyv1.UnpublishResponse{Project: toProtoProject(view)}), nil
 }
 
+// GetPublication 实现 GalaxyService：读回**某一个槽当前发布**的那一份产物清单。
+//
+// 它是"发布成功了"这件事的核对入口：返回的是发布记录里那条清单（**不重算**），
+// 每一项带访客路径上的地址，调用方因此可以按访客的路径把产物取回来核对。
+//
+// 它是**归属内的读**：发布者核对自己的产物。发布态本身仍是公开匿名的，那条路在
+// 发布域的 HTTP 入口上，不经过本方法（见 docs/design/galaxy/publication.md）。
+//
+// **未发布返回空**，不是错误：那是这个槽的一种正常状态，与 published_url 为空
+// 是同一条取向。
+func (s *GalaxyService) GetPublication(ctx context.Context, req *connect.Request[galaxyv1.GetPublicationRequest]) (*connect.Response[galaxyv1.GetPublicationResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	slot := fromProtoSlot(req.Msg.GetSlot())
+	publication, entries, err := s.galaxy.PublicationEntries(ctx, subject.ID, req.Msg.GetProjectId(), slot)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	if publication.ID == "" {
+		return connect.NewResponse(&galaxyv1.GetPublicationResponse{}), nil
+	}
+	return connect.NewResponse(&galaxyv1.GetPublicationResponse{
+		// 分享地址与 ProjectSlot.published_url 同一处派生：两处各拼一份就是又一个
+		// "发布地址从哪来"。
+		Publication: toProtoPublication(publication, s.galaxy.Origin().ShareURL(req.Msg.GetProjectId(), slot)),
+		Entries:     toProtoEntries(entries, publication.Manifest),
+	}), nil
+}
+
 // ResolveSharedPage 实现 GalaxyService：把一条**主站分享路径**解析成发布域上的
 // 内容地址。
 //
@@ -551,16 +582,10 @@ func (s *GalaxyService) ResolveSharedPage(ctx context.Context, req *connect.Requ
 		return empty, nil
 	}
 	return connect.NewResponse(&galaxyv1.ResolveSharedPageResponse{
-		ContentUrl: joinPublishedPath(s.galaxy.Origin().ContentURL(projectID, slot), entryPath),
+		// 槽根接上条目路径只有一处拼接（PublicOrigin.EntryURL）：读回发布态用的
+		// 也是它，两处各拼一份的表现是"壳指向的地址与回读取到的不是同一条"。
+		ContentUrl: s.galaxy.Origin().EntryURL(projectID, slot, entryPath),
 	}), nil
-}
-
-// joinPublishedPath 把槽根地址接上条目路径。空条目表示槽根本身。
-func joinPublishedPath(root, entryPath string) string {
-	if entryPath == "" {
-		return root
-	}
-	return root + "/" + entryPath
 }
 
 // toProtoCapabilities 把能力边界翻译成接口类型。

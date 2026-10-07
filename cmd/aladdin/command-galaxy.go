@@ -37,6 +37,7 @@ func newGalaxyCommand() *cobra.Command {
 		newGalaxyAssetCommand(),
 		newGalaxyPublishCommand(),
 		newGalaxyUnpublishCommand(),
+		newGalaxyPublicationCommand(),
 	)
 	return cmd
 }
