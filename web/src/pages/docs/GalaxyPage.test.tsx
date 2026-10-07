@@ -49,6 +49,18 @@ describe('创作与发布介绍页', () => {
     expect(text).toContain('公开地址')
   })
 
+  // 替换落在哪些位置**按槽给出**：site 是整份逐字替换，docs 是渲染那一趟，且代码块
+  // 与普通文字里的记号原样保留。这一条以前没写进界面，而照着"补在元素属性里"那句话
+  // 去写 docs 的图片，得到的正是一张裂图（见 docs/debugging/registry.md）。
+  it('讲清记号在两种槽里分别补在哪儿', async () => {
+    const container = await renderPage()
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('逐字替换')
+    expect(text).toContain('raw HTML')
+    expect(text).toContain('原样保留')
+  })
+
   // 内容是一组具名文件，因此命令行上的输入输出单位是**目录**：写成 --file 那一套
   // 会让人复制到一条不存在的命令。
   it('教的是"目录即整组"，不是一份文件', async () => {
@@ -105,6 +117,18 @@ describe('创作与发布介绍页', () => {
     expect(text).toContain('--yes')
     expect(text).toContain('unpublish')
     expect(text).toContain('不是')
+  })
+
+  // 发布成功不是终点：`publish` 的返回值只说"发布成功了"，而产物里的地址是渲染时
+  // 补上的。这一章因此要给出一条**读回发布态**的命令，否则用户手上的东西（返回值、
+  // version pull 取回的源）证明不了那些引用解开了。
+  it('给出发布之后核对产物的命令', async () => {
+    const container = await renderPage()
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('aladdin galaxy publication verify <工程标识> --slot site')
+    expect(text).toContain('发布记录')
+    expect(text).toContain('publication pull')
   })
 
   // 发布域是部署实例的值，写进仓库就违反"仓库不含实例值"（见 docs/deploy.md）。

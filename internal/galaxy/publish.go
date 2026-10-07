@@ -340,6 +340,38 @@ func (s *Service) CurrentPublication(ctx context.Context, project Project, slot 
 	return publication, true, nil
 }
 
+// PublicationEntries 读回**某一个槽当前发布**的那一份产物清单，并给每一条附上
+// **访客路径**上的读取地址（唯一入口）。
+//
+// 清单取自发布记录本身——不是把版本重算一遍，因此它回答的正是"现在发出去的是什么"。
+// 地址也是访客走的那一条（文本条目是内容地址，资产条目由它重定向到公开区），
+// 因此调用方可以**按访客的路径**把产物取回来核对，而不是只能相信 Publish 的返回值
+// （见 docs/design/galaxy/publication.md 的"回读发布态"）。
+//
+// **未发布不是错误**：那时返回零值记录与空清单——这个槽就是还没发出去，与
+// published_url 为空是同一条取向。
+func (s *Service) PublicationEntries(ctx context.Context, subjectID, projectID string, slot ContentSlot) (Publication, []EntryView, error) {
+	project, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot)
+	if err != nil {
+		return Publication{}, nil, err
+	}
+	publication, published, err := s.CurrentPublication(ctx, project, slot)
+	if err != nil {
+		return Publication{}, nil, err
+	}
+	if !published {
+		return Publication{}, nil, nil
+	}
+	views := make([]EntryView, 0, len(publication.Manifest))
+	for _, entry := range publication.Manifest {
+		views = append(views, EntryView{
+			Entry: entry,
+			URL:   s.origin.EntryURL(projectID, slot, entry.Path),
+		})
+	}
+	return publication, views, nil
+}
+
 // 内容地址与分享地址都由 Service.Origin() 上那一处派生给出（见
 // PublicOrigin.ContentURL / ShareURL）——不在这一层再包一遍，免得出现第二个
 // "发布地址从哪来"。

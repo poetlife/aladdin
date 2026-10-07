@@ -80,8 +80,9 @@ func (s *Service) ValidateDraft(ctx context.Context, subjectID, projectID string
 //
 //  1. 入口文件存在；
 //  2. 每一条资产条目都指向本工程现存的一个资产；
-//  3. 每一处取字节的引用都落在本文件组的**某一条条目**上（文本或资产），且
-//     不接受任何指向文件组之外的资源引用（导航链接不受此限）；
+//  3. **产物**里每一处取字节的引用都落在产物清单的**某一条条目**上（文本或
+//     资产），不接受任何指向文件组之外的资源引用（导航链接不受此限），也不接受
+//     没解开的记号（见 artifact_audit.go）；
 //  4. `docs` 槽下每一处文档间链接都落在文件组里；
 //  5. 单份文本、整组文本与文件数都不超上限。
 //
@@ -157,6 +158,12 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, slot Cont
 		}
 	}
 
+	// `docs` 槽下每一处 `#锚点` 都要落在**目标那一页的标题**上。判据就是刚刚
+	// 渲染出来的那份标题标识（目录用的同一份），因此这一趟不需要第二次解析。
+	if !tolerant && slot == SlotDocs && len(docs) > 0 {
+		problems = append(problems, checkAnchorLinks(docs, siteRoot)...)
+	}
+
 	if !tolerant && len(problems) > 0 {
 		return nil, Report{Problems: sortedProblems(problems)}, nil
 	}
@@ -189,14 +196,20 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, slot Cont
 			problems = append(problems, Problem{Path: entry.Path, Message: err.Error()})
 			continue
 		}
-
-		// 取资源的引用：每一处都必须落在本文件组的一条条目上。
-		problems = append(problems, checkResourceReferences(siteRoot, manifest, artifactPath, substituted)...)
 		artifacts[artifactPath] = substituted
 	}
 
 	if !tolerant && len(problems) > 0 {
 		return nil, Report{Problems: sortedProblems(problems)}, nil
+	}
+
+	// 引用完整性复核在**产物**上做：源回答"准备发布什么"，产物回答"实际发布出去
+	// 什么"（见 artifact_audit.go）。两档的差别只有"跑不跑"——预览不做审查。
+	if !tolerant {
+		problems = append(problems, AuditArtifacts(siteRoot, artifactPaths(artifacts, manifest), artifacts).Problems...)
+		if len(problems) > 0 {
+			return nil, Report{Problems: sortedProblems(problems)}, nil
+		}
 	}
 
 	// 产物的总量与文件数上限。**它是发布与校验的责任，不是渲染的责任**：预览
@@ -218,6 +231,89 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, slot Cont
 		}
 	}
 	return artifacts, Report{Problems: sortedProblems(problems)}, nil
+}
+
+// artifactPaths 返回产物清单里**可以命中的全部路径**：渲染或改写出来的每一份
+// 文本，加上原样进产物的资产条目。
+//
+// 它就是"发布出去的那一份集合"，与 writeArtifacts 落库的那条发布记录同一个形状
+// ——一份是刚算出来的，一份在发布记录里。
+func artifactPaths(artifacts map[string][]byte, manifest Manifest) map[string]bool {
+	paths := make(map[string]bool, len(artifacts)+len(manifest))
+	for artifactPath := range artifacts {
+		paths[artifactPath] = true
+	}
+	for _, entry := range manifest.Assets() {
+		paths[entry.Path] = true
+	}
+	return paths
+}
+
+// checkAnchorLinks 校验文档里每一处 `#锚点` 都落在目标那一页的标题上（唯一入口）。
+//
+// 判据是渲染这一趟自己算出来的标题标识（目录用的同一份），因此这里不需要再走
+// 一遍语法树、也不需要回读渲染出来的 HTML——两处因此不可能漂移。**指不到即拒绝**：
+// 锚点是同组、同一份文档内的引用，不涉及网络，与"引用的文件在不在文件组里"是同
+// 一类判断（见 docs/design/galaxy/site-model.md 的"引用完整性"）。
+//
+// 指向**非 markdown 条目**的后缀不在此列：那里没有标题可对，无从校验。
+func checkAnchorLinks(docs []Doc, siteRoot string) []Problem {
+	anchorsBySource := make(map[string]map[string]bool, len(docs))
+	for _, doc := range docs {
+		anchors := make(map[string]bool, len(doc.Anchors))
+		for _, anchor := range doc.Anchors {
+			anchors[anchor] = true
+		}
+		anchorsBySource[doc.SourcePath] = anchors
+	}
+
+	var problems []Problem
+	for _, doc := range docs {
+		for _, link := range doc.Links {
+			anchor, target, ok := anchorTarget(doc.SourcePath, link.Dest, siteRoot)
+			if !ok {
+				continue
+			}
+			anchors, known := anchorsBySource[target]
+			if !known || anchors[anchor] {
+				continue
+			}
+			problems = append(problems, Problem{
+				Path:    doc.SourcePath,
+				Line:    link.Line,
+				Message: fmt.Sprintf("链接 %q 指向了 %s 里不存在的锚点 %q", link.Dest, target, anchor),
+			})
+		}
+	}
+	return problems
+}
+
+// anchorTarget 判定一处链接是不是"带锚点的站内导航"，是则给出锚点与目标页的源路径。
+//
+// 三种情形不算：没有 `#` 后缀的、锚点为空的（只有一个 `#`）、目标是外部地址的
+// ——后者由那个站点自己回答，不是本文件组能判的事。
+func anchorTarget(from, dest, siteRoot string) (anchor, target string, ok bool) {
+	location, suffix := splitDestination(dest)
+	// 后缀里可能先有查询串再有锚点（`doc.md?q=1#小节`），因此找的是 `#`，不是首字节。
+	hash := strings.IndexByte(suffix, '#')
+	if hash < 0 {
+		return "", "", false
+	}
+	if anchor = suffix[hash+1:]; anchor == "" {
+		return "", "", false
+	}
+	if location == "" {
+		// `#小节`：**本页自己**。
+		return anchor, from, true
+	}
+	if isExternalDestination(location) {
+		return "", "", false
+	}
+	resolved, resolvedOK := resolveEntryPath(siteRoot, from, location)
+	if !resolvedOK {
+		return "", "", false
+	}
+	return anchor, resolved, true
 }
 
 // buildPreviewArtifacts 是预览要的那一档产物：**有问题也给产物**，坏引用原样留着，
@@ -309,56 +405,6 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-// checkResourceReferences 扫一遍一段非 markdown 文本里的取资源引用，并把不落在
-// 本文件组里的那些报成问题。
-//
-// **这是尽力而为的扫描，不是安全边界。** 枚举"取资源"的写法不可能穷尽——属性
-// 会新增、特性会演进，任何一份枚举清单都在它写完的那天开始过期。把边界建在枚举
-// 上，等于承诺一件做不到的事。它存在的目的是**给用户一条可操作的错误**；真正的
-// 边界是交付时附加的内容安全策略响应头（见 csp.go）：扫描漏掉的写法仍然取不到
-// 东西。
-//
-// 两类写法必须分开（这是设计里最容易搞混的一处）：取资源的引用不得指向本文件
-// 组之外；`<a href>` 一类导航链接可以是任意地址。
-func checkResourceReferences(siteRoot string, manifest Manifest, entryPath string, content []byte) []Problem {
-	refs := scanResourceReferences(string(content))
-	if strings.EqualFold(pathExt(entryPath), ".css") {
-		refs = append(refs, scanCSS(string(content), 0)...)
-	}
-	var problems []Problem
-	for _, ref := range refs {
-		if assetID, ok := placeholderID(ref.value); ok {
-			// 记号必须落在一条资产条目上（SubstituteAssetMarkers 已经替它
-			// 报过一次错，这里是为了让引用完整性的判断自成一体）。
-			if _, found := assetEntryByID(manifest, assetID); !found {
-				problems = append(problems, Problem{
-					Path:    entryPath,
-					Line:    lineOf(content, ref.offset),
-					Message: fmt.Sprintf("%s 引用的资产 %s 不在本文件组里", ref.where, PlaceholderScheme+assetID),
-				})
-			}
-			continue
-		}
-		if isExternalDestination(ref.value) {
-			problems = append(problems, Problem{
-				Path:    entryPath,
-				Line:    lineOf(content, ref.offset),
-				Message: fmt.Sprintf("%s 的资源引用 %q 指向了本文件组之外；发布物不得从别处取任何字节", ref.where, ref.value),
-			})
-			continue
-		}
-		resolved, ok := resolveEntryPath(siteRoot, entryPath, ref.value)
-		if !ok || !manifest.HasPath(resolved) {
-			problems = append(problems, Problem{
-				Path:    entryPath,
-				Line:    lineOf(content, ref.offset),
-				Message: fmt.Sprintf("%s 的资源引用 %q 不在本文件组里", ref.where, ref.value),
-			})
-		}
-	}
-	return problems
-}
-
 // sortedProblems 按（路径，行号，消息）排序，让同样的输入得到同样的结论。
 func sortedProblems(problems []Problem) []Problem {
 	sort.SliceStable(problems, func(i, j int) bool {
@@ -371,348 +417,4 @@ func sortedProblems(problems []Problem) []Problem {
 		return problems[i].Message < problems[j].Message
 	})
 	return problems
-}
-
-// lineOf 返回一个偏移量所在的行号（从 1 开始）。
-func lineOf(content []byte, offset int) int {
-	if offset > len(content) {
-		offset = len(content)
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	return 1 + strings.Count(string(content[:offset]), "\n")
-}
-
-// pathExt 返回路径的扩展名（小写）。
-func pathExt(entryPath string) string {
-	if dot := strings.LastIndexByte(entryPath, '.'); dot >= 0 && dot > strings.LastIndexByte(entryPath, '/') {
-		return strings.ToLower(entryPath[dot:])
-	}
-	return ""
-}
-
-// resourceReference 是正文里一处"取资源"的位置。
-type resourceReference struct {
-	offset int
-	// where 是位置描述（如 "img 的 src"），出现在给用户的错误里。
-	where string
-	value string
-}
-
-// scanResourceReferences 找出正文里所有取资源的位置。
-//
-// **这是尽力而为的扫描，不是安全边界**（理由见 checkResourceReferences）。
-func scanResourceReferences(content string) []resourceReference {
-	var refs []resourceReference
-	for i := 0; i < len(content); {
-		lt := strings.IndexByte(content[i:], '<')
-		if lt < 0 {
-			break
-		}
-		start := i + lt
-		switch {
-		case strings.HasPrefix(content[start:], "<!--"):
-			// 注释里的东西不会被浏览器取用。
-			end := strings.Index(content[start+4:], "-->")
-			if end < 0 {
-				return refs
-			}
-			i = start + 4 + end + 3
-			continue
-		case strings.HasPrefix(content[start:], "<!"), strings.HasPrefix(content[start:], "<?"):
-			end := strings.IndexByte(content[start:], '>')
-			if end < 0 {
-				return refs
-			}
-			i = start + end + 1
-			continue
-		}
-		tagEnd := tagEnd(content, start)
-		if tagEnd < 0 {
-			return refs
-		}
-		nameEnd := start + 1
-		closing := false
-		if nameEnd < len(content) && content[nameEnd] == '/' {
-			closing = true
-			nameEnd++
-		}
-		nameStop := nameEnd
-		for nameStop < len(content) && isTagNameByte(content[nameStop]) {
-			nameStop++
-		}
-		tag := strings.ToLower(content[nameEnd:nameStop])
-		if closing {
-			i = tagEnd + 1
-			continue
-		}
-		// 开始标签本身的属性是资源位置；而**体**要分开处理：
-		//
-		//   - 脚本体里可能出现任何文本，包括长得像标签的字符串，因此整段跳过；
-		//     但 `<script src>` 是取资源的位置，所以属性照常解析。
-		//   - 样式体是 CSS，由专门的扫描负责；跳过它，免得把 CSS 里的 `<`
-		//     当成一个标签的开头。
-		refs = append(refs, attributeReferences(content, tag, nameStop, tagEnd)...)
-		switch tag {
-		case "script":
-			if body := intsIndex(content, tagEnd+1, "</script"); body >= 0 {
-				i = body + len("</script>")
-				continue
-			}
-		case "style":
-			if body := intsIndex(content, tagEnd+1, "</style"); body >= 0 {
-				refs = append(refs, scanCSS(content[tagEnd+1:body], tagEnd+1)...)
-				i = body + len("</style>")
-				continue
-			}
-		}
-		i = tagEnd + 1
-	}
-	return refs
-}
-
-// attributeReferences 返回一个开始标签内部的资源引用。
-func attributeReferences(content, tag string, attrsFrom, tagEnd int) []resourceReference {
-	refs := make([]resourceReference, 0, 2)
-	for _, attr := range parseAttributes(content[attrsFrom:tagEnd], attrsFrom) {
-		name := strings.ToLower(attr.name)
-		switch {
-		case name == "style":
-			refs = append(refs, scanCSS(attr.value, attr.valueOffset)...)
-		case name == "srcset":
-			if tag != "img" && tag != "source" {
-				continue
-			}
-			for _, candidate := range splitSrcset(attr.value) {
-				if candidate == "" {
-					continue
-				}
-				// srcset 的候选是 `地址 描述符`，只取地址那一截。
-				address := candidate
-				if space := strings.IndexAny(candidate, " \t\n"); space >= 0 {
-					address = candidate[:space]
-				}
-				refs = append(refs, resourceReference{
-					offset: attr.valueOffset,
-					where:  tag + " 的 srcset",
-					value:  address,
-				})
-			}
-		case isResourceAttribute(tag, name):
-			if strings.TrimSpace(attr.value) == "" {
-				// 空取值不取任何资源（浏览器把它当成"没有这个属性"或解析成
-				// 页面自身，那一次请求被内容安全策略挡在 img-src 之外）。
-				continue
-			}
-			refs = append(refs, resourceReference{
-				offset: attr.valueOffset,
-				where:  tag + " 的 " + name,
-				value:  strings.TrimSpace(attr.value),
-			})
-		}
-	}
-	return refs
-}
-
-// isResourceAttribute 判定一个属性是不是"取资源"的位置。
-//
-// 与导航链接的分界就在这张表上：`href` 只有落在 <link> 上才是取资源，落在
-// <a>、<area> 上是用户写的导航链接。
-func isResourceAttribute(tag, attr string) bool {
-	switch attr {
-	case "src", "poster", "background":
-		return true
-	case "data":
-		return tag == "object"
-	case "href":
-		return tag == "link"
-	default:
-		return false
-	}
-}
-
-// splitSrcset 把 srcset 拆成候选。
-//
-// 按逗号拆是够用的近似：真实的 srcset 里逗号只能出现在地址（data: URL 里会
-// 有），而 data: 形式的引用本来就在禁止之列——它会被当成一处外部引用报出来。
-func splitSrcset(value string) []string {
-	parts := strings.Split(value, ",")
-	for i := range parts {
-		parts[i] = strings.TrimSpace(parts[i])
-	}
-	return parts
-}
-
-// htmlAttr 是一个已解析的属性，valueOffset 用于把问题定位回正文。
-type htmlAttr struct {
-	name        string
-	value       string
-	valueOffset int
-}
-
-// parseAttributes 解析一段标签内部的属性文本。
-//
-// 它不做完整的 HTML 解析：不处理实体、不校验属性名。它要回答的问题只有一个
-// ——"这段文本里有没有取资源的属性，取值是什么、在哪"。
-func parseAttributes(text string, base int) []htmlAttr {
-	var attrs []htmlAttr
-	i := 0
-	for i < len(text) {
-		for i < len(text) && isSpaceByte(text[i]) {
-			i++
-		}
-		if i >= len(text) {
-			break
-		}
-		nameStart := i
-		for i < len(text) && !isSpaceByte(text[i]) && text[i] != '=' && text[i] != '/' {
-			i++
-		}
-		name := text[nameStart:i]
-		for i < len(text) && isSpaceByte(text[i]) {
-			i++
-		}
-		if i >= len(text) || text[i] != '=' {
-			if name != "" {
-				attrs = append(attrs, htmlAttr{name: name})
-				continue
-			}
-			// 走到这里说明这个字节既不构成属性名、也不是 `=`——自闭合标签末尾
-			// 那个 `/` 就是这种。**必须推进**：名字为空时上面那个 `continue`
-			// 不消耗任何字节，一个 `<meta ... />` 就足以让属性解析原地打转，
-			// 进而让校验永远转不完（服务端一个核被打满）。
-			i++
-			continue
-		}
-		i++ // '='
-		for i < len(text) && isSpaceByte(text[i]) {
-			i++
-		}
-		if i >= len(text) {
-			break
-		}
-		var value string
-		var valueOffset int
-		if text[i] == '"' || text[i] == '\'' {
-			quote := text[i]
-			i++
-			valueOffset = base + i
-			valueStart := i
-			for i < len(text) && text[i] != quote {
-				i++
-			}
-			value = text[valueStart:i]
-			if i < len(text) {
-				i++
-			}
-		} else {
-			valueOffset = base + i
-			valueStart := i
-			for i < len(text) && !isSpaceByte(text[i]) {
-				i++
-			}
-			value = text[valueStart:i]
-		}
-		attrs = append(attrs, htmlAttr{name: name, value: value, valueOffset: valueOffset})
-	}
-	return attrs
-}
-
-// scanCSS 找出一段 CSS 里所有取资源的位置：url(...) 与 @import 后面的字符串。
-//
-// 覆盖内联样式属性与 <style> 块两处：两者的写法是同一种语言，因此用同一段
-// 代码扫，不各写一份。
-func scanCSS(css string, base int) []resourceReference {
-	var refs []resourceReference
-	lower := strings.ToLower(css)
-	for i := 0; i < len(css); {
-		switch {
-		case strings.HasPrefix(lower[i:], "url("):
-			open := i + len("url(")
-			close := strings.IndexByte(css[open:], ')')
-			if close < 0 {
-				return refs
-			}
-			raw := css[open : open+close]
-			refs = appendRef(refs, raw, base+open, "样式里的 url()")
-			i = open + close + 1
-		case strings.HasPrefix(lower[i:], "@import"):
-			j := i + len("@import")
-			for j < len(css) && isSpaceByte(css[j]) {
-				j++
-			}
-			if j < len(css) && (css[j] == '"' || css[j] == '\'') {
-				quote := css[j]
-				valueStart := j + 1
-				close := strings.IndexByte(css[valueStart:], quote)
-				if close < 0 {
-					return refs
-				}
-				refs = appendRef(refs, css[valueStart:valueStart+close], base+valueStart, "@import")
-				i = valueStart + close + 1
-				continue
-			}
-			// @import url(...) 会落在上面那个分支里。
-			i = j
-		default:
-			i++
-		}
-	}
-	return refs
-}
-
-func appendRef(refs []resourceReference, raw string, offset int, where string) []resourceReference {
-	value := strings.TrimSpace(raw)
-	value = strings.Trim(value, `"'`)
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return refs
-	}
-	return append(refs, resourceReference{offset: offset, where: where, value: value})
-}
-
-// tagEnd 返回一个标签结束的 '>' 位置，跳过引号内的 '>'。
-func tagEnd(content string, start int) int {
-	quote := byte(0)
-	for i := start + 1; i < len(content); i++ {
-		b := content[i]
-		if quote != 0 {
-			if b == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch b {
-		case '"', '\'':
-			quote = b
-		case '>':
-			return i
-		}
-	}
-	return -1
-}
-
-// intsIndex 是大小写不敏感的 strings.Index。
-func intsIndex(haystack string, from int, needle string) int {
-	idx := strings.Index(strings.ToLower(haystack[from:]), strings.ToLower(needle))
-	if idx < 0 {
-		return -1
-	}
-	return from + idx
-}
-
-func isTagNameByte(b byte) bool {
-	switch {
-	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z', b >= '0' && b <= '9':
-		return true
-	case b == '-' || b == ':' || b == '_':
-		return true
-	default:
-		return false
-	}
-}
-
-func isSpaceByte(b byte) bool {
-	return b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == '\f'
 }

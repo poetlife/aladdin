@@ -363,3 +363,52 @@ func TestPublicationManifestHoldsNoBytes(t *testing.T) {
 		}
 	}
 }
+
+// 回读发布态：清单取自**发布记录**（不是把版本重算一遍），地址是**访客走的那条**
+// ——发布域上的槽根接条目路径。
+func TestPublicationEntriesReadBackTheRelease(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "站点")
+	asset := f.uploadAsset(t, project.ID, "image/png", "a.png", []byte("png"))
+	f.pushDraft(t, project.ID, []Entry{
+		f.textEntry(t, project.ID, "index.html", `<img src="asset://`+asset.ID+`">`),
+		{Path: AssetMarkerPath(asset.ID), Kind: EntryKindAsset, AssetID: asset.ID},
+	})
+	version := f.saveVersion(t, project.ID)
+	publication := f.publish(t, project.ID, version.ID)
+
+	got, entries, err := f.service.PublicationEntries(context.Background(), testOwner, project.ID, SlotSite)
+	if err != nil {
+		t.Fatalf("回读发布态失败: %v", err)
+	}
+	if got.ID != publication.ID || got.VersionID != version.ID {
+		t.Errorf("回读的发布记录 = %s/%s，期望 %s/%s", got.ID, got.VersionID, publication.ID, version.ID)
+	}
+	urls := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		urls[entry.Entry.Path] = entry.URL
+	}
+	// 文本条目与资产条目**同形**：访客请求的就是这条地址（后者由它重定向到公开区）。
+	for path, want := range map[string]string{
+		"index.html":              testPageOrigin + "/g/" + project.ID + "/index.html",
+		AssetMarkerPath(asset.ID): testPageOrigin + "/g/" + project.ID + "/" + AssetMarkerPath(asset.ID),
+	} {
+		if urls[path] != want {
+			t.Errorf("%s 的地址 = %q，期望 %q", path, urls[path], want)
+		}
+	}
+}
+
+// 未发布不是错误：回读给出零值记录与空清单，与 published_url 为空是同一条取向。
+func TestPublicationEntriesOnUnpublishedSlot(t *testing.T) {
+	f := newFixture(t)
+	project := f.staticSite(t, map[string]string{"index.html": "<p>你好</p>"})
+
+	publication, entries, err := f.service.PublicationEntries(context.Background(), testOwner, project.ID, SlotSite)
+	if err != nil {
+		t.Fatalf("未发布时回读出错: %v", err)
+	}
+	if publication.ID != "" || len(entries) != 0 {
+		t.Errorf("未发布却回读到了 %+v / %+v", publication, entries)
+	}
+}

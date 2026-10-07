@@ -183,6 +183,22 @@ func (o PublicOrigin) ContentURL(projectID string, slot ContentSlot) string {
 	return o.pageBase() + strings.TrimSuffix(slotRootPath(projectID, slot), "/")
 }
 
+// EntryURL 返回一条发布态条目在**访客路径**上的地址（唯一入口）。
+//
+// 它是"槽根接上条目路径"这一处拼接：文本条目与资产条目同形——访客请求的就是这条
+// 地址（后者由它重定向到公开区，见 docs/design/galaxy/publication.md 的"发布记录
+// 与对外地址"）。主站壳解析分享地址时用的也是这一处，因此"iframe 指向哪一条"与
+// "读回发布态取哪一条"不可能漂移。
+//
+// entryPath 为空表示槽根本身。
+func (o PublicOrigin) EntryURL(projectID string, slot ContentSlot, entryPath string) string {
+	root := o.ContentURL(projectID, slot)
+	if entryPath == "" || root == "" {
+		return root
+	}
+	return root + "/" + entryPath
+}
+
 // ShareURL 返回**某一个内容槽**对外分享的地址（主站包装）。
 //
 // 它落在主站上，路径与内容地址同形：打开它得到的是主站的壳，壳再把跨源沙箱
