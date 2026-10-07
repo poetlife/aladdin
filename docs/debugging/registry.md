@@ -14,6 +14,7 @@
 | 命令行经反向代理调用：成功正常、**所有错误**变成一个空的 `Unknown` | 反代吞掉了空正文响应的 gRPC trailers（nginx 1.24 对 connect-go 的错误响应形状处理不了）；命令行因此走 Connect 而非原生 gRPC | [2026-09-29-grpc-trailers-dropped-by-nginx.md](records/2026-09-29-grpc-trailers-dropped-by-nginx.md) |
 | 流式方法（含 grpc 反射）一律返回 `Internal … does not implement http.Flusher`，同一服务的 unary 方法却正常 | 中间件包装了 `ResponseWriter` 而没实现 `Flusher`；connect-go 取 Flusher 走**直接类型断言**，`Unwrap` 帮不上忙 | [2026-09-29-streaming-internal-flusher.md](records/2026-09-29-streaming-internal-flusher.md) |
 | 遥测管理页「追踪 ID」列成片为空，而服务端响应头里明明有 | 前端取 trace_id 的入口（`traceIdOf`）长在错误模块里，只吃 `ConnectError.metadata`；**成功的响应头从来没被读**。按调用捕获即可（`captureTrace`） | [2026-10-07-telemetry-trace-id-empty.md](records/2026-10-07-telemetry-trace-id-empty.md) |
+| 工作台里在预览中点过一下，之后点外壳上任何按钮预览都整个重载 | 焦点落进本页自己的 iframe 再回到外壳，父窗口同样收到一对 `blur`/`focus`，被当成了"回到前台"；重取预览地址即新票，iframe 因此重新导航。那条兜底整条去掉了：连接的死活改由客户端**按心跳判活**（重连即 `RESYNC`），不再拿"用户有没有看向这一页"去猜"连接还活着没有" | [2026-10-07-preview-reloads-on-page-internal-focus.md](records/2026-10-07-preview-reloads-on-page-internal-focus.md) |
 
 ---
 

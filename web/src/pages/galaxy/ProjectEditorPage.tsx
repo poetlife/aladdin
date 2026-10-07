@@ -26,7 +26,6 @@ import { AssetLibrary } from './AssetLibrary'
 import { LifecycleStrip } from './LifecycleStrip'
 import { formatTime } from './format-time'
 import { SandboxFrame } from './SandboxFrame'
-import { useReloadWhenVisible } from './reload-when-visible'
 import { SourceView } from './SourceView'
 import { VALIDATION_PENDING, type ValidationState } from './validation-state'
 import { VersionList } from './VersionList'
@@ -72,10 +71,11 @@ interface failure {
  * 校验**自动产生**：打开页面就调一次服务端的 ValidateDraft；**这一页订阅了它正在
  * 看的那个工程的主题**（见 docs/design/events/README.md），别处（命令行、另一个
  * 标签页）改完就会推一条事件过来，随即重拉草稿、版本与预览并再问一次校验——状态条
- * 不会停在别的入口改动之前的结论上。页面在后台时由"重新可见或窗口重新获得焦点"兜底
- * 重拉一次（浏览器会冻结后台标签页，那条流可能已被对端关掉）。前端不复写引用解析
- * ——"这份草稿能不能发布"只有服务端一个实现入口，两端各写一份的表现是"提示说没
- * 问题、发布说不行"。
+ * 不会停在别的入口改动之前的结论上。**页面在后台不另外照顾**：隐藏期间不退订，事件
+ * 照常交付；连接真的死了（冻结标签页只是其中一种成因）由通道按心跳判活、重连，而
+ * 重连就会带来重拉（见 docs/design/events/README.md 的"页面隐藏时"）。前端不复写
+ * 引用解析——"这份草稿能不能发布"只有服务端一个实现入口，两端各写一份的表现是
+ * "提示说没问题、发布说不行"。
  */
 export function ProjectEditorPage(): React.ReactNode {
   const { projectId } = useParams<{ projectId: string }>()
@@ -336,11 +336,13 @@ export function ProjectEditorPage(): React.ReactNode {
   }, [load])
 
   /**
-   * 回到这一页：重拉草稿、版本与工程，并重新校验、重新渲染预览。
+   * 这一页正在看的草稿变了：重拉草稿、版本与工程，并重新校验、重新渲染预览。
+   *
+   * 它是订阅（`useWatch`）的落点，也是「刷新」之外唯一的重读入口——命令行 push
+   * 之后，状态条不能继续显示上一次的「可以发布」。
    *
    * 不走整页 `load`——那会把加载骨架拉起来，也会把正在看的那一页重置回入口。
-   * 命令行 push 之后，状态条不能继续显示上一次的「可以发布」。拉取失败时把结论
-   * 标成未完成，而不是留着过期的「可以发布」。
+   * 拉取失败时把结论标成未完成，而不是留着过期的「可以发布」。
    */
   const refreshOpenDraft = useCallback(async (): Promise<void> => {
     if (projectId === undefined) {
@@ -445,23 +447,20 @@ export function ProjectEditorPage(): React.ReactNode {
     readEntryText,
   ])
 
-  // 两条路径都会重拉，分工是**主路径与兜底**：
+  // **订阅是唯一一条"回到最新"的路径**，没有"回到前台再读一次"那条兜底：隐藏期间
+  // 不退订，事件照常交付；连接真的死了（浏览器冻结标签页只是其中一种成因）由通道
+  // 按心跳判活、重连，而重连本身就会带来重拉（见 docs/design/events/README.md 的
+  // "页面隐藏时"）。
   //
-  //   - 订阅（下面这行）是主路径：命令行 `push` 之后事件会推过来，页面不用等
-  //     任何人做任何事；
-  //   - 重新可见/重新获得焦点是兜底：浏览器会冻结后台标签页，那条流可能已经被
-  //     对端关掉，而这一页回到前台时不该再等下一次事件（见
-  //     docs/design/events/README.md）。
+  // 兜底看着像多一层保险，其实是拿"用户有没有又看向这一页"去猜"连接还活着没有"
+  // ——两者相关性很弱，页内换一次焦点就会误触发一次全页重读，表现是"在预览里点过
+  // 一下之后，点外壳上任何一个按钮预览都整个重载"。
   //
   // 主题集合就地写出来即可：`useWatch` 按**内容**而不是数组身份判断集合有没有变，
   // 因此每次渲染新建一个数组不会让它重开一条流。加载完成之前集合为空——那时还
   // 没有可订的工程。事件不带"变了什么"，到达即重拉这一页的整组读取（它本来就
   // 是廉价的）。
   useWatch(project === null || projectId === undefined ? [] : [projectTopic(projectId)], () => {
-    void refreshOpenDraft()
-  })
-
-  useReloadWhenVisible(project !== null && !loading, () => {
     void refreshOpenDraft()
   })
 

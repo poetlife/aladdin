@@ -588,7 +588,7 @@ describe('校验结论自动产生', () => {
   })
 })
 
-describe('回到前台时重读草稿', () => {
+describe('没有"回到前台再读一次"这条兜底', () => {
   function setVisibility(state: DocumentVisibilityState): void {
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -596,61 +596,46 @@ describe('回到前台时重读草稿', () => {
     })
   }
 
-  it('重新可见时重拉草稿并重新校验；焦点与可见性接连到来只问一次', async () => {
+  // 这一条钉住的是一份真实报障：**在预览里点过一下之后，点外壳上任何一个按钮，
+  // 预览都会整个重载。** 原因是那条兜底拿"用户是不是又看向这一页"去猜"连接还活着
+  // 没有"，于是页内换一次焦点就被当成了回到前台。它现在整条去掉了——判连接的死活
+  // 去看连接（通道按心跳判活，见 use-watch.ts），这一页重读只由订阅与用户自己的
+  // 动作触发。
+  it('页内换焦点、切走再切回来，都不产生任何调用', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
     const container = await renderEditor()
-    expect(container.textContent).toContain('可以发布')
+    await settle()
 
-    vi.mocked(galaxyApi.getDraft).mockResolvedValue(
-      create(GetDraftResponseSchema, {
-        draft: create(DraftSchema, {
-          entries: [
-            create(FileEntrySchema, {
-              path: 'index.html',
-              source: { case: 'digest', value: 'cc' },
-              url: 'https://cos.example/signed/cc',
-            }),
-          ],
-        }),
-      }),
-    )
-    vi.mocked(galaxyApi.validateDraft).mockResolvedValue(
-      create(ValidateDraftResponseSchema, {
-        problems: [create(ValidationProblemSchema, { message: '缺了样式', path: 'index.html' })],
-      }),
-    )
-    vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
-      create(PreviewDraftResponseSchema, { url: previewURL }),
-    )
+    const drafts = vi.mocked(galaxyApi.getDraft).mock.calls.length
+    const validations = vi.mocked(galaxyApi.validateDraft).mock.calls.length
+    const previews = vi.mocked(galaxyApi.previewDraft).mock.calls.length
 
-    const draftCalls = vi.mocked(galaxyApi.getDraft).mock.calls.length
-    const validateCalls = vi.mocked(galaxyApi.validateDraft).mock.calls.length
+    // 焦点落进预览那一帧（点内容里的东西），再回到外壳上的某个控件（点按钮）。
+    setVisibility('visible')
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'))
+      window.dispatchEvent(new Event('focus'))
+    })
+
+    // 切到别的标签页再切回来。
+    setVisibility('hidden')
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
     setVisibility('visible')
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'))
       window.dispatchEvent(new Event('focus'))
     })
 
-    expect(vi.mocked(galaxyApi.getDraft).mock.calls.length).toBe(draftCalls + 1)
-    expect(vi.mocked(galaxyApi.validateDraft).mock.calls.length).toBe(validateCalls + 1)
-    expect(vi.mocked(galaxyApi.previewDraft).mock.calls.length).toBeGreaterThanOrEqual(2)
-    expect(container.textContent).toContain('1 处问题')
-    expect(container.textContent).not.toContain('可以发布')
+    expect(vi.mocked(galaxyApi.getDraft).mock.calls.length, '一次焦点/可见性变化触发了重读').toBe(
+      drafts,
+    )
+    expect(vi.mocked(galaxyApi.validateDraft).mock.calls.length).toBe(validations)
+    expect(vi.mocked(galaxyApi.previewDraft).mock.calls.length, '预览被重取了一次地址').toBe(
+      previews,
+    )
     expect(container.querySelector('iframe')?.getAttribute('src')).toBe(previewURL)
-  })
-
-  it('页面隐藏时不重拉，避免把过期结论再问一遍', async () => {
-    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
-    await renderEditor()
-    const validateCalls = vi.mocked(galaxyApi.validateDraft).mock.calls.length
-
-    setVisibility('hidden')
-    await act(async () => {
-      document.dispatchEvent(new Event('visibilitychange'))
-      window.dispatchEvent(new Event('focus'))
-    })
-
-    expect(vi.mocked(galaxyApi.validateDraft).mock.calls.length).toBe(validateCalls)
   })
 })
 
@@ -725,17 +710,20 @@ describe('草稿有问题时的发布', () => {
   it('重拉失败时不再停留在上一次的可以发布', async () => {
     vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
     vi.mocked(galaxyApi.validateDraft).mockResolvedValue(create(ValidateDraftResponseSchema, {}))
+    // 唯一能触发重读的是别处的改动（订阅事件）。
+    const streams: FakeTopicStream[] = []
+    vi.mocked(eventsApi.watchTopics).mockImplementation((_topics, signal) => {
+      const fake = fakeTopicStream(signal)
+      streams.push(fake)
+      return fake.stream
+    })
     const container = await renderEditor()
+    await settle()
     expect(container.textContent).toContain('可以发布')
 
     vi.mocked(galaxyApi.getDraft).mockRejectedValue(new Error('网络断了'))
-    Object.defineProperty(document, 'visibilityState', {
-      configurable: true,
-      get: () => 'visible',
-    })
-    await act(async () => {
-      document.dispatchEvent(new Event('visibilitychange'))
-    })
+    streams[0]?.publish(projectTopic('p1'))
+    await settle()
 
     expect(container.textContent).toContain('校验未完成')
     expect(container.textContent).not.toContain('可以发布')
