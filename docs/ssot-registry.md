@@ -91,7 +91,8 @@
 | 日志 logger 构建 | `observability.NewLogger` | [internal/observability/logger.go](../internal/observability/logger.go) |
 | trace_id / span_id 的生成与继承 | OTel 传播器，经 `observability.StartServerSpan` / `StartClientSpan` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
 | 日志与链路的关联（`trace_id` / `span_id` 字段） | `observability.SpanLogger` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
-| 前端链路标识的生成与校验 | `newTraceparent` / `parseTraceparent` | [web/src/api/trace-context.ts](../web/src/api/trace-context.ts) |
+| 前端链路标识的生成、校验与从响应头取值 | `newTraceparent` / `parseTraceparent` / `traceIdFromHeaders` | [web/src/api/trace-context.ts](../web/src/api/trace-context.ts) |
+| 一次前端调用取回服务端的 trace_id，以及一条客户端事件该带哪一次的（成功与失败的取值规则） | `captureTrace` / `traceIdForAction` | [web/src/api/call-trace.ts](../web/src/api/call-trace.ts) |
 | 界面主题偏好的读取、落盘与「跟随系统」的折算 | `readThemePreference` / `writeThemePreference` / `resolveTheme` | [web/src/theme/theme-preference.ts](../web/src/theme/theme-preference.ts) |
 | 遥测实现（TracerProvider / MeterProvider）的构建 | `observability.NewProvider` | [internal/observability/provider.go](../internal/observability/provider.go) |
 | 数据库连接串的归一与脱敏摘要 | `database.NormalizeDSN` / `database.Describe` | [internal/database/dialect.go](../internal/database/dialect.go) |

@@ -18,6 +18,7 @@ import { Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import * as galaxyApi from '../../api/galaxy'
+import { captureTrace, traceIdForAction, type TraceCapture } from '../../api/call-trace'
 import { messageOf, traceIdOf } from '../../api/errors'
 import { PermissionGate } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
@@ -77,17 +78,20 @@ export function ProjectListPage(): React.ReactNode {
   const load = useCallback(async (trackOpen = false): Promise<void> => {
     setLoading(true)
     setFailure(null)
+    // 捕获这次调用的链路标识。**每次 load 一份**：刷新那次不产生事件，因此它的
+    // 捕获自然没人读，不会与"打开"那一次混起来（见 ../../api/call-trace）。
+    const trace = captureTrace()
     try {
-      const response = await galaxyApi.listProjects()
+      const response = await galaxyApi.listProjects(trace)
       setProjects(response.projects)
       if (trackOpen) {
-        trackListOpen(Result.OK)
+        trackListOpen(Result.OK, trace)
       }
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
       setProjects([])
       if (trackOpen) {
-        trackListOpen(Result.FAIL, err)
+        trackListOpen(Result.FAIL, trace, err)
       }
     } finally {
       setLoading(false)
@@ -378,13 +382,18 @@ export function ProjectListPage(): React.ReactNode {
   )
 }
 
-/** 上报一次"打开工程列表"。失败时带上 trace_id 以便与服务端留痕关联。 */
-function trackListOpen(result: Result, error?: unknown): void {
+/**
+ * 上报一次"打开工程列表"。
+ *
+ * `trace` 是这次加载那一次 listProjects 的链路标识捕获：成功时事件要与服务端
+ * 留痕关联只能靠它（失败的响应头在错误对象上，取值规则见 ../../api/call-trace）。
+ */
+function trackListOpen(result: Result, trace: TraceCapture, error?: unknown): void {
   track({
     surface: Surface.WEB_PROJECT_LIST,
     action: Action.PROJECT_LIST_OPEN,
     result,
-    traceId: error === undefined ? undefined : (traceIdOf(error) ?? undefined),
+    traceId: traceIdForAction(trace, error),
   })
 }
 

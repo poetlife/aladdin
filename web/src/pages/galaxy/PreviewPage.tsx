@@ -4,6 +4,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import * as galaxyApi from '../../api/galaxy'
+import { captureTrace, traceIdForAction, type TraceCapture } from '../../api/call-trace'
 import { messageOf, traceIdOf } from '../../api/errors'
 import { ContentSlot, type Project } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
@@ -45,11 +46,15 @@ export function PreviewPage(): React.ReactNode {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<failure | null>(null)
 
-  const load = useCallback(async (): Promise<void> => {
+  // trace 由调用方给：这一页的两次加载里只有"进入页面"那一次产生 PREVIEW_OPEN
+  // 事件（刷新不产生），而事件要带的是这次加载第一次调用（getProject）的链路标识。
+  // 放在调用方而不是这里 new 一份，是为了让事件的取值与它描述的那次加载是同一个
+  // 对象（见 ../../api/call-trace）。
+  const load = useCallback(async (trace?: TraceCapture): Promise<void> => {
     if (projectId === undefined) {
       return
     }
-    const projectResponse = await galaxyApi.getProject(projectId)
+    const projectResponse = await galaxyApi.getProject(projectId, trace)
     const loadedProject = projectResponse.project
     if (loadedProject === undefined) {
       throw new Error('工程不存在或已被删除')
@@ -73,12 +78,18 @@ export function PreviewPage(): React.ReactNode {
     let cancelled = false
     setLoading(true)
     setFailure(null)
-    void load()
+    const trace = captureTrace()
+    void load(trace)
       .then(() => {
         if (!cancelled) {
           // 落地成功：这条事件回答"独立预览页被打开并渲染出来了没有"，
           // 而请求留痕只答得了其中每一次 RPC。
-          track({ surface: Surface.WEB_PREVIEW, action: Action.PREVIEW_OPEN, result: Result.OK })
+          track({
+            surface: Surface.WEB_PREVIEW,
+            action: Action.PREVIEW_OPEN,
+            result: Result.OK,
+            traceId: traceIdForAction(trace),
+          })
         }
       })
       .catch((err: unknown) => {
@@ -87,7 +98,7 @@ export function PreviewPage(): React.ReactNode {
             surface: Surface.WEB_PREVIEW,
             action: Action.PREVIEW_OPEN,
             result: Result.FAIL,
-            traceId: traceIdOf(err) ?? undefined,
+            traceId: traceIdForAction(trace, err),
           })
           setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
         }

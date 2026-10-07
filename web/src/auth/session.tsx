@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import type { TraceCapture } from '../api/call-trace'
 import * as identityApi from '../api/identity'
 import { messageOf } from '../api/errors'
 import { onUnauthenticated } from '../api/transport'
@@ -21,10 +22,16 @@ export interface SessionState {
   permissions: PermissionSet
   /** 加载失败时的错误信息。 */
   error: string | null
-  /** 使用机器凭证或访问令牌登录。 */
-  signIn: (token: string) => Promise<void>
-  /** 使用 Google 签发的身份令牌登录。 */
-  signInWithGoogle: (idToken: string) => Promise<void>
+  /**
+   * 使用机器凭证或访问令牌登录。
+   *
+   * `trace` 可选：登录页要上报一条 `auth.login` 事件，而服务端的链路标识只在
+   * 响应头里，因此**要上报的那一方**把捕获点传进来（见 api/call-trace）。不需要
+   * 上报的调用方不传，行为与从前完全一致。
+   */
+  signIn: (token: string, trace?: TraceCapture) => Promise<void>
+  /** 使用 Google 签发的身份令牌登录。`trace` 的含义与 signIn 同。 */
+  signInWithGoogle: (idToken: string, trace?: TraceCapture) => Promise<void>
   /**
    * 采纳一份**已经拿到**的会话凭证。
    *
@@ -189,15 +196,15 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
   }, [load])
 
   const signIn = useCallback(
-    async (token: string): Promise<void> => {
-      await adoptToken((await identityApi.login(token)).accessToken)
+    async (token: string, trace?: TraceCapture): Promise<void> => {
+      await adoptToken((await identityApi.login(token, trace)).accessToken)
     },
     [adoptToken],
   )
 
   const signInWithGoogle = useCallback(
-    async (idToken: string): Promise<void> => {
-      await adoptToken((await identityApi.loginWithGoogle(idToken)).accessToken)
+    async (idToken: string, trace?: TraceCapture): Promise<void> => {
+      await adoptToken((await identityApi.loginWithGoogle(idToken, trace)).accessToken)
     },
     [adoptToken],
   )

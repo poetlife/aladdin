@@ -4,7 +4,8 @@ import { Alert, Button, Card, Divider, Form, Input, Space, Typography, theme } f
 import { KeyRound, Lamp } from 'lucide-react'
 
 import * as identityApi from '../api/identity'
-import { messageOf, traceIdOf } from '../api/errors'
+import { captureTrace, traceIdForAction, type TraceCapture } from '../api/call-trace'
+import { messageOf } from '../api/errors'
 import { GithubMark, GoogleSignInButton, useSession } from '../auth'
 import { Action, Result, Surface } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../telemetry/track'
@@ -65,12 +66,15 @@ export function LoginPage(): React.ReactNode {
   async function handleGoogleCredential(idToken: string): Promise<void> {
     setSubmitting(true)
     setError(null)
+    // 链路标识跟着这一次登录调用走：成功时错误对象不存在，值只能在响应头里
+    // （见 ../api/call-trace）。
+    const trace = captureTrace()
     try {
-      await signInWithGoogle(idToken)
-      trackLogin(Result.OK, 'google')
+      await signInWithGoogle(idToken, trace)
+      trackLogin(Result.OK, 'google', trace)
       void navigate(from, { replace: true })
     } catch (err) {
-      trackLogin(Result.FAIL, 'google', err)
+      trackLogin(Result.FAIL, 'google', trace, err)
       setError(messageOf(err))
     } finally {
       setSubmitting(false)
@@ -80,12 +84,13 @@ export function LoginPage(): React.ReactNode {
   async function handleSubmit(values: LoginFormValues): Promise<void> {
     setSubmitting(true)
     setError(null)
+    const trace = captureTrace()
     try {
-      await signIn(values.token)
-      trackLogin(Result.OK, 'password')
+      await signIn(values.token, trace)
+      trackLogin(Result.OK, 'password', trace)
       void navigate(from, { replace: true })
     } catch (err) {
-      trackLogin(Result.FAIL, 'password', err)
+      trackLogin(Result.FAIL, 'password', trace, err)
       setError(messageOf(err))
     } finally {
       setSubmitting(false)
@@ -177,13 +182,16 @@ export function LoginPage(): React.ReactNode {
  * 登录的 RPC 本身已有服务端请求留痕，但它记不到**渠道**（请求体不进日志，
  * 而渠道在请求体里）。"哪个渠道的失败在涨"正是这里要回答的问题，因此这条事件
  * 与请求留痕不是重复：它补的是请求留痕缺失的那一维。
+ *
+ * `trace` 是这次登录调用的链路标识捕获：**成功与失败都要带**，否则这条事件与
+ * 它对应的那次请求只能靠时间戳对账（见 api/call-trace）。
  */
-function trackLogin(result: Result, channel: string, error?: unknown): void {
+function trackLogin(result: Result, channel: string, trace: TraceCapture, error?: unknown): void {
   track({
     surface: Surface.WEB_AUTH,
     action: Action.AUTH_LOGIN,
     result,
-    traceId: error === undefined ? undefined : (traceIdOf(error) ?? undefined),
+    traceId: traceIdForAction(trace, error),
     attrs: { channel },
   })
 }

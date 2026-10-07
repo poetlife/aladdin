@@ -1,4 +1,5 @@
 import type { ContentSlot } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { traceCallOptions, type TraceCapture } from './call-trace'
 import { galaxyClient } from './transport'
 
 /**
@@ -23,9 +24,15 @@ export async function getCapabilities() {
   return galaxyClient().getCapabilities({})
 }
 
-/** 列出调用者自己的工程。 */
-export async function listProjects() {
-  return galaxyClient().listProjects({})
+/**
+ * 列出调用者自己的工程。
+ *
+ * `trace` 是这次调用的链路标识捕获（见 ./call-trace）：传了它，调用方在返回后
+ * 就能拿到服务端为**这一次**请求盖的 trace_id。只有"要拿它去上报一条客户端事件"
+ * 的调用才需要传——不是为了遥测的调用传它没有意义。
+ */
+export async function listProjects(trace?: TraceCapture) {
+  return galaxyClient().listProjects({}, traceCallOptions(trace))
 }
 
 /**
@@ -47,9 +54,15 @@ export async function addProjectSlot(projectId: string, slot: ContentSlot) {
   return galaxyClient().addProjectSlot({ projectId, slot })
 }
 
-/** 读取一个工程的元数据。不含草稿、版本与产物清单。 */
-export async function getProject(projectId: string) {
-  return galaxyClient().getProject({ projectId })
+/**
+ * 读取一个工程的元数据。不含草稿、版本与产物清单。
+ *
+ * `trace` 的含义与 listProjects 同：给需要上报客户端事件的调用方回填这次请求的
+ * 链路标识。"打开工作台 / 打开独立预览页"这两条事件都取这次调用——它是它们各自
+ * 加载流程里的第一次请求（见 ./call-trace 的 traceIdForAction）。
+ */
+export async function getProject(projectId: string, trace?: TraceCapture) {
+  return galaxyClient().getProject({ projectId }, traceCallOptions(trace))
 }
 
 /** 修改工程的名称与简介。空串表示清空。**内容槽不在其中**（槽只增不删）。 */

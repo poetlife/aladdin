@@ -2,7 +2,7 @@ import { ConnectError, Code } from '@connectrpc/connect'
 
 import { DenialDetailSchema } from '../gen/proto/aladdin/rbac/v1/errors_pb'
 import { DenialReason } from '../gen/proto/aladdin/rbac/v1/errors_pb'
-import { parseTraceID, parseTraceparent, TRACE_ID_HEADER, TRACEPARENT_HEADER } from './trace-context'
+import { traceIdFromHeaders } from './trace-context'
 
 /**
  * 拒绝原因枚举。
@@ -84,24 +84,20 @@ export function messageOf(error: unknown): string {
 }
 
 /**
- * 取回服务端在响应头里回写的链路 ID。
+ * 取回这次**失败**的链路 ID。
  *
- * 优先取 `x-trace-id`：服务端直接给 32 位 trace-id，复制它去搜日志即可，
- * 不必从 `traceparent` 的 `00-` 与 span-id 之间手工剥。
+ * 值来自响应头——失败的响应同样带服务端回写的链路标识，只是它随错误对象一起
+ * 回来，因此这里从 `ConnectError.metadata` 里读。取值的规则（优先 `x-trace-id`、
+ * 回退解析 `traceparent`、形状校验）只有一处实现，见 ./trace-context。
  *
- * 回退到解析 `traceparent` 是为了容忍还没升级的服务端——前后端可以独立部署，
- * 我们这边的改动不该只在后端跟上之后才生效。
+ * **成功的那一半不在这里**：成功时没有错误对象，也没有人读响应头，因此要走调用
+ * 捕获（见 ./call-trace）。
  *
  * 返回 null 表示这次失败没有走到服务端（网络中断、请求被浏览器拦下），
  * 或服务端两个头都没回写。两者都不该编一个 ID 出来。
  */
 export function traceIdOf(error: unknown): string | null {
-  const metadata = ConnectError.from(error).metadata
-  return (
-    parseTraceID(metadata.get(TRACE_ID_HEADER)) ??
-    parseTraceparent(metadata.get(TRACEPARENT_HEADER))?.traceId ??
-    null
-  )
+  return traceIdFromHeaders(ConnectError.from(error).metadata)
 }
 
 /**

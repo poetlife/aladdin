@@ -4,6 +4,7 @@ import { ExternalLink, Eye, FileCode, RefreshCw } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
 import * as galaxyApi from '../../api/galaxy'
+import { captureTrace, traceIdForAction, type TraceCapture } from '../../api/call-trace'
 import { messageOf, traceIdOf } from '../../api/errors'
 import { usePermission } from '../../auth'
 import { PermissionCodes } from '../../gen/permission-codes'
@@ -266,9 +267,14 @@ export function ProjectEditorPage(): React.ReactNode {
     }
     setLoading(true)
     setFailure(null)
+    // 打开工作台这一条事件伴随的不止一次 RPC（工程、能力、草稿、版本、资产、校验、
+    // 预览各一次），而事件只带得了一个 trace_id，因此按"这次动作的**第一次**调用"
+    // 取——它是这次打开的必要条件，且不随"有没有配置资产桶/发布域"改变条数
+    // （见 ../../api/call-trace 的 traceIdForAction）。
+    const trace = captureTrace()
     try {
       const [projectResponse, capabilityResponse] = await Promise.all([
-        galaxyApi.getProject(projectId),
+        galaxyApi.getProject(projectId, trace),
         galaxyApi.getCapabilities(),
       ])
       const loadedProject = projectResponse.project ?? null
@@ -316,9 +322,9 @@ export function ProjectEditorPage(): React.ReactNode {
       if (capabilityResponse.capabilities?.previewEnabled === true) {
         await renderPreview(loadedSlot, defaultPreviewPath(loadedSlot, loadedEntries))
       }
-      trackEditorOpen(Result.OK)
+      trackEditorOpen(Result.OK, trace)
     } catch (err) {
-      trackEditorOpen(Result.FAIL, err)
+      trackEditorOpen(Result.FAIL, trace, err)
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
       setLoading(false)
@@ -904,13 +910,18 @@ function defaultPreviewPath(slot: ContentSlot, entries: readonly FileEntry[]): s
   return entries.find((entry) => entry.source.case === 'digest')?.path ?? ''
 }
 
-/** 上报一次"打开工程编辑页"。 */
-function trackEditorOpen(result: Result, error?: unknown): void {
+/**
+ * 上报一次"打开工程编辑页"。
+ *
+ * `trace` 是这次加载第一次调用（getProject）的链路标识捕获——这一次打开伴随
+ * 多次 RPC，规则见 load 里的注释与 ../../api/call-trace。
+ */
+function trackEditorOpen(result: Result, trace: TraceCapture, error?: unknown): void {
   track({
     surface: Surface.WEB_EDITOR,
     action: Action.EDITOR_OPEN,
     result,
-    traceId: error === undefined ? undefined : (traceIdOf(error) ?? undefined),
+    traceId: traceIdForAction(trace, error),
   })
 }
 

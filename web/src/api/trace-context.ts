@@ -118,6 +118,30 @@ export function parseTraceID(value: string | null | undefined): string | null {
   return trimmed
 }
 
+/**
+ * 从**响应头**里取回服务端给出的链路标识。
+ *
+ * 优先取 `x-trace-id`：服务端直接给 32 位 trace-id，复制它去搜日志即可，
+ * 不必从 `traceparent` 的 `00-` 与 span-id 之间手工剥。
+ *
+ * 回退到解析 `traceparent` 是为了容忍还没升级的服务端——前后端可以独立部署，
+ * 我们这边的改动不该只在后端跟上之后才生效。
+ *
+ * 返回 null 表示这份响应没有可用的链路标识：请求没走到服务端（网络中断、被浏览器
+ * 拦下），或两个头都没回写。调用方据此**不写**这个字段，而不是编一个 ID 出来。
+ *
+ * 它是「响应头 → trace_id」的**唯一实现处**：错误展示（./errors）与调用捕获
+ * （./call-trace）都走这里。两处各写一遍就会在"优先取哪个头、怎么校验"上漂移，
+ * 而漂移的表现是同一份响应在两个地方给出不同的 ID。
+ */
+export function traceIdFromHeaders(headers: Headers): string | null {
+  return (
+    parseTraceID(headers.get(TRACE_ID_HEADER)) ??
+    parseTraceparent(headers.get(TRACEPARENT_HEADER))?.traceId ??
+    null
+  )
+}
+
 /** 取 n 字节的随机十六进制；环境不提供密码学随机数时返回 null。 */
 function randomHex(hexLength: number): string | null {
   const webCrypto = globalThis.crypto

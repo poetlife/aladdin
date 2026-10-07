@@ -13,6 +13,7 @@
 | 命令行报 `read server preface` / `frame header looked like an HTTP/1.1 header` | 对面回的是 HTTP/1.1，说明目标地址上不是 RPC 端点（默认地址是本机 9090，可能被别的服务占着） | [2026-09-29-cli-http1-preface-error.md](records/2026-09-29-cli-http1-preface-error.md) |
 | 命令行经反向代理调用：成功正常、**所有错误**变成一个空的 `Unknown` | 反代吞掉了空正文响应的 gRPC trailers（nginx 1.24 对 connect-go 的错误响应形状处理不了）；命令行因此走 Connect 而非原生 gRPC | [2026-09-29-grpc-trailers-dropped-by-nginx.md](records/2026-09-29-grpc-trailers-dropped-by-nginx.md) |
 | 流式方法（含 grpc 反射）一律返回 `Internal … does not implement http.Flusher`，同一服务的 unary 方法却正常 | 中间件包装了 `ResponseWriter` 而没实现 `Flusher`；connect-go 取 Flusher 走**直接类型断言**，`Unwrap` 帮不上忙 | [2026-09-29-streaming-internal-flusher.md](records/2026-09-29-streaming-internal-flusher.md) |
+| 遥测管理页「追踪 ID」列成片为空，而服务端响应头里明明有 | 前端取 trace_id 的入口（`traceIdOf`）长在错误模块里，只吃 `ConnectError.metadata`；**成功的响应头从来没被读**。按调用捕获即可（`captureTrace`） | [2026-10-07-telemetry-trace-id-empty.md](records/2026-10-07-telemetry-trace-id-empty.md) |
 
 ---
 

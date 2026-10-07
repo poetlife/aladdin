@@ -1,4 +1,5 @@
 import type { AuthMethod } from '../gen/proto/aladdin/identity/v1/identity_pb'
+import { traceCallOptions, type TraceCapture } from './call-trace'
 import { identityClient } from './transport'
 
 /**
@@ -10,11 +11,19 @@ import { identityClient } from './transport'
 
 export type { AuthMethod }
 
-/** 登录并换取访问凭证。这是公开方法，不需要凭证即可调用。 */
-export async function login(token: string) {
-  return identityClient().login({
-    credential: { case: 'token', value: { token } },
-  })
+/**
+ * 登录并换取访问凭证。这是公开方法，不需要凭证即可调用。
+ *
+ * `trace` 是这次调用的链路标识捕获（见 ./call-trace）：登录页要上报一条
+ * `auth.login` 事件，失败与成功都该能指回这一次请求。
+ */
+export async function login(token: string, trace?: TraceCapture) {
+  return identityClient().login(
+    {
+      credential: { case: 'token', value: { token } },
+    },
+    traceCallOptions(trace),
+  )
 }
 
 /** 查询当前凭证对应的主体。用于校验凭证是否仍然有效。 */
@@ -63,11 +72,16 @@ export async function getAuthMethods(): Promise<AuthMethod[]> {
  *
  * 令牌由 Google 在浏览器内签发（见 ../auth/google-identity），这里只是搬运：
  * 它的可信度完全由服务端校验，前端的任何字段都不参与信任决策。
+ *
+ * `trace` 的含义与 login 同：登录页的 `auth.login` 事件要指回这一次请求。
  */
-export async function loginWithGoogle(idToken: string) {
-  return identityClient().login({
-    credential: { case: 'google', value: { idToken } },
-  })
+export async function loginWithGoogle(idToken: string, trace?: TraceCapture) {
+  return identityClient().login(
+    {
+      credential: { case: 'google', value: { idToken } },
+    },
+    traceCallOptions(trace),
+  )
 }
 
 /** 列出当前主体已绑定的全部登录渠道。 */

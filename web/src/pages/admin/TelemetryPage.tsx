@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card, Empty, Segmented, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Empty, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd'
 import type { TableProps } from 'antd'
 import { Activity, RefreshCw } from 'lucide-react'
 
@@ -161,7 +161,14 @@ const eventColumns: NonNullable<TableProps<RecentEvent>['columns']> = [
     },
   },
   {
-    title: '追踪 ID',
+    // 列头带一句解释：这一列会**成片为空**，而空的原因分两种，都不是"数据丢了"
+    // ——没有伴随 RPC 的动作（被前端拦下、确认框被取消、纯前端切换）本来就没有
+    // 可指的链路；请求没发出去时也不该编一个。不写清楚，看的人会以为链路标识没报上来。
+    title: (
+      <Tooltip title="这条动作伴随的那次 RPC 的链路标识。没有发出请求的动作（被拦下、取消、纯前端切换）没有它。">
+        <span>追踪 ID</span>
+      </Tooltip>
+    ),
     dataIndex: 'clientTraceId',
     key: 'clientTraceId',
     render: (clientTraceId: string) =>

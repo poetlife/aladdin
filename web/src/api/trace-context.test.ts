@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { newTraceparent, parseTraceID, parseTraceparent } from './trace-context'
+import { newTraceparent, parseTraceID, parseTraceparent, traceIdFromHeaders } from './trace-context'
 
 describe('newTraceparent', () => {
   afterEach(() => {
@@ -85,5 +85,37 @@ describe('parseTraceID', () => {
     ['带 traceparent 前缀', '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'],
   ])('拒绝「%s」', (_name, value) => {
     expect(parseTraceID(value)).toBeNull()
+  })
+})
+
+// 它是"响应头 → trace_id"的唯一实现处：错误展示与调用捕获都走这里，
+// 因此"优先取哪个头"这条判断只在这里钉一次。
+describe('traceIdFromHeaders', () => {
+  const traceID = '4bf92f3577b34da6a3ce929d0e0e4736'
+  const otherTraceID = 'aaaabbbbccccddddeeeeffff00001111'
+  const traceparent = `00-${traceID}-00f067aa0ba902b7-01`
+
+  it('优先取 x-trace-id，即使 traceparent 带着另一个不同的值', () => {
+    const headers = new Headers({
+      'x-trace-id': traceID,
+      traceparent: `00-${otherTraceID}-00f067aa0ba902b7-01`,
+    })
+    expect(traceIdFromHeaders(headers)).toBe(traceID)
+  })
+
+  it.each([
+    ['缺失', {}],
+    ['非法', { 'x-trace-id': 'not-a-trace-id' }],
+  ])('x-trace-id %s 时回退到 traceparent', (_name, extra) => {
+    expect(traceIdFromHeaders(new Headers({ traceparent, ...extra }))).toBe(traceID)
+  })
+
+  it('两个头都没有时返回 null', () => {
+    expect(traceIdFromHeaders(new Headers())).toBeNull()
+  })
+
+  it('两个头都非法时返回 null', () => {
+    const headers = new Headers({ 'x-trace-id': 'bad', traceparent: 'not-a-traceparent' })
+    expect(traceIdFromHeaders(headers)).toBeNull()
   })
 })

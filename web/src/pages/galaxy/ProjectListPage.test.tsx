@@ -19,7 +19,14 @@ import {
   ProjectSchema,
   UnpublishResponseSchema,
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { Action, Result } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
+import { track } from '../../telemetry/track'
 import { ProjectListPage } from './ProjectListPage'
+
+// 遥测走真实模块的话它会去调还没初始化的传输层（本文件没有初始化它），
+// 于是每次上报都只落一条 console.debug。这里换成替身，好让"报了没有、带了什么"
+// 变成可断言的事实。
+vi.mock('../../telemetry/track', () => ({ track: vi.fn() }))
 
 vi.mock('../../api/identity', () => ({
   AuthSource: { Google: 'google', Github: 'github' },
@@ -236,5 +243,43 @@ describe('列表里撤回发布', () => {
 
     expect(container.textContent).toContain('https://app.example.com/g/p1')
     expect(findButton(container, '撤回发布')).toBeUndefined()
+  })
+})
+
+describe('打开列表的遥测', () => {
+  const traceID = '4bf92f3577b34da6a3ce929d0e0e4736'
+
+  // 服务端的 trace_id 只在响应头里，而成功时没有错误对象可读——值因此只能由
+  // 调用方交给调用的那个捕获点带回来。这条断言守的就是那根线：它一旦断了，
+  // 管理页上那一列会静默地全空，看起来像"服务端没回写"。
+  it('成功打开时带上这次 listProjects 的 trace_id', async () => {
+    vi.mocked(galaxyApi.listProjects).mockImplementation(async (trace) => {
+      trace?.onHeader(new Headers({ 'x-trace-id': traceID }))
+      return create(ListProjectsResponseSchema, { projects: [] })
+    })
+
+    await renderList()
+
+    expect(track).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: Action.PROJECT_LIST_OPEN,
+        result: Result.OK,
+        traceId: traceID,
+      }),
+    )
+  })
+
+  // 请求没走到服务端、或服务端没回写时，这个字段必须是空的：
+  // 编一个查不到的 ID 出来会把排障引向"日志丢了"。
+  it('响应没带链路标识时该字段为空，而不是编一个', async () => {
+    vi.mocked(galaxyApi.listProjects).mockImplementation(async () =>
+      create(ListProjectsResponseSchema, { projects: [] }),
+    )
+
+    await renderList()
+
+    expect(track).toHaveBeenCalledWith(
+      expect.objectContaining({ action: Action.PROJECT_LIST_OPEN, traceId: undefined }),
+    )
   })
 })
