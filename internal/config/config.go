@@ -120,7 +120,23 @@ const (
 	// 某一端调整默认端口后，让这个特性静默失效。
 	DefaultAddress = "127.0.0.1:9090"
 	// DefaultTimeout 是 CLI 单次调用的默认超时。
+	//
+	// 它是**一次普通调用**的量级。耗时由输入规模决定的命令另有自己的内置默认值
+	// （见 DefaultSkillCatalogTimeout），而不是把这个值整体调大——后者会让所有
+	// 挂住的命令都多挂十倍。
 	DefaultTimeout = 30 * time.Second
+	// DefaultSkillCatalogTimeout 是纳管（`skill add`）与同步（`skill sync`）的
+	// **命令级**默认超时。
+	//
+	// 这两个命令的耗时由**输入规模**决定：一次纳管按远端仓库的文件数发
+	// `1 + 文件数` 次出站请求（见 docs/design/skill/onboarding.md 的"超时与失败"）。
+	// 用一次普通调用的量级管它们，现象是按 spec 里的原样命令纳管首批三件、三件里
+	// 有两件在 30 秒处被掐掉——而那不是远端的问题，是默认值选错了量级。
+	//
+	// 取值由这条路径自己的三个上界推出：**文件数上限 ÷ 取字节并发上限 × 单次远端
+	// 请求超时**，即 200/8 × 30 秒，加上解析引用与目录树的几次请求，约十四分钟。
+	// 取一刻钟是把推导值向上取整，而不是刚好卡在它上面。
+	DefaultSkillCatalogTimeout = 15 * time.Minute
 	// DefaultLogLevel 是两端的默认日志级别。
 	DefaultLogLevel = observability.LevelInfo
 	// DefaultSampleRatio 是默认采样比例：全采。

@@ -77,7 +77,7 @@ func runLogin(cmd *cobra.Command, token string) error {
 		return fmt.Errorf("缺少凭证：请通过 --token 或 %s 提供", auth.EnvToken)
 	}
 
-	cfg, err := resolvedConfig()
+	cfg, err := resolvedConfig(0)
 	if err != nil {
 		return err
 	}

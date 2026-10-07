@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -30,6 +31,13 @@ type globalFlags struct {
 }
 
 var flags globalFlags
+
+// effectiveTimeout 是本次调用**真正生效**的超时。
+//
+// 它在配置解析成功时记下。理由与 executedCommand 同类：退出路径（Execute）只看
+// 得到错误，看不到当时用的是哪个超时值，而"超时"这条错误不给数字就等于没说话——
+// 用户不知道要加多少、加完够不够。零值表示配置没解析成功，此时不可能出现超时错误。
+var effectiveTimeout time.Duration
 
 // Execute 运行命令行并返回进程退出码。
 func Execute() int {
@@ -90,7 +98,7 @@ func newRootCommand() *cobra.Command {
 	pf.StringVar(&flags.output, "output", "text", "输出格式：text 或 json")
 	pf.BoolVar(&flags.debug, "debug", false, "输出调试信息（不包含凭证原文）")
 	pf.BoolVar(&flags.yes, "yes", false, "跳过危险操作的二次确认（非交互式环境必须显式指定）")
-	pf.DurationVar(&flags.timeout, "timeout", 0, "单次调用超时")
+	pf.DurationVar(&flags.timeout, "timeout", 0, "单次调用超时（缺省随命令而定：普通命令 30 秒，纳管与同步的耗时随远端文件数增长，另有更长的默认值）")
 
 	// 标志解析失败统一标记为用法错误：退出码约定要求"用法错误（参数不合法）"
 	// 与参数解析失败落到同一个值，配置文件的错误也归入这一类
@@ -117,21 +125,33 @@ func newRootCommand() *cobra.Command {
 //
 // 五层来源的合并与校验都在 config 包内实现一处，这里只把命令行**显式给出**
 // 的值传进去——不在这里再叠一层"没给就用默认"的判断。
-func resolvedConfig() (config.CLIConfig, error) {
-	return config.LoadCLI(config.CLIFlags{
-		ConfigPath: flags.configPath,
-		Address:    flags.address,
-		Timeout:    flags.timeout,
-		Debug:      flags.debug,
+//
+// builtinTimeout 是这条命令在内置默认值那一层要用的超时；零值表示用全局内置
+// 默认。**它不参与分层**：任何一层显式给出 timeout 都覆盖它，因此调用方不需要
+// （也不得）自己判断"用户给没给"。
+func resolvedConfig(builtinTimeout time.Duration) (config.CLIConfig, error) {
+	cfg, err := config.LoadCLI(config.CLIFlags{
+		ConfigPath:     flags.configPath,
+		Address:        flags.address,
+		Timeout:        flags.timeout,
+		BuiltinTimeout: builtinTimeout,
+		Debug:          flags.debug,
 	})
+	if err != nil {
+		return config.CLIConfig{}, err
+	}
+	effectiveTimeout = cfg.Timeout
+	return cfg, nil
 }
 
 // newClient 构造已注入凭证的 gRPC 客户端。
 //
 // 凭证缺失在这里就失败并给出"请先登录"的提示，
 // 而不是等到服务端返回 Unauthenticated 才让用户去猜。
-func newClient() (*client.Client, error) {
-	cfg, err := resolvedConfig()
+//
+// builtinTimeout 见 resolvedConfig。
+func newClient(builtinTimeout time.Duration) (*client.Client, error) {
+	cfg, err := resolvedConfig(builtinTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -264,5 +284,24 @@ func describeError(err error) string {
 	if msg := describeDenial(err); msg != "" {
 		return msg
 	}
+	if connect.CodeOf(err) == connect.CodeDeadlineExceeded {
+		// 裸的 deadline_exceeded 等于没说：看不出这是超时设置的问题，也看不出该动
+		// 哪个参数。**提示要对每条命令都成立**——会撞上超时的不止纳管与同步，因此
+		// 只点名生效的值与那个参数，不假定是哪条命令（见
+		// docs/design/skill/onboarding.md 的"超时与失败"）。
+		return fmt.Sprintf("本次调用超过了 %s 的超时，可用 `--timeout` 加长后重试（如 --timeout 30m）。",
+			effectiveTimeoutValue())
+	}
 	return err.Error()
+}
+
+// effectiveTimeoutValue 给出这次调用生效的超时，用于错误提示。
+//
+// 兜底取内置默认值：配置没解析成功时不可能走到超时这条错误上，但一句本该给数字的
+// 提示里留一个空白，比给一个近似值更糟。
+func effectiveTimeoutValue() time.Duration {
+	if effectiveTimeout <= 0 {
+		return config.DefaultTimeout
+	}
+	return effectiveTimeout
 }

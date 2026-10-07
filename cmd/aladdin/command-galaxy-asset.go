@@ -230,7 +230,7 @@ func newGalaxyAssetUploadCommand() *cobra.Command {
 			// 中间夹着一次不计入 RPC 超时的字节传输。共用一个 30 秒的 deadline
 			// 会让一份稍大的资产在提交时必然拿到过期的 context——而那时字节
 			// 已经传完了，用户看到的却是一次"超时"。
-			c, err := newClient()
+			c, err := newClient(0)
 			if err != nil {
 				return err
 			}

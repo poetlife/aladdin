@@ -23,7 +23,7 @@ const deviceLoginIntervalFallback = 5 * time.Second
 // 它拿到的是**使用者本人的会话**，而不是一份共享的机器凭证——批准发生在
 // 浏览器里已经登录的那个账号上（见 docs/design/identity/device-login.md）。
 func runDeviceLogin(cmd *cobra.Command) error {
-	cfg, err := resolvedConfig()
+	cfg, err := resolvedConfig(0)
 	if err != nil {
 		return err
 	}

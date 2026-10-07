@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	skillv1 "github.com/poetlife/aladdin/api/gen/aladdin/skill/v1"
 	"github.com/poetlife/aladdin/api/gen/aladdin/skill/v1/skillv1connect"
+	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/pkg/client"
 )
@@ -57,8 +59,13 @@ skill 目录（~/.claude/skills、Cursor 的目录等）写东西——装了本
 //
 // 凭证注入、超时与连接关闭对每条命令都一样，因此收在一处：漏掉其中任何一件的
 // 表现都是"这一条命令与别的不一样"。
-func skillCall() (context.Context, skillv1connect.SkillServiceClient, skillv1connect.SkillAdminServiceClient, func(), error) {
-	c, err := newClient()
+//
+// builtinTimeout 是这条命令在内置默认值那一层要用的超时，零值表示用全局内置默认。
+// **只有取回远端内容的那两条命令（add / sync）给它**：它们的耗时随远端仓库的文件数
+// 增长，而全局那 30 秒是给一次普通调用的量级（见 config.DefaultSkillCatalogTimeout）。
+// 它不参与分层——用户显式给出的 --timeout、环境变量或配置文件照常覆盖它。
+func skillCall(builtinTimeout time.Duration) (context.Context, skillv1connect.SkillServiceClient, skillv1connect.SkillAdminServiceClient, func(), error) {
+	c, err := newClient(builtinTimeout)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -92,7 +99,7 @@ func newSkillListCommand() *cobra.Command {
 			if len(args) == 1 {
 				query = args[0]
 			}
-			ctx, svc, _, done, err := skillCall()
+			ctx, svc, _, done, err := skillCall(0)
 			if err != nil {
 				return err
 			}
@@ -143,7 +150,7 @@ func newSkillGetCommand() *cobra.Command {
 它计一次使用（取用是使用量的计量点）。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, svc, _, done, err := skillCall()
+			ctx, svc, _, done, err := skillCall(0)
 			if err != nil {
 				return err
 			}
@@ -188,7 +195,7 @@ func newSkillCatCommand() *cobra.Command {
 取一条不存在的路径与"技能不存在"是两个不同的结论：技能在，是那条路径不在。`,
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, svc, _, done, err := skillCall()
+			ctx, svc, _, done, err := skillCall(0)
 			if err != nil {
 				return err
 			}
@@ -223,7 +230,7 @@ func newSkillVersionsCommand() *cobra.Command {
 标出目录对外服务的那一份。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, svc, _, done, err := skillCall()
+			ctx, svc, _, done, err := skillCall(0)
 			if err != nil {
 				return err
 			}
@@ -292,7 +299,7 @@ func newSkillUnfavoriteCommand() *cobra.Command {
 // 两个方向一条实现：只授一半的能力（能收藏、收不回来）是一个可以造出来的状态，
 // 而它没有任何用处。
 func setSkillFavorite(cmd *cobra.Command, skillID string, favorited bool) error {
-	ctx, svc, _, done, err := skillCall()
+	ctx, svc, _, done, err := skillCall(0)
 	if err != nil {
 		return err
 	}
@@ -334,13 +341,17 @@ func newSkillAddCommand() *cobra.Command {
 
 **校验失败不留任何痕迹**：库里没有新行，桶上也没有为它写的新对象。
 
+**这条命令的耗时随仓库里的文件数增长**（取回是"1 + 文件数"次远端请求），因此它
+带一个比别的命令长得多的内置默认超时。要更短或更长就用 --timeout；显式给出的一律
+优先。超时后的重试是安全的——失败本就不留痕迹。
+
 --cover 给一条**包内**的图片路径（如 examples/cover.png），它会被单独取回来存成
 技能的展示图。**它不进文件清单**——技能包只收文本，封面是说明层的一项；因此这条
 路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。取不到就是整次纳管
 失败，不会留下一个"只是没有封面"的技能。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, _, admin, done, err := skillCall()
+			ctx, _, admin, done, err := skillCall(config.DefaultSkillCatalogTimeout)
 			if err != nil {
 				return err
 			}
@@ -387,10 +398,14 @@ func newSkillSyncCommand() *cobra.Command {
 上次真的更新是什么时候"会变成一个看不出答案的问题。失败时当前指针也不动。
 
 来源的引用是标签或提交时，同步永远是"没有变化"——那不是缺陷，是这种来源的
-应有之义：想持续跟进就用分支。`,
+应有之义：想持续跟进就用分支。
+
+**这条命令的耗时随仓库里的文件数增长**（有变化时要重新取回整棵树），因此它带一个
+比别的命令长得多的内置默认超时。要更短或更长就用 --timeout；显式给出的一律优先。
+超时后的重试是安全的——失败时当前指针不动。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, _, admin, done, err := skillCall()
+			ctx, _, admin, done, err := skillCall(config.DefaultSkillCatalogTimeout)
 			if err != nil {
 				return err
 			}
@@ -428,7 +443,7 @@ func newSkillRollbackCommand() *cobra.Command {
 回滚说的是"现在我对外用哪一份"，同步说的是"追远端"。要停在旧版本上就别同步它。`,
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, _, admin, done, err := skillCall()
+			ctx, _, admin, done, err := skillCall(0)
 			if err != nil {
 				return err
 			}
@@ -469,7 +484,7 @@ func newSkillUpdateCommand() *cobra.Command {
 改标签用 --tag；不传 --tag 会把标签清空——它和"没改标签"不是一回事。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, _, admin, done, err := skillCall()
+			ctx, _, admin, done, err := skillCall(0)
 			if err != nil {
 				return err
 			}
@@ -508,7 +523,7 @@ func newSkillDeleteCommand() *cobra.Command {
 桶上的字节不删：内容对象按摘要全局共享，同一份字节可能正被别的技能引用。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, _, admin, done, err := skillCall()
+			ctx, _, admin, done, err := skillCall(0)
 			if err != nil {
 				return err
 			}

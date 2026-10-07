@@ -20,7 +20,7 @@ func newPermissionsCommand() *cobra.Command {
 服务端返回的已是展开结果，本工具不做任何本地推导。`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := newClient()
+			c, err := newClient(0)
 			if err != nil {
 				return err
 			}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 )
 
@@ -55,6 +56,17 @@ const (
 	// 它管的是**一次请求**，不是整条纳管流程：给整条流程设总超时会把"远端慢"与
 	// "远端挂了"变成同一个结论，而两者的应对不同。
 	remoteTimeout = 30 * time.Second
+	// blobFetchConcurrency 是**同时在飞**的取字节请求数上限。
+	//
+	// 耗时几乎全部来自逐个请求的往返：实测两个仓库的取回请求数是 44 与 59（各含 3 次
+	// 元数据请求），墙钟 29.6 秒与 51 秒——**每次往返 0.67 秒与 0.86 秒**，与文件
+	// 大小无关。并发是这条路径上唯一有效的提速手段，而它**一个请求都不少发**：配额
+	// 消耗、限频结论、取回的字节全都不变（见 docs/design/skill/onboarding.md 的
+	// "取回"与"远端凭据"）。
+	//
+	// 取值是一个小数字，且要落在远端自己的并发上限之下：那个额度是整个部署共用的，
+	// 留出的余量是给同一个部署里别的调用的，而不是假设一次只跑一条纳管。
+	blobFetchConcurrency = 8
 	// githubAPIBase 是 GitHub REST API 的根。
 	githubAPIBase = "https://api.github.com"
 	// jsonResponseMaxBytes 是**元数据响应**的读上限。
@@ -88,13 +100,21 @@ const (
 type GithubRemote struct {
 	client *http.Client
 	token  string
+	// apiBase 是 API 根的**取值**；生产构造只从 githubAPIBase 取。
+	//
+	// 它成字段是为了让测试能把请求指向一个本地服务端：否则真实的 REST 路径（响应
+	// 形状、状态码到领域结论的折叠、并发取回的顺序与上限）只有那条默认跳过的联网
+	// 冒烟能走到。**它不是导出入口**，因此"地址由服务端自己拼"这条边界没有松动：
+	// 调用方给的地址仍然只被解析成（仓库、引用、子路径）三元组（见 do）。
+	apiBase string
 }
 
 // NewGithubRemote 构造一个 GitHub 拉取实现。token 为空表示匿名访问。
 func NewGithubRemote(token string) *GithubRemote {
 	return &GithubRemote{
-		client: &http.Client{Timeout: remoteTimeout},
-		token:  token,
+		client:  &http.Client{Timeout: remoteTimeout},
+		token:   token,
+		apiBase: githubAPIBase,
 	}
 }
 
@@ -124,7 +144,7 @@ func (g *GithubRemote) ResolveCommit(ctx context.Context, repo Repository, ref s
 	return payload.SHA, nil
 }
 
-// FetchTree 实现 Remote：先问目录树，再逐条取要收的字节。
+// FetchTree 实现 Remote：先问目录树，再取要收的字节。
 //
 // 两步的理由见 repo_tree.go：成本只随**平台要收的东西**增长，而不是随上游仓库
 // 的大小增长。
@@ -133,28 +153,135 @@ func (g *GithubRemote) FetchTree(ctx context.Context, repo Repository, commit, s
 	if err != nil {
 		return Tree{}, err
 	}
+	return g.fetchPlanned(ctx, repo, plan)
+}
+
+// fetchedBlob 是一个计划条目的取回结论：留下、跳过，或两者都不是（被中断）。
+type fetchedBlob struct {
+	file FetchedFile
+	// skip 非空表示这一条不是文本，被跳过并点名。
+	skip string
+	// keep 表示这一条进了包。
+	keep bool
+}
+
+// fetchPlanned 按计划取回要收的字节，**并发但有上限**（见 blobFetchConcurrency）。
+//
+// 三件事与逐条串行时逐字一致，因为它们是留痕的一部分：
+//
+//   - **请求数**：一个都不少发，因此配额消耗与限频结论不变；
+//   - **结果顺序**：按计划顺序收拢（计划本身按路径排序），同样的一棵树给出同样的
+//     清单，而不是一个每次都不一样的顺序；
+//   - **上限的判定规则**：先判计数与累计、再留下，"不是文本"仍要到取回那一步才判
+//     （目录树只给大小，不给内容）。
+//
+// 唯一不再确定的是**多条同时失败时报哪一条**。它们同属一类（远端不可得，或包超过
+// 上限），而三类失败之间的区分不受影响。
+func (g *GithubRemote) fetchPlanned(ctx context.Context, repo Repository, plan repoPlan) (Tree, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make([]fetchedBlob, len(plan.Files))
+	indexes := make(chan int)
+
+	var (
+		workers  sync.WaitGroup
+		mu       sync.Mutex
+		expanded int64
+		kept     int
+		failure  error
+	)
+
+	for range min(blobFetchConcurrency, len(plan.Files)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for i := range indexes {
+				blob := plan.Files[i]
+				data, err := g.fetchBlob(ctx, repo, blob.SHA, MaxFileBytes)
+				if err != nil {
+					// 已经有人先失败了：这一条的中断是那次失败的下游，不再记一次，
+					// 否则报出来的会是"上下文结束了"而不是真正的原因。
+					if ctx.Err() != nil {
+						return
+					}
+					mu.Lock()
+					if failure == nil {
+						failure = err
+					}
+					mu.Unlock()
+					cancel()
+					return
+				}
+
+				record := fetchedBlob{file: FetchedFile{Path: blob.Path, Data: data}, keep: true}
+				// **"是不是文本"要到这一步才知道**：目录树只给大小，不给内容。不是
+				// 文本的跳过并点名，而不是让整份包作废（见 onboarding.md）。
+				if !isText(data) {
+					record = fetchedBlob{skip: blob.Path}
+				}
+
+				mu.Lock()
+				var over error
+				switch {
+				case !record.keep:
+					// 跳过：既不占文件名额，也不计入累计字节。
+				case kept >= MaxFiles:
+					over = fmt.Errorf("%w: 文件数超过上限 %d", ErrPackageInvalid, MaxFiles)
+				case expanded+int64(len(data)) > MaxPackageBytes:
+					over = fmt.Errorf("%w: 取回的文本累计超过 %d 字节",
+						ErrPackageInvalid, MaxPackageBytes)
+				default:
+					kept++
+					expanded += int64(len(data))
+				}
+				if over != nil {
+					if failure == nil {
+						failure = over
+					}
+				} else {
+					results[i] = record
+				}
+				mu.Unlock()
+
+				if over != nil {
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+
+	// 派发与收敛分开：失败时立即停发，已经在飞的那些由上面的 cancel 结束。
+	go func() {
+		defer close(indexes)
+		for i := range plan.Files {
+			select {
+			case indexes <- i:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	workers.Wait()
+	if failure != nil {
+		return Tree{}, failure
+	}
+	// 走到这里还带着已结束的上下文，说明是**调用方**走的（我们自己取消只发生在失败
+	// 时，那一种在上面就返回了）。此时手里是半个包，必须报出来而不是当成取回成功。
+	if err := ctx.Err(); err != nil {
+		return Tree{}, err
+	}
+
 	tree := Tree{Skipped: plan.Skipped, Blobs: plan.Blobs}
-	var expanded int64
-	for _, blob := range plan.Files {
-		if len(tree.Files) >= MaxFiles {
-			return Tree{}, fmt.Errorf("%w: 文件数超过上限 %d", ErrPackageInvalid, MaxFiles)
+	for _, record := range results {
+		switch {
+		case record.keep:
+			tree.Files = append(tree.Files, record.file)
+		case record.skip != "":
+			tree.Skipped = append(tree.Skipped, record.skip)
 		}
-		data, err := g.fetchBlob(ctx, repo, blob.SHA, MaxFileBytes)
-		if err != nil {
-			return Tree{}, err
-		}
-		// **"是不是文本"要到这一步才知道**：目录树只给大小，不给内容。不是文本
-		// 的跳过并点名，而不是让整份包作废（见 docs/design/skill/onboarding.md）。
-		if !isText(data) {
-			tree.Skipped = append(tree.Skipped, blob.Path)
-			continue
-		}
-		if expanded+int64(len(data)) > MaxPackageBytes {
-			return Tree{}, fmt.Errorf("%w: 取回的文本累计超过 %d 字节",
-				ErrPackageInvalid, MaxPackageBytes)
-		}
-		expanded += int64(len(data))
-		tree.Files = append(tree.Files, FetchedFile{Path: blob.Path, Data: data})
 	}
 	return tree, nil
 }
@@ -203,6 +330,10 @@ func (g *GithubRemote) fetchBlob(ctx context.Context, repo Repository, sha strin
 	// 单条字节的上限在这里就生效：读多一个字节即判超限，而不是先把整条收下来。
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
+		// 与 do 同一条：上下文结束是"调用方走了"，不是"远端挂了"。
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, fmt.Errorf("%w: 读取对象失败: %w", ErrRemoteUnavailable, err)
 	}
 	if int64(len(data)) > maxBytes {
@@ -253,12 +384,13 @@ func (g *GithubRemote) getJSON(ctx context.Context, path string, out any) error 
 //     拆成（owner，repo）两段，每段走字符白名单（见 source.go）；
 //   - 拼进这里的路径只有那两段、一个引用、一个提交标识或一个 git 对象标识，全部
 //     经 url.PathEscape；
-//   - 前缀是常量 githubAPIBase，别的任何主机都到不了这一行。
+//   - 前缀取自 apiBase，生产构造只给它常量 githubAPIBase（该字段不成导出入口，
+//     只是给测试留的一道缝，见 GithubRemote），别的任何主机都到不了这一行。
 //
 // 抑制写在被报的那两行上，而不是在配置文件里关掉整条规则：后者会让这个仓库里
 // **将来**真正需要看见的同类问题一起消失。
 func (g *GithubRemote) do(ctx context.Context, path, accept string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubAPIBase+path, nil) //nolint:gosec // G704：地址由白名单过的两段拼成，见上
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.apiBase+path, nil) //nolint:gosec // G704：地址由白名单过的两段拼成，见上
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrRemoteUnavailable, err)
 	}
@@ -270,6 +402,13 @@ func (g *GithubRemote) do(ctx context.Context, path, accept string) (*http.Respo
 	}
 	resp, err := g.client.Do(req) //nolint:gosec // G704：同上
 	if err != nil {
+		// **调用方走了 ≠ 远端挂了。** 上下文已经结束时（客户端超时、请求被取消）
+		// 把它归成"远端不可得"，会让一次客户端超时在服务端留痕里长成一个 503，
+		// 读日志的人会去查一个没有故障的远端——而失败三类必须分得开
+		// （见 docs/design/skill/onboarding.md 的"超时与失败"）。
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, fmt.Errorf("%w: %w", ErrRemoteUnavailable, err)
 	}
 	return resp, nil
