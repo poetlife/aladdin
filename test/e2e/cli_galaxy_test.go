@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	galaxyv1 "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
+	"github.com/poetlife/aladdin/internal/galaxy"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -268,6 +269,16 @@ func TestGalaxyCLIAuthoringRoundTrip(t *testing.T) {
 	}
 	if status, css, _ := fetchPublished(t, h, content, "style.css", nil); status != http.StatusOK || css != style {
 		t.Errorf("style.css = %d / %q", status, css)
+	}
+
+	// **回读发布态**：清单是发布记录里那一条，路径是产物路径，地址是**访客走的
+	// 那条**（发布域上的槽根接条目路径）。它是"发布成功了"这句话的核对入口。
+	readback := mustRunCLI(t, binary, h, "galaxy", "publication", "get", projectID)
+	for _, want := range []string{"index.html", "guide/one.html", "style.css",
+		h.publishBase + galaxy.PublicPathPrefix + projectID + "/"} {
+		if !strings.Contains(readback, want) {
+			t.Errorf("回读的清单里没有 %q:\n%s", want, readback)
+		}
 	}
 
 	mustRunCLI(t, binary, h, "galaxy", "unpublish", projectID)

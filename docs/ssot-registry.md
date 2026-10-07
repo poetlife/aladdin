@@ -56,11 +56,13 @@
 | 一个工程有哪些内容槽、每个槽的入口路径与地址，以及哪一段路径是保留段 | 内容槽的解析入口（槽的合法取值、入口、保留段共用这一处判断） | [internal/galaxy/content_slot.go](../internal/galaxy/content_slot.go) |
 | 一个工程的发布根（构建时注入与发布态地址共用，**按槽派生**；槽根带结尾斜杠，不带时由交付入口 301 过去） | 发布根的派生入口 | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | 一个已发布槽的**分享地址**（主站包装）与**内容地址**（发布域），以及主站壳解析它时用的那一处判断 | 发布地址的派生入口（两者同一处派生，客户端不拼） | [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
+| 一个槽**当前发布**的产物清单，以及每一条在**访客路径**上的地址（回读发布态） | 发布态的读取入口（清单取自发布记录、不重算；地址与主站壳同一处拼接） | [internal/galaxy/publish.go](../internal/galaxy/publish.go) / [internal/galaxy/public_origin.go](../internal/galaxy/public_origin.go) |
 | markdown 到 HTML 的渲染（`docs` 槽） | 文档渲染入口（确定性的唯一实现，发布时使用） | [internal/galaxy/doc_render.go](../internal/galaxy/doc_render.go) |
 | 发布产物交付时的内容安全策略 | CSP 响应头的构造入口 | [internal/galaxy/csp.go](../internal/galaxy/csp.go) |
 | 上传方声明的类型能不能作为头像 | 头像的类型白名单（唯一入口；声明不等于验证，见直传） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
 | 上传方声明的类型能不能作为资产 | 资产的类型白名单与分档上限（唯一入口；声明不等于验证，见直传） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
 | 一份内容能不能发布（引用完整性 + 体积与文件数上限） | `galaxy` 的校验入口（**编辑器提示与发布前置校验共用**，不得在前端复写） | [internal/galaxy/validate.go](../internal/galaxy/validate.go) |
+| 产物里的一处取资源引用落在哪一条条目上、产物里有没有残留没解开的记号（**校验与回读发布态之后的复核共用**） | 产物复核入口（扫的是产物，不是源） | [internal/galaxy/artifact_audit.go](../internal/galaxy/artifact_audit.go) |
 | 一个版本引用了哪些资产 | 文件组里资产条目的读取入口（不解析正文） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
 | 一个资产标识是否属于某个工程 | 资产的归属查询（唯一入口，发布校验与删除拦阻共用） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
 | 一个标签串的归一化与合法性（trim、小写、去重、长度与数量上限） | `tagging.Normalize`（galaxy 资产的标签与 skill 目录的标签共用；三端只能消费它的结论，不得各自再判一份） | [internal/tagging/tagging.go](../internal/tagging/tagging.go) |

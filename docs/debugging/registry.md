@@ -15,6 +15,7 @@
 | 流式方法（含 grpc 反射）一律返回 `Internal … does not implement http.Flusher`，同一服务的 unary 方法却正常 | 中间件包装了 `ResponseWriter` 而没实现 `Flusher`；connect-go 取 Flusher 走**直接类型断言**，`Unwrap` 帮不上忙 | [2026-09-29-streaming-internal-flusher.md](records/2026-09-29-streaming-internal-flusher.md) |
 | 遥测管理页「追踪 ID」列成片为空，而服务端响应头里明明有 | 前端取 trace_id 的入口（`traceIdOf`）长在错误模块里，只吃 `ConnectError.metadata`；**成功的响应头从来没被读**。按调用捕获即可（`captureTrace`） | [2026-10-07-telemetry-trace-id-empty.md](records/2026-10-07-telemetry-trace-id-empty.md) |
 | `skill add` / `skill sync` 在 30 秒处被掐掉，报 `deadline_exceeded`，服务端日志却是 **503** | 取回是 `3 + 文件数` 次**串行**出站请求（约 0.7 秒一次），而 CLI 的默认超时是给一次普通调用的 30 秒——按 spec 的原样命令纳管首批三件，两件必然超时。那个 503 是调用方的 deadline 到期，不是远端故障 | [2026-10-07-skill-add-times-out-at-30s.md](records/2026-10-07-skill-add-times-out-at-30s.md) |
+| docs 槽发布出去的图片裂开、控制台报 `asset://…` 被 CSP 拦截，而 `validate` 与 `publish` 都说成功 | markdown 里 raw HTML 的记号没有任何一步经手替换（渲染器只改写图片/链接节点，引用扫描只跑非 markdown 文本）；复核改到**产物**上、替换点补到 raw HTML 才看得见 | [2026-10-07-docs-asset-marker-not-substituted.md](records/2026-10-07-docs-asset-marker-not-substituted.md) |
 
 ---
 

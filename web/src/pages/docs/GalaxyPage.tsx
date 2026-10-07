@@ -96,11 +96,21 @@ export function GalaxyPage(): React.ReactNode {
         <CommandBlock>{'<img src="asset://<资产标识>">'}</CommandBlock>
         <Typography.Paragraph>
           正文里<strong>永远只有这个记号，没有真实地址</strong>
-          。真实地址由系统在渲染时补上——记号写在元素属性里、写在内联 CSS 的{' '}
-          <Typography.Text code>url()</Typography.Text> 里、写在{' '}
-          <Typography.Text code>srcset</Typography.Text> 里，都只是一段逐字替换的文本，
-          不必照着属性列表挨个写对。
+          。真实地址由系统补上，而<strong>补在哪些位置按槽给出</strong>：
         </Typography.Paragraph>
+        <ul>
+          <li>
+            <Tag>site</Tag> 整份文本<strong>逐字替换</strong>：记号写在元素属性里、
+            内联 CSS 的 <Typography.Text code>url()</Typography.Text> 里、{' '}
+            <Typography.Text code>srcset</Typography.Text> 里都成立，不必照着属性列表挨个写对。
+          </li>
+          <li>
+            <Tag>docs</Tag> 替换发生在<strong>渲染那一趟</strong>：markdown 图片与链接，以及正文里
+            写的 raw HTML（含其中的内联 CSS）都会解开；
+            <strong>代码块、行内代码与普通文字里的记号原样保留</strong>
+            ——那是给人看的文本，不是一处引用。
+          </li>
+        </ul>
         <Typography.Paragraph>
           补出来的地址在两处不同，而<strong>两处都不进你的源文件</strong>：
         </Typography.Paragraph>
@@ -121,9 +131,10 @@ export function GalaxyPage(): React.ReactNode {
           就是查一次标识。
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          <Typography.Text code>asset://</Typography.Text> 不是浏览器认识的协议，这是有意的：任何一次
-          漏掉补地址的场合都会<strong>显式坏掉</strong>（图片裂开、链接点不动），而不是静默指向一个看起来
-          合法的地方。<strong>构建产物不需要记号</strong>——它写的就是路径，原样生效。
+          <Typography.Text code>asset://</Typography.Text> 不是浏览器认识的协议，这是有意的：漏掉补地址的
+          记号不会被静默放过——<strong>发布前置校验会拒绝它</strong>
+          ，而不是留到读者的浏览器里变成一张裂图。<strong>构建产物不需要记号</strong>
+          ——它写的就是路径，原样生效。
         </Typography.Paragraph>
       </Card>
 
@@ -174,6 +185,9 @@ aladdin galaxy validate <工程标识> --slot site
 aladdin galaxy version save <工程标识> --slot site
 aladdin galaxy publish <工程标识> <版本标识> --slot site --yes
 
+# 发布之后核对：按访客的路径把产物取回来，逐条复核引用有没有解开
+aladdin galaxy publication verify <工程标识> --slot site
+
 # 后来想加上文档：加一个文档槽，再往那个槽推（槽只增不删）
 aladdin galaxy project slot add <工程标识> --slot docs
 aladdin galaxy draft push <工程标识> ./docs --slot docs`}</CommandBlock>
@@ -187,10 +201,22 @@ aladdin galaxy draft push <工程标识> ./docs --slot docs`}</CommandBlock>
             <Typography.Text code>validate && publish</Typography.Text>{' '}
             这类写法成立——「这份内容不能发布」是一个结论，不是一次调用失败。
           </Typography.Paragraph>
+          <Typography.Paragraph type="secondary">
+            <Typography.Text code>publish</Typography.Text> 的返回值只说「发布成功了」
+            ：产物里的地址是渲染时补上的，源里、版本里都只有记号。所以发布之后还要能读回来核对——
+            <Typography.Text code>publication verify</Typography.Text> 按访客走的那条地址把产物取回来，
+            复核取回的字节与发布记录是否一致、产物里有没有残留的记号、每一处引用是否都落在产物清单上、
+            每一条素材是否可达；读清单用{' '}
+            <Typography.Text code>publication get</Typography.Text>（加{' '}
+            <Typography.Text code>--path</Typography.Text> 取其中一份的字节）。
+          </Typography.Paragraph>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            想把某一版取回本地用 <Typography.Text code>version pull</Typography.Text>，
-            正在编辑的那一份用 <Typography.Text code>draft pull</Typography.Text>
-            ：两者都是"清单 + 一串直连下载"，往返之后目录内容逐字相同。
+            把内容取回本地有三条路：正在编辑的那一份用{' '}
+            <Typography.Text code>draft pull</Typography.Text>，某一版用{' '}
+            <Typography.Text code>version pull</Typography.Text>，
+            <strong>已经发出去的那一份</strong>用{' '}
+            <Typography.Text code>publication pull</Typography.Text>
+            ——前两条取的是你推上去的源，最后一条取的是访客拿到的东西。
           </Typography.Paragraph>
         </Space>
       </Card>
@@ -207,7 +233,8 @@ aladdin galaxy draft push <工程标识> ./docs --slot docs`}</CommandBlock>
           每一处<strong>取资源</strong>的引用都必须落在这一组文件里：指向外部地址、别的工程、
           或不存在的位置，发布会被拒绝，提示里带着文件和行号。链接到外部网站不受此限——那是你的意图，
           不是资源引用。<Typography.Text code>docs</Typography.Text> 槽下文档之间的相对链接同理，
-          指向不存在的位置即拒绝。
+          指向不存在的位置即拒绝；页面内的锚点也要指得到——{' '}
+          <Typography.Text code>#小节</Typography.Text> 对不上目标那一页的标题即拒绝。
         </Typography.Paragraph>
         <Typography.Paragraph>
           发布出去的站点是<strong>公开匿名</strong>的：拿到地址的人就能看，所以发布物里不要放秘密。

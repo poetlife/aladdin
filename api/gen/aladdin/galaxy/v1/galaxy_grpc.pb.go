@@ -43,6 +43,7 @@ const (
 	GalaxyService_UpdateAsset_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
 	GalaxyService_Publish_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/Publish"
 	GalaxyService_Unpublish_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
+	GalaxyService_GetPublication_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/GetPublication"
 	GalaxyService_ResolveSharedPage_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
 )
 
@@ -228,6 +229,20 @@ type GalaxyServiceClient interface {
 	// 撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
 	// 收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
 	Unpublish(ctx context.Context, in *UnpublishRequest, opts ...grpc.CallOption) (*UnpublishResponse, error)
+	// 读回**某个槽当前发布**的那一份产物清单：发布记录、路径、以及每一项在**访客
+	// 路径**上的读取地址。
+	//
+	// 它是"发布成功了"这件事的核对入口。发布物里的地址是渲染时补上的（源里、版本
+	// 里都只有 `asset://` 记号），因此只拿着 Publish 的返回值证明不了引用都解开了。
+	// 清单就是发布时落库的那一条记录——**不是重新算一遍**，因此它回答的正是"现在
+	// 发出去的是什么"。
+	//
+	// **未发布不是错误**：那时 publication 与 entries 都为空，与 published_url
+	// 为空是同一条取向。
+	//
+	// 它是**归属内的读**（发布者核对自己的产物），因此要 `galaxy.project.read` 与
+	// 工程归属；发布态本身仍是公开匿名的，那是发布域那条 HTTP 入口的事。
+	GetPublication(ctx context.Context, in *GetPublicationRequest, opts ...grpc.CallOption) (*GetPublicationResponse, error)
 	// 把一条**主站分享路径**解析成它在发布域上的内容地址。
 	//
 	// 主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
@@ -493,6 +508,16 @@ func (c *galaxyServiceClient) Unpublish(ctx context.Context, in *UnpublishReques
 	return out, nil
 }
 
+func (c *galaxyServiceClient) GetPublication(ctx context.Context, in *GetPublicationRequest, opts ...grpc.CallOption) (*GetPublicationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPublicationResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_GetPublication_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *galaxyServiceClient) ResolveSharedPage(ctx context.Context, in *ResolveSharedPageRequest, opts ...grpc.CallOption) (*ResolveSharedPageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ResolveSharedPageResponse)
@@ -685,6 +710,20 @@ type GalaxyServiceServer interface {
 	// 撤回用发布那一码——它是发布的反向操作，不给它单独一码不会带来任何安全
 	// 收益，只会让"发布得出去、收不回来"变成一个可以只授一半的组合。
 	Unpublish(context.Context, *UnpublishRequest) (*UnpublishResponse, error)
+	// 读回**某个槽当前发布**的那一份产物清单：发布记录、路径、以及每一项在**访客
+	// 路径**上的读取地址。
+	//
+	// 它是"发布成功了"这件事的核对入口。发布物里的地址是渲染时补上的（源里、版本
+	// 里都只有 `asset://` 记号），因此只拿着 Publish 的返回值证明不了引用都解开了。
+	// 清单就是发布时落库的那一条记录——**不是重新算一遍**，因此它回答的正是"现在
+	// 发出去的是什么"。
+	//
+	// **未发布不是错误**：那时 publication 与 entries 都为空，与 published_url
+	// 为空是同一条取向。
+	//
+	// 它是**归属内的读**（发布者核对自己的产物），因此要 `galaxy.project.read` 与
+	// 工程归属；发布态本身仍是公开匿名的，那是发布域那条 HTTP 入口的事。
+	GetPublication(context.Context, *GetPublicationRequest) (*GetPublicationResponse, error)
 	// 把一条**主站分享路径**解析成它在发布域上的内容地址。
 	//
 	// 主站壳（`<主站>/g/<工程标识>[/docs][/路径]`）用它问出 iframe 该指向哪里。
@@ -781,6 +820,9 @@ func (UnimplementedGalaxyServiceServer) Publish(context.Context, *PublishRequest
 }
 func (UnimplementedGalaxyServiceServer) Unpublish(context.Context, *UnpublishRequest) (*UnpublishResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Unpublish not implemented")
+}
+func (UnimplementedGalaxyServiceServer) GetPublication(context.Context, *GetPublicationRequest) (*GetPublicationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPublication not implemented")
 }
 func (UnimplementedGalaxyServiceServer) ResolveSharedPage(context.Context, *ResolveSharedPageRequest) (*ResolveSharedPageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveSharedPage not implemented")
@@ -1238,6 +1280,24 @@ func _GalaxyService_Unpublish_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GalaxyService_GetPublication_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPublicationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).GetPublication(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_GetPublication_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).GetPublication(ctx, req.(*GetPublicationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GalaxyService_ResolveSharedPage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ResolveSharedPageRequest)
 	if err := dec(in); err != nil {
@@ -1358,6 +1418,10 @@ var GalaxyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Unpublish",
 			Handler:    _GalaxyService_Unpublish_Handler,
+		},
+		{
+			MethodName: "GetPublication",
+			Handler:    _GalaxyService_GetPublication_Handler,
 		},
 		{
 			MethodName: "ResolveSharedPage",

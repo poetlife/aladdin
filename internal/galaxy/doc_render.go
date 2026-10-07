@@ -25,7 +25,9 @@ import (
 //
 // **升级渲染器时必须把它加一。** 忘了加的表现是：一份以旧规则发布过的版本，
 // 在升级后重新发布得到了不同的产物，而没有任何地方提示这件事发生了。
-const RenderRulesVersion = 4
+//
+// 5：raw HTML 里的 `asset://` 记号在渲染这一趟被解开（此前它原样进产物）。
+const RenderRulesVersion = 5
 
 // Doc 是一份渲染好的文档页。
 //
@@ -39,8 +41,26 @@ type Doc struct {
 	Title string
 	// Headings 是这一页的二级与三级标题，按出现顺序，供本页目录用。
 	Headings []Heading
+	// Anchors 是这一页**全部**标题的锚点标识（一级到六级），供锚点校验用。
+	//
+	// 它与 Headings 是同一处派生的两个视图：目录只列二三级，而 `#锚点` 可以
+	// 指向任何一级标题，因此校验要的是全集（见 checkAnchorLinks）。
+	Anchors []string
+	// Links 是这一页里的导航链接，供锚点校验用。
+	Links []DocLink
 	// Body 是渲染出来的正文片段（不含页面外壳）。
 	Body []byte
+}
+
+// DocLink 是一页 markdown 里的一处导航链接。
+//
+// 记下来是为了**锚点校验**：`#小节` 与 `guide/intro.md#小节` 里的名字对不对，
+// 得等整组文档都渲染完（也就是每一页的标题标识都算出来）才能回答。
+type DocLink struct {
+	// Dest 是源里写的那个目的地，逐字保留（不去后缀、不解析）。
+	Dest string
+	// Line 是它在源里的行号（从 1 开始）。0 表示取不到位置。
+	Line int
 }
 
 // Heading 是正文里的一个标题，目录从它派生。
@@ -95,6 +115,8 @@ func RenderDoc(src DocSource, resolver LinkResolver) (Doc, error) {
 		ArtifactPath: ArtifactPath(SlotDocs, src.Path),
 		Title:        title,
 		Headings:     rendered.headings,
+		Anchors:      rendered.anchors,
+		Links:        rendered.links,
 		Body:         rendered.body,
 	}, nil
 }
@@ -123,6 +145,8 @@ type rendered struct {
 	body     []byte
 	title    string
 	headings []Heading
+	anchors  []string
+	links    []DocLink
 }
 
 // renderMarkdown 渲染一份 markdown，并把其中的引用交给 resolver 改写。
@@ -134,6 +158,9 @@ type rendered struct {
 // 标题的锚点标识与目录也在这一趟里定下来：两者必须**同源**，否则会出现"目录
 // 指向一个正文里不存在的锚点"这种只有在点下去的时候才发现的错。
 func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, error) {
+	// 渲染器持有这一份的解析入口：raw HTML 不经过链接/图片节点，记号只能在它
+	// 写进产物之前替换，因此替换点必须与"这一段是哪一份文档"一起交给它。
+	markup := &docMarkup{from: from, resolver: resolver}
 	md := goldmark.New(
 		// **GFM 是渲染规则的组成部分，不是可选项。** 裸的 CommonMark 里没有表格：
 		// 一张 pipe 表会被当成一个普通段落，管道符原样留在正文里。用户写 markdown
@@ -141,9 +168,9 @@ func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, e
 		// 裸地址成链），而不是只挑表格一项——半套 GFM 同样是"要读实现才能回答
 		// 哪些写法能用"。
 		//
-		// Linkify 产出的是 ast.AutoLink，而下面改写的遍历只认 ast.Link 与
-		// ast.Image，因此裸地址不会被喂给 LinkResolver。这是对的：一段正文里写了
-		// 一个外部地址，它本来就不该拿文件组去解析。
+		// Linkify 产出的是 ast.AutoLink，而下面改写的遍历只把 `asset://` 那种
+		// 自动链接挑出来（它是一条解不开的引用，见下），其余裸地址原样保留：一段
+		// 正文里写了一个外部地址，它本来就不该拿文件组去解析。
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithRendererOptions(
 			// **允许内联 HTML。** 它是用户自己的内容，跑在用户自己的发布域上；
@@ -151,9 +178,9 @@ func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, e
 			// 才能回答的问题。隔离由发布域的响应头承担（见 csp.go），不由
 			// markdown 渲染器承担。
 			mdhtml.WithUnsafe(),
-			// 标题带锚点、代码块带语言标签：两处默认渲染给不出这份标记，
-			// 而它们是这一版版式的组成部分（见 docStyleSheet）。
-			renderer.WithNodeRenderers(util.Prioritized(docMarkup{}, 100)),
+			// 标题带锚点、代码块带语言标签、raw HTML 里的记号先解开：三处都是
+			// 这一版渲染规则自己产出的标记（见 docMarkup 与 docStyleSheet）。
+			renderer.WithNodeRenderers(util.Prioritized(markup, 100)),
 		),
 	)
 	reader := text.NewReader(src)
@@ -161,6 +188,8 @@ func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, e
 
 	seen := make(map[string]int)
 	var headings []Heading
+	var anchors []string
+	var links []DocLink
 	var resolveErr error
 	if err := ast.Walk(tree, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -175,18 +204,36 @@ func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, e
 			}
 			n.Destination = []byte(url)
 		case *ast.Link:
-			url, err := resolver.Resolve(from, string(n.Destination), false)
+			dest := string(n.Destination)
+			url, err := resolver.Resolve(from, dest, false)
 			if err != nil {
 				resolveErr = err
 				return ast.WalkStop, nil
 			}
 			n.Destination = []byte(url)
+			// 记下原样的目的地与行号：锚点校验要的是源里写的那个名字，而不是
+			// 改写之后的地址。
+			links = append(links, DocLink{Dest: dest, Line: nodeLine(n, src)})
 		case *ast.Heading:
 			text := strings.TrimSpace(nodeText(n, src))
 			slug := uniqueSlug(seen, headingSlug(text))
 			n.SetAttributeString("id", []byte(slug))
+			anchors = append(anchors, slug)
 			if n.Level == 2 || n.Level == 3 {
 				headings = append(headings, Heading{ID: slug, Level: n.Level, Text: text})
+			}
+		case *ast.AutoLink:
+			// **`<asset://…>` 是一条自动链接，不是一处可替换的位置。** markdown
+			// 把协议形状的整段 `<…>` 认成链接，于是这个记号既不会被链接改写碰到
+			// （它的目的地由节点自己的取值拼出来），也不是给人看的文本——它会以
+			// 一个字面量 `href` 进产物。这里显式拒绝，并告诉用户改成哪一种写法。
+			url := string(n.URL(src))
+			if _, isMarker := placeholderID(url); isMarker {
+				resolveErr = fmt.Errorf(
+					"%s 里的 %q 是一条自动链接，不是一处可替换的引用；"+
+						"引用素材请写成 ![图](%s资产标识) 或 <img src=\"%s资产标识\">",
+					from, url, PlaceholderScheme, PlaceholderScheme)
+				return ast.WalkStop, nil
 			}
 		}
 		return ast.WalkContinue, nil
@@ -199,9 +246,39 @@ func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, e
 
 	var out bytes.Buffer
 	if err := md.Renderer().Render(&out, src, tree); err != nil {
+		// 解不开的记号是**引用问题**，不是渲染故障：它带的那句话要原样交给用户，
+		// 因此不能混进"渲染失败"这一层包装里。
+		if markup.failure != nil {
+			return rendered{}, markup.failure
+		}
 		return rendered{}, fmt.Errorf("渲染失败: %w", err)
 	}
-	return rendered{body: out.Bytes(), title: firstHeading(tree, src), headings: headings}, nil
+	return rendered{
+		body:     out.Bytes(),
+		title:    firstHeading(tree, src),
+		headings: headings,
+		anchors:  anchors,
+		links:    links,
+	}, nil
+}
+
+// nodeLine 返回一个行内节点在源里的行号（从 1 开始）；取不到位置时返回 0。
+//
+// 行内节点自己不记位置，而它下面的文本段记着——那些段就是源里的字节，因此行号
+// 从那里读（与 nodeText 同一条理由：哪些片段属于这个节点由语法树回答）。
+func nodeLine(node ast.Node, src []byte) int {
+	line := 0
+	_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering || line > 0 {
+			return ast.WalkContinue, nil
+		}
+		if textNode, ok := n.(*ast.Text); ok {
+			line = lineOf(src, textNode.Segment.Start)
+			return ast.WalkStop, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	return line
 }
 
 // headingSlug 把标题文本变成一个锚点标识。
@@ -273,17 +350,99 @@ func nodeText(node ast.Node, src []byte) string {
 	return out.String()
 }
 
-// docMarkup 覆盖两类节点的渲染：标题与围栏代码块。
+// docMarkup 覆盖三类节点的渲染：标题、围栏代码块，以及 raw HTML。
 //
-// 只覆盖这两类，别的一律走 goldmark 自己的渲染——本模块要的是**足够像一份文档
-// 站的排版**，不是自己重写一个渲染器。这两类之所以要接管，是因为默认渲染给不出
-// 锚点与语言标签这两个纯标记（不需要脚本就能有）。
-type docMarkup struct{}
+// 别的一律走 goldmark 自己的渲染——本模块要的是**足够像一份文档站的排版**，
+// 不是自己重写一个渲染器。这三类之所以要接管：
+//
+//   - 标题与围栏代码块：默认渲染给不出锚点与语言标签这两个纯标记（不需要脚本
+//     就能有）；
+//   - **raw HTML：记号要在那里被解开。** markdown 允许写行内与块级 HTML，而
+//     那一段不经过链接/图片节点，默认渲染器直接把它逐字写进产物——一个写在
+//     `<img src="asset://…">` 里的记号因此会原样落到读者的浏览器里（见
+//     docs/design/galaxy/authoring.md 的"源侧的记号"）。
+//
+// **代码块与行内代码不在覆盖之列**：那是给人看的文本，里面出现的记号原样保留。
+type docMarkup struct {
+	// from 是这一份文档在文件组里的路径，解析记号时要用它。
+	from string
+	// resolver 是这一份文档的解析入口（发布态给站点内地址，预览态容忍坏引用）。
+	resolver LinkResolver
+	// failure 记住第一处解不开的记号。goldmark 会把渲染器返回的错误包一层，
+	// 而这里要的是原话，因此单独留一份（见 renderMarkdown 的收尾）。
+	failure error
+}
 
 // RegisterFuncs 实现 renderer.NodeRenderer。
-func (docMarkup) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
+func (m *docMarkup) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(ast.KindHeading, renderHeading)
 	reg.Register(ast.KindFencedCodeBlock, renderFencedCodeBlock)
+	reg.Register(ast.KindRawHTML, m.renderRawHTML)
+	reg.Register(ast.KindHTMLBlock, m.renderHTMLBlock)
+}
+
+// renderRawHTML 渲染一段行内 raw HTML，先把它里面的记号解开。
+func (m *docMarkup) renderRawHTML(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkSkipChildren, nil
+	}
+	n := node.(*ast.RawHTML)
+	var raw strings.Builder
+	for i := 0; i < n.Segments.Len(); i++ {
+		segment := n.Segments.At(i)
+		raw.Write(segment.Value(source))
+	}
+	return m.writeRawHTML(w, raw.String())
+}
+
+// renderHTMLBlock 渲染块级 raw HTML，先把它里面的记号解开。
+func (m *docMarkup) renderHTMLBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	n := node.(*ast.HTMLBlock)
+	if !entering {
+		if !n.HasClosure() {
+			return ast.WalkContinue, nil
+		}
+		_, err := m.writeRawHTML(w, string(n.ClosureLine.Value(source)))
+		if err != nil {
+			return ast.WalkStop, err
+		}
+		return ast.WalkContinue, nil
+	}
+	var raw strings.Builder
+	for i := 0; i < n.Lines().Len(); i++ {
+		line := n.Lines().At(i)
+		raw.Write(line.Value(source))
+	}
+	return m.writeRawHTML(w, raw.String())
+}
+
+// writeRawHTML 把一段 raw HTML 写进产物，逐字替换其中的记号。
+//
+// 它复用"哪一段文本算一个记号"的那一处实现（SubstituteAssetMarkers）——raw HTML
+// 不需要枚举属性，替换因此不会漏（理由见 placeholder.go）。
+func (m *docMarkup) writeRawHTML(w util.BufWriter, raw string) (ast.WalkStatus, error) {
+	substituted, err := SubstituteAssetMarkers([]byte(raw), func(assetID string) (string, error) {
+		return m.resolver.Resolve(m.from, PlaceholderScheme+assetID, true)
+	})
+	if err != nil {
+		m.failure = err
+		return ast.WalkStop, err
+	}
+	if _, err := w.WriteString(secureRawHTML(string(substituted))); err != nil {
+		return ast.WalkStop, err
+	}
+	return ast.WalkContinue, nil
+}
+
+// secureRawHTML 把源码里的 NUL 换成替换字符。
+//
+// goldmark 写 raw HTML 时会做这一步（SecureWrite），本函数照着做：NUL 在 HTML 里
+// 没有合法含义，原样写进去只会让浏览器按容错规则猜。
+func secureRawHTML(raw string) string {
+	if !strings.ContainsRune(raw, '\u0000') {
+		return raw
+	}
+	return strings.ReplaceAll(raw, "\u0000", "\uFFFD")
 }
 
 // renderHeading 渲染标题，并把锚点写在标题文字之前。

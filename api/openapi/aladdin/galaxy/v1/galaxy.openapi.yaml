@@ -1160,6 +1160,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.UnpublishResponse'
+  /aladdin.galaxy.v1.GalaxyService/GetPublication:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: GetPublication
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
+        读回**某个槽当前发布**的那一份产物清单：发布记录、路径、以及每一项在**访客
+         路径**上的读取地址。
+
+         它是"发布成功了"这件事的核对入口。发布物里的地址是渲染时补上的（源里、版本
+         里都只有 `asset://` 记号），因此只拿着 Publish 的返回值证明不了引用都解开了。
+         清单就是发布时落库的那一条记录——**不是重新算一遍**，因此它回答的正是"现在
+         发出去的是什么"。
+
+         **未发布不是错误**：那时 publication 与 entries 都为空，与 published_url
+         为空是同一条取向。
+
+         它是**归属内的读**（发布者核对自己的产物），因此要 `galaxy.project.read` 与
+         工程归属；发布态本身仍是公开匿名的，那是发布域那条 HTTP 入口的事。
+      operationId: aladdin.galaxy.v1.GalaxyService.GetPublication
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.GetPublicationRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.GetPublicationResponse'
   /aladdin.galaxy.v1.GalaxyService/ResolveSharedPage:
     post:
       x-aladdin-auth:
@@ -1697,11 +1754,14 @@ components:
           type: string
           title: url
           description: |-
-            **短时有效**的读取地址，客户端直接取字节。只有列出清单的方法（GetDraft、
-             GetVersion）会填充它；写入路径（PushDraft）忽略它。
+            读取地址，客户端直接取字节。**取值随调用它的方法而不同**：
 
-             它是一份短期凭证，因此**未发布的资产里不得承载秘密**。过期后重新读取
-             清单即得到新地址。
+               - GetDraft / GetVersion 填的是**编辑态的短时凭证**——它是一份短期凭证，
+                 因此未发布的资产里不得承载秘密，过期后重新读取清单即得到新地址；
+               - GetPublication 填的是**发布态的那条访客地址**（文本条目就是内容地址，
+                 资产条目由它重定向到公开区）——那条地址本来就是公开的，不是凭证。
+
+             写入路径（PushDraft）忽略这个字段。
       title: FileEntry
       additionalProperties: false
       description: |-
@@ -1762,6 +1822,37 @@ components:
             - title: project
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
       title: GetProjectResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.GetPublicationRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        slot:
+          allOf:
+            - title: slot
+              description: 要读哪个内容槽**当前发布**的那一份。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.ContentSlot'
+      title: GetPublicationRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.GetPublicationResponse:
+      type: object
+      properties:
+        publication:
+          allOf:
+            - title: publication
+              description: 这个槽当前发布的记录。**未发布时为空**——那是这个槽的一种正常状态，不是错误。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Publication'
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.FileEntry'
+          title: entries
+          description: |-
+            这一份产物的清单：路径是**产物路径**（`docs` 槽的 markdown 是 `.html`，与
+             发布域上那条地址同形），`url` 是访客走的读取地址。未发布时为空。
+      title: GetPublicationResponse
       additionalProperties: false
     aladdin.galaxy.v1.GetVersionRequest:
       type: object
