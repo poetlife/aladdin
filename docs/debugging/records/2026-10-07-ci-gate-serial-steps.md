@@ -46,6 +46,14 @@ curl -sL -H "Authorization: Bearer $T" \
 
 一处顺带收益：原先"所有 Go 步骤必须先于 `make web-ci`"（`go test ./...` 会走进 `web/node_modules`，npm 包里自带 Go 文件）这条脆弱约束，因为前端独立成 job 而不再可能被违反。
 
+## 结果
+
+拆完那一推的实测：**run 总时长 75s**（3 分 58 秒 → 1 分 15 秒），四个 job 73s / 70s / 65s / 63s，四个都绿。
+
+最慢的那一个是**端到端测试**，不是后端单元测试——"关键路径是哪一段"随每次运行变化，不是固定的。
+
+两处"搬家之后变慢"，都在关键路径之外，且都有结构性原因：`make test-e2e` 44s（原约 29s），因为 e2e 那个 job 不再能复用同一个 job 里 `make test` 刚编好的 race 产物（GOCACHE 每个 job 各恢复一次，不跨 job 共享）；`make web-ci` 19s（原约 9s），因为四个 job 同时恢复各自的缓存。
+
 ## 看过但**没有**做的
 
 - **`go test` 分片**：本仓库的 Go 1.27 **没有** `-shard`（`go help testflag` 里没有这个 flag，`go list -shard` 直接报未定义），分片要自己按包切，复杂度高于收益。
