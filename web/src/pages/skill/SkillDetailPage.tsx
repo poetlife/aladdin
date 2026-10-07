@@ -23,6 +23,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import * as skillApi from '../../api/skill'
 import { messageOf } from '../../api/errors'
 import { PermissionGate } from '../../auth'
+import { describeBytes } from '../../format/bytes'
 import { PermissionCodes } from '../../gen/permission-codes'
 import type { Skill, SkillVersion } from '../../gen/proto/aladdin/skill/v1/skill_pb'
 import { MONOSPACE } from '../../theme/monospace'
@@ -303,7 +304,7 @@ export function SkillDetailPage(): React.ReactNode {
                 onClick={() => void openFile(file.path)}
               >
                 <Typography.Text>{file.path}</Typography.Text>
-                <Typography.Text type="secondary">{file.sizeBytes} B</Typography.Text>
+                <Typography.Text type="secondary">{describeBytes(file.sizeBytes)}</Typography.Text>
               </List.Item>
             )}
           />

@@ -465,7 +465,7 @@ function AssetCard({
           </Typography.Text>
         )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {asset.mediaType} · {describeBytes(Number(asset.sizeBytes))}
+          {asset.mediaType} · {describeBytes(asset.sizeBytes)}
         </Typography.Text>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {formatTime(asset.uploadedAt)}
