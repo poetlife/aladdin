@@ -91,7 +91,7 @@ func flushClientEvents() {
 		return
 	}
 
-	cfg, err := resolvedConfig()
+	cfg, err := resolvedConfig(0)
 	if err != nil {
 		return
 	}

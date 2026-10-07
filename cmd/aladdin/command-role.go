@@ -28,7 +28,7 @@ func newRoleListCommand() *cobra.Command {
 		Short: "列出当前作用域下可见的角色",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := newClient()
+			c, err := newClient(0)
 			if err != nil {
 				return err
 			}
@@ -87,7 +87,7 @@ func newRoleAssignCommand() *cobra.Command {
 				return err
 			}
 
-			c, err := newClient()
+			c, err := newClient(0)
 			if err != nil {
 				return err
 			}

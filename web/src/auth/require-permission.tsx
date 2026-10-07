@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { Spin } from 'antd'
 
+import { LoadingHint } from '../ui/LoadingHint'
 import type { PermissionCode } from '../gen/permission-codes'
 import { useAnyPermission } from './use-permission'
 import { useSession } from './session'
@@ -37,7 +37,10 @@ export function RequirePermission({ require }: RequirePermissionProps): React.Re
   const allowed = required.length === 0 || hasPermission
 
   if (status === 'loading') {
-    return <Spin style={{ display: 'block', marginTop: 120 }} />
+    // 会话还没问出来之前，这一页整块都是空的（连外壳都还没渲染）。**它也要说清
+    // "在加载"**：这里此前是一颗不含居中的裸转圈，于是"打开主站"的第一眼是左上角
+    // 一颗小点，既不像在加载、也不像坏了。见 web/src/ui/LoadingHint.tsx。
+    return <LoadingHint minHeight="60vh" />
   }
   if (status === 'anonymous') {
     // 记住来路，登录后回到原页面。

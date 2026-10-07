@@ -268,6 +268,97 @@ func TestEmptyEnvMeansUnset(t *testing.T) {
 	}
 }
 
+// TestCLIBuiltinTimeoutIsLowestLayer 守住"命令级默认超时只占最低那一层"。
+//
+// 它是一条安全性质的判据，不是风格：命令级默认是最**弱**的一个来源，一旦它压过
+// 用户显式给出的取值，"我这次只要 10 秒"就会在某个命令上静默变成一刻钟——而超时
+// 被悄悄调长的人不会察觉，他只会觉得"这条命令怎么挂住了"（见
+// docs/design/config/cli-config.md）。
+func TestCLIBuiltinTimeoutIsLowestLayer(t *testing.T) {
+	const commandDefault = 7 * time.Minute
+
+	t.Run("一层都没给时用命令级默认", func(t *testing.T) {
+		clearEnv(t)
+		isolateHome(t)
+
+		cfg, err := LoadCLI(CLIFlags{BuiltinTimeout: commandDefault})
+		if err != nil {
+			t.Fatalf("LoadCLI: %v", err)
+		}
+		if cfg.Timeout != commandDefault {
+			t.Errorf("timeout = %v，期望命令级默认 %v", cfg.Timeout, commandDefault)
+		}
+	})
+
+	t.Run("不给命令级默认时用全局默认", func(t *testing.T) {
+		clearEnv(t)
+		isolateHome(t)
+
+		cfg, err := LoadCLI(CLIFlags{})
+		if err != nil {
+			t.Fatalf("LoadCLI: %v", err)
+		}
+		if cfg.Timeout != DefaultTimeout {
+			t.Errorf("timeout = %v，期望全局默认 %v", cfg.Timeout, DefaultTimeout)
+		}
+	})
+
+	// 四个显式来源各压一次。它们之间谁赢由既有的层级用例管，这里只问同一件事：
+	// 命令级默认有没有越位。
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T) CLIFlags
+		want  time.Duration
+	}{
+		{
+			name: "命令行参数",
+			setup: func(*testing.T) CLIFlags {
+				return CLIFlags{Timeout: 3 * time.Second, BuiltinTimeout: commandDefault}
+			},
+			want: 3 * time.Second,
+		},
+		{
+			name: "环境变量",
+			setup: func(t *testing.T) CLIFlags {
+				t.Setenv(EnvTimeout, "5s")
+				return CLIFlags{BuiltinTimeout: commandDefault}
+			},
+			want: 5 * time.Second,
+		},
+		{
+			name: "配置文件",
+			setup: func(t *testing.T) CLIFlags {
+				write(t, filepath.Join(cliDir(t), FileName), "timeout: 11s\n")
+				return CLIFlags{BuiltinTimeout: commandDefault}
+			},
+			want: 11 * time.Second,
+		},
+		{
+			name: "本地覆盖",
+			setup: func(t *testing.T) CLIFlags {
+				write(t, filepath.Join(cliDir(t), "config.local.yml"), "timeout: 13s\n")
+				return CLIFlags{BuiltinTimeout: commandDefault}
+			},
+			want: 13 * time.Second,
+		},
+	} {
+		t.Run(tc.name+"压过命令级默认", func(t *testing.T) {
+			clearEnv(t)
+			isolateHome(t)
+			flags := tc.setup(t)
+
+			cfg, err := LoadCLI(flags)
+			if err != nil {
+				t.Fatalf("LoadCLI: %v", err)
+			}
+			if cfg.Timeout != tc.want {
+				t.Errorf("timeout = %v，期望 %v：命令级默认 %v 不该压过显式取值",
+					cfg.Timeout, tc.want, commandDefault)
+			}
+		})
+	}
+}
+
 func TestFileLocationSemantics(t *testing.T) {
 	t.Run("默认位置缺失不是错误", func(t *testing.T) {
 		clearEnv(t)

@@ -14,6 +14,7 @@
 | 命令行经反向代理调用：成功正常、**所有错误**变成一个空的 `Unknown` | 反代吞掉了空正文响应的 gRPC trailers（nginx 1.24 对 connect-go 的错误响应形状处理不了）；命令行因此走 Connect 而非原生 gRPC | [2026-09-29-grpc-trailers-dropped-by-nginx.md](records/2026-09-29-grpc-trailers-dropped-by-nginx.md) |
 | 流式方法（含 grpc 反射）一律返回 `Internal … does not implement http.Flusher`，同一服务的 unary 方法却正常 | 中间件包装了 `ResponseWriter` 而没实现 `Flusher`；connect-go 取 Flusher 走**直接类型断言**，`Unwrap` 帮不上忙 | [2026-09-29-streaming-internal-flusher.md](records/2026-09-29-streaming-internal-flusher.md) |
 | 遥测管理页「追踪 ID」列成片为空，而服务端响应头里明明有 | 前端取 trace_id 的入口（`traceIdOf`）长在错误模块里，只吃 `ConnectError.metadata`；**成功的响应头从来没被读**。按调用捕获即可（`captureTrace`） | [2026-10-07-telemetry-trace-id-empty.md](records/2026-10-07-telemetry-trace-id-empty.md) |
+| `skill add` / `skill sync` 在 30 秒处被掐掉，报 `deadline_exceeded`，服务端日志却是 **503** | 取回是 `3 + 文件数` 次**串行**出站请求（约 0.7 秒一次），而 CLI 的默认超时是给一次普通调用的 30 秒——按 spec 的原样命令纳管首批三件，两件必然超时。那个 503 是调用方的 deadline 到期，不是远端故障 | [2026-10-07-skill-add-times-out-at-30s.md](records/2026-10-07-skill-add-times-out-at-30s.md) |
 | 工作台里在预览中点过一下，之后点外壳上任何按钮预览都整个重载 | 焦点落进本页自己的 iframe 再回到外壳，父窗口同样收到一对 `blur`/`focus`，被当成了"回到前台"；重取预览地址即新票，iframe 因此重新导航。那条兜底整条去掉了：连接的死活改由客户端**按心跳判活**（重连即 `RESYNC`），不再拿"用户有没有看向这一页"去猜"连接还活着没有" | [2026-10-07-preview-reloads-on-page-internal-focus.md](records/2026-10-07-preview-reloads-on-page-internal-focus.md) |
 
 ---
@@ -28,6 +29,7 @@ aladdin 是三端仓库，同一个"看不到数据"的表象可能来自三个�
 | 前端请求 403 / PermissionDenied | 服务端鉴权拦截器的 `reason` 字段，不要先怀疑前端 |
 | CLI 报权限不足 | CLI 凭证是否过期 / 目标环境是否配错；`aladdin --debug` 打印的决策链路 |
 | CLI 报连接层错误（preface / frame / header / connection refused） | 先分"对面有服务但不是 RPC 端点"与"对面没服务"，再核对 `aladdin --debug` 解析出的地址是不是你以为的那个 |
+| CLI 报 `deadline_exceeded`，服务端日志同一时刻出现 **503** | 先看 `duration_ms` 是否紧贴超时值：是则**是超时，不是远端故障**（那个 503 是调用方 ctx 到期被误归类成"远端不可达"）。耗时随请求数增长的命令另有更长的内置默认值，`--timeout` 可覆盖 |
 | 服务端整体拒绝所有请求 | 认证拦截器（身份提取）先于鉴权拦截器，先确认身份是否解析成功 |
 | 服务端重启后角色/授权全没了 | 先确认启动日志里的数据库定位信息是不是你以为的那个库——默认是**工作目录**下的 `aladdin.db`，在不同目录启动就会连到不同的库（见 [persistence](../design/persistence/schema.md)） |
 | 服务端启动即退出、报结构或版本错误 | 库结构与二进制不匹配：查看日志里的迁移结论；未知版本会被拒绝启动（见 [persistence](../design/persistence/README.md)） |
