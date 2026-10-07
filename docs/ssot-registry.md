@@ -20,6 +20,7 @@
 | 前端当前会话是否持有某权限码（仅用于展示裁剪） | `usePermission()` | [web/src/auth/use-permission.ts](../web/src/auth/use-permission.ts) |
 | 当前视口是否为窄屏（手机），及窄屏断点的取值 | `useNarrowViewport()` / `NARROW_MEDIA_QUERY` | [web/src/layouts/use-narrow-viewport.ts](../web/src/layouts/use-narrow-viewport.ts) |
 | 交付用户内容的 iframe：沙箱属性（**含不含 `allow-same-origin` 决定它是否落在不透明源上**；参数里不留可以传入属性的口子），以及它的加载态（遮罩铺到哪一刻、多久算"慢"） | `SandboxFrame` | [web/src/pages/galaxy/SandboxFrame.tsx](../web/src/pages/galaxy/SandboxFrame.tsx) |
+| 一块还没有内容可显示的地方在等的时候长什么样（居中 + 那一句话） | `LoadingHint` / `LOADING_TEXT` | [web/src/ui/LoadingHint.tsx](../web/src/ui/LoadingHint.tsx) |
 | 一个 RPC 方法需要认证 / 需要哪个权限码 | `rbac.Resolve` | [internal/rbac/annotation.go](../internal/rbac/annotation.go) |
 | 数据库后端类型的合法取值 | `database.ParseDialect` | [internal/database/dialect.go](../internal/database/dialect.go) |
 | 该读哪一个配置文件（显式指定 > 环境变量 > 默认位置） | `config.locateFile` | [internal/config/file.go](../internal/config/file.go) |

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as galaxyApi from '../../api/galaxy'
 import { ResolveSharedPageResponseSchema } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import { LOADING_TEXT } from '../../ui/LoadingHint'
 import { PublishedPage } from './PublishedPage'
 
 vi.mock('../../api/galaxy', () => ({
@@ -50,7 +51,7 @@ describe('主站壳', () => {
 
     const container = await renderAt('/g/p1')
 
-    expect(container.textContent).toContain('正在加载内容')
+    expect(container.textContent).toContain(LOADING_TEXT)
   })
 
   // 壳只做一件事：把**整条分享路径**交给服务端解析，再把给出的内容地址放进 iframe。

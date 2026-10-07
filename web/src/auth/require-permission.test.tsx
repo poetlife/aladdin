@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as identityApi from '../api/identity'
 import { PermissionCodes } from '../gen/permission-codes'
 import type { PermissionCode } from '../gen/permission-codes'
+import { LOADING_TEXT } from '../ui/LoadingHint'
 import { SessionProvider } from './session'
 import { RequirePermission } from './require-permission'
 
@@ -112,5 +113,17 @@ describe('路由准入', () => {
     const container = await mountGuard()
 
     expect(container.textContent).toContain('登录页')
+  })
+
+  // **打开主站的第一眼。** 会话还没问出来之前这一页整块是空的（连外壳都还没渲染），
+  // 那一段时间不能只有一颗贴在左上角的裸转圈——既不像在加载，也不像坏了。
+  it('会话判定期间给出加载提示', async () => {
+    globalThis.localStorage.setItem(TOKEN_KEY, 'tok')
+    vi.mocked(identityApi.whoAmI).mockReturnValue(new Promise<never>(() => {}))
+
+    const container = await mountGuard()
+
+    expect(container.textContent).toContain(LOADING_TEXT)
+    expect(container.textContent).not.toContain('受保护内容')
   })
 })
