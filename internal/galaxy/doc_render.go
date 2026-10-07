@@ -41,8 +41,26 @@ type Doc struct {
 	Title string
 	// Headings 是这一页的二级与三级标题，按出现顺序，供本页目录用。
 	Headings []Heading
+	// Anchors 是这一页**全部**标题的锚点标识（一级到六级），供锚点校验用。
+	//
+	// 它与 Headings 是同一处派生的两个视图：目录只列二三级，而 `#锚点` 可以
+	// 指向任何一级标题，因此校验要的是全集（见 checkAnchorLinks）。
+	Anchors []string
+	// Links 是这一页里的导航链接，供锚点校验用。
+	Links []DocLink
 	// Body 是渲染出来的正文片段（不含页面外壳）。
 	Body []byte
+}
+
+// DocLink 是一页 markdown 里的一处导航链接。
+//
+// 记下来是为了**锚点校验**：`#小节` 与 `guide/intro.md#小节` 里的名字对不对，
+// 得等整组文档都渲染完（也就是每一页的标题标识都算出来）才能回答。
+type DocLink struct {
+	// Dest 是源里写的那个目的地，逐字保留（不去后缀、不解析）。
+	Dest string
+	// Line 是它在源里的行号（从 1 开始）。0 表示取不到位置。
+	Line int
 }
 
 // Heading 是正文里的一个标题，目录从它派生。
@@ -97,6 +115,8 @@ func RenderDoc(src DocSource, resolver LinkResolver) (Doc, error) {
 		ArtifactPath: ArtifactPath(SlotDocs, src.Path),
 		Title:        title,
 		Headings:     rendered.headings,
+		Anchors:      rendered.anchors,
+		Links:        rendered.links,
 		Body:         rendered.body,
 	}, nil
 }
@@ -125,6 +145,8 @@ type rendered struct {
 	body     []byte
 	title    string
 	headings []Heading
+	anchors  []string
+	links    []DocLink
 }
 
 // renderMarkdown 渲染一份 markdown，并把其中的引用交给 resolver 改写。
@@ -166,6 +188,8 @@ func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, e
 
 	seen := make(map[string]int)
 	var headings []Heading
+	var anchors []string
+	var links []DocLink
 	var resolveErr error
 	if err := ast.Walk(tree, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -180,16 +204,21 @@ func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, e
 			}
 			n.Destination = []byte(url)
 		case *ast.Link:
-			url, err := resolver.Resolve(from, string(n.Destination), false)
+			dest := string(n.Destination)
+			url, err := resolver.Resolve(from, dest, false)
 			if err != nil {
 				resolveErr = err
 				return ast.WalkStop, nil
 			}
 			n.Destination = []byte(url)
+			// 记下原样的目的地与行号：锚点校验要的是源里写的那个名字，而不是
+			// 改写之后的地址。
+			links = append(links, DocLink{Dest: dest, Line: nodeLine(n, src)})
 		case *ast.Heading:
 			text := strings.TrimSpace(nodeText(n, src))
 			slug := uniqueSlug(seen, headingSlug(text))
 			n.SetAttributeString("id", []byte(slug))
+			anchors = append(anchors, slug)
 			if n.Level == 2 || n.Level == 3 {
 				headings = append(headings, Heading{ID: slug, Level: n.Level, Text: text})
 			}
@@ -224,7 +253,32 @@ func renderMarkdown(src []byte, from string, resolver LinkResolver) (rendered, e
 		}
 		return rendered{}, fmt.Errorf("渲染失败: %w", err)
 	}
-	return rendered{body: out.Bytes(), title: firstHeading(tree, src), headings: headings}, nil
+	return rendered{
+		body:     out.Bytes(),
+		title:    firstHeading(tree, src),
+		headings: headings,
+		anchors:  anchors,
+		links:    links,
+	}, nil
+}
+
+// nodeLine 返回一个行内节点在源里的行号（从 1 开始）；取不到位置时返回 0。
+//
+// 行内节点自己不记位置，而它下面的文本段记着——那些段就是源里的字节，因此行号
+// 从那里读（与 nodeText 同一条理由：哪些片段属于这个节点由语法树回答）。
+func nodeLine(node ast.Node, src []byte) int {
+	line := 0
+	_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering || line > 0 {
+			return ast.WalkContinue, nil
+		}
+		if textNode, ok := n.(*ast.Text); ok {
+			line = lineOf(src, textNode.Segment.Start)
+			return ast.WalkStop, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	return line
 }
 
 // headingSlug 把标题文本变成一个锚点标识。

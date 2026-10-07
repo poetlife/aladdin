@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Problem 是校验发现的一处问题。
@@ -157,6 +158,12 @@ func (s *Service) buildArtifacts(ctx context.Context, project Project, slot Cont
 		}
 	}
 
+	// `docs` 槽下每一处 `#锚点` 都要落在**目标那一页的标题**上。判据就是刚刚
+	// 渲染出来的那份标题标识（目录用的同一份），因此这一趟不需要第二次解析。
+	if !tolerant && slot == SlotDocs && len(docs) > 0 {
+		problems = append(problems, checkAnchorLinks(docs, siteRoot)...)
+	}
+
 	if !tolerant && len(problems) > 0 {
 		return nil, Report{Problems: sortedProblems(problems)}, nil
 	}
@@ -240,6 +247,73 @@ func artifactPaths(artifacts map[string][]byte, manifest Manifest) map[string]bo
 		paths[entry.Path] = true
 	}
 	return paths
+}
+
+// checkAnchorLinks 校验文档里每一处 `#锚点` 都落在目标那一页的标题上（唯一入口）。
+//
+// 判据是渲染这一趟自己算出来的标题标识（目录用的同一份），因此这里不需要再走
+// 一遍语法树、也不需要回读渲染出来的 HTML——两处因此不可能漂移。**指不到即拒绝**：
+// 锚点是同组、同一份文档内的引用，不涉及网络，与"引用的文件在不在文件组里"是同
+// 一类判断（见 docs/design/galaxy/site-model.md 的"引用完整性"）。
+//
+// 指向**非 markdown 条目**的后缀不在此列：那里没有标题可对，无从校验。
+func checkAnchorLinks(docs []Doc, siteRoot string) []Problem {
+	anchorsBySource := make(map[string]map[string]bool, len(docs))
+	for _, doc := range docs {
+		anchors := make(map[string]bool, len(doc.Anchors))
+		for _, anchor := range doc.Anchors {
+			anchors[anchor] = true
+		}
+		anchorsBySource[doc.SourcePath] = anchors
+	}
+
+	var problems []Problem
+	for _, doc := range docs {
+		for _, link := range doc.Links {
+			anchor, target, ok := anchorTarget(doc.SourcePath, link.Dest, siteRoot)
+			if !ok {
+				continue
+			}
+			anchors, known := anchorsBySource[target]
+			if !known || anchors[anchor] {
+				continue
+			}
+			problems = append(problems, Problem{
+				Path:    doc.SourcePath,
+				Line:    link.Line,
+				Message: fmt.Sprintf("链接 %q 指向了 %s 里不存在的锚点 %q", link.Dest, target, anchor),
+			})
+		}
+	}
+	return problems
+}
+
+// anchorTarget 判定一处链接是不是"带锚点的站内导航"，是则给出锚点与目标页的源路径。
+//
+// 三种情形不算：没有 `#` 后缀的、锚点为空的（只有一个 `#`）、目标是外部地址的
+// ——后者由那个站点自己回答，不是本文件组能判的事。
+func anchorTarget(from, dest, siteRoot string) (anchor, target string, ok bool) {
+	location, suffix := splitDestination(dest)
+	// 后缀里可能先有查询串再有锚点（`doc.md?q=1#小节`），因此找的是 `#`，不是首字节。
+	hash := strings.IndexByte(suffix, '#')
+	if hash < 0 {
+		return "", "", false
+	}
+	if anchor = suffix[hash+1:]; anchor == "" {
+		return "", "", false
+	}
+	if location == "" {
+		// `#小节`：**本页自己**。
+		return anchor, from, true
+	}
+	if isExternalDestination(location) {
+		return "", "", false
+	}
+	resolved, resolvedOK := resolveEntryPath(siteRoot, from, location)
+	if !resolvedOK {
+		return "", "", false
+	}
+	return anchor, resolved, true
 }
 
 // buildPreviewArtifacts 是预览要的那一档产物：**有问题也给产物**，坏引用原样留着，

@@ -433,3 +433,110 @@ func TestAuditArtifactsAcceptsResolvedReferences(t *testing.T) {
 		t.Errorf("引用都落在产物清单里，却报错: %v", report.Messages())
 	}
 }
+
+// `docs` 槽：`#锚点` 指不到目标那一页的标题即拒绝。
+//
+// 判据是渲染这一趟算出来的标题标识（目录用的同一份）。指不到不会给出坏页面，
+// 但一份整页死链的文档会被顺利发布出去，而发布物是公开匿名的——读者点到的每一
+// 个死链都是对外可见的质量损失（见 docs/design/galaxy/site-model.md）。
+func TestDocsAnchorMustExistInTargetPage(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		// wantBad 非空表示期望被拒，且问题信息里含它。
+		wantBad string
+	}{
+		{
+			name: "本页里存在的锚点",
+			files: map[string]string{
+				"index.md": "# 首页\n\n## 成品概览\n\n见[成品](#成品概览)。\n",
+			},
+		},
+		{
+			name: "跨页里存在的锚点",
+			files: map[string]string{
+				"index.md":       "# 首页\n\n看[第一次](guide/intro.md#第一次)。\n",
+				"guide/intro.md": "# 入门\n\n## 第一次\n",
+			},
+		},
+		{
+			name: "跨页里不存在的锚点",
+			files: map[string]string{
+				"index.md":       "# 首页\n\n看[第二次](guide/intro.md#第二次)。\n",
+				"guide/intro.md": "# 入门\n\n## 第一次\n",
+			},
+			wantBad: "第二次",
+		},
+		{
+			name: "本页里不存在的锚点",
+			files: map[string]string{
+				"index.md": "# 首页\n\n[没有](#没有这一节)。\n",
+			},
+			wantBad: "没有这一节",
+		},
+		{
+			name: "只有查询串不算锚点",
+			files: map[string]string{
+				"index.md": "# 首页\n\n[换一种排法](?sort=time)。\n",
+			},
+		},
+		{
+			name: "指向站点文件的锚点不在此列",
+			files: map[string]string{
+				"index.md":  "# 首页\n\n[样式](theme.css#top)。\n",
+				"theme.css": "body{}",
+			},
+		},
+		{
+			name: "外部地址的锚点由那个站点自己回答",
+			files: map[string]string{
+				"index.md": "# 首页\n\n[外站](https://example.com/x#小节)。\n",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			project := f.createProjectSlots(t, "文档站", SlotDocs)
+			entries := make([]Entry, 0, len(tc.files))
+			for entryPath, content := range tc.files {
+				entries = append(entries, f.textEntry(t, project.ID, entryPath, content))
+			}
+			f.pushDraftSlot(t, project.ID, SlotDocs, entries)
+
+			report := f.reportSlot(t, project.ID, SlotDocs)
+			if tc.wantBad == "" {
+				if !report.OK() {
+					t.Fatalf("这份文档被拒了: %v", report.Messages())
+				}
+				return
+			}
+			if report.OK() {
+				t.Fatal("指不到的锚点被放过了")
+			}
+			if text := problems(report); !strings.Contains(text, tc.wantBad) {
+				t.Errorf("问题信息 %q 没有指出那个锚点", text)
+			}
+		})
+	}
+}
+
+// 锚点的问题要指到**文件与行号**上：只说"锚点不对"会让用户在一组文件里自己找。
+func TestDocsAnchorProblemCarriesLine(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProjectSlots(t, "文档站", SlotDocs)
+	f.pushDraftSlot(t, project.ID, SlotDocs, []Entry{
+		f.textEntry(t, project.ID, "index.md", "# 首页\n\n正文。\n\n[没有](#没有这一节)\n"),
+	})
+
+	report := f.reportSlot(t, project.ID, SlotDocs)
+	if report.OK() {
+		t.Fatal("指不到的锚点被放过了")
+	}
+	if report.Problems[0].Path != "index.md" {
+		t.Errorf("问题的文件 = %q，期望 index.md", report.Problems[0].Path)
+	}
+	if report.Problems[0].Line != 5 {
+		t.Errorf("问题的行号 = %d，期望 5", report.Problems[0].Line)
+	}
+}
