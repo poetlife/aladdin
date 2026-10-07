@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Flex, Spin, Typography, theme } from 'antd'
 
+import { LoadingHint } from '../../ui/LoadingHint'
 import { parseFrameImagePreview, type FrameImagePreview } from './frame-channel'
 import { FrameImageLightbox } from './FrameImageLightbox'
 
@@ -158,22 +159,15 @@ export function SandboxFrame({ url, title, height = 420 }: SandboxFrameProps): R
  *
  * 它不透明是**有意的**：这一帧此刻是空的（浏览器还没拿到任何字节），把调用方的底色
  * 透出来只会让"还没开始加载"和"内容就是一片空白"看起来一样。铺到内容开始出现为止
- * 的分寸见上方 `COVER_TIMEOUT_MS`。
+ * 的分寸见上方 `COVER_TIMEOUT_MS`；长什么样由 `LoadingHint` 一处定（见
+ * docs/ssot-registry.md）。
  */
 function LoadingCover(): React.ReactNode {
   const { token } = theme.useToken()
   return (
-    <Flex
-      align="center"
-      justify="center"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        background: token.colorBgContainer,
-      }}
-    >
-      <Spin size="large" description="正在加载内容…" />
-    </Flex>
+    <div style={{ position: 'absolute', inset: 0, background: token.colorBgContainer }}>
+      <LoadingHint />
+    </div>
   )
 }
 

@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { LOADING_TEXT } from '../../ui/LoadingHint'
 import { FRAME_CHANNEL, FRAME_CHANNEL_VERSION } from './frame-channel'
 import { SandboxFrame } from './SandboxFrame'
 
@@ -95,11 +96,11 @@ describe('加载态', () => {
   it('load 之前有加载态，load 之后撤掉', async () => {
     const container = await renderFrame('https://pub.example.com/g/prj_x')
 
-    expect(container.textContent, '内容还没到时什么都没有').toContain('正在加载内容')
+    expect(container.textContent, '内容还没到时什么都没有').toContain(LOADING_TEXT)
 
     await fireLoad(container)
 
-    expect(container.textContent).not.toContain('正在加载内容')
+    expect(container.textContent).not.toContain(LOADING_TEXT)
     // 加载完成后不留任何痕迹：正常的那条路上不能多出一层东西。
     expect(container.textContent).not.toContain('内容还在加载')
   })
@@ -115,13 +116,13 @@ describe('加载态', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(SPEC_COVER_TIMEOUT_MS - 1)
       })
-      expect(container.textContent, '还没到点就把遮罩撤了').toContain('正在加载内容')
+      expect(container.textContent, '还没到点就把遮罩撤了').toContain(LOADING_TEXT)
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1)
       })
 
-      expect(container.textContent, '到点后遮罩还盖着').not.toContain('正在加载内容')
+      expect(container.textContent, '到点后遮罩还盖着').not.toContain(LOADING_TEXT)
       expect(container.textContent).toContain('内容还在加载')
       // antd 在按钮文字的汉字之间插空格，因此按去空格后的文本比。
       expect(container.textContent?.replace(/\s/g, '')).toContain('重试')
@@ -151,7 +152,7 @@ describe('加载态', () => {
       expect(iframe(container), '重试没有重新取这一帧').not.toBe(before)
       expect(iframe(container).getAttribute('src')).toBe('https://pub.example.com/g/prj_x')
       // 重新等起：遮罩回来了，而不是停在"还在加载"那条状态条上。
-      expect(container.textContent).toContain('正在加载内容')
+      expect(container.textContent).toContain(LOADING_TEXT)
     } finally {
       vi.useRealTimers()
     }
@@ -161,11 +162,11 @@ describe('加载态', () => {
   it('换一条地址后重新进入加载态', async () => {
     const container = await renderFrame('https://pub.example.com/g/p/tok1/prj_x/')
     await fireLoad(container)
-    expect(container.textContent).not.toContain('正在加载内容')
+    expect(container.textContent).not.toContain(LOADING_TEXT)
 
     await rerenderFrame('https://pub.example.com/g/p/tok2/prj_x/')
 
-    expect(container.textContent).toContain('正在加载内容')
+    expect(container.textContent).toContain(LOADING_TEXT)
   })
 })
 
