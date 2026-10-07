@@ -45,9 +45,6 @@ const (
 	// IdentityServiceGetSessionPermissionsProcedure is the fully-qualified name of the
 	// IdentityService's GetSessionPermissions RPC.
 	IdentityServiceGetSessionPermissionsProcedure = "/aladdin.identity.v1.IdentityService/GetSessionPermissions"
-	// IdentityServiceBindIdentityProcedure is the fully-qualified name of the IdentityService's
-	// BindIdentity RPC.
-	IdentityServiceBindIdentityProcedure = "/aladdin.identity.v1.IdentityService/BindIdentity"
 	// IdentityServiceUnbindIdentityProcedure is the fully-qualified name of the IdentityService's
 	// UnbindIdentity RPC.
 	IdentityServiceUnbindIdentityProcedure = "/aladdin.identity.v1.IdentityService/UnbindIdentity"
@@ -91,21 +88,6 @@ type IdentityServiceClient interface {
 	// 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
 	// 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
 	GetSessionPermissions(context.Context, *connect.Request[v1.GetSessionPermissionsRequest]) (*connect.Response[v1.GetSessionPermissionsResponse], error)
-	// 把一个登录渠道绑到当前主体上。
-	//
-	// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
-	// 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
-	// 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
-	//
-	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
-	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-	// 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
-	// identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
-	// 身份被并入当前主体。
-	//
-	// 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
-	// 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
-	BindIdentity(context.Context, *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error)
 	// 从当前主体上摘掉一个登录渠道。
 	//
 	// 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
@@ -114,12 +96,19 @@ type IdentityServiceClient interface {
 	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
 	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
 	UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error)
-	// 完成一次重定向型渠道的绑定。
+	// 完成一次渠道绑定。
 	//
-	// 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
-	// 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
-	// 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
-	// 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	// 渠道凭证**不在这里**：所有渠道都是重定向型，凭证经一次浏览器导航到达
+	// 服务端，由回调校验过之后记成一份一次性的"待绑定凭据"，只经浏览器不可读的
+	// cookie 交回。本方法只负责在**当前已认证主体**上兑换它——归属仍然只由当前
+	// 凭证决定，不由请求里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	//
+	// **归属由发起者决定，不由凭证决定。** 凭证只证明"发起者控制着这个身份"，
+	// 因此这里只可能绑到当前凭证代表的主体上。该身份已属于另一个主体时拒绝，
+	// **不转移、不合并**：转移意味着任何拿到该渠道凭证的人都能把别人的进入方式
+	// 夺走一部分，而这个动作在系统里与一次正常绑定没有区别。唯一的窄口子是
+	// "空主体认领"（见 docs/design/identity/identity-linking.md）：原主体只有这条
+	// 身份、且没有任何角色绑定时，身份被并入当前主体。
 	CompleteIdentityBinding(context.Context, *connect.Request[v1.CompleteIdentityBindingRequest]) (*connect.Response[v1.CompleteIdentityBindingResponse], error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error)
@@ -204,12 +193,6 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
-		bindIdentity: connect.NewClient[v1.BindIdentityRequest, v1.BindIdentityResponse](
-			httpClient,
-			baseURL+IdentityServiceBindIdentityProcedure,
-			connect.WithSchema(identityServiceMethods.ByName("BindIdentity")),
-			connect.WithClientOptions(opts...),
-		),
 		unbindIdentity: connect.NewClient[v1.UnbindIdentityRequest, v1.UnbindIdentityResponse](
 			httpClient,
 			baseURL+IdentityServiceUnbindIdentityProcedure,
@@ -263,7 +246,6 @@ type identityServiceClient struct {
 	getAuthMethods          *connect.Client[v1.GetAuthMethodsRequest, v1.GetAuthMethodsResponse]
 	whoAmI                  *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
 	getSessionPermissions   *connect.Client[v1.GetSessionPermissionsRequest, v1.GetSessionPermissionsResponse]
-	bindIdentity            *connect.Client[v1.BindIdentityRequest, v1.BindIdentityResponse]
 	unbindIdentity          *connect.Client[v1.UnbindIdentityRequest, v1.UnbindIdentityResponse]
 	completeIdentityBinding *connect.Client[v1.CompleteIdentityBindingRequest, v1.CompleteIdentityBindingResponse]
 	listIdentities          *connect.Client[v1.ListIdentitiesRequest, v1.ListIdentitiesResponse]
@@ -296,11 +278,6 @@ func (c *identityServiceClient) WhoAmI(ctx context.Context, req *connect.Request
 // GetSessionPermissions calls aladdin.identity.v1.IdentityService.GetSessionPermissions.
 func (c *identityServiceClient) GetSessionPermissions(ctx context.Context, req *connect.Request[v1.GetSessionPermissionsRequest]) (*connect.Response[v1.GetSessionPermissionsResponse], error) {
 	return c.getSessionPermissions.CallUnary(ctx, req)
-}
-
-// BindIdentity calls aladdin.identity.v1.IdentityService.BindIdentity.
-func (c *identityServiceClient) BindIdentity(ctx context.Context, req *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error) {
-	return c.bindIdentity.CallUnary(ctx, req)
 }
 
 // UnbindIdentity calls aladdin.identity.v1.IdentityService.UnbindIdentity.
@@ -358,21 +335,6 @@ type IdentityServiceHandler interface {
 	// 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
 	// 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
 	GetSessionPermissions(context.Context, *connect.Request[v1.GetSessionPermissionsRequest]) (*connect.Response[v1.GetSessionPermissionsResponse], error)
-	// 把一个登录渠道绑到当前主体上。
-	//
-	// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
-	// 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
-	// 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
-	//
-	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
-	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-	// 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
-	// identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
-	// 身份被并入当前主体。
-	//
-	// 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
-	// 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
-	BindIdentity(context.Context, *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error)
 	// 从当前主体上摘掉一个登录渠道。
 	//
 	// 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
@@ -381,12 +343,19 @@ type IdentityServiceHandler interface {
 	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
 	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
 	UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error)
-	// 完成一次重定向型渠道的绑定。
+	// 完成一次渠道绑定。
 	//
-	// 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
-	// 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
-	// 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
-	// 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	// 渠道凭证**不在这里**：所有渠道都是重定向型，凭证经一次浏览器导航到达
+	// 服务端，由回调校验过之后记成一份一次性的"待绑定凭据"，只经浏览器不可读的
+	// cookie 交回。本方法只负责在**当前已认证主体**上兑换它——归属仍然只由当前
+	// 凭证决定，不由请求里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	//
+	// **归属由发起者决定，不由凭证决定。** 凭证只证明"发起者控制着这个身份"，
+	// 因此这里只可能绑到当前凭证代表的主体上。该身份已属于另一个主体时拒绝，
+	// **不转移、不合并**：转移意味着任何拿到该渠道凭证的人都能把别人的进入方式
+	// 夺走一部分，而这个动作在系统里与一次正常绑定没有区别。唯一的窄口子是
+	// "空主体认领"（见 docs/design/identity/identity-linking.md）：原主体只有这条
+	// 身份、且没有任何角色绑定时，身份被并入当前主体。
 	CompleteIdentityBinding(context.Context, *connect.Request[v1.CompleteIdentityBindingRequest]) (*connect.Response[v1.CompleteIdentityBindingResponse], error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *connect.Request[v1.ListIdentitiesRequest]) (*connect.Response[v1.ListIdentitiesResponse], error)
@@ -467,12 +436,6 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
-	identityServiceBindIdentityHandler := connect.NewUnaryHandler(
-		IdentityServiceBindIdentityProcedure,
-		svc.BindIdentity,
-		connect.WithSchema(identityServiceMethods.ByName("BindIdentity")),
-		connect.WithHandlerOptions(opts...),
-	)
 	identityServiceUnbindIdentityHandler := connect.NewUnaryHandler(
 		IdentityServiceUnbindIdentityProcedure,
 		svc.UnbindIdentity,
@@ -528,8 +491,6 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 			identityServiceWhoAmIHandler.ServeHTTP(w, r)
 		case IdentityServiceGetSessionPermissionsProcedure:
 			identityServiceGetSessionPermissionsHandler.ServeHTTP(w, r)
-		case IdentityServiceBindIdentityProcedure:
-			identityServiceBindIdentityHandler.ServeHTTP(w, r)
 		case IdentityServiceUnbindIdentityProcedure:
 			identityServiceUnbindIdentityHandler.ServeHTTP(w, r)
 		case IdentityServiceCompleteIdentityBindingProcedure:
@@ -571,10 +532,6 @@ func (UnimplementedIdentityServiceHandler) WhoAmI(context.Context, *connect.Requ
 
 func (UnimplementedIdentityServiceHandler) GetSessionPermissions(context.Context, *connect.Request[v1.GetSessionPermissionsRequest]) (*connect.Response[v1.GetSessionPermissionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.GetSessionPermissions is not implemented"))
-}
-
-func (UnimplementedIdentityServiceHandler) BindIdentity(context.Context, *connect.Request[v1.BindIdentityRequest]) (*connect.Response[v1.BindIdentityResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.identity.v1.IdentityService.BindIdentity is not implemented"))
 }
 
 func (UnimplementedIdentityServiceHandler) UnbindIdentity(context.Context, *connect.Request[v1.UnbindIdentityRequest]) (*connect.Response[v1.UnbindIdentityResponse], error) {

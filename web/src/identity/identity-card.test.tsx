@@ -8,7 +8,6 @@ import { IdentityCard } from './identity-card'
 
 vi.mock('../api/identity', () => ({
   AuthSource: { Google: 'google', Github: 'github' },
-  bindGoogleIdentity: vi.fn(),
   getAuthMethods: vi.fn(),
   listIdentities: vi.fn(),
   unbindIdentity: vi.fn(),
@@ -43,7 +42,6 @@ beforeEach(() => {
     {
       $typeName: 'aladdin.identity.v1.AuthMethod',
       source: identityApi.AuthSource.Github,
-      clientId: 'Iv1.example',
     },
   ])
 })
@@ -60,6 +58,21 @@ it('未绑定的 GitHub 给出去绑定的起点链接', async () => {
   const container = await renderCard()
 
   expect(container.querySelector('a[href="/auth/github/start?purpose=bind"]')).not.toBeNull()
+})
+
+it('未绑定的 Google 也给出去绑定的起点链接，并带绑定用途标记', async () => {
+  vi.mocked(identityApi.getAuthMethods).mockResolvedValue([
+    {
+      $typeName: 'aladdin.identity.v1.AuthMethod',
+      source: identityApi.AuthSource.Google,
+    },
+  ])
+
+  const container = await renderCard()
+
+  // purpose 只告诉服务端这次导航走向绑定分支，绑到谁在回跳后的已认证兑换里决定。
+  expect(container.querySelector('a[href="/auth/google/start?purpose=bind"]')).not.toBeNull()
+  expect(container.querySelector('a[href="/auth/github/start?purpose=bind"]')).toBeNull()
 })
 
 it('已绑定的渠道只展示，不再给绑定入口', async () => {

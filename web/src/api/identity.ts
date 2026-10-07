@@ -46,6 +46,9 @@ export async function getSessionPermissions(scope: string) {
  *
  * 它们与服务端的 `identity.Source*` 一一对应。前端只在"该渲染哪个入口、
  * 该往哪个地址跳"这件事上用它们——**身份归属与任何判定都不在前端**。
+ *
+ * 两个渠道都是重定向型：登录与绑定都只由一次浏览器导航发起，没有"把渠道凭证
+ * 随 RPC 交给服务端"的入口（见 docs/design/identity/channel-login.md）。
  */
 export const AuthSource = {
   Google: 'google',
@@ -67,38 +70,9 @@ export async function getAuthMethods(): Promise<AuthMethod[]> {
   return resp.methods
 }
 
-/**
- * 用 Google 签发的身份令牌换取会话凭证。
- *
- * 令牌由 Google 在浏览器内签发（见 ../auth/google-identity），这里只是搬运：
- * 它的可信度完全由服务端校验，前端的任何字段都不参与信任决策。
- *
- * `trace` 的含义与 login 同：登录页的 `auth.login` 事件要指回这一次请求。
- */
-export async function loginWithGoogle(idToken: string, trace?: TraceCapture) {
-  return identityClient().login(
-    {
-      credential: { case: 'google', value: { idToken } },
-    },
-    traceCallOptions(trace),
-  )
-}
-
 /** 列出当前主体已绑定的全部登录渠道。 */
 export async function listIdentities() {
   return identityClient().listIdentities({})
-}
-
-/**
- * 用 Google 签发的身份令牌把该渠道绑到**当前主体**。
- *
- * 这是搬运型渠道的绑定：令牌直接随请求到达服务端，由与登录相同的校验器
- * 校验；归属只取当前会话的主体，请求里没有主体字段。
- */
-export async function bindGoogleIdentity(idToken: string) {
-  return identityClient().bindIdentity({
-    credential: { case: 'google', value: { idToken } },
-  })
 }
 
 /**

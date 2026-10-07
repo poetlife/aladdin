@@ -186,7 +186,7 @@ EOF
 
 密钥**不进 `config.yml`**：那个文件会进版本库、进镜像、被贴给别人排查问题（见 [design/config/credentials.md](design/config/credentials.md)）。这与"生产机上不出现 `ALADDIN_DEV_SEED`"是同一条理由的两面。
 
-**所有密钥放这一个文件，一个功能一份 env 是不要的。** 约束只到"密钥走环境变量"，没说它们要分几份；而分开只会多出漂移面——多一个文件就多一行 `EnvironmentFile=`，多一处"重装单元时漏掉"的机会。分开也换不来隔离：读它们的是同一个进程、同一个 uid，`EnvironmentFile` 机制也一样，信任域完全重合。第 11 步的 GitHub 密钥因此**追加到同一个文件**。
+**所有密钥放这一个文件，一个功能一份 env 是不要的。** 约束只到"密钥走环境变量"，没说它们要分几份；而分开只会多出漂移面——多一个文件就多一行 `EnvironmentFile=`，多一处"重装单元时漏掉"的机会。分开也换不来隔离：读它们的是同一个进程、同一个 uid，`EnvironmentFile` 机制也一样，信任域完全重合。第 12 步的 GitHub 密钥因此**追加到同一个文件**。
 
 4. 在 `/opt/aladdin/config.yml` 填 `cos_bucket_url`——**完整桶主机名**（含 APPID 与地域，形如 `https://<桶名>-<APPID>.cos.<地域>.myqcloud.com`），然后重启。
 
@@ -242,7 +242,7 @@ sudo systemctl enable aladdin-server
 
 单元文件里有 `EnvironmentFile=-/opt/aladdin/secrets.env`。**`-` 前缀是有意的**：文件不存在时 systemd 不报错，因此没做第 7 步的部署照常启动，头像功能保持未启用。密钥是这里唯一一类需要走环境变量的输入——它们不能进配置文件（理由同上），而 `secrets.env` 是 0600、属主是服务账号，与 CLI 侧凭证文件的保护方式一致。
 
-> 单元文件里**只有这一行** `EnvironmentFile=`。第 11 步的 GitHub 密钥不是第二份文件，更不是第二行。"一个功能一份 env"曾让 `github.env` 只存在于服务器上，而仓库那份单元少了它——于是"按仓库重装单元"会静默丢掉 GitHub 登录：密钥文件还在，服务读不到。一份文件一行，这类漂移没有产生的余地。
+> 单元文件里**只有这一行** `EnvironmentFile=`。第 12 步的 GitHub 密钥不是第二份文件，更不是第二行。"一个功能一份 env"曾让 `github.env` 只存在于服务器上，而仓库那份单元少了它——于是"按仓库重装单元"会静默丢掉 GitHub 登录：密钥文件还在，服务读不到。一份文件一行，这类漂移没有产生的余地。
 
 ### 9. 发布第一个版本
 
@@ -252,27 +252,51 @@ sudo systemctl enable aladdin-server
 sudo /opt/aladdin/deploy.sh
 ```
 
-### 10. 首次引导管理员
+### 10. 启用 Google 登录
+
+Google 是**重定向型**渠道（与 GitHub 逐字同规格）：浏览器被交给 Google，Google 把授权码送回服务端，服务端用客户端密钥换回身份令牌。因此它需要三处配置齐全，且有一处要在 Google 控制台登记。
+
+1. 在 Google Cloud Console 建（或改用）一个 **Web 应用** 类型的 OAuth 2.0 客户端，在**"已获授权的重定向 URI"**里填
+   `https://<域名>/auth/google/callback`
+   （"已获授权的 JavaScript 来源"**不再需要**：本站不在浏览器里调用 Google）
+2. 在 `/opt/aladdin/config.yml` 填入：
+   ```yaml
+   google_client_id: "<OAuth 客户端的 Client ID>"
+   public_base_url: "https://<域名>"
+   ```
+3. 把客户端密钥**追加**到第 7 步那个 `secrets.env` 末尾，**不要**写进 `config.yml`，也**不要**另起一份（理由见第 7 步）：
+   ```bash
+   [[ -e /opt/aladdin/secrets.env ]] || sudo install -o aladdin -g aladdin -m 0600 /dev/null /opt/aladdin/secrets.env
+   sudo tee -a /opt/aladdin/secrets.env >/dev/null <<'EOF'
+   ALADDIN_GOOGLE_CLIENT_SECRET=<Client Secret>
+   EOF
+   ```
+   第一行的守卫让"没做第 7 步"的部署也能拿到一个创建即 0600 的文件，而不是让 `tee -a` 按 root 的 umask 建出一个宽权限的。单元文件**不动**——它那一行 `EnvironmentFile=` 已经在第 8 步装好了，且只该有那一行
+4. 确认 nginx 里 `location ^~ /auth/` 转发到服务端，且这一条里带 `access_log off`（模板已含，见 [../deploy/nginx-aladdin-site.conf](../deploy/nginx-aladdin-site.conf)）——回调地址里带着授权码与登录凭据，默认的访问日志格式会把它们写进日志
+5. 重启服务，登录页应出现 Google 入口
+
+三项（客户端标识、客户端密钥、对外地址）**缺一即拒绝启动**，这是刻意的：半套配置的失败方式是"看起来配好了"，直到有人点了登录才失败。
+
+> 换域名时要同时改三处：Google 控制台的已获授权的重定向 URI、配置里的 `public_base_url`、以及 nginx 的站点域名。**只改其中一处都表现为"点登录没反应"或"回调 404"**，而不是任何一条报错。
+
+### 11. 首次引导管理员
 
 系统里还没有任何角色绑定时，需要建立第一个管理员。**机器凭证在生产不可用**——它只能由开发种子旁路产生，而生产不开那个旁路。因此第一个管理员必须走真实登录：
 
-1. 在 `/opt/aladdin/config.yml` 填入 `google_client_id`
-2. **到 Google 控制台把 `https://<域名>` 加进允许的浏览器来源**
-3. 重启服务，用浏览器登录一次
-4. 从服务端日志里读出这次登录的**主体标识**
+1. 按上一步启用一个渠道（Google 或 GitHub）
+2. 重启服务，用浏览器登录一次
+3. 从服务端日志里读出这次登录的**主体标识**
    ```bash
    sudo journalctl -u aladdin-server | grep -i 登录
    ```
-5. 把该标识填进 `bootstrap_admin_subject`，并按需填 `bootstrap_admin_scope`，重启
-6. 确认日志里出现 `warn` 级的引导留痕，然后**删掉这两行**
+4. 把该标识填进 `bootstrap_admin_subject`，并按需填 `bootstrap_admin_scope`，重启
+5. 确认日志里出现 `warn` 级的引导留痕，然后**删掉这两行**
 
-第 4 步填的必须是**主体标识**，不是邮箱，也不是 Google 的 `sub`：邮箱可以被改名、被回收，回收给另一个人的那天就是一次无痕提权（见 [AGENTS.md](../AGENTS.md) 第 7 条）。第 6 步删掉配置**不会**撤销已经建立的绑定——判定路径只读数据库、从不读配置。
+第 3 步填的必须是**主体标识**，不是邮箱，也不是渠道上的身份标识（Google 的 `sub`）：邮箱可以被改名、被回收，回收给另一个人的那天就是一次无痕提权（见 [AGENTS.md](../AGENTS.md) 第 7 条）。第 5 步删掉配置**不会**撤销已经建立的绑定——判定路径只读数据库、从不读配置。
 
-> **第 2 步是本部署里唯一一处不在本仓库管理的东西。** 浏览器来源白名单只存在于 Google 控制台，仓库里刻意没有对应的配置键。换域名时改的是那里，**忘记改的表现是"换了域名之后登录按钮点了没反应"**，而不是任何一条报错。
+### 12. 启用 GitHub 登录（可选）
 
-### 11. 启用 GitHub 登录（可选）
-
-GitHub 是**重定向型**渠道：它交给浏览器的是一个授权码，服务端要用客户端密钥去换令牌，因此比 Google 多两步配置，且多一处要在渠道侧登记。
+GitHub 与 Google 的配置要求**逐字相同**（都是重定向型渠道，都要三项齐全、都要在渠道侧登记回调地址），只是键名与端点不同：
 
 1. 在 GitHub 建 **OAuth App**，把 **Authorization callback URL** 填成
    `https://<域名>/auth/github/callback`
@@ -281,24 +305,15 @@ GitHub 是**重定向型**渠道：它交给浏览器的是一个授权码，服
    github_client_id: "<OAuth App 的 Client ID>"
    public_base_url: "https://<域名>"
    ```
-3. 把客户端密钥**追加**到第 7 步那个 `secrets.env` 末尾，**不要**写进 `config.yml`，也**不要**另起一份（理由见第 7 步）：
-   ```bash
-   [[ -e /opt/aladdin/secrets.env ]] || sudo install -o aladdin -g aladdin -m 0600 /dev/null /opt/aladdin/secrets.env
-   sudo tee -a /opt/aladdin/secrets.env >/dev/null <<'EOF'
-   ALADDIN_GITHUB_CLIENT_SECRET=<Client Secret>
-   EOF
-   ```
-   第一行的守卫让"没做第 7 步"的部署也能拿到一个创建即 0600 的文件，而不是让 `tee -a` 按 root 的 umask 建出一个宽权限的。单元文件**不动**——它那一行 `EnvironmentFile=` 已经在第 8 步装好了，且只该有那一行
-4. 确认 nginx 里 `location ^~ /auth/` 转发到服务端，且这一条里带 `access_log off`（模板已含，见 [../deploy/nginx-aladdin-site.conf](../deploy/nginx-aladdin-site.conf)）——回调地址里带着授权码与登录凭据，默认的访问日志格式会把它们写进日志
+3. 把客户端密钥**追加**到 `secrets.env` 末尾（做法与上一步第 3 条逐字相同，只换成 `ALADDIN_GITHUB_CLIENT_SECRET=<Client Secret>`）
+4. 确认 nginx 的 `/auth/` 转发与 `access_log off` 同上
 5. 重启服务，登录页应出现 GitHub 入口
 
-三项（客户端标识、客户端密钥、对外地址）**缺一即拒绝启动**，这是刻意的：半套配置的失败方式是"看起来配好了"，直到有人点了登录才失败。
+> 换域名时要同时改三处，与 Google 那条一样：GitHub 控制台的授权回调地址、配置里的 `public_base_url`、以及 nginx 的站点域名。**只改其中一处都表现为"点登录没反应"或"回调 404"**，而不是任何一条报错。
 
-> 换域名时要同时改三处：GitHub 控制台的授权回调地址、配置里的 `public_base_url`、以及 nginx 的站点域名。**只改其中一处都表现为"点登录没反应"或"回调 404"**，而不是任何一条报错。
+**用渠道登录得到的是零权限的主体**（首次登录必然如此），不会自动并入已有账号：把两个渠道归到同一个主体是「绑定」这个动作——先登录已有账号，在个人资料里绑定新渠道（见 [design/identity/identity-linking.md](design/identity/identity-linking.md)）。
 
-**GitHub 登录会得到一个零权限的新主体**，不会自动并入已有的 Google 账号：把两个渠道归到同一个主体是「绑定」这个动作，而绑定重定向型渠道目前尚未支持（见 [design/identity/github-login.md](design/identity/github-login.md) 的待定决策）。
-
-### 12. 命令行登录（设备码，可选）
+### 13. 命令行登录（设备码，可选）
 
 命令行登录不依赖任何一个渠道：终端打印一个短码，人在**自己已经登录的浏览器**里批准，终端随后拿到一份属于那个主体的会话（见 [design/identity/device-login.md](design/identity/device-login.md)）。
 
@@ -316,7 +331,7 @@ nginx **不需要任何改动**：批准页 `/device` 是前端路由，落在 `
 
 用法是 `aladdin login`（不带 `--token`）。带 `--token` 时走的仍是机器凭证那条既有路径，两者不受彼此影响。
 
-### 13. 技能目录的远端凭据（可选）
+### 14. 技能目录的远端凭据（可选）
 
 平台从 GitHub 纳管技能时要取远端内容，用的凭据是 `ALADDIN_GITHUB_TOKEN`（见 [design/skill/onboarding.md](design/skill/onboarding.md) 的"远端凭据"）。**不配也能用**：读写目录、取用技能都不受影响，只是远端访问走匿名额度。
 
@@ -327,7 +342,7 @@ ALADDIN_GITHUB_TOKEN=<只读的 Personal Access Token>
 EOF
 ```
 
-与第 11 步同一条理由：**不写进 `config.yml`**，也不另起一份文件。重启服务后生效。
+与第 12 步同一条理由：**不写进 `config.yml`**，也不另起一份文件。重启服务后生效。
 
 > **不配的失败方式要认得出来。** 一次纳管要发 `1 + 文件数` 次远端请求（先问目录树，再逐条取要收的字节），而匿名额度是**每小时 60 次**——收一个几十个文件的仓库一次就用掉大半。因此现象是"头两个技能纳得进来，第三个开始一直失败"，那是限频，不是仓库地址或子路径的问题。要正经维护目录就得配它。
 
@@ -427,7 +442,7 @@ sudo -u aladdin sqlite3 /opt/aladdin/data/aladdin.db \
 | 浏览器报证书错误 | 证书名与站点 `server_name` 是否一致；`certbot renew --dry-run` 是否通过 |
 | 部署后健康检查失败并自动回滚 | `deploy.sh` 打印的服务端日志；若含"未知版本"，是迁移与回滚的冲突，见上文"回滚" |
 | 服务端起不来且日志说端口被占 | 9090 被同机别的服务占了，换端口要同时改三处（见"端口"） |
-| 换了域名后登录按钮点了没反应 | Google 控制台的浏览器来源白名单没改 |
+| 换了域名后 Google 登录按钮点了没反应 | 三处域名只要有一处没改就会这样：Google 控制台的**已获授权的重定向 URI**、配置里的 `public_base_url`、nginx 站点域名。另需确认 nginx 的 `location ^~ /auth/` 转发到了服务端 |
 | 点 GitHub 登录没反应或回调 404 | 三处域名只要有一处没改就会这样：GitHub 控制台的授权回调地址、配置里的 `public_base_url`、nginx 站点域名。另需确认 nginx 的 `location ^~ /auth/` 转发到了服务端。**这条路径刻意不记 nginx 访问日志**（地址里带着授权码与凭据），因此"请求有没有打到服务端"要看服务端日志：走对了会有登录成功或"登录未完成"的留痕；走错了才会在 `location /` 的访问日志里留下一条 200 |
 | GitHub 登录曾正常、某次重装单元后失效 | 单元里是否丢了 `EnvironmentFile=-/opt/aladdin/secrets.env`，或密钥是否仍留在旧的 `github.env` 里（同一个键不会读两处，旧的不会再被读到）。**重新装了单元就必须核对这一行**——它是唯一会被"按仓库重装"覆盖掉的一行 |
 | 管理员登录后仍然"没有权限" | 引导是否生效：`sudo journalctl -u aladdin-server \| grep -i 引导`；引导只在存储中无任何绑定时生效 |

@@ -49,24 +49,6 @@ service IdentityService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
-  // 把一个登录渠道绑到当前主体上。
-  //
-  // **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
-  // 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
-  // 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
-  //
-  // 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
-  // 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-  // 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
-  // identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
-  // 身份被并入当前主体。
-  //
-  // 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
-  // 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
-  rpc BindIdentity(BindIdentityRequest) returns (BindIdentityResponse) {
-    option (aladdin.rbac.v1.authenticated_only) = true;
-  }
-
   // 从当前主体上摘掉一个登录渠道。
   //
   // 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
@@ -78,12 +60,19 @@ service IdentityService {
     option (aladdin.rbac.v1.authenticated_only) = true;
   }
 
-  // 完成一次重定向型渠道的绑定。
+  // 完成一次渠道绑定。
   //
-  // 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
-  // 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
-  // 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
-  // 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+  // 渠道凭证**不在这里**：所有渠道都是重定向型，凭证经一次浏览器导航到达
+  // 服务端，由回调校验过之后记成一份一次性的"待绑定凭据"，只经浏览器不可读的
+  // cookie 交回。本方法只负责在**当前已认证主体**上兑换它——归属仍然只由当前
+  // 凭证决定，不由请求里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+  //
+  // **归属由发起者决定，不由凭证决定。** 凭证只证明"发起者控制着这个身份"，
+  // 因此这里只可能绑到当前凭证代表的主体上。该身份已属于另一个主体时拒绝，
+  // **不转移、不合并**：转移意味着任何拿到该渠道凭证的人都能把别人的进入方式
+  // 夺走一部分，而这个动作在系统里与一次正常绑定没有区别。唯一的窄口子是
+  // "空主体认领"（见 docs/design/identity/identity-linking.md）：原主体只有这条
+  // 身份、且没有任何角色绑定时，身份被并入当前主体。
   rpc CompleteIdentityBinding(CompleteIdentityBindingRequest) returns (CompleteIdentityBindingResponse) {
     option (aladdin.rbac.v1.authenticated_only) = true;
   }
@@ -143,12 +132,13 @@ service IdentityService {
 }
 
 message LoginRequest {
-  // 人类用户使用用户名口令；机器凭证使用 token 换取短期访问凭证；
-  // 人类用户也可用外部身份源签发的身份令牌换取会话凭证。
+  // 人类用户使用用户名口令；机器凭证使用 token 换取短期访问凭证。
+  //
+  // **外部身份源不在这里**：所有渠道都是重定向型，凭证由渠道直接交给服务端
+  // 的一个浏览器直连端点，客户端从不经手（见 docs/design/identity/channel-login.md）。
   oneof credential {
     PasswordCredential password = 1;
     TokenCredential token = 2;
-    GoogleCredential google = 3;
   }
 }
 
@@ -159,17 +149,6 @@ message PasswordCredential {
 
 message TokenCredential {
   string token = 1;
-}
-
-// GoogleCredential 是 Google Identity Services 在浏览器内返回的身份令牌。
-//
-// 它由前端搬运、由服务端校验，前端的任何字段都不参与信任决策。服务端必须
-// 校验签名、签发方、受众与有效期，其中**受众必须严格等于本服务配置的客户端
-// 标识**——漏掉这一条意味着任何 Google 应用的令牌都能登录本服务。
-//
-// 这份令牌**不得进入日志、错误信息与 --debug 输出**：它与口令同级。
-message GoogleCredential {
-  string id_token = 1;
 }
 
 message GetAuthMethodsRequest {}
@@ -194,13 +173,13 @@ message GetAuthMethodsResponse {
 }
 
 // AuthMethod 是一个已启用的登录渠道。
+//
+// **只有一个来源标识**：所有渠道都是重定向型，入口是一个指向服务端起点的
+// 导航，客户端不需要渠道的客户端标识（它由服务端持有并直接交给渠道）。
+// 下发一个客户端用不上的值，只会多一处"看起来该用它"的地方。
 message AuthMethod {
   // 渠道来源标识，如 google / github。前端据此决定渲染哪个入口。
   string source = 1;
-  // 该渠道的公开客户端标识。
-  //
-  // **不是秘密**：它本来就明文出现在浏览器里，这是这类登录方式的设计前提。
-  string client_id = 2;
 }
 
 message LoginResponse {
@@ -239,30 +218,8 @@ message GetSessionPermissionsResponse {
   repeated string permissions = 2;
 }
 
-message BindIdentityRequest {
-  // 要绑定的渠道身份。校验要求与登录**完全相同**——复用同一个校验器，
-  // 不为绑定另写一套：两套会让"哪条路径校验得更松"只能靠比对代码回答。
-  oneof credential {
-    GoogleCredential google = 1;
-  }
-}
-
-// BindIdentityResponse 返回绑定之后该主体的全部渠道。
-//
-// 返回整份现状而不是一个"成功"标志：客户端刚做过一次会改变现状的操作，
-// 让它在同一次往返里拿到新现状，比再多发一次查询更省事，也不会读到
-// 两次请求之间的中间态。
-message BindIdentityResponse {
-  repeated Identity identities = 1;
-  // 本次是否认领了一个空主体上的身份。含义与 CompleteIdentityBindingResponse
-  // 的同名字段一致：为 true 表示这个渠道此前单独登录过、已并入当前账号，
-  // 客户端据此给出说明；它不告诉调用方原主体的任何标识。
-  bool reclaimed = 2;
-}
-
-// CompleteIdentityBindingRequest 兑换一份已经由回调校验过的重定向型渠道身份。
 message CompleteIdentityBindingRequest {
-  // 渠道来源，如 github。它只用于与待绑定凭据里记下的来源互相印证；
+  // 渠道来源，如 google。它只用于与待绑定凭据里记下的来源互相印证；
   // **不是归属输入**——目标主体只取当前凭证代表的主体。
   string source = 1;
 }

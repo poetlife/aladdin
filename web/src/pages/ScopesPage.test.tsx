@@ -14,7 +14,6 @@ vi.mock('../api/identity', () => ({
   AuthSource: { Google: 'google', Github: 'github' },
   getAuthMethods: vi.fn(),
   login: vi.fn(),
-  loginWithGoogle: vi.fn(),
   whoAmI: vi.fn(),
   getSessionPermissions: vi.fn(),
 }))

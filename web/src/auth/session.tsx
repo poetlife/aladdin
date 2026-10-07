@@ -30,13 +30,12 @@ export interface SessionState {
    * 上报的调用方不传，行为与从前完全一致。
    */
   signIn: (token: string, trace?: TraceCapture) => Promise<void>
-  /** 使用 Google 签发的身份令牌登录。`trace` 的含义与 signIn 同。 */
-  signInWithGoogle: (idToken: string, trace?: TraceCapture) => Promise<void>
   /**
    * 采纳一份**已经拿到**的会话凭证。
    *
-   * 重定向型登录渠道（如 GitHub）由服务端完成校验，凭证随一次跳转交回前端，
-   * 前端只在回调页把它取出来交给这里——它不经由任何 RPC，因此不能走 signIn。
+   * 重定向型登录渠道（如 GitHub、Google）由服务端完成校验，凭证随一次跳转
+   * 交回前端，前端只在回调页把它取出来交给这里——它不经由任何 RPC，因此
+   * 不能走 signIn。
    */
   adoptSessionToken: (accessToken: string) => Promise<void>
   /** 清除本地凭证。 */
@@ -202,13 +201,6 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     [adoptToken],
   )
 
-  const signInWithGoogle = useCallback(
-    async (idToken: string, trace?: TraceCapture): Promise<void> => {
-      await adoptToken((await identityApi.loginWithGoogle(idToken, trace)).accessToken)
-    },
-    [adoptToken],
-  )
-
   const setScope = useCallback(
     async (next: string): Promise<void> => {
       setScopeState(next)
@@ -230,7 +222,6 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
       permissions,
       error,
       signIn,
-      signInWithGoogle,
       adoptSessionToken: adoptToken,
       signOut: clear,
       setScope,
@@ -243,7 +234,6 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
       permissions,
       error,
       signIn,
-      signInWithGoogle,
       adoptToken,
       clear,
       setScope,

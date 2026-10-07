@@ -24,7 +24,6 @@ const (
 	IdentityService_GetAuthMethods_FullMethodName          = "/aladdin.identity.v1.IdentityService/GetAuthMethods"
 	IdentityService_WhoAmI_FullMethodName                  = "/aladdin.identity.v1.IdentityService/WhoAmI"
 	IdentityService_GetSessionPermissions_FullMethodName   = "/aladdin.identity.v1.IdentityService/GetSessionPermissions"
-	IdentityService_BindIdentity_FullMethodName            = "/aladdin.identity.v1.IdentityService/BindIdentity"
 	IdentityService_UnbindIdentity_FullMethodName          = "/aladdin.identity.v1.IdentityService/UnbindIdentity"
 	IdentityService_CompleteIdentityBinding_FullMethodName = "/aladdin.identity.v1.IdentityService/CompleteIdentityBinding"
 	IdentityService_ListIdentities_FullMethodName          = "/aladdin.identity.v1.IdentityService/ListIdentities"
@@ -61,21 +60,6 @@ type IdentityServiceClient interface {
 	// 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
 	// 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
 	GetSessionPermissions(ctx context.Context, in *GetSessionPermissionsRequest, opts ...grpc.CallOption) (*GetSessionPermissionsResponse, error)
-	// 把一个登录渠道绑到当前主体上。
-	//
-	// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
-	// 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
-	// 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
-	//
-	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
-	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-	// 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
-	// identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
-	// 身份被并入当前主体。
-	//
-	// 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
-	// 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
-	BindIdentity(ctx context.Context, in *BindIdentityRequest, opts ...grpc.CallOption) (*BindIdentityResponse, error)
 	// 从当前主体上摘掉一个登录渠道。
 	//
 	// 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
@@ -84,12 +68,19 @@ type IdentityServiceClient interface {
 	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
 	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
 	UnbindIdentity(ctx context.Context, in *UnbindIdentityRequest, opts ...grpc.CallOption) (*UnbindIdentityResponse, error)
-	// 完成一次重定向型渠道的绑定。
+	// 完成一次渠道绑定。
 	//
-	// 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
-	// 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
-	// 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
-	// 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	// 渠道凭证**不在这里**：所有渠道都是重定向型，凭证经一次浏览器导航到达
+	// 服务端，由回调校验过之后记成一份一次性的"待绑定凭据"，只经浏览器不可读的
+	// cookie 交回。本方法只负责在**当前已认证主体**上兑换它——归属仍然只由当前
+	// 凭证决定，不由请求里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	//
+	// **归属由发起者决定，不由凭证决定。** 凭证只证明"发起者控制着这个身份"，
+	// 因此这里只可能绑到当前凭证代表的主体上。该身份已属于另一个主体时拒绝，
+	// **不转移、不合并**：转移意味着任何拿到该渠道凭证的人都能把别人的进入方式
+	// 夺走一部分，而这个动作在系统里与一次正常绑定没有区别。唯一的窄口子是
+	// "空主体认领"（见 docs/design/identity/identity-linking.md）：原主体只有这条
+	// 身份、且没有任何角色绑定时，身份被并入当前主体。
 	CompleteIdentityBinding(ctx context.Context, in *CompleteIdentityBindingRequest, opts ...grpc.CallOption) (*CompleteIdentityBindingResponse, error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error)
@@ -182,16 +173,6 @@ func (c *identityServiceClient) GetSessionPermissions(ctx context.Context, in *G
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetSessionPermissionsResponse)
 	err := c.cc.Invoke(ctx, IdentityService_GetSessionPermissions_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *identityServiceClient) BindIdentity(ctx context.Context, in *BindIdentityRequest, opts ...grpc.CallOption) (*BindIdentityResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(BindIdentityResponse)
-	err := c.cc.Invoke(ctx, IdentityService_BindIdentity_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -295,21 +276,6 @@ type IdentityServiceServer interface {
 	// 这是前端会话权限的唯一来源：前端拿到的是已展开的最终集合，
 	// 因此前端不需要（也不允许）自行实现继承、通配与作用域包含逻辑。
 	GetSessionPermissions(context.Context, *GetSessionPermissionsRequest) (*GetSessionPermissionsResponse, error)
-	// 把一个登录渠道绑到当前主体上。
-	//
-	// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
-	// 因此这里只可能绑到**当前凭证代表的主体**上——不存在"把身份绑到指定主体"
-	// 的形状。若存在，任何持有他人令牌的人都能把身份挂到他人名下。
-	//
-	// 该身份已属于另一个主体时拒绝，**不转移、不合并**：转移意味着任何拿到
-	// 该渠道令牌的人都能把别人的进入方式夺走一部分，而这个动作在系统里与一次
-	// 正常绑定没有区别。唯一的窄口子是"空主体认领"（见 docs/design/identity/
-	// identity-linking.md）：原主体只有这条身份、且没有任何角色绑定时，
-	// 身份被并入当前主体。
-	//
-	// 归属语义与 CompleteIdentityBinding（重定向型）**完全相同**，两者只有
-	// 凭证怎么到达服务端不同——因此共用同一处实现，不得各写一份。
-	BindIdentity(context.Context, *BindIdentityRequest) (*BindIdentityResponse, error)
 	// 从当前主体上摘掉一个登录渠道。
 	//
 	// 同样只作用于当前主体。**不允许摘掉最后一个身份**：那会让这个主体再也
@@ -318,12 +284,19 @@ type IdentityServiceServer interface {
 	// 摘掉之后该渠道不再通向这个主体，下次用它登录会登记出一个新的、零权限
 	// 的主体——这是预期行为，不是权限丢失，界面必须说明这一点。
 	UnbindIdentity(context.Context, *UnbindIdentityRequest) (*UnbindIdentityResponse, error)
-	// 完成一次重定向型渠道的绑定。
+	// 完成一次渠道绑定。
 	//
-	// 渠道凭证**不在这里**：它经一次浏览器导航到达服务端，由回调校验过之后
-	// 记成一份一次性的"待绑定凭据"，只经浏览器不可读的 cookie 交回。本方法只
-	// 负责在**当前已认证主体**上兑换它——归属仍然只由当前凭证决定，不由请求
-	// 里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	// 渠道凭证**不在这里**：所有渠道都是重定向型，凭证经一次浏览器导航到达
+	// 服务端，由回调校验过之后记成一份一次性的"待绑定凭据"，只经浏览器不可读的
+	// cookie 交回。本方法只负责在**当前已认证主体**上兑换它——归属仍然只由当前
+	// 凭证决定，不由请求里的任何字段决定（不存在"把身份绑到指定主体"的形状）。
+	//
+	// **归属由发起者决定，不由凭证决定。** 凭证只证明"发起者控制着这个身份"，
+	// 因此这里只可能绑到当前凭证代表的主体上。该身份已属于另一个主体时拒绝，
+	// **不转移、不合并**：转移意味着任何拿到该渠道凭证的人都能把别人的进入方式
+	// 夺走一部分，而这个动作在系统里与一次正常绑定没有区别。唯一的窄口子是
+	// "空主体认领"（见 docs/design/identity/identity-linking.md）：原主体只有这条
+	// 身份、且没有任何角色绑定时，身份被并入当前主体。
 	CompleteIdentityBinding(context.Context, *CompleteIdentityBindingRequest) (*CompleteIdentityBindingResponse, error)
 	// 列出当前主体已绑定的全部登录渠道。
 	ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error)
@@ -386,9 +359,6 @@ func (UnimplementedIdentityServiceServer) WhoAmI(context.Context, *WhoAmIRequest
 }
 func (UnimplementedIdentityServiceServer) GetSessionPermissions(context.Context, *GetSessionPermissionsRequest) (*GetSessionPermissionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSessionPermissions not implemented")
-}
-func (UnimplementedIdentityServiceServer) BindIdentity(context.Context, *BindIdentityRequest) (*BindIdentityResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method BindIdentity not implemented")
 }
 func (UnimplementedIdentityServiceServer) UnbindIdentity(context.Context, *UnbindIdentityRequest) (*UnbindIdentityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UnbindIdentity not implemented")
@@ -518,24 +488,6 @@ func _IdentityService_GetSessionPermissions_Handler(srv interface{}, ctx context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IdentityServiceServer).GetSessionPermissions(ctx, req.(*GetSessionPermissionsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _IdentityService_BindIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BindIdentityRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(IdentityServiceServer).BindIdentity(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: IdentityService_BindIdentity_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IdentityServiceServer).BindIdentity(ctx, req.(*BindIdentityRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -692,10 +644,6 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSessionPermissions",
 			Handler:    _IdentityService_GetSessionPermissions_Handler,
-		},
-		{
-			MethodName: "BindIdentity",
-			Handler:    _IdentityService_BindIdentity_Handler,
 		},
 		{
 			MethodName: "UnbindIdentity",

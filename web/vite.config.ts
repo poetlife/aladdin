@@ -35,7 +35,7 @@ export default defineConfig({
     // 与 /aladdin. 不冲突。
     //
     // /auth/ 整段属于**服务端的浏览器直连端点**（重定向型登录渠道的起点与
-    // 回调，见 internal/server/github_login_flow.go）。它同样必须转发到后端，
+    // 回调，见 internal/server/redirect_login_flow.go）。它同样必须转发到后端，
     // 否则本地点 GitHub 登录会被 SPA 兜底吃掉、表现为"点了没反应"。
     // 约定：前端不在 /auth/ 下放任何路由——它整段是服务端的。
     proxy: {

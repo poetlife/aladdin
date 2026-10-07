@@ -292,6 +292,7 @@ func LoadServer(f ServerFlags) (ServerConfig, error) {
 
 	// 密钥不参与分层：它们没有配置键，只从环境变量读。
 	cfg.COS.SecretID, cfg.COS.SecretKey = cosSecretsFromEnv()
+	cfg.GoogleClientSecret = googleClientSecretFromEnv()
 	cfg.GithubClientSecret = githubClientSecretFromEnv()
 	cfg.Skill.GithubToken = githubTokenFromEnv()
 
@@ -324,6 +325,13 @@ func cosSecretsFromEnv() (secretID, secretKey string) {
 // 与 cosSecretsFromEnv 同理：没有配置键，只从环境变量读（见 validateGithubLogin）。
 func githubClientSecretFromEnv() string {
 	return os.Getenv(EnvGithubClientSecret)
+}
+
+// googleClientSecretFromEnv 读取 Google 登录的客户端密钥。
+//
+// 与 cosSecretsFromEnv 同理：没有配置键，只从环境变量读（见 validateGoogleLogin）。
+func googleClientSecretFromEnv() string {
+	return os.Getenv(EnvGoogleClientSecret)
 }
 
 // LoadCLI 合并出 CLI 运行配置。

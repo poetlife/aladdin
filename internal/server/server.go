@@ -244,9 +244,14 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	// 因此不走 Connect handler，但要经同一个 register 注册——这样遥测的路径
 	// 归一保持有界，且 authMiddleware 的放行清单与这里注册的地址不会漂移（见
 	// middleware.go 的 browserEntryPaths）。
-	githubFlow := NewGithubLoginFlow(identitySrv, cfg, logger)
-	register(identity.GithubStartPath, http.HandlerFunc(githubFlow.Start))
-	register(identity.GithubCallbackPath, http.HandlerFunc(githubFlow.Callback))
+	//
+	// 渠道清单只有一份（见 redirect_login_flow.go 的 redirectChannels）：加一个
+	// 渠道时端点与放行清单一起变，不会出现"注册了但没放行"。
+	for _, channel := range redirectChannels() {
+		flow := NewRedirectLoginFlow(identitySrv, cfg, logger, channel)
+		register(channel.startPath, http.HandlerFunc(flow.Start))
+		register(channel.callbackPath, http.HandlerFunc(flow.Callback))
+	}
 
 	// 档案服务不再需要单独一组 handler options：头像改为**直传**之后，它没有
 	// 任何一个由客户端决定大小的入口——字节根本不经过这里（见

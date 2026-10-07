@@ -95,46 +95,33 @@ func (s *IdentityService) deviceLoginEnabled() bool {
 // Login 实现 IdentityService。
 //
 // 它是公开方法（proto 上标记 public），因此不经过认证中间件。
+//
+// **这里没有渠道凭证的形状**：所有渠道都是重定向型，浏览器被交给渠道，凭证由
+// 渠道直接送回服务端的一个直连端点（见 redirect_login_flow.go），客户端从不
+// 经手。保留一个"客户端把渠道凭证交给服务端"的入口，等于给同一条路留两个信任面。
 func (s *IdentityService) Login(ctx context.Context, req *connect.Request[identityv1.LoginRequest]) (*connect.Response[identityv1.LoginResponse], error) {
 	switch cred := req.Msg.GetCredential().(type) {
-	case *identityv1.LoginRequest_Google:
-		return s.loginWithChannel(ctx, identity.SourceGoogle, cred.Google.GetIdToken())
 	case *identityv1.LoginRequest_Token:
 		return s.loginWithMachineToken(cred.Token.GetToken())
 	case *identityv1.LoginRequest_Password:
 		// 口令认证尚未实现。返回 Unimplemented 而不是伪造成功，
 		// 避免开发环境误以为认证已经生效。
 		return nil, connect.NewError(connect.CodeUnimplemented,
-			errors.New("口令认证尚未实现，请使用 Google 登录或 token 凭证"))
+			errors.New("口令认证尚未实现，请使用渠道登录或 token 凭证"))
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("缺少凭证"))
 	}
 }
 
-// loginWithChannel 校验一份渠道凭证，解析出主体，签发会话。
-func (s *IdentityService) loginWithChannel(ctx context.Context, source, credential string) (*connect.Response[identityv1.LoginResponse], error) {
-	verified, err := s.verify(ctx, source, credential)
-	if err != nil {
-		return nil, toLoginConnectError(err)
-	}
-	issued, err := s.resolveAndIssue(ctx, source, verified)
-	if err != nil {
-		return nil, toIdentityConnectError(err)
-	}
-	return connect.NewResponse(&identityv1.LoginResponse{
-		AccessToken: issued.Token,
-		ExpiresAt:   issued.Session.ExpiresAt.Format(time.RFC3339),
-	}), nil
-}
-
-// resolveAndIssue 是登录与重定向回调**共用**的那段核心：解析主体、签发会话、留痕。
+// resolveAndIssue 是登录与绑定兑换**共用**的那段核心：解析主体、签发会话、留痕。
 //
 // 它接受一份**已校验**的身份，自己不做任何校验。调用方必须在校验通过之后
 // 才走到这里——解析会登记新主体，因此绝不能在校验之前发生，否则任何字符串
 // 都能在库里造出一个主体。
 //
-// 两条登录路径（RPC 与浏览器重定向回调）共用它，是为了让"登录成功后要做什么"
-// 只有一份：分开实现迟早会出现"RPC 生效、回调没生效"这类断裂。
+// 它刻意只接受"已校验的身份"而不是"一份凭证"：校验发生在渠道实现里
+// （见 internal/identity），而"校验通过之后要做什么"只有这一份——分开实现
+// 迟早会出现"登录生效、回调没生效"这类断裂。
 func (s *IdentityService) resolveAndIssue(ctx context.Context, source string, verified identity.VerifiedIdentity) (identity.Issued, error) {
 	subject, err := s.identities.ResolveOrRegister(ctx, source, verified.ExternalID, verified.Display)
 	if err != nil {
@@ -178,35 +165,14 @@ func (s *IdentityService) loginWithMachineToken(token string) (*connect.Response
 // 它只做校验，不登记主体、不签发会话——那两件事在 resolveAndIssue 里，
 // 由调用方在校验通过之后触发。
 //
-// 失败一律返回领域错误，由各入口各自映射成自己的错误形状：登录 RPC 映射成
-// Connect 错误码，浏览器回调映射成一次带错误信息的重定向。
+// 失败一律返回领域错误，由各入口各自映射成自己的错误形状：浏览器回调把它映射
+// 成一次带固定失败标记的重定向（见 redirect_login_flow.go 的 fail）。
 func (s *IdentityService) verify(ctx context.Context, source, credential string) (identity.VerifiedIdentity, error) {
 	channel, ok := s.channels.Get(source)
 	if !ok {
 		return identity.VerifiedIdentity{}, fmt.Errorf("%w: %s", identity.ErrChannelDisabled, source)
 	}
 	return channel.Verifier.Verify(ctx, credential)
-}
-
-// toLoginConnectError 把登录路径上的失败映射为 Connect 错误码。
-//
-// 分类的依据是"调用方该做什么"，而不是错误来自哪一层：
-//
-//   - 渠道未启用 → Unimplemented（这条路没开，换一条）；
-//   - 凭证不成立 → Unauthenticated（**不是**无权限，见 docs/design/rbac）；
-//   - 够不着渠道 → Unavailable（退避重试）。
-func toLoginConnectError(err error) error {
-	switch {
-	case errors.Is(err, identity.ErrChannelDisabled):
-		return connect.NewError(connect.CodeUnimplemented, errors.New("未启用该登录方式"))
-	case errors.Is(err, identity.ErrProviderUnavailable):
-		return connect.NewError(connect.CodeUnavailable,
-			errors.New("身份提供方暂时不可用，请稍后重试"))
-	case errors.Is(err, identity.ErrInvalidToken):
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("身份凭证无效"))
-	default:
-		return toIdentityConnectError(err)
-	}
 }
 
 // Refresh 实现 IdentityService。
@@ -246,10 +212,7 @@ func (s *IdentityService) GetAuthMethods(_ context.Context, _ *connect.Request[i
 	channels := s.channels.Methods()
 	methods := make([]*identityv1.AuthMethod, 0, len(channels))
 	for _, ch := range channels {
-		methods = append(methods, &identityv1.AuthMethod{
-			Source:   ch.Source,
-			ClientId: ch.ClientID,
-		})
+		methods = append(methods, &identityv1.AuthMethod{Source: ch.Source})
 	}
 	return connect.NewResponse(&identityv1.GetAuthMethodsResponse{
 		Methods:            methods,
@@ -400,53 +363,9 @@ func toProtoDeviceLoginState(state deviceLoginState) identityv1.DeviceLoginState
 	}
 }
 
-// BindIdentity 实现 IdentityService。
-//
-// **归属由发起者决定，不由令牌决定。** 令牌只证明"发起者控制着这个身份"，
-// 因此这里只可能绑到当前凭证代表的主体上——不存在"把身份绑到指定主体"的
-// 形状。如果存在，任何持有他人令牌的人都能把身份挂到他人名下。
-func (s *IdentityService) BindIdentity(ctx context.Context, req *connect.Request[identityv1.BindIdentityRequest]) (*connect.Response[identityv1.BindIdentityResponse], error) {
-	subject, ok := interceptor.SubjectFromContext(ctx)
-	if !ok {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("未认证"))
-	}
-
-	google, ok := req.Msg.GetCredential().(*identityv1.BindIdentityRequest_Google)
-	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("缺少凭证"))
-	}
-	// 与登录**同一个**校验器、同一份校验清单：为绑定另写一套会让
-	// "哪条路径校验得更松"只能靠比对代码来回答。
-	verified, err := s.verify(ctx, identity.SourceGoogle, google.Google.GetIdToken())
-	if err != nil {
-		return nil, toLoginConnectError(err)
-	}
-
-	// 归属与空主体认领**只有这一处实现**：搬运型与重定向型的差别只在凭证
-	// 怎么到达服务端，到了这里之后的归属语义完全相同（见
-	// docs/design/identity/identity-linking.md）。为一条路径另写一份，迟早会
-	// 出现"一条路径能认领、另一条不能"的断裂。
-	reclaimed, err := s.bindVerifiedIdentity(ctx, subject, pendingBinding{
-		source:   identity.SourceGoogle,
-		verified: verified,
-	})
-	if err != nil {
-		return nil, toIdentityConnectError(err)
-	}
-	s.logBinding(subject.ID, identity.SourceGoogle, verified.ExternalID, reclaimed)
-	list, err := s.identityList(ctx, subject.ID)
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(&identityv1.BindIdentityResponse{
-		Identities: list,
-		Reclaimed:  reclaimed,
-	}), nil
-}
-
 // stagePendingBinding 记下一份已经由浏览器直连端点校验过的身份。
 //
-// 它由 GithubLoginFlow 在回调里调用；返回的凭据只经 HttpOnly cookie 交给
+// 它由 RedirectLoginFlow 在回调里调用；返回的凭据只经 HttpOnly cookie 交给
 // 浏览器，前端拿不到它的内容，只能拿它来兑换。
 func (s *IdentityService) stagePendingBinding(source string, verified identity.VerifiedIdentity) (string, error) {
 	return s.pendingBindings.issue(source, verified)

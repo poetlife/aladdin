@@ -4,9 +4,9 @@
 
 ## 背景与目标
 
-GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认证过程由 GitHub 完成，但它交给浏览器的是一个**授权码**，而不是一份自证身份的凭证。
+GitHub 是第二个接入的渠道，也是第一个**重定向型**渠道：认证过程由 GitHub 完成，但它交给浏览器的是一个**授权码**，而不是一份自证身份的凭证。（Google 后来也改成了这一形态，见 [google-login.md](google-login.md)；现在这个仓库里的渠道**全是**重定向型，两个渠道走的是同一段流程。）
 
-这个差别带来三件 Google 那条路不需要的东西，本文件逐项定义：
+这个差别带来三件搬运型渠道不需要的东西——本文件逐项定义，Google 那份逐字同构：
 
 1. 浏览器要经过一次**跨站导航**才能把授权码送到服务端；
 2. 服务端必须用一份**客户端密钥**去换授权码，因为授权码本身不自证任何东西；
@@ -197,7 +197,7 @@ GitHub 的绑定与登录复用上面那两个端点，差别只在用途标记�
 | 职责 | 文件路径 |
 |------|---------|
 | GitHub 凭证（授权码）的校验（唯一入口） | [internal/identity/github_verifier.go](../../../internal/identity/github_verifier.go) |
-| 两个浏览器直连端点 | [internal/server/github_login_flow.go](../../../internal/server/github_login_flow.go) |
+| 两个浏览器直连端点（与 Google 共用同一段实现） | [internal/server/redirect_login_flow.go](../../../internal/server/redirect_login_flow.go) |
 | 一次性导航凭据与待绑定凭据的记录（单次使用与有效期） | [internal/server/one_time_store.go](../../../internal/server/one_time_store.go) / [internal/server/pending_bindings.go](../../../internal/server/pending_bindings.go) |
 | 服务端签发的 cookie 的构造与读取（属性集合唯一入口） | [internal/server/cookie.go](../../../internal/server/cookie.go) |
 | 待绑定凭据的兑换与空主体认领 | [internal/server/identity_service.go](../../../internal/server/identity_service.go) |
