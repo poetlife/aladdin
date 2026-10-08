@@ -103,14 +103,14 @@ func (f *fakeRemote) FetchTree(_ context.Context, repo Repository, commit, subPa
 
 // FetchBlob 按 FetchTree 给过的标识取字节。
 //
-// 它存在的理由是**包外的东西要能按路径找**——目前唯一的消费方是封面：那一张多半
-// 正是被跳过的那类二进制，而它仍然得能被取回来（见 cover.go）。
+// 它存在的理由是**包外的东西要能按路径找**——目前唯一的消费方是展示图：那几张多半
+// 正是被跳过的那类二进制，而它们仍然得能被取回来（见 image.go）。
 func (f *fakeRemote) FetchBlob(_ context.Context, _ Repository, sha string, maxBytes int64) ([]byte, error) {
 	data, ok := f.blobs[sha]
 	if !ok {
 		return nil, fmt.Errorf("%w: 没有这个对象", ErrRepositoryNotFound)
 	}
-	// 上限由调用方给，假实现照它执行：不执行的话，"取封面时错用了包里的单文件上限"
+	// 上限由调用方给，假实现照它执行：不执行的话，"取展示图时错用了包里的单文件上限"
 	// 这条就漏过去了。
 	if int64(len(data)) > maxBytes {
 		return nil, fmt.Errorf("%w: 取回的对象超过 %d 字节", ErrPackageInvalid, maxBytes)

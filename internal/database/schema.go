@@ -463,11 +463,6 @@ type SkillRecord struct {
 	// （空是一个判据，不是"内容是一个空字符串"）。
 	Title   string
 	Summary string
-	// CoverKey 是封面的对象键。**空表示没有封面。**
-	//
-	// 它是说明层的一项，与标题、简介、标签同级：可改、不进版本、不进包。存的是键
-	// 而不是地址——地址是短时签发的，落库只会留下一份过期的。
-	CoverKey string
 	// 来源：两段名字、引用、子路径，加上上次同步到的提交。
 	//
 	// **两段名字分开存，而不是存一个地址串**：地址串的形状规则将来若变，存量行不
@@ -557,6 +552,39 @@ type SkillTagRecord struct {
 
 // TableName 实现 gorm 的表名解析。
 func (SkillTagRecord) TableName() string { return "skill_tags" }
+
+// SkillImageRecord 是一个技能的一张**展示图**在库里的一行（见
+// docs/design/skill/catalog.md 的"展示图集"）。
+//
+// **图集独立成表，而顺序是它自己的一列**：顺序会变（重排、设为首图），而"哪一张"
+// 不随顺序变。把顺序编进对象键（`<技能标识>/<序号>`）会让一次重排变成"把每一张都
+// 搬家"，而删中间一张会让后面每一张的地址都作废。
+//
+// 它**只存清单，不存字节**：字节在对象存储，一张一个键，由这一个技能独占（不像内容
+// 对象那样按摘要共享）。
+type SkillImageRecord struct {
+	// ID 是图标识，主键。由 aladdin 分配、不可猜、不改、不复用。
+	//
+	// **不复用是有代价的**：对象键由它派生，因此复用一个标识就等于让新图去覆盖旧图
+	// 的对象。
+	ID string `gorm:"primaryKey;size:191"`
+	// SkillID 是这一张所属的技能。这个索引与 Position 合起来服务唯一的读取路径：
+	// "按顺序取一个技能的整组图"。
+	SkillID string `gorm:"size:191;index:idx_skill_images_order,priority:1"`
+	// Position 是它在图集里的位置，**越小越靠前，最小的那个就是首图**。
+	//
+	// 它不稠密也成立（删除会留下空档）：顺序只按大小比，不按稠密性判。
+	Position int `gorm:"index:idx_skill_images_order,priority:2"`
+	// ObjectKey 是这一张在对象存储里的键。**存下来而不是每次现拼**，是为了那些
+	// 不按当前规则派生的存量行（早期的单张封面用的是另一个前缀）。
+	ObjectKey string
+	// SizeBytes 是字节数。图集的合计上限按它算，因此它必须与桶上的对象一致。
+	SizeBytes int64
+	CreatedAt time.Time
+}
+
+// TableName 实现 gorm 的表名解析。
+func (SkillImageRecord) TableName() string { return "skill_images" }
 
 // SkillFavoriteRecord 是一个主体收藏一个技能在库里的一行。
 //

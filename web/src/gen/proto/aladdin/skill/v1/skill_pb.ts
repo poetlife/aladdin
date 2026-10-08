@@ -13,13 +13,14 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/skill/v1/skill.proto.
  */
 export const file_aladdin_skill_v1_skill: GenFile = /*@__PURE__*/
-  fileDesc("ChxhbGFkZGluL3NraWxsL3YxL3NraWxsLnByb3RvEhBhbGFkZGluLnNraWxsLnYxIq0DCgVTa2lsbBIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJEgwKBHRhZ3MYBCADKAkSEQoJZmF2b3JpdGVkGAUgASgIEhIKCmZpbGVfY291bnQYBiABKA0SEwoLdG90YWxfYnl0ZXMYByABKAQSKwoFdXNhZ2UYCCABKAsyHC5hbGFkZGluLnNraWxsLnYxLlNraWxsVXNhZ2USFgoOdGl0bGVfb3ZlcnJpZGUYCSABKAkSGAoQc3VtbWFyeV9vdmVycmlkZRgKIAEoCRIMCgRuYW1lGAsgASgJEhMKC2Rlc2NyaXB0aW9uGAwgASgJEhoKEmN1cnJlbnRfdmVyc2lvbl9pZBgNIAEoCRIiChpjdXJyZW50X3ZlcnNpb25fY3JlYXRlZF9hdBgOIAEoCRItCgZzb3VyY2UYDyABKAsyHS5hbGFkZGluLnNraWxsLnYxLlNraWxsU291cmNlEioKBWZpbGVzGBAgAygLMhsuYWxhZGRpbi5za2lsbC52MS5Ta2lsbEZpbGUSEQoJY292ZXJfdXJsGBEgASgJIlQKC1NraWxsU291cmNlEhYKDnJlcG9zaXRvcnlfdXJsGAEgASgJEgsKA3JlZhgCIAEoCRIQCghzdWJfcGF0aBgDIAEoCRIOCgZjb21taXQYBCABKAkiPQoJU2tpbGxGaWxlEgwKBHBhdGgYASABKAkSEgoKc2l6ZV9ieXRlcxgCIAEoBBIOCgZkaWdlc3QYAyABKAkijwEKDFNraWxsVmVyc2lvbhIKCgJpZBgBIAEoCRIOCgZjb21taXQYAiABKAkSEgoKZmlsZV9jb3VudBgDIAEoDRITCgt0b3RhbF9ieXRlcxgEIAEoBBISCgpjcmVhdGVkX2F0GAUgASgJEg8KB2N1cnJlbnQYBiABKAgSFQoNc2tpcHBlZF9maWxlcxgHIAEoDSJICgpTa2lsbFVzYWdlEhAKCHVzZV9kYXlzGAEgASgNEhIKCnVzZXJfY291bnQYAiABKA0SFAoMbGFzdF91c2VkX2F0GAMgASgJIooBChFTa2lsbENhcGFiaWxpdGllcxIXCg9jYXRhbG9nX2VuYWJsZWQYASABKAgSFgoOaW1wb3J0X2VuYWJsZWQYAiABKAgSEQoJbWF4X2ZpbGVzGAMgASgNEhYKDm1heF9maWxlX2J5dGVzGAQgASgNEhkKEW1heF9wYWNrYWdlX2J5dGVzGAUgASgNIhgKFkdldENhcGFiaWxpdGllc1JlcXVlc3QiVAoXR2V0Q2FwYWJpbGl0aWVzUmVzcG9uc2USOQoMY2FwYWJpbGl0aWVzGAEgASgLMiMuYWxhZGRpbi5za2lsbC52MS5Ta2lsbENhcGFiaWxpdGllcyJIChFMaXN0U2tpbGxzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIMCgR0YWdzGAIgAygJEhYKDmZhdm9yaXRlZF9vbmx5GAMgASgIImgKEkxpc3RTa2lsbHNSZXNwb25zZRInCgZza2lsbHMYASADKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsEhYKDmF2YWlsYWJsZV90YWdzGAIgAygJEhEKCXRydW5jYXRlZBgDIAEoCCIjCg9HZXRTa2lsbFJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkiOgoQR2V0U2tpbGxSZXNwb25zZRImCgVza2lsbBgBIAEoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwiNQoTR2V0U2tpbGxGaWxlUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRIMCgRwYXRoGAIgASgJIkUKFEdldFNraWxsRmlsZVJlc3BvbnNlEg8KB2NvbnRlbnQYASABKAwSDAoEcGF0aBgCIAEoCRIOCgZkaWdlc3QYAyABKAkiLAoYTGlzdFNraWxsVmVyc2lvbnNSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJIk0KGUxpc3RTa2lsbFZlcnNpb25zUmVzcG9uc2USMAoIdmVyc2lvbnMYASADKAsyHi5hbGFkZGluLnNraWxsLnYxLlNraWxsVmVyc2lvbiI+ChdTZXRTa2lsbEZhdm9yaXRlUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRIRCglmYXZvcml0ZWQYAiABKAgiGgoYU2V0U2tpbGxGYXZvcml0ZVJlc3BvbnNlIo0BChJJbXBvcnRTa2lsbFJlcXVlc3QSFgoOcmVwb3NpdG9yeV91cmwYASABKAkSCwoDcmVmGAIgASgJEhAKCHN1Yl9wYXRoGAMgASgJEg0KBXRpdGxlGAQgASgJEg8KB3N1bW1hcnkYBSABKAkSDAoEdGFncxgGIAMoCRISCgpjb3Zlcl9wYXRoGAcgASgJIj0KE0ltcG9ydFNraWxsUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIiYKElJlc3luY1NraWxsUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCSJOChNSZXN5bmNTa2lsbFJlc3BvbnNlEiYKBXNraWxsGAEgASgLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbBIPCgdjaGFuZ2VkGAIgASgIIkUKHVNldEN1cnJlbnRTa2lsbFZlcnNpb25SZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhIKCnZlcnNpb25faWQYAiABKAkiSAoeU2V0Q3VycmVudFNraWxsVmVyc2lvblJlc3BvbnNlEiYKBXNraWxsGAEgASgLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbCJcChpVcGRhdGVTa2lsbE1ldGFkYXRhUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJEgwKBHRhZ3MYBCADKAkiRQobVXBkYXRlU2tpbGxNZXRhZGF0YVJlc3BvbnNlEiYKBXNraWxsGAEgASgLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbCImChJEZWxldGVTa2lsbFJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkiFQoTRGVsZXRlU2tpbGxSZXNwb25zZSJaChxCZWdpblNraWxsQ292ZXJVcGxvYWRSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhQKDGNvbnRlbnRfdHlwZRgCIAEoCRISCgpzaXplX2J5dGVzGAMgASgEIl8KHUJlZ2luU2tpbGxDb3ZlclVwbG9hZFJlc3BvbnNlEj4KBnVwbG9hZBgBIAEoCzIuLmFsYWRkaW4ub2JqZWN0c3RvcmUudjEuRGlyZWN0VXBsb2FkQ3JlZGVudGlhbCIxCh1Db21taXRTa2lsbENvdmVyVXBsb2FkUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCSJICh5Db21taXRTa2lsbENvdmVyVXBsb2FkUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIisKF0RlbGV0ZVNraWxsQ292ZXJSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJIkIKGERlbGV0ZVNraWxsQ292ZXJSZXNwb25zZRImCgVza2lsbBgBIAEoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwy/gUKDFNraWxsU2VydmljZRJzCg9HZXRDYXBhYmlsaXRpZXMSKC5hbGFkZGluLnNraWxsLnYxLkdldENhcGFiaWxpdGllc1JlcXVlc3QaKS5hbGFkZGluLnNraWxsLnYxLkdldENhcGFiaWxpdGllc1Jlc3BvbnNlIguQAgGQiCcDoIgnARJ2CgpMaXN0U2tpbGxzEiMuYWxhZGRpbi5za2lsbC52MS5MaXN0U2tpbGxzUmVxdWVzdBokLmFsYWRkaW4uc2tpbGwudjEuTGlzdFNraWxsc1Jlc3BvbnNlIh2QAgGKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxJwCghHZXRTa2lsbBIhLmFsYWRkaW4uc2tpbGwudjEuR2V0U2tpbGxSZXF1ZXN0GiIuYWxhZGRpbi5za2lsbC52MS5HZXRTa2lsbFJlc3BvbnNlIh2QAgGKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxJ5CgxHZXRTa2lsbEZpbGUSJS5hbGFkZGluLnNraWxsLnYxLkdldFNraWxsRmlsZVJlcXVlc3QaJi5hbGFkZGluLnNraWxsLnYxLkdldFNraWxsRmlsZVJlc3BvbnNlIhqKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxKLAQoRTGlzdFNraWxsVmVyc2lvbnMSKi5hbGFkZGluLnNraWxsLnYxLkxpc3RTa2lsbFZlcnNpb25zUmVxdWVzdBorLmFsYWRkaW4uc2tpbGwudjEuTGlzdFNraWxsVmVyc2lvbnNSZXNwb25zZSIdkAIBiognEnNraWxsLmNhdGFsb2cucmVhZJCIJwMShQEKEFNldFNraWxsRmF2b3JpdGUSKS5hbGFkZGluLnNraWxsLnYxLlNldFNraWxsRmF2b3JpdGVSZXF1ZXN0GiouYWxhZGRpbi5za2lsbC52MS5TZXRTa2lsbEZhdm9yaXRlUmVzcG9uc2UiGoqIJxJza2lsbC5jYXRhbG9nLnJlYWSQiCcDMucIChFTa2lsbEFkbWluU2VydmljZRJ3CgtJbXBvcnRTa2lsbBIkLmFsYWRkaW4uc2tpbGwudjEuSW1wb3J0U2tpbGxSZXF1ZXN0GiUuYWxhZGRpbi5za2lsbC52MS5JbXBvcnRTa2lsbFJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSdwoLUmVzeW5jU2tpbGwSJC5hbGFkZGluLnNraWxsLnYxLlJlc3luY1NraWxsUmVxdWVzdBolLmFsYWRkaW4uc2tpbGwudjEuUmVzeW5jU2tpbGxSZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDEpgBChZTZXRDdXJyZW50U2tpbGxWZXJzaW9uEi8uYWxhZGRpbi5za2lsbC52MS5TZXRDdXJyZW50U2tpbGxWZXJzaW9uUmVxdWVzdBowLmFsYWRkaW4uc2tpbGwudjEuU2V0Q3VycmVudFNraWxsVmVyc2lvblJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSjwEKE1VwZGF0ZVNraWxsTWV0YWRhdGESLC5hbGFkZGluLnNraWxsLnYxLlVwZGF0ZVNraWxsTWV0YWRhdGFSZXF1ZXN0Gi0uYWxhZGRpbi5za2lsbC52MS5VcGRhdGVTa2lsbE1ldGFkYXRhUmVzcG9uc2UiG4qIJxNza2lsbC5jYXRhbG9nLndyaXRlkIgnAxJ3CgtEZWxldGVTa2lsbBIkLmFsYWRkaW4uc2tpbGwudjEuRGVsZXRlU2tpbGxSZXF1ZXN0GiUuYWxhZGRpbi5za2lsbC52MS5EZWxldGVTa2lsbFJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSlQEKFUJlZ2luU2tpbGxDb3ZlclVwbG9hZBIuLmFsYWRkaW4uc2tpbGwudjEuQmVnaW5Ta2lsbENvdmVyVXBsb2FkUmVxdWVzdBovLmFsYWRkaW4uc2tpbGwudjEuQmVnaW5Ta2lsbENvdmVyVXBsb2FkUmVzcG9uc2UiG4qIJxNza2lsbC5jYXRhbG9nLndyaXRlkIgnAxKYAQoWQ29tbWl0U2tpbGxDb3ZlclVwbG9hZBIvLmFsYWRkaW4uc2tpbGwudjEuQ29tbWl0U2tpbGxDb3ZlclVwbG9hZFJlcXVlc3QaMC5hbGFkZGluLnNraWxsLnYxLkNvbW1pdFNraWxsQ292ZXJVcGxvYWRSZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDEoYBChBEZWxldGVTa2lsbENvdmVyEikuYWxhZGRpbi5za2lsbC52MS5EZWxldGVTa2lsbENvdmVyUmVxdWVzdBoqLmFsYWRkaW4uc2tpbGwudjEuRGVsZXRlU2tpbGxDb3ZlclJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwNCPlo8Z2l0aHViLmNvbS9wb2V0bGlmZS9hbGFkZGluL2FwaS9nZW4vYWxhZGRpbi9za2lsbC92MTtza2lsbHYxYgZwcm90bzM", [file_aladdin_objectstore_v1_upload, file_aladdin_rbac_v1_annotations]);
+  fileDesc("ChxhbGFkZGluL3NraWxsL3YxL3NraWxsLnByb3RvEhBhbGFkZGluLnNraWxsLnYxItsDCgVTa2lsbBIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIPCgdzdW1tYXJ5GAMgASgJEgwKBHRhZ3MYBCADKAkSEQoJZmF2b3JpdGVkGAUgASgIEhIKCmZpbGVfY291bnQYBiABKA0SEwoLdG90YWxfYnl0ZXMYByABKAQSKwoFdXNhZ2UYCCABKAsyHC5hbGFkZGluLnNraWxsLnYxLlNraWxsVXNhZ2USFgoOdGl0bGVfb3ZlcnJpZGUYCSABKAkSGAoQc3VtbWFyeV9vdmVycmlkZRgKIAEoCRIMCgRuYW1lGAsgASgJEhMKC2Rlc2NyaXB0aW9uGAwgASgJEhoKEmN1cnJlbnRfdmVyc2lvbl9pZBgNIAEoCRIiChpjdXJyZW50X3ZlcnNpb25fY3JlYXRlZF9hdBgOIAEoCRItCgZzb3VyY2UYDyABKAsyHS5hbGFkZGluLnNraWxsLnYxLlNraWxsU291cmNlEioKBWZpbGVzGBAgAygLMhsuYWxhZGRpbi5za2lsbC52MS5Ta2lsbEZpbGUSEQoJY292ZXJfdXJsGBEgASgJEiwKBmltYWdlcxgSIAMoCzIcLmFsYWRkaW4uc2tpbGwudjEuU2tpbGxJbWFnZSI5CgpTa2lsbEltYWdlEgoKAmlkGAEgASgJEgsKA3VybBgCIAEoCRISCgpzaXplX2J5dGVzGAMgASgEIlQKC1NraWxsU291cmNlEhYKDnJlcG9zaXRvcnlfdXJsGAEgASgJEgsKA3JlZhgCIAEoCRIQCghzdWJfcGF0aBgDIAEoCRIOCgZjb21taXQYBCABKAkiPQoJU2tpbGxGaWxlEgwKBHBhdGgYASABKAkSEgoKc2l6ZV9ieXRlcxgCIAEoBBIOCgZkaWdlc3QYAyABKAkijwEKDFNraWxsVmVyc2lvbhIKCgJpZBgBIAEoCRIOCgZjb21taXQYAiABKAkSEgoKZmlsZV9jb3VudBgDIAEoDRITCgt0b3RhbF9ieXRlcxgEIAEoBBISCgpjcmVhdGVkX2F0GAUgASgJEg8KB2N1cnJlbnQYBiABKAgSFQoNc2tpcHBlZF9maWxlcxgHIAEoDSJICgpTa2lsbFVzYWdlEhAKCHVzZV9kYXlzGAEgASgNEhIKCnVzZXJfY291bnQYAiABKA0SFAoMbGFzdF91c2VkX2F0GAMgASgJItYBChFTa2lsbENhcGFiaWxpdGllcxIXCg9jYXRhbG9nX2VuYWJsZWQYASABKAgSFgoOaW1wb3J0X2VuYWJsZWQYAiABKAgSEQoJbWF4X2ZpbGVzGAMgASgNEhYKDm1heF9maWxlX2J5dGVzGAQgASgNEhkKEW1heF9wYWNrYWdlX2J5dGVzGAUgASgNEhIKCm1heF9pbWFnZXMYBiABKA0SFwoPbWF4X2ltYWdlX2J5dGVzGAcgASgNEh0KFW1heF9pbWFnZV90b3RhbF9ieXRlcxgIIAEoDSIYChZHZXRDYXBhYmlsaXRpZXNSZXF1ZXN0IlQKF0dldENhcGFiaWxpdGllc1Jlc3BvbnNlEjkKDGNhcGFiaWxpdGllcxgBIAEoCzIjLmFsYWRkaW4uc2tpbGwudjEuU2tpbGxDYXBhYmlsaXRpZXMiSAoRTGlzdFNraWxsc1JlcXVlc3QSDQoFcXVlcnkYASABKAkSDAoEdGFncxgCIAMoCRIWCg5mYXZvcml0ZWRfb25seRgDIAEoCCJoChJMaXN0U2tpbGxzUmVzcG9uc2USJwoGc2tpbGxzGAEgAygLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbBIWCg5hdmFpbGFibGVfdGFncxgCIAMoCRIRCgl0cnVuY2F0ZWQYAyABKAgiIwoPR2V0U2tpbGxSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJIjoKEEdldFNraWxsUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIjUKE0dldFNraWxsRmlsZVJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSDAoEcGF0aBgCIAEoCSJFChRHZXRTa2lsbEZpbGVSZXNwb25zZRIPCgdjb250ZW50GAEgASgMEgwKBHBhdGgYAiABKAkSDgoGZGlnZXN0GAMgASgJIiwKGExpc3RTa2lsbFZlcnNpb25zUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCSJNChlMaXN0U2tpbGxWZXJzaW9uc1Jlc3BvbnNlEjAKCHZlcnNpb25zGAEgAygLMh4uYWxhZGRpbi5za2lsbC52MS5Ta2lsbFZlcnNpb24iPgoXU2V0U2tpbGxGYXZvcml0ZVJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSEQoJZmF2b3JpdGVkGAIgASgIIhoKGFNldFNraWxsRmF2b3JpdGVSZXNwb25zZSKgAQoSSW1wb3J0U2tpbGxSZXF1ZXN0EhYKDnJlcG9zaXRvcnlfdXJsGAEgASgJEgsKA3JlZhgCIAEoCRIQCghzdWJfcGF0aBgDIAEoCRINCgV0aXRsZRgEIAEoCRIPCgdzdW1tYXJ5GAUgASgJEgwKBHRhZ3MYBiADKAkSEwoLaW1hZ2VfcGF0aHMYCCADKAlKBAgHEAhSCmNvdmVyX3BhdGgiPQoTSW1wb3J0U2tpbGxSZXNwb25zZRImCgVza2lsbBgBIAEoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwiJgoSUmVzeW5jU2tpbGxSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJIk4KE1Jlc3luY1NraWxsUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsEg8KB2NoYW5nZWQYAiABKAgiRQodU2V0Q3VycmVudFNraWxsVmVyc2lvblJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSEgoKdmVyc2lvbl9pZBgCIAEoCSJICh5TZXRDdXJyZW50U2tpbGxWZXJzaW9uUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIlwKGlVwZGF0ZVNraWxsTWV0YWRhdGFSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEg0KBXRpdGxlGAIgASgJEg8KB3N1bW1hcnkYAyABKAkSDAoEdGFncxgEIAMoCSJFChtVcGRhdGVTa2lsbE1ldGFkYXRhUmVzcG9uc2USJgoFc2tpbGwYASABKAsyFy5hbGFkZGluLnNraWxsLnYxLlNraWxsIiYKEkRlbGV0ZVNraWxsUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCSIVChNEZWxldGVTa2lsbFJlc3BvbnNlImwKHEJlZ2luU2tpbGxJbWFnZVVwbG9hZFJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSEAoIaW1hZ2VfaWQYAiABKAkSFAoMY29udGVudF90eXBlGAMgASgJEhIKCnNpemVfYnl0ZXMYBCABKAQicQodQmVnaW5Ta2lsbEltYWdlVXBsb2FkUmVzcG9uc2USEAoIaW1hZ2VfaWQYASABKAkSPgoGdXBsb2FkGAIgASgLMi4uYWxhZGRpbi5vYmplY3RzdG9yZS52MS5EaXJlY3RVcGxvYWRDcmVkZW50aWFsIkMKHUNvbW1pdFNraWxsSW1hZ2VVcGxvYWRSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhAKCGltYWdlX2lkGAIgASgJIkgKHkNvbW1pdFNraWxsSW1hZ2VVcGxvYWRSZXNwb25zZRImCgVza2lsbBgBIAEoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwiPQoXRGVsZXRlU2tpbGxJbWFnZVJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSEAoIaW1hZ2VfaWQYAiABKAkiQgoYRGVsZXRlU2tpbGxJbWFnZVJlc3BvbnNlEiYKBXNraWxsGAEgASgLMhcuYWxhZGRpbi5za2lsbC52MS5Ta2lsbCJAChlSZW9yZGVyU2tpbGxJbWFnZXNSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhEKCWltYWdlX2lkcxgCIAMoCSJEChpSZW9yZGVyU2tpbGxJbWFnZXNSZXNwb25zZRImCgVza2lsbBgBIAEoCzIXLmFsYWRkaW4uc2tpbGwudjEuU2tpbGwy/gUKDFNraWxsU2VydmljZRJzCg9HZXRDYXBhYmlsaXRpZXMSKC5hbGFkZGluLnNraWxsLnYxLkdldENhcGFiaWxpdGllc1JlcXVlc3QaKS5hbGFkZGluLnNraWxsLnYxLkdldENhcGFiaWxpdGllc1Jlc3BvbnNlIguQAgGQiCcDoIgnARJ2CgpMaXN0U2tpbGxzEiMuYWxhZGRpbi5za2lsbC52MS5MaXN0U2tpbGxzUmVxdWVzdBokLmFsYWRkaW4uc2tpbGwudjEuTGlzdFNraWxsc1Jlc3BvbnNlIh2QAgGKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxJwCghHZXRTa2lsbBIhLmFsYWRkaW4uc2tpbGwudjEuR2V0U2tpbGxSZXF1ZXN0GiIuYWxhZGRpbi5za2lsbC52MS5HZXRTa2lsbFJlc3BvbnNlIh2QAgGKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxJ5CgxHZXRTa2lsbEZpbGUSJS5hbGFkZGluLnNraWxsLnYxLkdldFNraWxsRmlsZVJlcXVlc3QaJi5hbGFkZGluLnNraWxsLnYxLkdldFNraWxsRmlsZVJlc3BvbnNlIhqKiCcSc2tpbGwuY2F0YWxvZy5yZWFkkIgnAxKLAQoRTGlzdFNraWxsVmVyc2lvbnMSKi5hbGFkZGluLnNraWxsLnYxLkxpc3RTa2lsbFZlcnNpb25zUmVxdWVzdBorLmFsYWRkaW4uc2tpbGwudjEuTGlzdFNraWxsVmVyc2lvbnNSZXNwb25zZSIdkAIBiognEnNraWxsLmNhdGFsb2cucmVhZJCIJwMShQEKEFNldFNraWxsRmF2b3JpdGUSKS5hbGFkZGluLnNraWxsLnYxLlNldFNraWxsRmF2b3JpdGVSZXF1ZXN0GiouYWxhZGRpbi5za2lsbC52MS5TZXRTa2lsbEZhdm9yaXRlUmVzcG9uc2UiGoqIJxJza2lsbC5jYXRhbG9nLnJlYWSQiCcDMvYJChFTa2lsbEFkbWluU2VydmljZRJ3CgtJbXBvcnRTa2lsbBIkLmFsYWRkaW4uc2tpbGwudjEuSW1wb3J0U2tpbGxSZXF1ZXN0GiUuYWxhZGRpbi5za2lsbC52MS5JbXBvcnRTa2lsbFJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSdwoLUmVzeW5jU2tpbGwSJC5hbGFkZGluLnNraWxsLnYxLlJlc3luY1NraWxsUmVxdWVzdBolLmFsYWRkaW4uc2tpbGwudjEuUmVzeW5jU2tpbGxSZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDEpgBChZTZXRDdXJyZW50U2tpbGxWZXJzaW9uEi8uYWxhZGRpbi5za2lsbC52MS5TZXRDdXJyZW50U2tpbGxWZXJzaW9uUmVxdWVzdBowLmFsYWRkaW4uc2tpbGwudjEuU2V0Q3VycmVudFNraWxsVmVyc2lvblJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSjwEKE1VwZGF0ZVNraWxsTWV0YWRhdGESLC5hbGFkZGluLnNraWxsLnYxLlVwZGF0ZVNraWxsTWV0YWRhdGFSZXF1ZXN0Gi0uYWxhZGRpbi5za2lsbC52MS5VcGRhdGVTa2lsbE1ldGFkYXRhUmVzcG9uc2UiG4qIJxNza2lsbC5jYXRhbG9nLndyaXRlkIgnAxJ3CgtEZWxldGVTa2lsbBIkLmFsYWRkaW4uc2tpbGwudjEuRGVsZXRlU2tpbGxSZXF1ZXN0GiUuYWxhZGRpbi5za2lsbC52MS5EZWxldGVTa2lsbFJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSlQEKFUJlZ2luU2tpbGxJbWFnZVVwbG9hZBIuLmFsYWRkaW4uc2tpbGwudjEuQmVnaW5Ta2lsbEltYWdlVXBsb2FkUmVxdWVzdBovLmFsYWRkaW4uc2tpbGwudjEuQmVnaW5Ta2lsbEltYWdlVXBsb2FkUmVzcG9uc2UiG4qIJxNza2lsbC5jYXRhbG9nLndyaXRlkIgnAxKYAQoWQ29tbWl0U2tpbGxJbWFnZVVwbG9hZBIvLmFsYWRkaW4uc2tpbGwudjEuQ29tbWl0U2tpbGxJbWFnZVVwbG9hZFJlcXVlc3QaMC5hbGFkZGluLnNraWxsLnYxLkNvbW1pdFNraWxsSW1hZ2VVcGxvYWRSZXNwb25zZSIbiognE3NraWxsLmNhdGFsb2cud3JpdGWQiCcDEoYBChBEZWxldGVTa2lsbEltYWdlEikuYWxhZGRpbi5za2lsbC52MS5EZWxldGVTa2lsbEltYWdlUmVxdWVzdBoqLmFsYWRkaW4uc2tpbGwudjEuRGVsZXRlU2tpbGxJbWFnZVJlc3BvbnNlIhuKiCcTc2tpbGwuY2F0YWxvZy53cml0ZZCIJwMSjAEKElJlb3JkZXJTa2lsbEltYWdlcxIrLmFsYWRkaW4uc2tpbGwudjEuUmVvcmRlclNraWxsSW1hZ2VzUmVxdWVzdBosLmFsYWRkaW4uc2tpbGwudjEuUmVvcmRlclNraWxsSW1hZ2VzUmVzcG9uc2UiG4qIJxNza2lsbC5jYXRhbG9nLndyaXRlkIgnA0I+WjxnaXRodWIuY29tL3BvZXRsaWZlL2FsYWRkaW4vYXBpL2dlbi9hbGFkZGluL3NraWxsL3YxO3NraWxsdjFiBnByb3RvMw", [file_aladdin_objectstore_v1_upload, file_aladdin_rbac_v1_annotations]);
 
 /**
  * Skill 是目录里的一条技能。
  *
- * **列表只填前八项。** 说明层原值、当前版本信息、来源与文件清单只在详情里给出
- * （GetSkill）——列表会读很多行，把清单挂上来是一笔与列表无关的代价。
+ * **列表只填前八项。** 说明层原值、当前版本信息、来源、文件清单与**整个图集**只在
+ * 详情里给出（GetSkill）——列表会读很多行，把它们挂上来是一笔与列表无关的代价。
+ * 列表仍然给首图那一个地址（`cover_url`），因为卡片要用它。
  *
  * @generated from message aladdin.skill.v1.Skill
  */
@@ -143,18 +144,31 @@ export type Skill = Message<"aladdin.skill.v1.Skill"> & {
   files: SkillFile[];
 
   /**
-   * 封面的**短时读取地址**，列表与详情都给。空串表示这个技能没有封面，界面据此
-   * 渲染占位（标题首字 + 中性底），而不是去取一张不存在的图。
+   * 展示图集的**首图**（也就是卡片封面）的短时读取地址，列表与详情都给。空串
+   * 表示这个技能没有展示图，界面据此渲染占位（标题首字 + 中性底），而不是去取
+   * 一张不存在的图。
    *
    * 它是**预签名地址**：短时有效，过期后重新读一次就有新的。签名是本地计算、
-   * 不发网络请求，因此列表里 N 条技能不产生 N 次往返。
+   * 不发网络请求，因此列表里 N 条技能不产生 N 次往返；**列表也只签这一张**——
+   * 卡片只用首图，为它把整个图集签一遍是白签。
    *
-   * **封面不是包的内容**：它属于说明层，不进文件清单、不进版本、不参与取用
-   * （见 docs/design/skill/catalog.md 的"封面"）。
+   * **展示图不是包的内容**：它属于说明层，不进文件清单、不进版本、不参与取用
+   * （见 docs/design/skill/catalog.md 的"展示图集"）。
    *
    * @generated from field: string cover_url = 17;
    */
   coverUrl: string;
+
+  /**
+   * 展示图集，**有序**：第一项即首图。**只在详情里给**（列表只给 cover_url）——
+   * 列表会读很多行，为每条技能签一串地址是一笔与列表无关的代价，而卡片只用第一张。
+   *
+   * 每张图有它自己的标识与地址：设为首图、重排、删一张都按标识指认（见
+   * SkillAdminService 的重排与删除）。每一张的地址同样是短时预签名地址。
+   *
+   * @generated from field: repeated aladdin.skill.v1.SkillImage images = 18;
+   */
+  images: SkillImage[];
 };
 
 /**
@@ -163,6 +177,42 @@ export type Skill = Message<"aladdin.skill.v1.Skill"> & {
  */
 export const SkillSchema: GenMessage<Skill> = /*@__PURE__*/
   messageDesc(file_aladdin_skill_v1_skill, 0);
+
+/**
+ * SkillImage 是展示图集里的一张图。
+ *
+ * @generated from message aladdin.skill.v1.SkillImage
+ */
+export type SkillImage = Message<"aladdin.skill.v1.SkillImage"> & {
+  /**
+   * 图标识。由服务端分配、不可猜、不可改、不复用。它是这一张在重排、设为首图与
+   * 删除时的指认方式——**不是它的位置**：位置会随重排而变，标识不会。
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * 这一张的短时读取地址（与 cover_url 同一条模型）。
+   *
+   * @generated from field: string url = 2;
+   */
+  url: string;
+
+  /**
+   * 字节数。界面上说明"还能再加几张"用得到它（上限见 skill.MaxImages）。
+   *
+   * @generated from field: uint64 size_bytes = 3;
+   */
+  sizeBytes: bigint;
+};
+
+/**
+ * Describes the message aladdin.skill.v1.SkillImage.
+ * Use `create(SkillImageSchema)` to create a new message.
+ */
+export const SkillImageSchema: GenMessage<SkillImage> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 1);
 
 /**
  * SkillSource 是一个技能的内容从哪来。
@@ -207,7 +257,7 @@ export type SkillSource = Message<"aladdin.skill.v1.SkillSource"> & {
  * Use `create(SkillSourceSchema)` to create a new message.
  */
 export const SkillSourceSchema: GenMessage<SkillSource> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 1);
+  messageDesc(file_aladdin_skill_v1_skill, 2);
 
 /**
  * SkillFile 是当前版本里的一条文件。
@@ -241,7 +291,7 @@ export type SkillFile = Message<"aladdin.skill.v1.SkillFile"> & {
  * Use `create(SkillFileSchema)` to create a new message.
  */
 export const SkillFileSchema: GenMessage<SkillFile> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 2);
+  messageDesc(file_aladdin_skill_v1_skill, 3);
 
 /**
  * SkillVersion 是一个技能的一份不可变快照。
@@ -300,7 +350,7 @@ export type SkillVersion = Message<"aladdin.skill.v1.SkillVersion"> & {
  * Use `create(SkillVersionSchema)` to create a new message.
  */
 export const SkillVersionSchema: GenMessage<SkillVersion> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 3);
+  messageDesc(file_aladdin_skill_v1_skill, 4);
 
 /**
  * SkillUsage 是一个技能的使用量（最近 30 天）。
@@ -342,7 +392,7 @@ export type SkillUsage = Message<"aladdin.skill.v1.SkillUsage"> & {
  * Use `create(SkillUsageSchema)` to create a new message.
  */
 export const SkillUsageSchema: GenMessage<SkillUsage> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 4);
+  messageDesc(file_aladdin_skill_v1_skill, 5);
 
 /**
  * SkillCapabilities 是当前部署下技能目录的边界。
@@ -385,6 +435,27 @@ export type SkillCapabilities = Message<"aladdin.skill.v1.SkillCapabilities"> & 
    * @generated from field: uint32 max_package_bytes = 5;
    */
   maxPackageBytes: number;
+
+  /**
+   * 一个技能的**展示图张数**上限。
+   *
+   * @generated from field: uint32 max_images = 6;
+   */
+  maxImages: number;
+
+  /**
+   * **单张**展示图的字节上限（与头像同一档）。
+   *
+   * @generated from field: uint32 max_image_bytes = 7;
+   */
+  maxImageBytes: number;
+
+  /**
+   * 一个技能的展示图**合计字节**上限。
+   *
+   * @generated from field: uint32 max_image_total_bytes = 8;
+   */
+  maxImageTotalBytes: number;
 };
 
 /**
@@ -392,7 +463,7 @@ export type SkillCapabilities = Message<"aladdin.skill.v1.SkillCapabilities"> & 
  * Use `create(SkillCapabilitiesSchema)` to create a new message.
  */
 export const SkillCapabilitiesSchema: GenMessage<SkillCapabilities> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 5);
+  messageDesc(file_aladdin_skill_v1_skill, 6);
 
 /**
  * @generated from message aladdin.skill.v1.GetCapabilitiesRequest
@@ -405,7 +476,7 @@ export type GetCapabilitiesRequest = Message<"aladdin.skill.v1.GetCapabilitiesRe
  * Use `create(GetCapabilitiesRequestSchema)` to create a new message.
  */
 export const GetCapabilitiesRequestSchema: GenMessage<GetCapabilitiesRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 6);
+  messageDesc(file_aladdin_skill_v1_skill, 7);
 
 /**
  * @generated from message aladdin.skill.v1.GetCapabilitiesResponse
@@ -422,7 +493,7 @@ export type GetCapabilitiesResponse = Message<"aladdin.skill.v1.GetCapabilitiesR
  * Use `create(GetCapabilitiesResponseSchema)` to create a new message.
  */
 export const GetCapabilitiesResponseSchema: GenMessage<GetCapabilitiesResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 7);
+  messageDesc(file_aladdin_skill_v1_skill, 8);
 
 /**
  * @generated from message aladdin.skill.v1.ListSkillsRequest
@@ -456,7 +527,7 @@ export type ListSkillsRequest = Message<"aladdin.skill.v1.ListSkillsRequest"> & 
  * Use `create(ListSkillsRequestSchema)` to create a new message.
  */
 export const ListSkillsRequestSchema: GenMessage<ListSkillsRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 8);
+  messageDesc(file_aladdin_skill_v1_skill, 9);
 
 /**
  * @generated from message aladdin.skill.v1.ListSkillsResponse
@@ -487,7 +558,7 @@ export type ListSkillsResponse = Message<"aladdin.skill.v1.ListSkillsResponse"> 
  * Use `create(ListSkillsResponseSchema)` to create a new message.
  */
 export const ListSkillsResponseSchema: GenMessage<ListSkillsResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 9);
+  messageDesc(file_aladdin_skill_v1_skill, 10);
 
 /**
  * @generated from message aladdin.skill.v1.GetSkillRequest
@@ -504,7 +575,7 @@ export type GetSkillRequest = Message<"aladdin.skill.v1.GetSkillRequest"> & {
  * Use `create(GetSkillRequestSchema)` to create a new message.
  */
 export const GetSkillRequestSchema: GenMessage<GetSkillRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 10);
+  messageDesc(file_aladdin_skill_v1_skill, 11);
 
 /**
  * @generated from message aladdin.skill.v1.GetSkillResponse
@@ -521,7 +592,7 @@ export type GetSkillResponse = Message<"aladdin.skill.v1.GetSkillResponse"> & {
  * Use `create(GetSkillResponseSchema)` to create a new message.
  */
 export const GetSkillResponseSchema: GenMessage<GetSkillResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 11);
+  messageDesc(file_aladdin_skill_v1_skill, 12);
 
 /**
  * @generated from message aladdin.skill.v1.GetSkillFileRequest
@@ -546,7 +617,7 @@ export type GetSkillFileRequest = Message<"aladdin.skill.v1.GetSkillFileRequest"
  * Use `create(GetSkillFileRequestSchema)` to create a new message.
  */
 export const GetSkillFileRequestSchema: GenMessage<GetSkillFileRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 12);
+  messageDesc(file_aladdin_skill_v1_skill, 13);
 
 /**
  * @generated from message aladdin.skill.v1.GetSkillFileResponse
@@ -578,7 +649,7 @@ export type GetSkillFileResponse = Message<"aladdin.skill.v1.GetSkillFileRespons
  * Use `create(GetSkillFileResponseSchema)` to create a new message.
  */
 export const GetSkillFileResponseSchema: GenMessage<GetSkillFileResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 13);
+  messageDesc(file_aladdin_skill_v1_skill, 14);
 
 /**
  * @generated from message aladdin.skill.v1.ListSkillVersionsRequest
@@ -595,7 +666,7 @@ export type ListSkillVersionsRequest = Message<"aladdin.skill.v1.ListSkillVersio
  * Use `create(ListSkillVersionsRequestSchema)` to create a new message.
  */
 export const ListSkillVersionsRequestSchema: GenMessage<ListSkillVersionsRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 14);
+  messageDesc(file_aladdin_skill_v1_skill, 15);
 
 /**
  * @generated from message aladdin.skill.v1.ListSkillVersionsResponse
@@ -612,7 +683,7 @@ export type ListSkillVersionsResponse = Message<"aladdin.skill.v1.ListSkillVersi
  * Use `create(ListSkillVersionsResponseSchema)` to create a new message.
  */
 export const ListSkillVersionsResponseSchema: GenMessage<ListSkillVersionsResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 15);
+  messageDesc(file_aladdin_skill_v1_skill, 16);
 
 /**
  * @generated from message aladdin.skill.v1.SetSkillFavoriteRequest
@@ -636,7 +707,7 @@ export type SetSkillFavoriteRequest = Message<"aladdin.skill.v1.SetSkillFavorite
  * Use `create(SetSkillFavoriteRequestSchema)` to create a new message.
  */
 export const SetSkillFavoriteRequestSchema: GenMessage<SetSkillFavoriteRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 16);
+  messageDesc(file_aladdin_skill_v1_skill, 17);
 
 /**
  * @generated from message aladdin.skill.v1.SetSkillFavoriteResponse
@@ -649,7 +720,7 @@ export type SetSkillFavoriteResponse = Message<"aladdin.skill.v1.SetSkillFavorit
  * Use `create(SetSkillFavoriteResponseSchema)` to create a new message.
  */
 export const SetSkillFavoriteResponseSchema: GenMessage<SetSkillFavoriteResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 17);
+  messageDesc(file_aladdin_skill_v1_skill, 18);
 
 /**
  * @generated from message aladdin.skill.v1.ImportSkillRequest
@@ -696,18 +767,19 @@ export type ImportSkillRequest = Message<"aladdin.skill.v1.ImportSkillRequest"> 
   tags: string[];
 
   /**
-   * 可选的封面来源：**包内的一条图片路径**（如 `examples/cover.png`）。
+   * 可选的展示图来源：**包内的若干条图片路径**（如 `examples/cover.png`），
+   * **顺序即图集顺序、第一张即首图**。
    *
-   * 服务端把这一条单独取回来、校验后存成封面。**它不进文件清单**——封面是说明层
-   * 的一项，不是包的内容（见 docs/design/skill/catalog.md 的"封面"）。因此这条
-   * 路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。
+   * 服务端把这几条逐张取回来、校验后存成展示图。**它们不进文件清单**——展示图是
+   * 说明层的一项，不是包的内容（见 docs/design/skill/catalog.md 的"展示图集"）。
+   * 因此这些路径多半正是"被跳过的那类二进制"，那不影响它们被取回来当展示图。
    *
-   * 取不到、或类型与字节不符时**整次纳管失败**，与别的校验同一条：不留下"技能
-   * 进来了、只是没有封面"这种要人去猜的状态。
+   * 取不到、类型与字节不符、张数或合计字节超限时**整次纳管失败**，与别的校验
+   * 同一条：不留下"技能进来了、只是没有图"这种要人去猜的状态。
    *
-   * @generated from field: string cover_path = 7;
+   * @generated from field: repeated string image_paths = 8;
    */
-  coverPath: string;
+  imagePaths: string[];
 };
 
 /**
@@ -715,7 +787,7 @@ export type ImportSkillRequest = Message<"aladdin.skill.v1.ImportSkillRequest"> 
  * Use `create(ImportSkillRequestSchema)` to create a new message.
  */
 export const ImportSkillRequestSchema: GenMessage<ImportSkillRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 18);
+  messageDesc(file_aladdin_skill_v1_skill, 19);
 
 /**
  * @generated from message aladdin.skill.v1.ImportSkillResponse
@@ -732,7 +804,7 @@ export type ImportSkillResponse = Message<"aladdin.skill.v1.ImportSkillResponse"
  * Use `create(ImportSkillResponseSchema)` to create a new message.
  */
 export const ImportSkillResponseSchema: GenMessage<ImportSkillResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 19);
+  messageDesc(file_aladdin_skill_v1_skill, 20);
 
 /**
  * @generated from message aladdin.skill.v1.ResyncSkillRequest
@@ -749,7 +821,7 @@ export type ResyncSkillRequest = Message<"aladdin.skill.v1.ResyncSkillRequest"> 
  * Use `create(ResyncSkillRequestSchema)` to create a new message.
  */
 export const ResyncSkillRequestSchema: GenMessage<ResyncSkillRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 20);
+  messageDesc(file_aladdin_skill_v1_skill, 21);
 
 /**
  * @generated from message aladdin.skill.v1.ResyncSkillResponse
@@ -773,7 +845,7 @@ export type ResyncSkillResponse = Message<"aladdin.skill.v1.ResyncSkillResponse"
  * Use `create(ResyncSkillResponseSchema)` to create a new message.
  */
 export const ResyncSkillResponseSchema: GenMessage<ResyncSkillResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 21);
+  messageDesc(file_aladdin_skill_v1_skill, 22);
 
 /**
  * @generated from message aladdin.skill.v1.SetCurrentSkillVersionRequest
@@ -797,7 +869,7 @@ export type SetCurrentSkillVersionRequest = Message<"aladdin.skill.v1.SetCurrent
  * Use `create(SetCurrentSkillVersionRequestSchema)` to create a new message.
  */
 export const SetCurrentSkillVersionRequestSchema: GenMessage<SetCurrentSkillVersionRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 22);
+  messageDesc(file_aladdin_skill_v1_skill, 23);
 
 /**
  * @generated from message aladdin.skill.v1.SetCurrentSkillVersionResponse
@@ -814,7 +886,7 @@ export type SetCurrentSkillVersionResponse = Message<"aladdin.skill.v1.SetCurren
  * Use `create(SetCurrentSkillVersionResponseSchema)` to create a new message.
  */
 export const SetCurrentSkillVersionResponseSchema: GenMessage<SetCurrentSkillVersionResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 23);
+  messageDesc(file_aladdin_skill_v1_skill, 24);
 
 /**
  * @generated from message aladdin.skill.v1.UpdateSkillMetadataRequest
@@ -850,7 +922,7 @@ export type UpdateSkillMetadataRequest = Message<"aladdin.skill.v1.UpdateSkillMe
  * Use `create(UpdateSkillMetadataRequestSchema)` to create a new message.
  */
 export const UpdateSkillMetadataRequestSchema: GenMessage<UpdateSkillMetadataRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 24);
+  messageDesc(file_aladdin_skill_v1_skill, 25);
 
 /**
  * @generated from message aladdin.skill.v1.UpdateSkillMetadataResponse
@@ -867,7 +939,7 @@ export type UpdateSkillMetadataResponse = Message<"aladdin.skill.v1.UpdateSkillM
  * Use `create(UpdateSkillMetadataResponseSchema)` to create a new message.
  */
 export const UpdateSkillMetadataResponseSchema: GenMessage<UpdateSkillMetadataResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 25);
+  messageDesc(file_aladdin_skill_v1_skill, 26);
 
 /**
  * @generated from message aladdin.skill.v1.DeleteSkillRequest
@@ -884,7 +956,7 @@ export type DeleteSkillRequest = Message<"aladdin.skill.v1.DeleteSkillRequest"> 
  * Use `create(DeleteSkillRequestSchema)` to create a new message.
  */
 export const DeleteSkillRequestSchema: GenMessage<DeleteSkillRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 26);
+  messageDesc(file_aladdin_skill_v1_skill, 27);
 
 /**
  * @generated from message aladdin.skill.v1.DeleteSkillResponse
@@ -897,83 +969,105 @@ export type DeleteSkillResponse = Message<"aladdin.skill.v1.DeleteSkillResponse"
  * Use `create(DeleteSkillResponseSchema)` to create a new message.
  */
 export const DeleteSkillResponseSchema: GenMessage<DeleteSkillResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 27);
+  messageDesc(file_aladdin_skill_v1_skill, 28);
 
 /**
- * @generated from message aladdin.skill.v1.BeginSkillCoverUploadRequest
+ * @generated from message aladdin.skill.v1.BeginSkillImageUploadRequest
  */
-export type BeginSkillCoverUploadRequest = Message<"aladdin.skill.v1.BeginSkillCoverUploadRequest"> & {
+export type BeginSkillImageUploadRequest = Message<"aladdin.skill.v1.BeginSkillImageUploadRequest"> & {
   /**
    * @generated from field: string skill_id = 1;
    */
   skillId: string;
 
   /**
+   * 目标图标识。**留空表示新增一张**（服务端分配标识、排到图集末尾）；给出现有的
+   * 一张表示**换掉它的字节**（图标识、对象键与它在图集里的位置都不变）。
+   *
+   * @generated from field: string image_id = 2;
+   */
+  imageId: string;
+
+  /**
    * 上传方声明的类型。服务端只校验它在白名单内——白名单里没有任何可执行类型，
    * 而这正是这套链路能成立的原因。
    *
-   * @generated from field: string content_type = 2;
+   * @generated from field: string content_type = 3;
    */
   contentType: string;
 
   /**
    * 上传方声明的字节数。服务端按它早退（省一次白传），真正的边界由存储侧执行。
    *
-   * @generated from field: uint64 size_bytes = 3;
+   * @generated from field: uint64 size_bytes = 4;
    */
   sizeBytes: bigint;
 };
 
 /**
- * Describes the message aladdin.skill.v1.BeginSkillCoverUploadRequest.
- * Use `create(BeginSkillCoverUploadRequestSchema)` to create a new message.
+ * Describes the message aladdin.skill.v1.BeginSkillImageUploadRequest.
+ * Use `create(BeginSkillImageUploadRequestSchema)` to create a new message.
  */
-export const BeginSkillCoverUploadRequestSchema: GenMessage<BeginSkillCoverUploadRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 28);
+export const BeginSkillImageUploadRequestSchema: GenMessage<BeginSkillImageUploadRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 29);
 
 /**
- * @generated from message aladdin.skill.v1.BeginSkillCoverUploadResponse
+ * @generated from message aladdin.skill.v1.BeginSkillImageUploadResponse
  */
-export type BeginSkillCoverUploadResponse = Message<"aladdin.skill.v1.BeginSkillCoverUploadResponse"> & {
+export type BeginSkillImageUploadResponse = Message<"aladdin.skill.v1.BeginSkillImageUploadResponse"> & {
   /**
-   * 直传凭证。**只允许写、只对这个技能的封面这一个键有效、短时有效**，且允许
-   * 覆盖（封面是"当前这一张"）。
+   * 这次上传对应的图标识。新增时由服务端分配，提交要用同一个值。
    *
-   * @generated from field: aladdin.objectstore.v1.DirectUploadCredential upload = 1;
+   * @generated from field: string image_id = 1;
+   */
+  imageId: string;
+
+  /**
+   * 直传凭证。**只允许写、只对这个技能的这一张展示图的键有效、短时有效**，且
+   * 允许覆盖（换图就是覆盖那一张的字节）。
+   *
+   * @generated from field: aladdin.objectstore.v1.DirectUploadCredential upload = 2;
    */
   upload?: DirectUploadCredential | undefined;
 };
 
 /**
- * Describes the message aladdin.skill.v1.BeginSkillCoverUploadResponse.
- * Use `create(BeginSkillCoverUploadResponseSchema)` to create a new message.
+ * Describes the message aladdin.skill.v1.BeginSkillImageUploadResponse.
+ * Use `create(BeginSkillImageUploadResponseSchema)` to create a new message.
  */
-export const BeginSkillCoverUploadResponseSchema: GenMessage<BeginSkillCoverUploadResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 29);
+export const BeginSkillImageUploadResponseSchema: GenMessage<BeginSkillImageUploadResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 30);
 
 /**
- * @generated from message aladdin.skill.v1.CommitSkillCoverUploadRequest
+ * @generated from message aladdin.skill.v1.CommitSkillImageUploadRequest
  */
-export type CommitSkillCoverUploadRequest = Message<"aladdin.skill.v1.CommitSkillCoverUploadRequest"> & {
+export type CommitSkillImageUploadRequest = Message<"aladdin.skill.v1.CommitSkillImageUploadRequest"> & {
   /**
    * @generated from field: string skill_id = 1;
    */
   skillId: string;
+
+  /**
+   * 签发时给出的那个图标识（新增时是响应里分配给它的那一个）。
+   *
+   * @generated from field: string image_id = 2;
+   */
+  imageId: string;
 };
 
 /**
- * Describes the message aladdin.skill.v1.CommitSkillCoverUploadRequest.
- * Use `create(CommitSkillCoverUploadRequestSchema)` to create a new message.
+ * Describes the message aladdin.skill.v1.CommitSkillImageUploadRequest.
+ * Use `create(CommitSkillImageUploadRequestSchema)` to create a new message.
  */
-export const CommitSkillCoverUploadRequestSchema: GenMessage<CommitSkillCoverUploadRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 30);
+export const CommitSkillImageUploadRequestSchema: GenMessage<CommitSkillImageUploadRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 31);
 
 /**
- * @generated from message aladdin.skill.v1.CommitSkillCoverUploadResponse
+ * @generated from message aladdin.skill.v1.CommitSkillImageUploadResponse
  */
-export type CommitSkillCoverUploadResponse = Message<"aladdin.skill.v1.CommitSkillCoverUploadResponse"> & {
+export type CommitSkillImageUploadResponse = Message<"aladdin.skill.v1.CommitSkillImageUploadResponse"> & {
   /**
-   * 提交之后的那一份技能，省掉一次读取：调用方多半正要刷新卡片上的那张图。
+   * 提交之后的那一份技能，省掉一次读取：调用方多半正要刷新画廊里的缩略图。
    *
    * @generated from field: aladdin.skill.v1.Skill skill = 1;
    */
@@ -981,33 +1075,38 @@ export type CommitSkillCoverUploadResponse = Message<"aladdin.skill.v1.CommitSki
 };
 
 /**
- * Describes the message aladdin.skill.v1.CommitSkillCoverUploadResponse.
- * Use `create(CommitSkillCoverUploadResponseSchema)` to create a new message.
+ * Describes the message aladdin.skill.v1.CommitSkillImageUploadResponse.
+ * Use `create(CommitSkillImageUploadResponseSchema)` to create a new message.
  */
-export const CommitSkillCoverUploadResponseSchema: GenMessage<CommitSkillCoverUploadResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 31);
+export const CommitSkillImageUploadResponseSchema: GenMessage<CommitSkillImageUploadResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 32);
 
 /**
- * @generated from message aladdin.skill.v1.DeleteSkillCoverRequest
+ * @generated from message aladdin.skill.v1.DeleteSkillImageRequest
  */
-export type DeleteSkillCoverRequest = Message<"aladdin.skill.v1.DeleteSkillCoverRequest"> & {
+export type DeleteSkillImageRequest = Message<"aladdin.skill.v1.DeleteSkillImageRequest"> & {
   /**
    * @generated from field: string skill_id = 1;
    */
   skillId: string;
+
+  /**
+   * @generated from field: string image_id = 2;
+   */
+  imageId: string;
 };
 
 /**
- * Describes the message aladdin.skill.v1.DeleteSkillCoverRequest.
- * Use `create(DeleteSkillCoverRequestSchema)` to create a new message.
+ * Describes the message aladdin.skill.v1.DeleteSkillImageRequest.
+ * Use `create(DeleteSkillImageRequestSchema)` to create a new message.
  */
-export const DeleteSkillCoverRequestSchema: GenMessage<DeleteSkillCoverRequest> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 32);
+export const DeleteSkillImageRequestSchema: GenMessage<DeleteSkillImageRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 33);
 
 /**
- * @generated from message aladdin.skill.v1.DeleteSkillCoverResponse
+ * @generated from message aladdin.skill.v1.DeleteSkillImageResponse
  */
-export type DeleteSkillCoverResponse = Message<"aladdin.skill.v1.DeleteSkillCoverResponse"> & {
+export type DeleteSkillImageResponse = Message<"aladdin.skill.v1.DeleteSkillImageResponse"> & {
   /**
    * @generated from field: aladdin.skill.v1.Skill skill = 1;
    */
@@ -1015,11 +1114,53 @@ export type DeleteSkillCoverResponse = Message<"aladdin.skill.v1.DeleteSkillCove
 };
 
 /**
- * Describes the message aladdin.skill.v1.DeleteSkillCoverResponse.
- * Use `create(DeleteSkillCoverResponseSchema)` to create a new message.
+ * Describes the message aladdin.skill.v1.DeleteSkillImageResponse.
+ * Use `create(DeleteSkillImageResponseSchema)` to create a new message.
  */
-export const DeleteSkillCoverResponseSchema: GenMessage<DeleteSkillCoverResponse> = /*@__PURE__*/
-  messageDesc(file_aladdin_skill_v1_skill, 33);
+export const DeleteSkillImageResponseSchema: GenMessage<DeleteSkillImageResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 34);
+
+/**
+ * @generated from message aladdin.skill.v1.ReorderSkillImagesRequest
+ */
+export type ReorderSkillImagesRequest = Message<"aladdin.skill.v1.ReorderSkillImagesRequest"> & {
+  /**
+   * @generated from field: string skill_id = 1;
+   */
+  skillId: string;
+
+  /**
+   * 期望的完整顺序。必须是这个技能当前图集的一个排列（不多、不少、不重、不带
+   * 别人的标识），否则整个拒绝。**第一项即首图。**
+   *
+   * @generated from field: repeated string image_ids = 2;
+   */
+  imageIds: string[];
+};
+
+/**
+ * Describes the message aladdin.skill.v1.ReorderSkillImagesRequest.
+ * Use `create(ReorderSkillImagesRequestSchema)` to create a new message.
+ */
+export const ReorderSkillImagesRequestSchema: GenMessage<ReorderSkillImagesRequest> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 35);
+
+/**
+ * @generated from message aladdin.skill.v1.ReorderSkillImagesResponse
+ */
+export type ReorderSkillImagesResponse = Message<"aladdin.skill.v1.ReorderSkillImagesResponse"> & {
+  /**
+   * @generated from field: aladdin.skill.v1.Skill skill = 1;
+   */
+  skill?: Skill | undefined;
+};
+
+/**
+ * Describes the message aladdin.skill.v1.ReorderSkillImagesResponse.
+ * Use `create(ReorderSkillImagesResponseSchema)` to create a new message.
+ */
+export const ReorderSkillImagesResponseSchema: GenMessage<ReorderSkillImagesResponse> = /*@__PURE__*/
+  messageDesc(file_aladdin_skill_v1_skill, 36);
 
 /**
  * SkillService 是**技能目录的读面**：找到技能、看清它是什么、把正文取走。
@@ -1038,12 +1179,12 @@ export const DeleteSkillCoverResponseSchema: GenMessage<DeleteSkillCoverResponse
  */
 export const SkillService: GenService<{
   /**
-   * 读取当前部署下技能目录的边界：能不能用、纳得进多大的包。
+   * 读取当前部署下技能目录的边界：能不能用、纳得进多大的包、图集能到多少张。
    *
    * 它是**能力下发点**，与档案的 avatar_upload_enabled、galaxy 的 GetCapabilities
    * 同一取向：能力由服务端说，客户端不猜。前端据此不渲染未启用的入口，而不是渲染
-   * 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来"，而不是等一次纳管
-   * 失败才把上限讲给管理员听。
+   * 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来、一张图能多大"，而不是
+   * 等一次写入失败才把上限讲给管理员听（见 SkillCapabilities 上的展示图那三项）。
    *
    * 它退回的每一项都是部署形态的公开事实，不因调用者而异，因此只要认证——
    * 与 galaxy 的同名方法一致。
@@ -1229,11 +1370,12 @@ export const SkillAdminService: GenService<{
     output: typeof UpdateSkillMetadataResponseSchema;
   },
   /**
-   * 删除一个技能：技能行、版本行、标签、收藏与使用记录一起消失。
+   * 删除一个技能：技能行、版本行、标签、图集、收藏与使用记录一起消失。
    *
-   * **桶上的字节不删。** 内容对象按摘要全局共享，同一份字节可能正被别处引用；
-   * "哪些对象还在被引用"要一次全量对账才答得上来，因此与 galaxy 的孤儿对象回收
-   * 合并处理。不可逆。
+   * **桶上的内容字节不删**，而**展示图的对象一起删**。两者的区别是键的归属：内容
+   * 对象按摘要全局共享，同一份字节可能正被别处引用，"哪些对象还在被引用"要一次全量
+   * 对账才答得上来（因此与 galaxy 的孤儿对象回收合并处理）；展示图一张一个键、由这
+   * 一个技能独占，删它不会动到别处。不可逆。
    *
    * @generated from rpc aladdin.skill.v1.SkillAdminService.DeleteSkill
    */
@@ -1243,47 +1385,66 @@ export const SkillAdminService: GenService<{
     output: typeof DeleteSkillResponseSchema;
   },
   /**
-   * 开始一次封面上传：签发一份直传凭证。
+   * 开始一次展示图上传播：签发一份直传凭证。
    *
    * **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
-   * 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
-   * 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+   * 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的某一张
+   * 展示图这一个键、类型与大小受条件约束"的策略交给对象存储执行。
    *
-   * 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
-   * 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
-   * docs/design/skill/catalog.md 的"封面"）。
+   * 不给图标识时是**新增一张**：服务端分配标识、把它排到图集末尾。给了已有的图
+   * 标识时是**换掉那一张的字节**：对象键与它在图集里的位置都不变——展示图按图标识
+   * 定位，一张一个键，顺序不是键的一部分（见 docs/design/skill/catalog.md 的
+   * "展示图集"）。
    *
-   * @generated from rpc aladdin.skill.v1.SkillAdminService.BeginSkillCoverUpload
+   * @generated from rpc aladdin.skill.v1.SkillAdminService.BeginSkillImageUpload
    */
-  beginSkillCoverUpload: {
+  beginSkillImageUpload: {
     methodKind: "unary";
-    input: typeof BeginSkillCoverUploadRequestSchema;
-    output: typeof BeginSkillCoverUploadResponseSchema;
+    input: typeof BeginSkillImageUploadRequestSchema;
+    output: typeof BeginSkillImageUploadResponseSchema;
   },
   /**
-   * 提交一次封面上传：核对字节确实到了，把技能指向它。
+   * 提交一次展示图上传：核对字节确实到了，把它记进图集（换图时只是让它生效）。
    *
    * 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
-   * Head：不存在即失败，字节数超过上限即失败并删除对象。
+   * Head：不存在即失败，字节数超过单张上限即失败并删除对象，**并按真实字节数复核
+   * 图集的合计上限**——声明可以撒谎，而这一步服务端看得见真实的字节数。
    *
-   * @generated from rpc aladdin.skill.v1.SkillAdminService.CommitSkillCoverUpload
+   * @generated from rpc aladdin.skill.v1.SkillAdminService.CommitSkillImageUpload
    */
-  commitSkillCoverUpload: {
+  commitSkillImageUpload: {
     methodKind: "unary";
-    input: typeof CommitSkillCoverUploadRequestSchema;
-    output: typeof CommitSkillCoverUploadResponseSchema;
+    input: typeof CommitSkillImageUploadRequestSchema;
+    output: typeof CommitSkillImageUploadResponseSchema;
   },
   /**
-   * 移除封面。没有封面时也成功（幂等）。
+   * 从图集里移除一张。没有这一张时也失败（**不是幂等**：调用方给出的标识必须
+   * 指向当前图集里的一张，"删一张已经不在的图"是一次拼错了标识，不是一个状态）。
    *
-   * 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
+   * 它删的是**对象**：这个键由这一张独占，不像内容对象那样可能被别处引用。剩下的
+   * 顺序保持不变——删中间一张不会让后面任何一张的地址变（见
+   * docs/design/skill/catalog.md 的"展示图集"）。
    *
-   * @generated from rpc aladdin.skill.v1.SkillAdminService.DeleteSkillCover
+   * @generated from rpc aladdin.skill.v1.SkillAdminService.DeleteSkillImage
    */
-  deleteSkillCover: {
+  deleteSkillImage: {
     methodKind: "unary";
-    input: typeof DeleteSkillCoverRequestSchema;
-    output: typeof DeleteSkillCoverResponseSchema;
+    input: typeof DeleteSkillImageRequestSchema;
+    output: typeof DeleteSkillImageResponseSchema;
+  },
+  /**
+   * 重排图集：请求给出的是**期望的完整顺序**，与改说明层同取向。
+   *
+   * **第一项即首图**——"设为首图"就是把某一张排到第一位，没有第二个开关（卡片
+   * 显示哪一张由它唯一决定）。给出的标识不是这个技能当前图集的一个排列（少了、
+   * 多了、重复了、有别人的）时整个拒绝，顺序不变——不做"部分重排"。
+   *
+   * @generated from rpc aladdin.skill.v1.SkillAdminService.ReorderSkillImages
+   */
+  reorderSkillImages: {
+    methodKind: "unary";
+    input: typeof ReorderSkillImagesRequestSchema;
+    output: typeof ReorderSkillImagesResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_aladdin_skill_v1_skill, 1);
