@@ -43,11 +43,14 @@ func (s *SkillService) GetCapabilities(ctx context.Context, _ *connect.Request[s
 	capabilities := s.skills.Capabilities()
 	return connect.NewResponse(&skillv1.GetCapabilitiesResponse{
 		Capabilities: &skillv1.SkillCapabilities{
-			CatalogEnabled:  capabilities.CatalogEnabled,
-			ImportEnabled:   capabilities.ImportEnabled,
-			MaxFiles:        fitUint32(int64(capabilities.MaxFiles)),
-			MaxFileBytes:    fitUint32(int64(capabilities.MaxFileBytes)),
-			MaxPackageBytes: fitUint32(int64(capabilities.MaxPackageBytes)),
+			CatalogEnabled:     capabilities.CatalogEnabled,
+			ImportEnabled:      capabilities.ImportEnabled,
+			MaxFiles:           fitUint32(int64(capabilities.MaxFiles)),
+			MaxFileBytes:       fitUint32(int64(capabilities.MaxFileBytes)),
+			MaxPackageBytes:    fitUint32(int64(capabilities.MaxPackageBytes)),
+			MaxImages:          fitUint32(int64(capabilities.MaxImages)),
+			MaxImageBytes:      fitUint32(int64(capabilities.MaxImageBytes)),
+			MaxImageTotalBytes: fitUint32(int64(capabilities.MaxImageTotal)),
 		},
 	}), nil
 }
@@ -156,8 +159,12 @@ func (s *SkillService) SetSkillFavorite(ctx context.Context, req *connect.Reques
 
 // toProtoSkill 把一条技能回填成协议类型。
 //
-// detail 为假时**只填列表要用的那几项**：文件清单与来源只在详情里给出，列表会读
-// 很多行，把清单挂上来是一笔与列表无关的代价（见 skill.proto 的 Skill 说明）。
+// detail 为假时**只填列表要用的那几项**：文件清单、来源与整个图集只在详情里给出，
+// 列表会读很多行，把它们挂上来是一笔与列表无关的代价（见 skill.proto 的 Skill
+// 说明）。列表仍然给**首图**那一个地址——卡片要用它。
+//
+// 图集由 view.Shown 给出：它按 detail 决定是整组还是只有首图（见 skill.ViewOf），
+// 因此这里不再自己裁一次——两处各裁一次就会漂移。
 func toProtoSkill(view skill.View, detail bool) *skillv1.Skill {
 	item := view.Skill
 	out := &skillv1.Skill{
@@ -166,7 +173,7 @@ func toProtoSkill(view skill.View, detail bool) *skillv1.Skill {
 		Summary:    item.EffectiveSummary(),
 		Tags:       item.Tags,
 		Favorited:  view.Favorited,
-		CoverUrl:   view.CoverURL,
+		CoverUrl:   view.CoverURL(),
 		FileCount:  fitUint32(int64(len(item.Current.Files))),
 		TotalBytes: fitUint64(item.Current.TotalBytes()),
 		Usage: &skillv1.SkillUsage{
@@ -198,6 +205,14 @@ func toProtoSkill(view skill.View, detail bool) *skillv1.Skill {
 			Digest:    file.Digest,
 		})
 	}
+	out.Images = make([]*skillv1.SkillImage, 0, len(view.Shown))
+	for _, image := range view.Shown {
+		out.Images = append(out.Images, &skillv1.SkillImage{
+			Id:        image.ID,
+			Url:       image.URL,
+			SizeBytes: fitUint64(image.SizeBytes),
+		})
+	}
 	return out
 }
 
@@ -218,9 +233,15 @@ func formatSkillTime(at time.Time) string {
 // 把它们混成一句"纳管失败"的表现是管理员完全不知道该动哪一头。
 func toSkillConnectError(err error) error {
 	switch {
-	case errors.Is(err, skill.ErrStoreUnavailable),
-		errors.Is(err, objectstore.ErrStoreUnavailable):
+	case errors.Is(err, skill.ErrStoreUnavailable):
 		return connect.NewError(connect.CodeUnavailable, errors.New("服务暂时不可用，请稍后重试"))
+	case errors.Is(err, objectstore.ErrStoreUnavailable):
+		// **与上面那条必须分开。** 库不可用与桶不可用是两件事，而"哪一头坏了"
+		// 决定了去哪查：混成同一句话的表现是排障的人只能靠猜。
+		//
+		// 这一条要排在上面那条"配置缺失"之前：一次真实的存储故障在链上同时挂着
+		// 它（见 image.go 那几处包装），先判到的必须是"失败了"而不是"没配置"。
+		return connect.NewError(connect.CodeUnavailable, errors.New("对象存储暂时不可用，请稍后重试"))
 	case errors.Is(err, skill.ErrObjectStoreUnavailable),
 		errors.Is(err, skill.ErrRemoteNotConfigured):
 		// **不是故障，是"这条路在这个部署上不成立"**：没有配置对象存储时技能目录
@@ -243,13 +264,29 @@ func toSkillConnectError(err error) error {
 	case errors.Is(err, skill.ErrPackageInvalid):
 		// 消息里点名了那一处（哪一个路径、违反了哪一条），因此原样透出。
 		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
-	case errors.Is(err, skill.ErrCoverNotAllowed),
+	case errors.Is(err, skill.ErrImageNotAllowed),
 		errors.Is(err, imagetype.ErrTypeNotAllowed):
 		// 消息里点名了那一条路径或那一个类型，因此原样透出。
 		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
-	case errors.Is(err, skill.ErrCoverTooLarge):
+	case errors.Is(err, skill.ErrImageTooLarge):
 		return connect.NewError(connect.CodeInvalidArgument,
-			fmt.Errorf("封面不能超过 %d MiB", imagetype.MaxBytes/(1024*1024)))
+			fmt.Errorf("单张展示图不能超过 %d MiB", imagetype.MaxBytes/(1024*1024)))
+	case errors.Is(err, skill.ErrTooManyImages):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("一个技能最多 %d 张展示图", skill.MaxImages))
+	case errors.Is(err, skill.ErrImagesTooLarge):
+		// 换图失败时对象已经覆盖上去了，消息里点名了这一点，因此原样透出。
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
+	case errors.Is(err, skill.ErrImageNotFound):
+		// **与"技能不存在"必须分开**：技能在，是那一张不在。
+		return connect.NewError(connect.CodeNotFound, errors.New("这个技能里没有这张展示图"))
+	case errors.Is(err, skill.ErrImageUploadMissing):
+		// 上传没完成不是调用方的错，也不是服务端的故障：客户端重传一次即可
+		// （与头像那一处同一条）。
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("展示图还没有传完，请重试"))
+	case errors.Is(err, skill.ErrImageOrderMismatch):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
 	case errors.Is(err, skill.ErrTitleTooLong):
 		return connect.NewError(connect.CodeInvalidArgument,
 			fmt.Errorf("技能标题不能超过 %d 个字", skill.MaxTitleRunes))

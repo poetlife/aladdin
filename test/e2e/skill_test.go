@@ -18,9 +18,12 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	skillv1 "github.com/poetlife/aladdin/api/gen/aladdin/skill/v1"
 	"github.com/poetlife/aladdin/api/gen/aladdin/skill/v1/skillv1connect"
+	"github.com/poetlife/aladdin/internal/imagetype"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/skill"
 )
@@ -121,7 +124,7 @@ func (f *fakeSkillRemote) setBlob(sha string, data []byte) {
 	f.blobs[sha] = data
 }
 
-// FetchBlob 按 FetchTree 给过的标识取字节（封面的那条路要用）。
+// FetchBlob 按 FetchTree 给过的标识取字节（展示图的那条路要用）。
 func (f *fakeSkillRemote) FetchBlob(_ context.Context, _ skill.Repository, sha string, maxBytes int64) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -463,14 +466,16 @@ func TestSkillImportRejectsNonGithubAddress(t *testing.T) {
 	}
 }
 
-// 封面：纳管时从仓库取一张 → 卡片拿得到地址 → 界面换一张 → 移除。
+// 展示图集：纳管时从仓库取两张 → 卡片拿首图 → 详情给整组 → 直传加一张 → 换一张 →
+// 设为首图 → 删一张。
 //
-// 它是**说明层的一项**，因此这一条同时要确认：封面进去了，而文件清单里没有它。
-func TestSkillCoverEndToEnd(t *testing.T) {
+// 它是**说明层的一项**，因此这一条同时要确认：图进来了，而文件清单里没有它们。
+func TestSkillImagesEndToEnd(t *testing.T) {
 	h := startServer(t, rbac.RoleSkillCurator, testScope)
 	h.skillRemote.setTree(skillCommit1, map[string]string{
-		"SKILL.md":  "---\nname: mono-color\ndescription: 出图。\n---\n\n正文。\n",
-		"cover.png": string(coverPNG),
+		"SKILL.md":      "---\nname: mono-color\ndescription: 出图。\n---\n\n正文。\n",
+		"gallery/a.png": string(coverPNG) + "a",
+		"gallery/b.png": string(coverPNG) + "b",
 	})
 
 	reader, admin := skillClients(t, h, testToken, testScope)
@@ -479,84 +484,220 @@ func TestSkillCoverEndToEnd(t *testing.T) {
 
 	resp, err := admin.ImportSkill(ctx, connect.NewRequest(&skillv1.ImportSkillRequest{
 		RepositoryUrl: "https://github.com/" + skillOwner + "/" + skillRepo,
-		CoverPath:     "cover.png",
+		ImagePaths:    []string{"gallery/a.png", "gallery/b.png"},
 		Tags:          []string{"出图"},
 	}))
 	if err != nil {
-		t.Fatalf("带封面纳管失败: %v", err)
+		t.Fatalf("带展示图纳管失败: %v", err)
 	}
 	item := resp.Msg.GetSkill()
-	if item.GetCoverUrl() == "" {
-		t.Fatal("纳管之后没有拿到封面地址")
+	if len(item.GetImages()) != 2 {
+		t.Fatalf("详情里的图集 = %d 张，期望 2 张", len(item.GetImages()))
 	}
-	// **封面不是包的内容**：文件清单里只有那份文本。
-	for _, file := range item.GetFiles() {
-		if file.GetPath() == "cover.png" {
-			t.Error("封面进了文件清单")
-		}
+	// **首图即封面**：cover_url 就是第一张的地址。
+	if item.GetCoverUrl() == "" || item.GetCoverUrl() != item.GetImages()[0].GetUrl() {
+		t.Errorf("首图地址 = %q，第一张的地址 = %q", item.GetCoverUrl(), item.GetImages()[0].GetUrl())
 	}
+	if item.GetImages()[0].GetId() == item.GetImages()[1].GetId() {
+		t.Error("两张图的标识相同")
+	}
+	// **展示图不是包的内容**：文件清单里只有那份文本。
 	if len(item.GetFiles()) != 1 {
 		t.Errorf("文件清单 = %d 条，期望 1 条", len(item.GetFiles()))
 	}
+	for _, file := range item.GetFiles() {
+		if strings.HasPrefix(file.GetPath(), "gallery/") {
+			t.Errorf("展示图 %q 进了文件清单", file.GetPath())
+		}
+	}
 
-	// 列表里也给地址（卡片要显示图）。
+	// **列表只给首图**：卡片要用的那一个地址给，整组不给。
 	list, err := reader.ListSkills(ctx, connect.NewRequest(&skillv1.ListSkillsRequest{}))
 	if err != nil {
 		t.Fatalf("列出失败: %v", err)
 	}
-	if list.Msg.GetSkills()[0].GetCoverUrl() == "" {
-		t.Error("列表里没有封面地址")
+	listed := list.Msg.GetSkills()[0]
+	if listed.GetCoverUrl() != item.GetCoverUrl() {
+		t.Errorf("列表里的首图地址 = %q，期望 %q", listed.GetCoverUrl(), item.GetCoverUrl())
+	}
+	if len(listed.GetImages()) != 0 {
+		t.Errorf("列表里带了 %d 张图，期望一张都不带", len(listed.GetImages()))
 	}
 
-	// 界面换一张：签发 → 直传 → 提交。
-	begin, err := admin.BeginSkillCoverUpload(ctx, connect.NewRequest(&skillv1.BeginSkillCoverUploadRequest{
-		SkillId: item.GetId(), ContentType: "image/png", SizeBytes: uint64(len(coverPNG)),
+	// 直传加一张：签发 → 直传 → 提交，落在**末尾**。
+	added := string(coverPNG) + "d"
+	begin, err := admin.BeginSkillImageUpload(ctx, connect.NewRequest(&skillv1.BeginSkillImageUploadRequest{
+		SkillId: item.GetId(), ContentType: "image/png", SizeBytes: uint64(len(added)),
 	}))
 	if err != nil {
 		t.Fatalf("签发失败: %v", err)
 	}
 	credential := begin.Msg.GetUpload()
-	if credential == nil || credential.GetKey() == "" {
-		t.Fatal("没有返回直传凭证")
+	if credential == nil || credential.GetKey() == "" || begin.Msg.GetImageId() == "" {
+		t.Fatal("没有返回图标识或直传凭证")
 	}
 	// 直传那一步在真实链路里由浏览器把字节写进桶；装配里没有真桶，因此这里直接
 	// 写进假存储（与资产那些用例同一条）。
-	h.objects.SimulateUpload(credential.GetKey(), coverPNG)
-	committed, err := admin.CommitSkillCoverUpload(ctx, connect.NewRequest(&skillv1.CommitSkillCoverUploadRequest{
-		SkillId: item.GetId(),
+	h.objects.SimulateUpload(credential.GetKey(), []byte(added))
+	committed, err := admin.CommitSkillImageUpload(ctx, connect.NewRequest(&skillv1.CommitSkillImageUploadRequest{
+		SkillId: item.GetId(), ImageId: begin.Msg.GetImageId(),
 	}))
 	if err != nil {
 		t.Fatalf("提交失败: %v", err)
 	}
-	if committed.Msg.GetSkill().GetCoverUrl() == "" {
-		t.Error("换完之后没有封面地址")
+	if got := committed.Msg.GetSkill().GetImages(); len(got) != 3 || got[2].GetId() != begin.Msg.GetImageId() {
+		t.Fatalf("加完之后图集 = %+v，期望新的一张排在末尾", got)
 	}
+	firstKey := objectKeyOf(t, committed.Msg.GetSkill().GetImages()[0].GetUrl())
 
-	// 移除。
-	cleared, err := admin.DeleteSkillCover(ctx, connect.NewRequest(&skillv1.DeleteSkillCoverRequest{
-		SkillId: item.GetId(),
+	// 换第一张（同一标识、同一键、同一位置）。
+	replaced := string(coverPNG) + "replaced"
+	replace, err := admin.BeginSkillImageUpload(ctx, connect.NewRequest(&skillv1.BeginSkillImageUploadRequest{
+		SkillId:     item.GetId(),
+		ImageId:     item.GetImages()[0].GetId(),
+		ContentType: "image/png",
+		SizeBytes:   uint64(len(replaced)),
 	}))
 	if err != nil {
-		t.Fatalf("移除失败: %v", err)
+		t.Fatalf("换图签发失败: %v", err)
 	}
-	if cleared.Msg.GetSkill().GetCoverUrl() != "" {
-		t.Error("移除之后仍有封面地址")
+	if replace.Msg.GetUpload().GetKey() != firstKey {
+		t.Errorf("换图换了一个键: %q → %q", firstKey, replace.Msg.GetUpload().GetKey())
+	}
+	h.objects.SimulateUpload(replace.Msg.GetUpload().GetKey(), []byte(replaced))
+	swapped, err := admin.CommitSkillImageUpload(ctx, connect.NewRequest(&skillv1.CommitSkillImageUploadRequest{
+		SkillId: item.GetId(), ImageId: item.GetImages()[0].GetId(),
+	}))
+	if err != nil {
+		t.Fatalf("换图提交失败: %v", err)
+	}
+	if got := swapped.Msg.GetSkill().GetImages(); len(got) != 3 ||
+		got[0].GetId() != item.GetImages()[0].GetId() || got[1].GetId() != item.GetImages()[1].GetId() {
+		t.Fatalf("换图之后图集 = %+v，期望位置与标识都不变", got)
 	}
 
-	// **写权限是封面那道门。** 创作者能读目录，但换封面的三个方法一律被拒——
-	// 它改的是目录内容，与"读"不是一回事。
-	creatorToken, _ := injectSubject(t, h, rbac.RoleGalaxyAuthor, "e2e-skill-cover-reader")
+	// 设为首图：把最后一张排到第一位，**其余每一张的地址都不变**。
+	images := swapped.Msg.GetSkill().GetImages()
+	order := []string{images[2].GetId(), images[0].GetId(), images[1].GetId()}
+	reordered, err := admin.ReorderSkillImages(ctx, connect.NewRequest(&skillv1.ReorderSkillImagesRequest{
+		SkillId: item.GetId(), ImageIds: order,
+	}))
+	if err != nil {
+		t.Fatalf("重排失败: %v", err)
+	}
+	after := reordered.Msg.GetSkill()
+	if after.GetCoverUrl() != images[2].GetUrl() {
+		t.Errorf("设为首图之后的首图地址 = %q，期望 %q", after.GetCoverUrl(), images[2].GetUrl())
+	}
+	for i, wantID := range order {
+		if after.GetImages()[i].GetId() != wantID {
+			t.Errorf("重排之后第 %d 张 = %q，期望 %q", i, after.GetImages()[i].GetId(), wantID)
+		}
+	}
+	// 被拒的重排：少一张。
+	if _, err := admin.ReorderSkillImages(ctx, connect.NewRequest(&skillv1.ReorderSkillImagesRequest{
+		SkillId: item.GetId(), ImageIds: order[:2],
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("少一张的重排 = %v，期望 InvalidArgument", err)
+	}
+
+	// 删中间一张：剩下的顺序与地址都不变。
+	deleted, err := admin.DeleteSkillImage(ctx, connect.NewRequest(&skillv1.DeleteSkillImageRequest{
+		SkillId: item.GetId(), ImageId: order[1],
+	}))
+	if err != nil {
+		t.Fatalf("删图失败: %v", err)
+	}
+	remaining := deleted.Msg.GetSkill().GetImages()
+	if len(remaining) != 2 || remaining[0].GetId() != order[0] || remaining[1].GetId() != order[2] {
+		t.Fatalf("删完之后图集 = %+v", remaining)
+	}
+	if remaining[0].GetUrl() != after.GetImages()[0].GetUrl() || remaining[1].GetUrl() != after.GetImages()[2].GetUrl() {
+		t.Error("删中间一张改了其余图的地址")
+	}
+	// 删一张已经不在的：技能在，是那一张不在。
+	if _, err := admin.DeleteSkillImage(ctx, connect.NewRequest(&skillv1.DeleteSkillImageRequest{
+		SkillId: item.GetId(), ImageId: order[1],
+	})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("重复删 = %v，期望 NotFound", err)
+	}
+
+	// **上限由能力下发点给出**，客户端不猜：界面上那句"最多几张"来自这里
+	// （见 skill.proto 的 GetCapabilities）。
+	caps, err := reader.GetCapabilities(ctx, connect.NewRequest(&skillv1.GetCapabilitiesRequest{}))
+	if err != nil {
+		t.Fatalf("读取能力失败: %v", err)
+	}
+	if got := caps.Msg.GetCapabilities(); got.GetMaxImages() != skill.MaxImages ||
+		got.GetMaxImageBytes() != imagetype.MaxBytes ||
+		got.GetMaxImageTotalBytes() != skill.MaxImageTotalBytes {
+		t.Errorf("能力里的图集上限 = %+v，期望 %d / %d / %d",
+			got, skill.MaxImages, imagetype.MaxBytes, skill.MaxImageTotalBytes)
+	}
+
+	// **写权限是图集那道门。** 创作者能读目录，但图集的四个方法一律被拒——它们改的
+	// 是目录内容，与"读"不是一回事。
+	creatorToken, _ := injectSubject(t, h, rbac.RoleGalaxyAuthor, "e2e-skill-image-reader")
 	_, creatorAdmin := skillClients(t, h, creatorToken, testScope)
-	if _, err := creatorAdmin.BeginSkillCoverUpload(ctx, connect.NewRequest(&skillv1.BeginSkillCoverUploadRequest{
+	if _, err := creatorAdmin.BeginSkillImageUpload(ctx, connect.NewRequest(&skillv1.BeginSkillImageUploadRequest{
 		SkillId: item.GetId(), ContentType: "image/png", SizeBytes: 8,
 	})); err == nil {
-		t.Error("没有写权限的主体签发了封面上传凭证")
+		t.Error("没有写权限的主体签发了展示图上传播凭证")
 	}
-	if _, err := creatorAdmin.DeleteSkillCover(ctx, connect.NewRequest(&skillv1.DeleteSkillCoverRequest{
-		SkillId: item.GetId(),
+	if _, err := creatorAdmin.CommitSkillImageUpload(ctx, connect.NewRequest(&skillv1.CommitSkillImageUploadRequest{
+		SkillId: item.GetId(), ImageId: order[0],
 	})); err == nil {
-		t.Error("没有写权限的主体移除了封面")
+		t.Error("没有写权限的主体提交了展示图")
 	}
+	if _, err := creatorAdmin.DeleteSkillImage(ctx, connect.NewRequest(&skillv1.DeleteSkillImageRequest{
+		SkillId: item.GetId(), ImageId: order[0],
+	})); err == nil {
+		t.Error("没有写权限的主体删除了展示图")
+	}
+	if _, err := creatorAdmin.ReorderSkillImages(ctx, connect.NewRequest(&skillv1.ReorderSkillImagesRequest{
+		SkillId: item.GetId(), ImageIds: order,
+	})); err == nil {
+		t.Error("没有写权限的主体重排了展示图")
+	}
+
+	// **同一套注解在另一条协议上结论相同。** 上面几颗都是 Connect；这里用 grpc-go
+	// 客户端再打同一个方法——判定只有一处实现，但那处实现要能在三条协议上都被走到
+	// （见 AGENTS.md 的"改判定必须三种协议都对"）。
+	grpcCreator := h.dial(t, creatorToken, testScope)
+	grpcCtx, grpcCancel := grpcCreator.Context()
+	defer grpcCancel()
+	if _, err := skillv1.NewSkillAdminServiceClient(grpcCreator.Conn()).
+		BeginSkillImageUpload(grpcCtx, &skillv1.BeginSkillImageUploadRequest{
+			SkillId: item.GetId(), ContentType: "image/png", SizeBytes: 8,
+		}); status.Code(err) != codes.PermissionDenied {
+		t.Errorf("gRPC 上无写权限的签发 = %v，期望 PermissionDenied", err)
+	}
+	grpcAdmin := h.dial(t, testToken, testScope)
+	grpcAdminCtx, grpcAdminCancel := grpcAdmin.Context()
+	defer grpcAdminCancel()
+	if _, err := skillv1.NewSkillAdminServiceClient(grpcAdmin.Conn()).
+		BeginSkillImageUpload(grpcAdminCtx, &skillv1.BeginSkillImageUploadRequest{
+			SkillId: item.GetId(), ContentType: "image/png", SizeBytes: 8,
+		}); err != nil {
+		t.Errorf("gRPC 上有写权限的签发失败: %v", err)
+	}
+}
+
+// objectKeyOf 从假对象存储给出的地址里取回对象键。
+//
+// 这里能从地址反推键，是因为装配里的对象存储是内存实现；生产实现给的是一个真正的
+// 预签名地址，反推不出来——而这条用例要断言的正是"换图没换键、删中间一张没动其余"。
+func objectKeyOf(t *testing.T, url string) string {
+	t.Helper()
+	const prefix = "memory://"
+	if !strings.HasPrefix(url, prefix) {
+		t.Fatalf("地址 %q 不是内存实现的形状", url)
+	}
+	key := strings.TrimPrefix(url, prefix)
+	if i := strings.Index(key, "?ttl="); i >= 0 {
+		key = key[:i]
+	}
+	return key
 }
 
 // **平台从不写调用方的文件系统**：跑完取用之后，调用方的 HOME 里不出现任何技能

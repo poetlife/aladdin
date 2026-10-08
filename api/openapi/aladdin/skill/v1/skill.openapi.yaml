@@ -14,12 +14,12 @@ paths:
 
         **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
 
-        读取当前部署下技能目录的边界：能不能用、纳得进多大的包。
+        读取当前部署下技能目录的边界：能不能用、纳得进多大的包、图集能到多少张。
 
          它是**能力下发点**，与档案的 avatar_upload_enabled、galaxy 的 GetCapabilities
          同一取向：能力由服务端说，客户端不猜。前端据此不渲染未启用的入口，而不是渲染
-         一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来"，而不是等一次纳管
-         失败才把上限讲给管理员听。
+         一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来、一张图能多大"，而不是
+         等一次写入失败才把上限讲给管理员听（见 SkillCapabilities 上的展示图那三项）。
 
          它退回的每一项都是部署形态的公开事实，不因调用者而异，因此只要认证——
          与 galaxy 的同名方法一致。
@@ -522,11 +522,12 @@ paths:
       description: |-
         **鉴权**：需要权限 `skill.catalog.write`；作用域取自凭证的默认作用域。
 
-        删除一个技能：技能行、版本行、标签、收藏与使用记录一起消失。
+        删除一个技能：技能行、版本行、标签、图集、收藏与使用记录一起消失。
 
-         **桶上的字节不删。** 内容对象按摘要全局共享，同一份字节可能正被别处引用；
-         "哪些对象还在被引用"要一次全量对账才答得上来，因此与 galaxy 的孤儿对象回收
-         合并处理。不可逆。
+         **桶上的内容字节不删**，而**展示图的对象一起删**。两者的区别是键的归属：内容
+         对象按摘要全局共享，同一份字节可能正被别处引用，"哪些对象还在被引用"要一次全量
+         对账才答得上来（因此与 galaxy 的孤儿对象回收合并处理）；展示图一张一个键、由这
+         一个技能独占，删它不会动到别处。不可逆。
       operationId: aladdin.skill.v1.SkillAdminService.DeleteSkill
       parameters:
         - name: Connect-Protocol-Version
@@ -557,7 +558,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.skill.v1.DeleteSkillResponse'
-  /aladdin.skill.v1.SkillAdminService/BeginSkillCoverUpload:
+  /aladdin.skill.v1.SkillAdminService/BeginSkillImageUpload:
     post:
       x-aladdin-auth:
         kind: requires
@@ -565,20 +566,21 @@ paths:
         scope-source: SCOPE_SOURCE_CREDENTIAL
       tags:
         - aladdin.skill.v1.SkillAdminService
-      summary: BeginSkillCoverUpload
+      summary: BeginSkillImageUpload
       description: |-
         **鉴权**：需要权限 `skill.catalog.write`；作用域取自凭证的默认作用域。
 
-        开始一次封面上传：签发一份直传凭证。
+        开始一次展示图上传播：签发一份直传凭证。
 
          **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
-         校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
-         这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+         校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的某一张
+         展示图这一个键、类型与大小受条件约束"的策略交给对象存储执行。
 
-         一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
-         而不是内容对象那种按摘要寻址、不可变、共享的字节（见
-         docs/design/skill/catalog.md 的"封面"）。
-      operationId: aladdin.skill.v1.SkillAdminService.BeginSkillCoverUpload
+         不给图标识时是**新增一张**：服务端分配标识、把它排到图集末尾。给了已有的图
+         标识时是**换掉那一张的字节**：对象键与它在图集里的位置都不变——展示图按图标识
+         定位，一张一个键，顺序不是键的一部分（见 docs/design/skill/catalog.md 的
+         "展示图集"）。
+      operationId: aladdin.skill.v1.SkillAdminService.BeginSkillImageUpload
       parameters:
         - name: Connect-Protocol-Version
           in: header
@@ -593,7 +595,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/aladdin.skill.v1.BeginSkillCoverUploadRequest'
+              $ref: '#/components/schemas/aladdin.skill.v1.BeginSkillImageUploadRequest'
         required: true
       responses:
         default:
@@ -607,8 +609,8 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/aladdin.skill.v1.BeginSkillCoverUploadResponse'
-  /aladdin.skill.v1.SkillAdminService/CommitSkillCoverUpload:
+                $ref: '#/components/schemas/aladdin.skill.v1.BeginSkillImageUploadResponse'
+  /aladdin.skill.v1.SkillAdminService/CommitSkillImageUpload:
     post:
       x-aladdin-auth:
         kind: requires
@@ -616,15 +618,16 @@ paths:
         scope-source: SCOPE_SOURCE_CREDENTIAL
       tags:
         - aladdin.skill.v1.SkillAdminService
-      summary: CommitSkillCoverUpload
+      summary: CommitSkillImageUpload
       description: |-
         **鉴权**：需要权限 `skill.catalog.write`；作用域取自凭证的默认作用域。
 
-        提交一次封面上传：核对字节确实到了，把技能指向它。
+        提交一次展示图上传：核对字节确实到了，把它记进图集（换图时只是让它生效）。
 
          签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
-         Head：不存在即失败，字节数超过上限即失败并删除对象。
-      operationId: aladdin.skill.v1.SkillAdminService.CommitSkillCoverUpload
+         Head：不存在即失败，字节数超过单张上限即失败并删除对象，**并按真实字节数复核
+         图集的合计上限**——声明可以撒谎，而这一步服务端看得见真实的字节数。
+      operationId: aladdin.skill.v1.SkillAdminService.CommitSkillImageUpload
       parameters:
         - name: Connect-Protocol-Version
           in: header
@@ -639,7 +642,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/aladdin.skill.v1.CommitSkillCoverUploadRequest'
+              $ref: '#/components/schemas/aladdin.skill.v1.CommitSkillImageUploadRequest'
         required: true
       responses:
         default:
@@ -653,8 +656,8 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/aladdin.skill.v1.CommitSkillCoverUploadResponse'
-  /aladdin.skill.v1.SkillAdminService/DeleteSkillCover:
+                $ref: '#/components/schemas/aladdin.skill.v1.CommitSkillImageUploadResponse'
+  /aladdin.skill.v1.SkillAdminService/DeleteSkillImage:
     post:
       x-aladdin-auth:
         kind: requires
@@ -662,14 +665,17 @@ paths:
         scope-source: SCOPE_SOURCE_CREDENTIAL
       tags:
         - aladdin.skill.v1.SkillAdminService
-      summary: DeleteSkillCover
+      summary: DeleteSkillImage
       description: |-
         **鉴权**：需要权限 `skill.catalog.write`；作用域取自凭证的默认作用域。
 
-        移除封面。没有封面时也成功（幂等）。
+        从图集里移除一张。没有这一张时也失败（**不是幂等**：调用方给出的标识必须
+         指向当前图集里的一张，"删一张已经不在的图"是一次拼错了标识，不是一个状态）。
 
-         它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
-      operationId: aladdin.skill.v1.SkillAdminService.DeleteSkillCover
+         它删的是**对象**：这个键由这一张独占，不像内容对象那样可能被别处引用。剩下的
+         顺序保持不变——删中间一张不会让后面任何一张的地址变（见
+         docs/design/skill/catalog.md 的"展示图集"）。
+      operationId: aladdin.skill.v1.SkillAdminService.DeleteSkillImage
       parameters:
         - name: Connect-Protocol-Version
           in: header
@@ -684,7 +690,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/aladdin.skill.v1.DeleteSkillCoverRequest'
+              $ref: '#/components/schemas/aladdin.skill.v1.DeleteSkillImageRequest'
         required: true
       responses:
         default:
@@ -698,7 +704,54 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/aladdin.skill.v1.DeleteSkillCoverResponse'
+                $ref: '#/components/schemas/aladdin.skill.v1.DeleteSkillImageResponse'
+  /aladdin.skill.v1.SkillAdminService/ReorderSkillImages:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: skill.catalog.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.skill.v1.SkillAdminService
+      summary: ReorderSkillImages
+      description: |-
+        **鉴权**：需要权限 `skill.catalog.write`；作用域取自凭证的默认作用域。
+
+        重排图集：请求给出的是**期望的完整顺序**，与改说明层同取向。
+
+         **第一项即首图**——"设为首图"就是把某一张排到第一位，没有第二个开关（卡片
+         显示哪一张由它唯一决定）。给出的标识不是这个技能当前图集的一个排列（少了、
+         多了、重复了、有别人的）时整个拒绝，顺序不变——不做"部分重排"。
+      operationId: aladdin.skill.v1.SkillAdminService.ReorderSkillImages
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.skill.v1.ReorderSkillImagesRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.skill.v1.ReorderSkillImagesResponse'
 components:
   schemas:
     aladdin.objectstore.v1.DirectUploadCredential:
@@ -754,12 +807,18 @@ components:
          资源只有 key 这一个对象，条件限定声明的内容类型与请求体长度上限。
 
          **它不得进日志。** 把它写进日志等于把一次写入的能力留在了日志文件里。
-    aladdin.skill.v1.BeginSkillCoverUploadRequest:
+    aladdin.skill.v1.BeginSkillImageUploadRequest:
       type: object
       properties:
         skillId:
           type: string
           title: skill_id
+        imageId:
+          type: string
+          title: image_id
+          description: |-
+            目标图标识。**留空表示新增一张**（服务端分配标识、排到图集末尾）；给出现有的
+             一张表示**换掉它的字节**（图标识、对象键与它在图集里的位置都不变）。
         contentType:
           type: string
           title: content_type
@@ -774,54 +833,65 @@ components:
               title: string
           title: size_bytes
           description: 上传方声明的字节数。服务端按它早退（省一次白传），真正的边界由存储侧执行。
-      title: BeginSkillCoverUploadRequest
+      title: BeginSkillImageUploadRequest
       additionalProperties: false
-    aladdin.skill.v1.BeginSkillCoverUploadResponse:
+    aladdin.skill.v1.BeginSkillImageUploadResponse:
       type: object
       properties:
+        imageId:
+          type: string
+          title: image_id
+          description: 这次上传对应的图标识。新增时由服务端分配，提交要用同一个值。
         upload:
           allOf:
             - title: upload
               description: |-
-                直传凭证。**只允许写、只对这个技能的封面这一个键有效、短时有效**，且允许
-                 覆盖（封面是"当前这一张"）。
+                直传凭证。**只允许写、只对这个技能的这一张展示图的键有效、短时有效**，且
+                 允许覆盖（换图就是覆盖那一张的字节）。
             - $ref: '#/components/schemas/aladdin.objectstore.v1.DirectUploadCredential'
-      title: BeginSkillCoverUploadResponse
+      title: BeginSkillImageUploadResponse
       additionalProperties: false
-    aladdin.skill.v1.CommitSkillCoverUploadRequest:
+    aladdin.skill.v1.CommitSkillImageUploadRequest:
       type: object
       properties:
         skillId:
           type: string
           title: skill_id
-      title: CommitSkillCoverUploadRequest
+        imageId:
+          type: string
+          title: image_id
+          description: 签发时给出的那个图标识（新增时是响应里分配给它的那一个）。
+      title: CommitSkillImageUploadRequest
       additionalProperties: false
-    aladdin.skill.v1.CommitSkillCoverUploadResponse:
+    aladdin.skill.v1.CommitSkillImageUploadResponse:
       type: object
       properties:
         skill:
           allOf:
             - title: skill
-              description: 提交之后的那一份技能，省掉一次读取：调用方多半正要刷新卡片上的那张图。
+              description: 提交之后的那一份技能，省掉一次读取：调用方多半正要刷新画廊里的缩略图。
             - $ref: '#/components/schemas/aladdin.skill.v1.Skill'
-      title: CommitSkillCoverUploadResponse
+      title: CommitSkillImageUploadResponse
       additionalProperties: false
-    aladdin.skill.v1.DeleteSkillCoverRequest:
+    aladdin.skill.v1.DeleteSkillImageRequest:
       type: object
       properties:
         skillId:
           type: string
           title: skill_id
-      title: DeleteSkillCoverRequest
+        imageId:
+          type: string
+          title: image_id
+      title: DeleteSkillImageRequest
       additionalProperties: false
-    aladdin.skill.v1.DeleteSkillCoverResponse:
+    aladdin.skill.v1.DeleteSkillImageResponse:
       type: object
       properties:
         skill:
           allOf:
             - title: skill
             - $ref: '#/components/schemas/aladdin.skill.v1.Skill'
-      title: DeleteSkillCoverResponse
+      title: DeleteSkillImageResponse
       additionalProperties: false
     aladdin.skill.v1.DeleteSkillRequest:
       type: object
@@ -926,18 +996,21 @@ components:
             type: string
           title: tags
           description: 可选的初始标签。
-        coverPath:
-          type: string
-          title: cover_path
+        imagePaths:
+          type: array
+          items:
+            type: string
+          title: image_paths
           description: |-
-            可选的封面来源：**包内的一条图片路径**（如 `examples/cover.png`）。
+            可选的展示图来源：**包内的若干条图片路径**（如 `examples/cover.png`），
+             **顺序即图集顺序、第一张即首图**。
 
-             服务端把这一条单独取回来、校验后存成封面。**它不进文件清单**——封面是说明层
-             的一项，不是包的内容（见 docs/design/skill/catalog.md 的"封面"）。因此这条
-             路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。
+             服务端把这几条逐张取回来、校验后存成展示图。**它们不进文件清单**——展示图是
+             说明层的一项，不是包的内容（见 docs/design/skill/catalog.md 的"展示图集"）。
+             因此这些路径多半正是"被跳过的那类二进制"，那不影响它们被取回来当展示图。
 
-             取不到、或类型与字节不符时**整次纳管失败**，与别的校验同一条：不留下"技能
-             进来了、只是没有封面"这种要人去猜的状态。
+             取不到、类型与字节不符、张数或合计字节超限时**整次纳管失败**，与别的校验
+             同一条：不留下"技能进来了、只是没有图"这种要人去猜的状态。
       title: ImportSkillRequest
       additionalProperties: false
     aladdin.skill.v1.ImportSkillResponse:
@@ -1007,6 +1080,31 @@ components:
           title: truncated
           description: 是否因为条数上限而截断。为真时调用方应当用关键词缩小范围。
       title: ListSkillsResponse
+      additionalProperties: false
+    aladdin.skill.v1.ReorderSkillImagesRequest:
+      type: object
+      properties:
+        skillId:
+          type: string
+          title: skill_id
+        imageIds:
+          type: array
+          items:
+            type: string
+          title: image_ids
+          description: |-
+            期望的完整顺序。必须是这个技能当前图集的一个排列（不多、不少、不重、不带
+             别人的标识），否则整个拒绝。**第一项即首图。**
+      title: ReorderSkillImagesRequest
+      additionalProperties: false
+    aladdin.skill.v1.ReorderSkillImagesResponse:
+      type: object
+      properties:
+        skill:
+          allOf:
+            - title: skill
+            - $ref: '#/components/schemas/aladdin.skill.v1.Skill'
+      title: ReorderSkillImagesResponse
       additionalProperties: false
     aladdin.skill.v1.ResyncSkillRequest:
       type: object
@@ -1162,21 +1260,35 @@ components:
           type: string
           title: cover_url
           description: |-
-            封面的**短时读取地址**，列表与详情都给。空串表示这个技能没有封面，界面据此
-             渲染占位（标题首字 + 中性底），而不是去取一张不存在的图。
+            展示图集的**首图**（也就是卡片封面）的短时读取地址，列表与详情都给。空串
+             表示这个技能没有展示图，界面据此渲染占位（标题首字 + 中性底），而不是去取
+             一张不存在的图。
 
              它是**预签名地址**：短时有效，过期后重新读一次就有新的。签名是本地计算、
-             不发网络请求，因此列表里 N 条技能不产生 N 次往返。
+             不发网络请求，因此列表里 N 条技能不产生 N 次往返；**列表也只签这一张**——
+             卡片只用首图，为它把整个图集签一遍是白签。
 
-             **封面不是包的内容**：它属于说明层，不进文件清单、不进版本、不参与取用
-             （见 docs/design/skill/catalog.md 的"封面"）。
+             **展示图不是包的内容**：它属于说明层，不进文件清单、不进版本、不参与取用
+             （见 docs/design/skill/catalog.md 的"展示图集"）。
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.skill.v1.SkillImage'
+          title: images
+          description: |-
+            展示图集，**有序**：第一项即首图。**只在详情里给**（列表只给 cover_url）——
+             列表会读很多行，为每条技能签一串地址是一笔与列表无关的代价，而卡片只用第一张。
+
+             每张图有它自己的标识与地址：设为首图、重排、删一张都按标识指认（见
+             SkillAdminService 的重排与删除）。每一张的地址同样是短时预签名地址。
       title: Skill
       additionalProperties: false
       description: |-
         Skill 是目录里的一条技能。
 
-         **列表只填前八项。** 说明层原值、当前版本信息、来源与文件清单只在详情里给出
-         （GetSkill）——列表会读很多行，把清单挂上来是一笔与列表无关的代价。
+         **列表只填前八项。** 说明层原值、当前版本信息、来源、文件清单与**整个图集**只在
+         详情里给出（GetSkill）——列表会读很多行，把它们挂上来是一笔与列表无关的代价。
+         列表仍然给首图那一个地址（`cover_url`），因为卡片要用它。
     aladdin.skill.v1.SkillCapabilities:
       type: object
       properties:
@@ -1202,6 +1314,18 @@ components:
           type: integer
           title: max_package_bytes
           description: 一个包的字节总数上限。
+        maxImages:
+          type: integer
+          title: max_images
+          description: 一个技能的**展示图张数**上限。
+        maxImageBytes:
+          type: integer
+          title: max_image_bytes
+          description: '**单张**展示图的字节上限（与头像同一档）。'
+        maxImageTotalBytes:
+          type: integer
+          title: max_image_total_bytes
+          description: 一个技能的展示图**合计字节**上限。
       title: SkillCapabilities
       additionalProperties: false
       description: SkillCapabilities 是当前部署下技能目录的边界。
@@ -1228,6 +1352,30 @@ components:
       title: SkillFile
       additionalProperties: false
       description: SkillFile 是当前版本里的一条文件。
+    aladdin.skill.v1.SkillImage:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+          description: |-
+            图标识。由服务端分配、不可猜、不可改、不复用。它是这一张在重排、设为首图与
+             删除时的指认方式——**不是它的位置**：位置会随重排而变，标识不会。
+        url:
+          type: string
+          title: url
+          description: 这一张的短时读取地址（与 cover_url 同一条模型）。
+        sizeBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: size_bytes
+          description: 字节数。界面上说明"还能再加几张"用得到它（上限见 skill.MaxImages）。
+      title: SkillImage
+      additionalProperties: false
+      description: SkillImage 是展示图集里的一张图。
     aladdin.skill.v1.SkillSource:
       type: object
       properties:

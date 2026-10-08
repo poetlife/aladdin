@@ -7,7 +7,7 @@ import (
 	"github.com/poetlife/aladdin/internal/imagetype"
 )
 
-// 这一包是"展示小图"这一类图片的**唯一**白名单，头像与技能封面共用。它要挡住的是
+// 这一包是"展示小图"这一类图片的**唯一**白名单，头像与技能展示图共用。它要挡住的是
 // 同一件事：让一张会被浏览器直接取走的图，落在"无法携带可执行内容"的那几个格式里。
 
 func TestNormalizeAcceptsWhitelist(t *testing.T) {

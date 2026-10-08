@@ -148,11 +148,12 @@ type Skill struct {
 	Summary string
 	// Tags 是归一化之后的标签（小写、去重、有序）。见 tagging。
 	Tags []string
-	// CoverKey 是封面的对象键。空表示没有封面。
+	// Images 是**展示图集**，有序：第一张即卡片上的封面。空表示没有图。
 	//
 	// **它是说明层的一项**，与标题、简介、标签同级：可改、不进版本、不进包（见
-	// cover.go）。存的是键而不是地址——地址是短时签发的，落库只会留下一份过期的。
-	CoverKey string
+	// image.go）。每一项存的是对象键而不是地址——地址是短时签发的，落库只会留下
+	// 一份过期的。
+	Images []Image
 	// Source 是内容的来源。纳管之后不可改。
 	Source Source
 	// Current 是当前对外服务的那一份快照。**它永远存在**——技能是随第一个版本

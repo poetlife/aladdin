@@ -46,10 +46,11 @@ vi.mock('../../api/skill', () => ({
   setCurrentVersion: vi.fn(),
   updateMetadata: vi.fn(),
   deleteSkill: vi.fn(),
-  beginCoverUpload: vi.fn(),
-  commitCoverUpload: vi.fn(),
-  deleteCover: vi.fn(),
-  updateCover: vi.fn(),
+  beginImageUpload: vi.fn(),
+  commitImageUpload: vi.fn(),
+  deleteSkillImage: vi.fn(),
+  reorderSkillImages: vi.fn(),
+  addSkillImage: vi.fn(),
 }))
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
