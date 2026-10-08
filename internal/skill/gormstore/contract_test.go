@@ -63,15 +63,37 @@ func testVersion(id, skillID string, at time.Time) skill.Version {
 	}
 }
 
+// imageID 造一个属于某个技能的展示图标识。
+//
+// **带上技能标识**：图标识是全库唯一的主键，两个技能共用一套夹具标识会在写入第二
+// 个技能时撞主键——那是一次夹具问题，却会表现成"存储实现坏了"。
+func imageID(skillID, suffix string) string { return "ski_" + skillID + "_" + suffix }
+
+// testImage 造一张属于某个技能的展示图。
+func testImage(skillID, suffix string, size int64) skill.Image {
+	id := imageID(skillID, suffix)
+	return skill.Image{ID: id, ObjectKey: skill.ImageKey(skillID, id), SizeBytes: size}
+}
+
+// testImages 造一组**有序**的展示图。
+//
+// 非空且不止一张：顺序是这一组数据唯一会被写歪的地方（多一张、少一张、次序反了
+// 都只有拿三条以上才看得出来），用空值或单张当夹具，漏掉顺序的实现会照样通过。
+func testImages(skillID string) []skill.Image {
+	return []skill.Image{
+		testImage(skillID, "a", 1024),
+		testImage(skillID, "b", 2048),
+		testImage(skillID, "c", 4096),
+	}
+}
+
 func testSkill(id string, at time.Time) skill.Skill {
 	return skill.Skill{
 		ID:      id,
 		Title:   "",
 		Summary: "",
-		// 非空：这一列在两个写入路径上都要落得下去（创建带初值、SetCover 改它）。
-		// 用空值当夹具，漏掉一处的实现会照样通过。
-		CoverKey: skill.CoverKey(id),
-		Tags:     []string{"出图", "排版"},
+		Images:  testImages(id),
+		Tags:    []string{"出图", "排版"},
 		Source: skill.Source{
 			Owner: "yanliudesign", Name: "mono-color-skill",
 			Ref: "main", SubPath: "skills/mono", Commit: "1f4a9c2d3e5b6a7089abcdef1234567890abcdef",
@@ -117,9 +139,13 @@ func TestStoreRoundTrip(t *testing.T) {
 			if got.Current.SkippedFiles != 3 {
 				t.Errorf("跳过的条数 = %d，期望 3（创建这条路上丢了？）", got.Current.SkippedFiles)
 			}
-			if got.CoverKey != skill.CoverKey("skl_a") {
-				t.Errorf("封面键 = %q，期望 %q（创建这条路上丢了？）",
-					got.CoverKey, skill.CoverKey("skl_a"))
+			if len(got.Images) != 3 {
+				t.Fatalf("图集 = %+v，期望 3 张（创建这条路上丢了？）", got.Images)
+			}
+			for i, want := range testImages("skl_a") {
+				if got.Images[i] != want {
+					t.Errorf("第 %d 张 = %+v，期望 %+v（顺序丢了？）", i, got.Images[i], want)
+				}
 			}
 
 			items, err := store.ListSkills(ctx)
@@ -238,8 +264,11 @@ func TestStoreSetCurrentVersionRejectsForeignVersion(t *testing.T) {
 	}
 }
 
-// 封面键能设也能清，且**不碰内容层任何一项**（它是说明层的一列）。
-func TestStoreSetCover(t *testing.T) {
+// 图集能加、能换、能删、能重排，而**每一步都不碰内容层任何一项**（它是说明层）。
+//
+// 顺序是这一组用例的主角：它必须与对象键无关——删中间一张、重排之后，其余每一张的
+// 键逐字不变，而那正是"一张一个键、顺序是单独一列"换来的性质。
+func TestStoreImageWrites(t *testing.T) {
 	at := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
 	for _, tc := range storeCases(t) {
 		t.Run(tc.name, func(t *testing.T) {
@@ -248,36 +277,130 @@ func TestStoreSetCover(t *testing.T) {
 			if err := store.CreateSkill(ctx, testSkill("skl_a", at)); err != nil {
 				t.Fatalf("创建技能: %v", err)
 			}
-			if err := store.SetCover(ctx, "skl_a", "skills/cover/other"); err != nil {
-				t.Fatalf("设置封面: %v", err)
+
+			// 追加：排在末尾，已有三张的键与次序都不动。
+			added := testImage("skl_a", "d", 8192)
+			if err := store.PutImage(ctx, "skl_a", added); err != nil {
+				t.Fatalf("追加展示图: %v", err)
 			}
-			got, err := store.GetSkill(ctx, "skl_a")
-			if err != nil {
-				t.Fatalf("读取技能: %v", err)
+			got := getSkill(t, store, "skl_a")
+			if len(got.Images) != 4 || got.Images[3] != added {
+				t.Fatalf("追加之后图集 = %+v", got.Images)
 			}
-			if got.CoverKey != "skills/cover/other" {
-				t.Errorf("封面键 = %q", got.CoverKey)
+			for i, want := range testImages("skl_a") {
+				if got.Images[i] != want {
+					t.Errorf("追加动了第 %d 张: %+v，期望 %+v", i, got.Images[i], want)
+				}
 			}
+
+			// 换图（标识已在图集里）：只更新键与字节数，**位置不动**。
+			replaced := testImage("skl_a", "b", 999)
+			if err := store.PutImage(ctx, "skl_a", replaced); err != nil {
+				t.Fatalf("换图: %v", err)
+			}
+			got = getSkill(t, store, "skl_a")
+			if len(got.Images) != 4 || got.Images[1] != replaced {
+				t.Fatalf("换图之后图集 = %+v", got.Images)
+			}
+
+			// 删中间一张：其余每一张的键与相对次序**逐字不变**。
+			if err := store.DeleteImage(ctx, "skl_a", imageID("skl_a", "b")); err != nil {
+				t.Fatalf("删图: %v", err)
+			}
+			got = getSkill(t, store, "skl_a")
+			original := testImages("skl_a")
+			want := []skill.Image{original[0], original[2], added}
+			if len(got.Images) != len(want) {
+				t.Fatalf("删图之后图集 = %+v", got.Images)
+			}
+			for i := range want {
+				if got.Images[i] != want[i] {
+					t.Errorf("删图之后第 %d 张 = %+v，期望 %+v", i, got.Images[i], want[i])
+				}
+			}
+
+			// 重排：第一项即首图。
+			order := []string{imageID("skl_a", "d"), imageID("skl_a", "c"), imageID("skl_a", "a")}
+			if err := store.ReorderImages(ctx, "skl_a", order); err != nil {
+				t.Fatalf("重排: %v", err)
+			}
+			got = getSkill(t, store, "skl_a")
+			for i, wantID := range order {
+				if got.Images[i].ID != wantID {
+					t.Errorf("重排之后第 %d 张 = %q，期望 %q", i, got.Images[i].ID, wantID)
+				}
+			}
+
+			// 内容层一项都不动。
 			if got.Current.ID != "skv_skl_a" || len(got.Current.Files) != 2 {
-				t.Errorf("改封面碰了内容层: %+v", got.Current)
-			}
-
-			if err := store.SetCover(ctx, "skl_a", ""); err != nil {
-				t.Fatalf("清空封面: %v", err)
-			}
-			got, err = store.GetSkill(ctx, "skl_a")
-			if err != nil {
-				t.Fatalf("读取技能: %v", err)
-			}
-			if got.CoverKey != "" {
-				t.Errorf("清空之后封面键 = %q", got.CoverKey)
-			}
-
-			if err := store.SetCover(ctx, "skl_missing", "k"); !errors.Is(err, skill.ErrSkillNotFound) {
-				t.Errorf("技能不存在 err = %v，期望 ErrSkillNotFound", err)
+				t.Errorf("图集写入碰了内容层: %+v", got.Current)
 			}
 		})
 	}
+}
+
+// 重排与删除的拒绝语义：给出的标识不是当前图集的一个排列时整个拒绝、顺序原样；
+// 删一张不在图集里的图是"没有这一张"，而不是静默成功。
+func TestStoreImageRejections(t *testing.T) {
+	at := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	for _, tc := range storeCases(t) {
+		t.Run(tc.name, func(t *testing.T) {
+			store := tc.open(t)
+			ctx := context.Background()
+			if err := store.CreateSkill(ctx, testSkill("skl_a", at)); err != nil {
+				t.Fatalf("创建技能: %v", err)
+			}
+
+			for name, order := range map[string][]string{
+				"少一张": {imageID("skl_a", "a"), imageID("skl_a", "b")},
+				"多一张": {
+					imageID("skl_a", "a"), imageID("skl_a", "b"),
+					imageID("skl_a", "c"), imageID("skl_a", "d"),
+				},
+				"重复": {
+					imageID("skl_a", "a"), imageID("skl_a", "a"), imageID("skl_a", "c"),
+				},
+				"带了别人的": {
+					imageID("skl_a", "a"), imageID("skl_a", "b"), imageID("skl_b", "a"),
+				},
+				"空的": {},
+			} {
+				if err := store.ReorderImages(ctx, "skl_a", order); !errors.Is(err, skill.ErrImageOrderMismatch) {
+					t.Errorf("%s：err = %v，期望 ErrImageOrderMismatch", name, err)
+				}
+				// 被拒之后顺序原样（不做部分重排）。
+				got := getSkill(t, store, "skl_a")
+				for i, want := range testImages("skl_a") {
+					if got.Images[i] != want {
+						t.Errorf("%s：被拒之后第 %d 张 = %+v，期望 %+v", name, i, got.Images[i], want)
+					}
+				}
+			}
+
+			if err := store.DeleteImage(ctx, "skl_a", imageID("skl_a", "missing")); !errors.Is(err, skill.ErrImageNotFound) {
+				t.Errorf("删一张不在图集里的图 err = %v，期望 ErrImageNotFound", err)
+			}
+			if err := store.DeleteImage(ctx, "skl_missing", imageID("skl_a", "a")); !errors.Is(err, skill.ErrSkillNotFound) {
+				t.Errorf("技能不存在 err = %v，期望 ErrSkillNotFound", err)
+			}
+			if err := store.PutImage(ctx, "skl_missing", skill.Image{ID: "ski_x"}); !errors.Is(err, skill.ErrSkillNotFound) {
+				t.Errorf("技能不存在时写图 err = %v，期望 ErrSkillNotFound", err)
+			}
+			if err := store.ReorderImages(ctx, "skl_missing", []string{imageID("skl_a", "a")}); !errors.Is(err, skill.ErrSkillNotFound) {
+				t.Errorf("技能不存在时重排 err = %v，期望 ErrSkillNotFound", err)
+			}
+		})
+	}
+}
+
+// getSkill 读一条技能，失败即终止用例。
+func getSkill(t *testing.T, store skill.Store, skillID string) skill.Skill {
+	t.Helper()
+	got, err := store.GetSkill(context.Background(), skillID)
+	if err != nil {
+		t.Fatalf("读取技能: %v", err)
+	}
+	return got
 }
 
 // 标签是**整体替换**：改一次之后旧标签一条都不剩。

@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/poetlife/aladdin/internal/imagetype"
 	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/tagging"
 )
@@ -61,14 +62,18 @@ func NewService(deps Deps) *Service {
 // Capabilities 汇报部署形态的边界。
 //
 // 它是**能力下发点**（与 galaxy 的 Capabilities 同一取向）：能力由服务端说，
-// 客户端不猜。前两项是部署形态的事实、不因调用者而异，后三项是包契约的上限——
-// 界面据此说明"什么样的仓库纳得进来"，而不是等一次纳管失败才把上限讲给管理员听。
+// 客户端不猜。前两项是部署形态的事实、不因调用者而异，后面几项是包契约与图集
+// 的上限——界面据此说明"什么样的仓库纳得进来、一张图能多大"，而不是等一次写入
+// 失败才把上限讲给管理员听。
 type Capabilities struct {
 	CatalogEnabled  bool
 	ImportEnabled   bool
 	MaxFiles        int
 	MaxFileBytes    int
 	MaxPackageBytes int
+	MaxImages       int
+	MaxImageBytes   int
+	MaxImageTotal   int
 }
 
 // Capabilities 返回当前部署的边界。
@@ -79,6 +84,9 @@ func (s *Service) Capabilities() Capabilities {
 		MaxFiles:        MaxFiles,
 		MaxFileBytes:    MaxFileBytes,
 		MaxPackageBytes: MaxPackageBytes,
+		MaxImages:       MaxImages,
+		MaxImageBytes:   imagetype.MaxBytes,
+		MaxImageTotal:   MaxImageTotalBytes,
 	}
 }
 
@@ -92,12 +100,24 @@ type View struct {
 	Favorited bool
 	// Usage 是最近 30 天的使用量。**只有计数，没有"谁"**。
 	Usage Usage
-	// CoverURL 是封面的短时读取地址。空串表示没有封面（或这个部署没有对象存储），
-	// 界面据此渲染占位。
+	// Shown 是**图集对调用方呈现的样子**：有序，第一项即首图。
 	//
-	// 它**不在 Skill 上**：地址是每次读取时签发的，落进领域对象只会让人以为它是一个
+	// detail 为假时**只有首图一项**——列表只用它，为其余几张签名是白签（见
+	// docs/design/skill/catalog.md 的"展示图集"）。它与 Skill.Images 是同一组图的
+	// 两个视角：那边是领域事实（整组），这边是这一次读取要签发的地址。
+	//
+	// 地址**不在 Skill 上**：它是每次读取时签发的，落进领域对象只会让人以为它是一个
 	// 可以存下来的取值。
-	CoverURL string
+	Shown []ShownImage
+}
+
+// CoverURL 返回首图（也就是卡片封面）的短时地址（唯一入口）。返回空串表示这个
+// 技能没有展示图，界面据此渲染占位。
+func (v View) CoverURL() string {
+	if len(v.Shown) == 0 {
+		return ""
+	}
+	return v.Shown[0].URL
 }
 
 // ListResult 是一次列表的结论。
@@ -148,7 +168,7 @@ func (s *Service) ListSkills(ctx context.Context, subjectID string, filter Filte
 		if !matchesFilter(item, filter.Query, wanted, filter.FavoritedOnly, favorites) {
 			continue
 		}
-		view := s.ViewOf(ctx, item)
+		view := s.ViewOf(ctx, item, false)
 		view.Favorited = favorites[item.ID]
 		view.Usage = usage[item.ID]
 		matched = append(matched, view)
@@ -176,7 +196,7 @@ func (s *Service) GetSkill(ctx context.Context, subjectID, skillID string) (View
 	if err != nil {
 		return View{}, err
 	}
-	view := s.ViewOf(ctx, item)
+	view := s.ViewOf(ctx, item, true)
 	view.Favorited = favorites[skillID]
 	view.Usage = usage[skillID]
 	return view, nil
@@ -246,11 +266,11 @@ type ImportParams struct {
 	Summary string
 	// Tags 是初始标签。
 	Tags []string
-	// CoverPath 是可选的封面来源：**包内的一条图片路径**。
+	// ImagePaths 是可选的展示图来源：**包内的若干条图片路径**，顺序即图集顺序。
 	//
-	// 它单独被取回来（多半正是被跳过的那类二进制），存成封面。**不进文件清单**：
-	// 封面是说明层的一项，不是包的内容（见 cover.go）。
-	CoverPath string
+	// 它们逐张被取回来（多半正是被跳过的那类二进制），存成展示图。**不进文件清单**：
+	// 展示图是说明层的一项，不是包的内容（见 image.go）。
+	ImagePaths []string
 }
 
 // Import 从远端纳管一个新技能（唯一入口）。
@@ -284,11 +304,12 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 	if err != nil {
 		return Skill{}, err
 	}
-	// 封面在**落地之前**取回来并校验完：取不到就是整次纳管失败，与别的校验同一条
-	// ——不留下"技能进来了、只是没有封面"这种要人去猜的状态（见 onboarding.md）。
-	var cover Cover
-	if params.CoverPath != "" {
-		cover, err = s.pickCover(ctx, repo, tree, params.CoverPath)
+	// 展示图在**落地之前**逐张取回来并校验完：取不到、或张数与合计超限就是整次纳管
+	// 失败，与别的校验同一条——不留下"技能进来了、只是没有图"这种要人去猜的状态
+	// （见 onboarding.md）。
+	var picked []PickedImage
+	if len(params.ImagePaths) > 0 {
+		picked, err = s.pickImages(ctx, repo, tree, params.ImagePaths)
 		if err != nil {
 			return Skill{}, err
 		}
@@ -305,10 +326,9 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 	if err := s.writeObjects(ctx, pkg); err != nil {
 		return Skill{}, err
 	}
-	if params.CoverPath != "" {
-		if err := s.writeCover(ctx, skillID, cover); err != nil {
-			return Skill{}, err
-		}
+	images, err := s.writeImages(ctx, skillID, picked)
+	if err != nil {
+		return Skill{}, err
 	}
 
 	item := Skill{
@@ -320,8 +340,8 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 			Owner: repo.Owner, Name: repo.Name,
 			Ref: ref, SubPath: subPath, Commit: commit,
 		},
-		CoverKey: coverKeyFor(skillID, params.CoverPath),
-		Current:  version,
+		Images:  images,
+		Current: version,
 	}
 	if err := s.store.CreateSkill(ctx, item); err != nil {
 		return Skill{}, err
@@ -331,6 +351,7 @@ func (s *Service) Import(ctx context.Context, params ImportParams) (Skill, error
 		zap.String("repository", repo.Owner+"/"+repo.Name),
 		zap.String("commit", commit),
 		zap.Int("files", len(version.Files)),
+		zap.Int("images", len(images)),
 		zap.Int("skipped_files", len(tree.Skipped)))
 	return item, nil
 }
@@ -427,8 +448,9 @@ func (s *Service) UpdateMetadata(ctx context.Context, skillID, title, summary st
 
 // Delete 删除一个技能（唯一入口）。
 //
-// 删的是**行**：技能、版本、标签、收藏与使用记录一起消失，而桶上的字节不删
-// （见 package.go 的 ContentObjectKey）。
+// 删的是**行**：技能、版本、标签、图集、收藏与使用记录一起消失；桶上的内容对象
+// 不删（见 package.go 的 ContentObjectKey），而**展示图的对象一起删**——每个键都由
+// 这一个技能独占，不像内容对象那样可能被别处引用。
 func (s *Service) Delete(ctx context.Context, skillID string) error {
 	current, err := s.store.GetSkill(ctx, skillID)
 	if err != nil {
@@ -437,16 +459,26 @@ func (s *Service) Delete(ctx context.Context, skillID string) error {
 	if err := s.store.DeleteSkill(ctx, skillID); err != nil {
 		return err
 	}
-	// **封面对象跟着删**：这个键由这一个技能独占，不像内容对象那样可能被别处引用
-	// （内容对象按摘要共享，一个都不删）。尽力而为——库里的行才是权威，删对象失败
-	// 只留下一个无从被引用的孤儿。
-	if current.CoverKey != "" && s.objects != nil {
-		if err := s.objects.Delete(ctx, current.CoverKey); err != nil {
-			s.logger.Warn("删除封面对象失败，技能已删除", zap.String("skill_id", skillID))
+	if keys := imageKeys(current.Images); len(keys) > 0 && s.objects != nil {
+		if err := s.objects.DeleteMany(ctx, keys); err != nil {
+			// 尽力而为——库里的行才是权威，删对象失败只留下几个无从被引用的孤儿。
+			s.logger.Warn("删除展示图对象失败，技能已删除",
+				zap.String("skill_id", skillID), zap.Error(err))
 		}
 	}
 	s.logger.Info("技能删除", zap.String("skill_id", skillID))
 	return nil
+}
+
+// imageKeys 取出一组图在对象存储里的键。
+func imageKeys(images []Image) []string {
+	keys := make([]string, 0, len(images))
+	for _, image := range images {
+		if image.ObjectKey != "" {
+			keys = append(keys, image.ObjectKey)
+		}
+	}
+	return keys
 }
 
 // PurgeUsage 回收超过保留期的使用日次。在服务端启动路径上调用。
@@ -488,17 +520,6 @@ func (s *Service) fetchPackage(ctx context.Context, repo Repository, commit, sub
 		return Package{}, Tree{}, err
 	}
 	return pkg, tree, nil
-}
-
-// coverKeyFor 返回这次纳管应当写进技能行的封面键。
-//
-// 它把"这一条技能的封面键"收在一处：写对象与写行用的是同一个值，分两处拼的表现是
-// 一个技能指向别人的封面。
-func coverKeyFor(skillID, coverPath string) string {
-	if coverPath == "" {
-		return ""
-	}
-	return CoverKey(skillID)
 }
 
 // newVersion 从一份已校验的包造出一个版本。
@@ -643,9 +664,14 @@ func containsString(values []string, want string) bool {
 //
 // **"这个对象不存在"不是"存储不可用"**：前者是一处内容问题（那份字节没有写成），
 // 后者是一次故障。两者在用户面前是两句不同的话。
+//
+// **它表达的也永远不是"没配置"。** 每一处调用都在确认对象存储存在之后才走到这里，
+// 因此这里只可能包出"这一次操作失败了"（`objectstore.ErrStoreUnavailable`）。
+// 包成 `ErrObjectStoreUnavailable`（"这个部署没有桶"）会把一次故障说成一个配置
+// 状态，而排障的人会照着它去查一个根本没错的地方。
 func mapObjectError(err error) error {
 	if errors.Is(err, objectstore.ErrObjectNotFound) {
 		return fmt.Errorf("%w: 内容对象不存在", ErrPackageInvalid)
 	}
-	return fmt.Errorf("%w: %w", ErrObjectStoreUnavailable, err)
+	return fmt.Errorf("%w: %w", objectstore.ErrStoreUnavailable, err)
 }

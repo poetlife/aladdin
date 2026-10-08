@@ -324,7 +324,7 @@ func setSkillFavorite(cmd *cobra.Command, skillID string, favorited bool) error 
 
 func newSkillAddCommand() *cobra.Command {
 	var ref, subPath, title, summary, coverPath string
-	var tags []string
+	var tags, imagePaths []string
 
 	cmd := &cobra.Command{
 		Use:   "add <仓库地址>",
@@ -345,10 +345,13 @@ func newSkillAddCommand() *cobra.Command {
 带一个比别的命令长得多的内置默认超时。要更短或更长就用 --timeout；显式给出的一律
 优先。超时后的重试是安全的——失败本就不留痕迹。
 
---cover 给一条**包内**的图片路径（如 examples/cover.png），它会被单独取回来存成
-技能的展示图。**它不进文件清单**——技能包只收文本，封面是说明层的一项；因此这条
-路径多半正是"被跳过的那类二进制"，那不影响它被取回来当封面。取不到就是整次纳管
-失败，不会留下一个"只是没有封面"的技能。`,
+--image 给一条**包内**的图片路径（如 examples/cover.png），可以重复；**出现顺序
+就是图集顺序，第一张即卡片封面**。它们会被逐张取回来存成技能的展示图，**不进文件
+清单**——技能包只收文本，展示图是说明层的一项；因此这些路径多半正是"被跳过的那类
+二进制"，那不影响它们被取回来当展示图。取不到、张数或合计超限就是整次纳管失败，
+不会留下一个"只是没有图"的技能。上限是 12 张、单张 2 MiB、合计 12 MiB。
+
+--cover 是旧名，等价于把那一张放在 --image 的最前面（也就是首图）。`,
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, _, admin, done, err := skillCall(config.DefaultSkillCatalogTimeout)
@@ -357,6 +360,11 @@ func newSkillAddCommand() *cobra.Command {
 			}
 			defer done()
 
+			// --cover 给的那一张**排在第一位**：旧名说的是"封面"，而封面就是首图。
+			images := imagePaths
+			if coverPath != "" {
+				images = append([]string{coverPath}, imagePaths...)
+			}
 			resp, err := admin.ImportSkill(ctx, connect.NewRequest(&skillv1.ImportSkillRequest{
 				RepositoryUrl: args[0],
 				Ref:           ref,
@@ -364,7 +372,7 @@ func newSkillAddCommand() *cobra.Command {
 				Title:         title,
 				Summary:       summary,
 				Tags:          tags,
-				CoverPath:     coverPath,
+				ImagePaths:    images,
 			}))
 			if err != nil {
 				return err
@@ -381,7 +389,10 @@ func newSkillAddCommand() *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "标题（留空则用 SKILL.md 的 name）")
 	cmd.Flags().StringVar(&summary, "summary", "", "简介（留空则用 SKILL.md 的 description）")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "标签（可重复）")
-	cmd.Flags().StringVar(&coverPath, "cover", "", "包内的一张图片路径，作为技能封面")
+	cmd.Flags().StringArrayVar(&imagePaths, "image", nil,
+		"包内的一张图片路径，作为展示图（可重复，顺序即图集顺序、第一张即封面）")
+	cmd.Flags().StringVar(&coverPath, "cover", "",
+		"包内的一张图片路径，作为首图（旧名，等价于放在最前面的 --image）")
 
 	requirePermission(cmd, rbac.PermissionSkillCatalogWrite)
 	return cmd
@@ -595,6 +606,10 @@ func printSkillDetail(cmd *cobra.Command, item *skillv1.Skill) {
 		item.GetCurrentVersionId(), item.GetFileCount(), item.GetTotalBytes())
 	for _, file := range item.GetFiles() {
 		printf(cmd.OutOrStdout(), "  %s  %d 字节\n", file.GetPath(), file.GetSizeBytes())
+	}
+	// 列表只给首图，因此这一段只在详情、以及各条写入的返回里出现。
+	if images := item.GetImages(); len(images) > 0 {
+		printf(cmd.OutOrStdout(), "展示图：%d 张（第一张即卡片封面）\n", len(images))
 	}
 }
 

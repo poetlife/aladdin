@@ -43,12 +43,12 @@ const (
 // docs/design/skill/agent-access.md）。装了本地副本之后真相源就有两份，而分叉的
 // 表现不是报错，是"同一条指令在两台机器上得到不同的结果"。
 type SkillServiceClient interface {
-	// 读取当前部署下技能目录的边界：能不能用、纳得进多大的包。
+	// 读取当前部署下技能目录的边界：能不能用、纳得进多大的包、图集能到多少张。
 	//
 	// 它是**能力下发点**，与档案的 avatar_upload_enabled、galaxy 的 GetCapabilities
 	// 同一取向：能力由服务端说，客户端不猜。前端据此不渲染未启用的入口，而不是渲染
-	// 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来"，而不是等一次纳管
-	// 失败才把上限讲给管理员听。
+	// 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来、一张图能多大"，而不是
+	// 等一次写入失败才把上限讲给管理员听（见 SkillCapabilities 上的展示图那三项）。
 	//
 	// 它退回的每一项都是部署形态的公开事实，不因调用者而异，因此只要认证——
 	// 与 galaxy 的同名方法一致。
@@ -184,12 +184,12 @@ func (c *skillServiceClient) SetSkillFavorite(ctx context.Context, in *SetSkillF
 // docs/design/skill/agent-access.md）。装了本地副本之后真相源就有两份，而分叉的
 // 表现不是报错，是"同一条指令在两台机器上得到不同的结果"。
 type SkillServiceServer interface {
-	// 读取当前部署下技能目录的边界：能不能用、纳得进多大的包。
+	// 读取当前部署下技能目录的边界：能不能用、纳得进多大的包、图集能到多少张。
 	//
 	// 它是**能力下发点**，与档案的 avatar_upload_enabled、galaxy 的 GetCapabilities
 	// 同一取向：能力由服务端说，客户端不猜。前端据此不渲染未启用的入口，而不是渲染
-	// 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来"，而不是等一次纳管
-	// 失败才把上限讲给管理员听。
+	// 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来、一张图能多大"，而不是
+	// 等一次写入失败才把上限讲给管理员听（见 SkillCapabilities 上的展示图那三项）。
 	//
 	// 它退回的每一项都是部署形态的公开事实，不因调用者而异，因此只要认证——
 	// 与 galaxy 的同名方法一致。
@@ -438,9 +438,10 @@ const (
 	SkillAdminService_SetCurrentSkillVersion_FullMethodName = "/aladdin.skill.v1.SkillAdminService/SetCurrentSkillVersion"
 	SkillAdminService_UpdateSkillMetadata_FullMethodName    = "/aladdin.skill.v1.SkillAdminService/UpdateSkillMetadata"
 	SkillAdminService_DeleteSkill_FullMethodName            = "/aladdin.skill.v1.SkillAdminService/DeleteSkill"
-	SkillAdminService_BeginSkillCoverUpload_FullMethodName  = "/aladdin.skill.v1.SkillAdminService/BeginSkillCoverUpload"
-	SkillAdminService_CommitSkillCoverUpload_FullMethodName = "/aladdin.skill.v1.SkillAdminService/CommitSkillCoverUpload"
-	SkillAdminService_DeleteSkillCover_FullMethodName       = "/aladdin.skill.v1.SkillAdminService/DeleteSkillCover"
+	SkillAdminService_BeginSkillImageUpload_FullMethodName  = "/aladdin.skill.v1.SkillAdminService/BeginSkillImageUpload"
+	SkillAdminService_CommitSkillImageUpload_FullMethodName = "/aladdin.skill.v1.SkillAdminService/CommitSkillImageUpload"
+	SkillAdminService_DeleteSkillImage_FullMethodName       = "/aladdin.skill.v1.SkillAdminService/DeleteSkillImage"
+	SkillAdminService_ReorderSkillImages_FullMethodName     = "/aladdin.skill.v1.SkillAdminService/ReorderSkillImages"
 )
 
 // SkillAdminServiceClient is the client API for SkillAdminService service.
@@ -496,31 +497,43 @@ type SkillAdminServiceClient interface {
 	// 或简介（清空即回到当前版本 SKILL.md 的回退值），标签以请求集合**整体替换**，
 	// 空集合表示去掉全部标签。
 	UpdateSkillMetadata(ctx context.Context, in *UpdateSkillMetadataRequest, opts ...grpc.CallOption) (*UpdateSkillMetadataResponse, error)
-	// 删除一个技能：技能行、版本行、标签、收藏与使用记录一起消失。
+	// 删除一个技能：技能行、版本行、标签、图集、收藏与使用记录一起消失。
 	//
-	// **桶上的字节不删。** 内容对象按摘要全局共享，同一份字节可能正被别处引用；
-	// "哪些对象还在被引用"要一次全量对账才答得上来，因此与 galaxy 的孤儿对象回收
-	// 合并处理。不可逆。
+	// **桶上的内容字节不删**，而**展示图的对象一起删**。两者的区别是键的归属：内容
+	// 对象按摘要全局共享，同一份字节可能正被别处引用，"哪些对象还在被引用"要一次全量
+	// 对账才答得上来（因此与 galaxy 的孤儿对象回收合并处理）；展示图一张一个键、由这
+	// 一个技能独占，删它不会动到别处。不可逆。
 	DeleteSkill(ctx context.Context, in *DeleteSkillRequest, opts ...grpc.CallOption) (*DeleteSkillResponse, error)
-	// 开始一次封面上传：签发一份直传凭证。
+	// 开始一次展示图上传播：签发一份直传凭证。
 	//
 	// **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
-	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
-	// 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的某一张
+	// 展示图这一个键、类型与大小受条件约束"的策略交给对象存储执行。
 	//
-	// 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
-	// 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
-	// docs/design/skill/catalog.md 的"封面"）。
-	BeginSkillCoverUpload(ctx context.Context, in *BeginSkillCoverUploadRequest, opts ...grpc.CallOption) (*BeginSkillCoverUploadResponse, error)
-	// 提交一次封面上传：核对字节确实到了，把技能指向它。
+	// 不给图标识时是**新增一张**：服务端分配标识、把它排到图集末尾。给了已有的图
+	// 标识时是**换掉那一张的字节**：对象键与它在图集里的位置都不变——展示图按图标识
+	// 定位，一张一个键，顺序不是键的一部分（见 docs/design/skill/catalog.md 的
+	// "展示图集"）。
+	BeginSkillImageUpload(ctx context.Context, in *BeginSkillImageUploadRequest, opts ...grpc.CallOption) (*BeginSkillImageUploadResponse, error)
+	// 提交一次展示图上传：核对字节确实到了，把它记进图集（换图时只是让它生效）。
 	//
 	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
-	// Head：不存在即失败，字节数超过上限即失败并删除对象。
-	CommitSkillCoverUpload(ctx context.Context, in *CommitSkillCoverUploadRequest, opts ...grpc.CallOption) (*CommitSkillCoverUploadResponse, error)
-	// 移除封面。没有封面时也成功（幂等）。
+	// Head：不存在即失败，字节数超过单张上限即失败并删除对象，**并按真实字节数复核
+	// 图集的合计上限**——声明可以撒谎，而这一步服务端看得见真实的字节数。
+	CommitSkillImageUpload(ctx context.Context, in *CommitSkillImageUploadRequest, opts ...grpc.CallOption) (*CommitSkillImageUploadResponse, error)
+	// 从图集里移除一张。没有这一张时也失败（**不是幂等**：调用方给出的标识必须
+	// 指向当前图集里的一张，"删一张已经不在的图"是一次拼错了标识，不是一个状态）。
 	//
-	// 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
-	DeleteSkillCover(ctx context.Context, in *DeleteSkillCoverRequest, opts ...grpc.CallOption) (*DeleteSkillCoverResponse, error)
+	// 它删的是**对象**：这个键由这一张独占，不像内容对象那样可能被别处引用。剩下的
+	// 顺序保持不变——删中间一张不会让后面任何一张的地址变（见
+	// docs/design/skill/catalog.md 的"展示图集"）。
+	DeleteSkillImage(ctx context.Context, in *DeleteSkillImageRequest, opts ...grpc.CallOption) (*DeleteSkillImageResponse, error)
+	// 重排图集：请求给出的是**期望的完整顺序**，与改说明层同取向。
+	//
+	// **第一项即首图**——"设为首图"就是把某一张排到第一位，没有第二个开关（卡片
+	// 显示哪一张由它唯一决定）。给出的标识不是这个技能当前图集的一个排列（少了、
+	// 多了、重复了、有别人的）时整个拒绝，顺序不变——不做"部分重排"。
+	ReorderSkillImages(ctx context.Context, in *ReorderSkillImagesRequest, opts ...grpc.CallOption) (*ReorderSkillImagesResponse, error)
 }
 
 type skillAdminServiceClient struct {
@@ -581,30 +594,40 @@ func (c *skillAdminServiceClient) DeleteSkill(ctx context.Context, in *DeleteSki
 	return out, nil
 }
 
-func (c *skillAdminServiceClient) BeginSkillCoverUpload(ctx context.Context, in *BeginSkillCoverUploadRequest, opts ...grpc.CallOption) (*BeginSkillCoverUploadResponse, error) {
+func (c *skillAdminServiceClient) BeginSkillImageUpload(ctx context.Context, in *BeginSkillImageUploadRequest, opts ...grpc.CallOption) (*BeginSkillImageUploadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(BeginSkillCoverUploadResponse)
-	err := c.cc.Invoke(ctx, SkillAdminService_BeginSkillCoverUpload_FullMethodName, in, out, cOpts...)
+	out := new(BeginSkillImageUploadResponse)
+	err := c.cc.Invoke(ctx, SkillAdminService_BeginSkillImageUpload_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *skillAdminServiceClient) CommitSkillCoverUpload(ctx context.Context, in *CommitSkillCoverUploadRequest, opts ...grpc.CallOption) (*CommitSkillCoverUploadResponse, error) {
+func (c *skillAdminServiceClient) CommitSkillImageUpload(ctx context.Context, in *CommitSkillImageUploadRequest, opts ...grpc.CallOption) (*CommitSkillImageUploadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CommitSkillCoverUploadResponse)
-	err := c.cc.Invoke(ctx, SkillAdminService_CommitSkillCoverUpload_FullMethodName, in, out, cOpts...)
+	out := new(CommitSkillImageUploadResponse)
+	err := c.cc.Invoke(ctx, SkillAdminService_CommitSkillImageUpload_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *skillAdminServiceClient) DeleteSkillCover(ctx context.Context, in *DeleteSkillCoverRequest, opts ...grpc.CallOption) (*DeleteSkillCoverResponse, error) {
+func (c *skillAdminServiceClient) DeleteSkillImage(ctx context.Context, in *DeleteSkillImageRequest, opts ...grpc.CallOption) (*DeleteSkillImageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteSkillCoverResponse)
-	err := c.cc.Invoke(ctx, SkillAdminService_DeleteSkillCover_FullMethodName, in, out, cOpts...)
+	out := new(DeleteSkillImageResponse)
+	err := c.cc.Invoke(ctx, SkillAdminService_DeleteSkillImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *skillAdminServiceClient) ReorderSkillImages(ctx context.Context, in *ReorderSkillImagesRequest, opts ...grpc.CallOption) (*ReorderSkillImagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReorderSkillImagesResponse)
+	err := c.cc.Invoke(ctx, SkillAdminService_ReorderSkillImages_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -664,31 +687,43 @@ type SkillAdminServiceServer interface {
 	// 或简介（清空即回到当前版本 SKILL.md 的回退值），标签以请求集合**整体替换**，
 	// 空集合表示去掉全部标签。
 	UpdateSkillMetadata(context.Context, *UpdateSkillMetadataRequest) (*UpdateSkillMetadataResponse, error)
-	// 删除一个技能：技能行、版本行、标签、收藏与使用记录一起消失。
+	// 删除一个技能：技能行、版本行、标签、图集、收藏与使用记录一起消失。
 	//
-	// **桶上的字节不删。** 内容对象按摘要全局共享，同一份字节可能正被别处引用；
-	// "哪些对象还在被引用"要一次全量对账才答得上来，因此与 galaxy 的孤儿对象回收
-	// 合并处理。不可逆。
+	// **桶上的内容字节不删**，而**展示图的对象一起删**。两者的区别是键的归属：内容
+	// 对象按摘要全局共享，同一份字节可能正被别处引用，"哪些对象还在被引用"要一次全量
+	// 对账才答得上来（因此与 galaxy 的孤儿对象回收合并处理）；展示图一张一个键、由这
+	// 一个技能独占，删它不会动到别处。不可逆。
 	DeleteSkill(context.Context, *DeleteSkillRequest) (*DeleteSkillResponse, error)
-	// 开始一次封面上传：签发一份直传凭证。
+	// 开始一次展示图上传播：签发一份直传凭证。
 	//
 	// **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
-	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
-	// 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的某一张
+	// 展示图这一个键、类型与大小受条件约束"的策略交给对象存储执行。
 	//
-	// 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
-	// 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
-	// docs/design/skill/catalog.md 的"封面"）。
-	BeginSkillCoverUpload(context.Context, *BeginSkillCoverUploadRequest) (*BeginSkillCoverUploadResponse, error)
-	// 提交一次封面上传：核对字节确实到了，把技能指向它。
+	// 不给图标识时是**新增一张**：服务端分配标识、把它排到图集末尾。给了已有的图
+	// 标识时是**换掉那一张的字节**：对象键与它在图集里的位置都不变——展示图按图标识
+	// 定位，一张一个键，顺序不是键的一部分（见 docs/design/skill/catalog.md 的
+	// "展示图集"）。
+	BeginSkillImageUpload(context.Context, *BeginSkillImageUploadRequest) (*BeginSkillImageUploadResponse, error)
+	// 提交一次展示图上传：核对字节确实到了，把它记进图集（换图时只是让它生效）。
 	//
 	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
-	// Head：不存在即失败，字节数超过上限即失败并删除对象。
-	CommitSkillCoverUpload(context.Context, *CommitSkillCoverUploadRequest) (*CommitSkillCoverUploadResponse, error)
-	// 移除封面。没有封面时也成功（幂等）。
+	// Head：不存在即失败，字节数超过单张上限即失败并删除对象，**并按真实字节数复核
+	// 图集的合计上限**——声明可以撒谎，而这一步服务端看得见真实的字节数。
+	CommitSkillImageUpload(context.Context, *CommitSkillImageUploadRequest) (*CommitSkillImageUploadResponse, error)
+	// 从图集里移除一张。没有这一张时也失败（**不是幂等**：调用方给出的标识必须
+	// 指向当前图集里的一张，"删一张已经不在的图"是一次拼错了标识，不是一个状态）。
 	//
-	// 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
-	DeleteSkillCover(context.Context, *DeleteSkillCoverRequest) (*DeleteSkillCoverResponse, error)
+	// 它删的是**对象**：这个键由这一张独占，不像内容对象那样可能被别处引用。剩下的
+	// 顺序保持不变——删中间一张不会让后面任何一张的地址变（见
+	// docs/design/skill/catalog.md 的"展示图集"）。
+	DeleteSkillImage(context.Context, *DeleteSkillImageRequest) (*DeleteSkillImageResponse, error)
+	// 重排图集：请求给出的是**期望的完整顺序**，与改说明层同取向。
+	//
+	// **第一项即首图**——"设为首图"就是把某一张排到第一位，没有第二个开关（卡片
+	// 显示哪一张由它唯一决定）。给出的标识不是这个技能当前图集的一个排列（少了、
+	// 多了、重复了、有别人的）时整个拒绝，顺序不变——不做"部分重排"。
+	ReorderSkillImages(context.Context, *ReorderSkillImagesRequest) (*ReorderSkillImagesResponse, error)
 	mustEmbedUnimplementedSkillAdminServiceServer()
 }
 
@@ -714,14 +749,17 @@ func (UnimplementedSkillAdminServiceServer) UpdateSkillMetadata(context.Context,
 func (UnimplementedSkillAdminServiceServer) DeleteSkill(context.Context, *DeleteSkillRequest) (*DeleteSkillResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSkill not implemented")
 }
-func (UnimplementedSkillAdminServiceServer) BeginSkillCoverUpload(context.Context, *BeginSkillCoverUploadRequest) (*BeginSkillCoverUploadResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method BeginSkillCoverUpload not implemented")
+func (UnimplementedSkillAdminServiceServer) BeginSkillImageUpload(context.Context, *BeginSkillImageUploadRequest) (*BeginSkillImageUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginSkillImageUpload not implemented")
 }
-func (UnimplementedSkillAdminServiceServer) CommitSkillCoverUpload(context.Context, *CommitSkillCoverUploadRequest) (*CommitSkillCoverUploadResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CommitSkillCoverUpload not implemented")
+func (UnimplementedSkillAdminServiceServer) CommitSkillImageUpload(context.Context, *CommitSkillImageUploadRequest) (*CommitSkillImageUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitSkillImageUpload not implemented")
 }
-func (UnimplementedSkillAdminServiceServer) DeleteSkillCover(context.Context, *DeleteSkillCoverRequest) (*DeleteSkillCoverResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteSkillCover not implemented")
+func (UnimplementedSkillAdminServiceServer) DeleteSkillImage(context.Context, *DeleteSkillImageRequest) (*DeleteSkillImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSkillImage not implemented")
+}
+func (UnimplementedSkillAdminServiceServer) ReorderSkillImages(context.Context, *ReorderSkillImagesRequest) (*ReorderSkillImagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReorderSkillImages not implemented")
 }
 func (UnimplementedSkillAdminServiceServer) mustEmbedUnimplementedSkillAdminServiceServer() {}
 func (UnimplementedSkillAdminServiceServer) testEmbeddedByValue()                           {}
@@ -834,56 +872,74 @@ func _SkillAdminService_DeleteSkill_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SkillAdminService_BeginSkillCoverUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BeginSkillCoverUploadRequest)
+func _SkillAdminService_BeginSkillImageUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginSkillImageUploadRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SkillAdminServiceServer).BeginSkillCoverUpload(ctx, in)
+		return srv.(SkillAdminServiceServer).BeginSkillImageUpload(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SkillAdminService_BeginSkillCoverUpload_FullMethodName,
+		FullMethod: SkillAdminService_BeginSkillImageUpload_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SkillAdminServiceServer).BeginSkillCoverUpload(ctx, req.(*BeginSkillCoverUploadRequest))
+		return srv.(SkillAdminServiceServer).BeginSkillImageUpload(ctx, req.(*BeginSkillImageUploadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SkillAdminService_CommitSkillCoverUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CommitSkillCoverUploadRequest)
+func _SkillAdminService_CommitSkillImageUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitSkillImageUploadRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SkillAdminServiceServer).CommitSkillCoverUpload(ctx, in)
+		return srv.(SkillAdminServiceServer).CommitSkillImageUpload(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SkillAdminService_CommitSkillCoverUpload_FullMethodName,
+		FullMethod: SkillAdminService_CommitSkillImageUpload_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SkillAdminServiceServer).CommitSkillCoverUpload(ctx, req.(*CommitSkillCoverUploadRequest))
+		return srv.(SkillAdminServiceServer).CommitSkillImageUpload(ctx, req.(*CommitSkillImageUploadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SkillAdminService_DeleteSkillCover_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteSkillCoverRequest)
+func _SkillAdminService_DeleteSkillImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSkillImageRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SkillAdminServiceServer).DeleteSkillCover(ctx, in)
+		return srv.(SkillAdminServiceServer).DeleteSkillImage(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SkillAdminService_DeleteSkillCover_FullMethodName,
+		FullMethod: SkillAdminService_DeleteSkillImage_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SkillAdminServiceServer).DeleteSkillCover(ctx, req.(*DeleteSkillCoverRequest))
+		return srv.(SkillAdminServiceServer).DeleteSkillImage(ctx, req.(*DeleteSkillImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SkillAdminService_ReorderSkillImages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReorderSkillImagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SkillAdminServiceServer).ReorderSkillImages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SkillAdminService_ReorderSkillImages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SkillAdminServiceServer).ReorderSkillImages(ctx, req.(*ReorderSkillImagesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -916,16 +972,20 @@ var SkillAdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SkillAdminService_DeleteSkill_Handler,
 		},
 		{
-			MethodName: "BeginSkillCoverUpload",
-			Handler:    _SkillAdminService_BeginSkillCoverUpload_Handler,
+			MethodName: "BeginSkillImageUpload",
+			Handler:    _SkillAdminService_BeginSkillImageUpload_Handler,
 		},
 		{
-			MethodName: "CommitSkillCoverUpload",
-			Handler:    _SkillAdminService_CommitSkillCoverUpload_Handler,
+			MethodName: "CommitSkillImageUpload",
+			Handler:    _SkillAdminService_CommitSkillImageUpload_Handler,
 		},
 		{
-			MethodName: "DeleteSkillCover",
-			Handler:    _SkillAdminService_DeleteSkillCover_Handler,
+			MethodName: "DeleteSkillImage",
+			Handler:    _SkillAdminService_DeleteSkillImage_Handler,
+		},
+		{
+			MethodName: "ReorderSkillImages",
+			Handler:    _SkillAdminService_ReorderSkillImages_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

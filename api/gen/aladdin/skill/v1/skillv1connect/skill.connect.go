@@ -66,25 +66,28 @@ const (
 	// SkillAdminServiceDeleteSkillProcedure is the fully-qualified name of the SkillAdminService's
 	// DeleteSkill RPC.
 	SkillAdminServiceDeleteSkillProcedure = "/aladdin.skill.v1.SkillAdminService/DeleteSkill"
-	// SkillAdminServiceBeginSkillCoverUploadProcedure is the fully-qualified name of the
-	// SkillAdminService's BeginSkillCoverUpload RPC.
-	SkillAdminServiceBeginSkillCoverUploadProcedure = "/aladdin.skill.v1.SkillAdminService/BeginSkillCoverUpload"
-	// SkillAdminServiceCommitSkillCoverUploadProcedure is the fully-qualified name of the
-	// SkillAdminService's CommitSkillCoverUpload RPC.
-	SkillAdminServiceCommitSkillCoverUploadProcedure = "/aladdin.skill.v1.SkillAdminService/CommitSkillCoverUpload"
-	// SkillAdminServiceDeleteSkillCoverProcedure is the fully-qualified name of the SkillAdminService's
-	// DeleteSkillCover RPC.
-	SkillAdminServiceDeleteSkillCoverProcedure = "/aladdin.skill.v1.SkillAdminService/DeleteSkillCover"
+	// SkillAdminServiceBeginSkillImageUploadProcedure is the fully-qualified name of the
+	// SkillAdminService's BeginSkillImageUpload RPC.
+	SkillAdminServiceBeginSkillImageUploadProcedure = "/aladdin.skill.v1.SkillAdminService/BeginSkillImageUpload"
+	// SkillAdminServiceCommitSkillImageUploadProcedure is the fully-qualified name of the
+	// SkillAdminService's CommitSkillImageUpload RPC.
+	SkillAdminServiceCommitSkillImageUploadProcedure = "/aladdin.skill.v1.SkillAdminService/CommitSkillImageUpload"
+	// SkillAdminServiceDeleteSkillImageProcedure is the fully-qualified name of the SkillAdminService's
+	// DeleteSkillImage RPC.
+	SkillAdminServiceDeleteSkillImageProcedure = "/aladdin.skill.v1.SkillAdminService/DeleteSkillImage"
+	// SkillAdminServiceReorderSkillImagesProcedure is the fully-qualified name of the
+	// SkillAdminService's ReorderSkillImages RPC.
+	SkillAdminServiceReorderSkillImagesProcedure = "/aladdin.skill.v1.SkillAdminService/ReorderSkillImages"
 )
 
 // SkillServiceClient is a client for the aladdin.skill.v1.SkillService service.
 type SkillServiceClient interface {
-	// 读取当前部署下技能目录的边界：能不能用、纳得进多大的包。
+	// 读取当前部署下技能目录的边界：能不能用、纳得进多大的包、图集能到多少张。
 	//
 	// 它是**能力下发点**，与档案的 avatar_upload_enabled、galaxy 的 GetCapabilities
 	// 同一取向：能力由服务端说，客户端不猜。前端据此不渲染未启用的入口，而不是渲染
-	// 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来"，而不是等一次纳管
-	// 失败才把上限讲给管理员听。
+	// 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来、一张图能多大"，而不是
+	// 等一次写入失败才把上限讲给管理员听（见 SkillCapabilities 上的展示图那三项）。
 	//
 	// 它退回的每一项都是部署形态的公开事实，不因调用者而异，因此只要认证——
 	// 与 galaxy 的同名方法一致。
@@ -232,12 +235,12 @@ func (c *skillServiceClient) SetSkillFavorite(ctx context.Context, req *connect.
 
 // SkillServiceHandler is an implementation of the aladdin.skill.v1.SkillService service.
 type SkillServiceHandler interface {
-	// 读取当前部署下技能目录的边界：能不能用、纳得进多大的包。
+	// 读取当前部署下技能目录的边界：能不能用、纳得进多大的包、图集能到多少张。
 	//
 	// 它是**能力下发点**，与档案的 avatar_upload_enabled、galaxy 的 GetCapabilities
 	// 同一取向：能力由服务端说，客户端不猜。前端据此不渲染未启用的入口，而不是渲染
-	// 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来"，而不是等一次纳管
-	// 失败才把上限讲给管理员听。
+	// 一个点了报错的控件；管理端据此说明"什么样的仓库纳得进来、一张图能多大"，而不是
+	// 等一次写入失败才把上限讲给管理员听（见 SkillCapabilities 上的展示图那三项）。
 	//
 	// 它退回的每一项都是部署形态的公开事实，不因调用者而异，因此只要认证——
 	// 与 galaxy 的同名方法一致。
@@ -422,31 +425,43 @@ type SkillAdminServiceClient interface {
 	// 或简介（清空即回到当前版本 SKILL.md 的回退值），标签以请求集合**整体替换**，
 	// 空集合表示去掉全部标签。
 	UpdateSkillMetadata(context.Context, *connect.Request[v1.UpdateSkillMetadataRequest]) (*connect.Response[v1.UpdateSkillMetadataResponse], error)
-	// 删除一个技能：技能行、版本行、标签、收藏与使用记录一起消失。
+	// 删除一个技能：技能行、版本行、标签、图集、收藏与使用记录一起消失。
 	//
-	// **桶上的字节不删。** 内容对象按摘要全局共享，同一份字节可能正被别处引用；
-	// "哪些对象还在被引用"要一次全量对账才答得上来，因此与 galaxy 的孤儿对象回收
-	// 合并处理。不可逆。
+	// **桶上的内容字节不删**，而**展示图的对象一起删**。两者的区别是键的归属：内容
+	// 对象按摘要全局共享，同一份字节可能正被别处引用，"哪些对象还在被引用"要一次全量
+	// 对账才答得上来（因此与 galaxy 的孤儿对象回收合并处理）；展示图一张一个键、由这
+	// 一个技能独占，删它不会动到别处。不可逆。
 	DeleteSkill(context.Context, *connect.Request[v1.DeleteSkillRequest]) (*connect.Response[v1.DeleteSkillResponse], error)
-	// 开始一次封面上传：签发一份直传凭证。
+	// 开始一次展示图上传播：签发一份直传凭证。
 	//
 	// **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
-	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
-	// 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的某一张
+	// 展示图这一个键、类型与大小受条件约束"的策略交给对象存储执行。
 	//
-	// 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
-	// 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
-	// docs/design/skill/catalog.md 的"封面"）。
-	BeginSkillCoverUpload(context.Context, *connect.Request[v1.BeginSkillCoverUploadRequest]) (*connect.Response[v1.BeginSkillCoverUploadResponse], error)
-	// 提交一次封面上传：核对字节确实到了，把技能指向它。
+	// 不给图标识时是**新增一张**：服务端分配标识、把它排到图集末尾。给了已有的图
+	// 标识时是**换掉那一张的字节**：对象键与它在图集里的位置都不变——展示图按图标识
+	// 定位，一张一个键，顺序不是键的一部分（见 docs/design/skill/catalog.md 的
+	// "展示图集"）。
+	BeginSkillImageUpload(context.Context, *connect.Request[v1.BeginSkillImageUploadRequest]) (*connect.Response[v1.BeginSkillImageUploadResponse], error)
+	// 提交一次展示图上传：核对字节确实到了，把它记进图集（换图时只是让它生效）。
 	//
 	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
-	// Head：不存在即失败，字节数超过上限即失败并删除对象。
-	CommitSkillCoverUpload(context.Context, *connect.Request[v1.CommitSkillCoverUploadRequest]) (*connect.Response[v1.CommitSkillCoverUploadResponse], error)
-	// 移除封面。没有封面时也成功（幂等）。
+	// Head：不存在即失败，字节数超过单张上限即失败并删除对象，**并按真实字节数复核
+	// 图集的合计上限**——声明可以撒谎，而这一步服务端看得见真实的字节数。
+	CommitSkillImageUpload(context.Context, *connect.Request[v1.CommitSkillImageUploadRequest]) (*connect.Response[v1.CommitSkillImageUploadResponse], error)
+	// 从图集里移除一张。没有这一张时也失败（**不是幂等**：调用方给出的标识必须
+	// 指向当前图集里的一张，"删一张已经不在的图"是一次拼错了标识，不是一个状态）。
 	//
-	// 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
-	DeleteSkillCover(context.Context, *connect.Request[v1.DeleteSkillCoverRequest]) (*connect.Response[v1.DeleteSkillCoverResponse], error)
+	// 它删的是**对象**：这个键由这一张独占，不像内容对象那样可能被别处引用。剩下的
+	// 顺序保持不变——删中间一张不会让后面任何一张的地址变（见
+	// docs/design/skill/catalog.md 的"展示图集"）。
+	DeleteSkillImage(context.Context, *connect.Request[v1.DeleteSkillImageRequest]) (*connect.Response[v1.DeleteSkillImageResponse], error)
+	// 重排图集：请求给出的是**期望的完整顺序**，与改说明层同取向。
+	//
+	// **第一项即首图**——"设为首图"就是把某一张排到第一位，没有第二个开关（卡片
+	// 显示哪一张由它唯一决定）。给出的标识不是这个技能当前图集的一个排列（少了、
+	// 多了、重复了、有别人的）时整个拒绝，顺序不变——不做"部分重排"。
+	ReorderSkillImages(context.Context, *connect.Request[v1.ReorderSkillImagesRequest]) (*connect.Response[v1.ReorderSkillImagesResponse], error)
 }
 
 // NewSkillAdminServiceClient constructs a client for the aladdin.skill.v1.SkillAdminService
@@ -490,22 +505,28 @@ func NewSkillAdminServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(skillAdminServiceMethods.ByName("DeleteSkill")),
 			connect.WithClientOptions(opts...),
 		),
-		beginSkillCoverUpload: connect.NewClient[v1.BeginSkillCoverUploadRequest, v1.BeginSkillCoverUploadResponse](
+		beginSkillImageUpload: connect.NewClient[v1.BeginSkillImageUploadRequest, v1.BeginSkillImageUploadResponse](
 			httpClient,
-			baseURL+SkillAdminServiceBeginSkillCoverUploadProcedure,
-			connect.WithSchema(skillAdminServiceMethods.ByName("BeginSkillCoverUpload")),
+			baseURL+SkillAdminServiceBeginSkillImageUploadProcedure,
+			connect.WithSchema(skillAdminServiceMethods.ByName("BeginSkillImageUpload")),
 			connect.WithClientOptions(opts...),
 		),
-		commitSkillCoverUpload: connect.NewClient[v1.CommitSkillCoverUploadRequest, v1.CommitSkillCoverUploadResponse](
+		commitSkillImageUpload: connect.NewClient[v1.CommitSkillImageUploadRequest, v1.CommitSkillImageUploadResponse](
 			httpClient,
-			baseURL+SkillAdminServiceCommitSkillCoverUploadProcedure,
-			connect.WithSchema(skillAdminServiceMethods.ByName("CommitSkillCoverUpload")),
+			baseURL+SkillAdminServiceCommitSkillImageUploadProcedure,
+			connect.WithSchema(skillAdminServiceMethods.ByName("CommitSkillImageUpload")),
 			connect.WithClientOptions(opts...),
 		),
-		deleteSkillCover: connect.NewClient[v1.DeleteSkillCoverRequest, v1.DeleteSkillCoverResponse](
+		deleteSkillImage: connect.NewClient[v1.DeleteSkillImageRequest, v1.DeleteSkillImageResponse](
 			httpClient,
-			baseURL+SkillAdminServiceDeleteSkillCoverProcedure,
-			connect.WithSchema(skillAdminServiceMethods.ByName("DeleteSkillCover")),
+			baseURL+SkillAdminServiceDeleteSkillImageProcedure,
+			connect.WithSchema(skillAdminServiceMethods.ByName("DeleteSkillImage")),
+			connect.WithClientOptions(opts...),
+		),
+		reorderSkillImages: connect.NewClient[v1.ReorderSkillImagesRequest, v1.ReorderSkillImagesResponse](
+			httpClient,
+			baseURL+SkillAdminServiceReorderSkillImagesProcedure,
+			connect.WithSchema(skillAdminServiceMethods.ByName("ReorderSkillImages")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -518,9 +539,10 @@ type skillAdminServiceClient struct {
 	setCurrentSkillVersion *connect.Client[v1.SetCurrentSkillVersionRequest, v1.SetCurrentSkillVersionResponse]
 	updateSkillMetadata    *connect.Client[v1.UpdateSkillMetadataRequest, v1.UpdateSkillMetadataResponse]
 	deleteSkill            *connect.Client[v1.DeleteSkillRequest, v1.DeleteSkillResponse]
-	beginSkillCoverUpload  *connect.Client[v1.BeginSkillCoverUploadRequest, v1.BeginSkillCoverUploadResponse]
-	commitSkillCoverUpload *connect.Client[v1.CommitSkillCoverUploadRequest, v1.CommitSkillCoverUploadResponse]
-	deleteSkillCover       *connect.Client[v1.DeleteSkillCoverRequest, v1.DeleteSkillCoverResponse]
+	beginSkillImageUpload  *connect.Client[v1.BeginSkillImageUploadRequest, v1.BeginSkillImageUploadResponse]
+	commitSkillImageUpload *connect.Client[v1.CommitSkillImageUploadRequest, v1.CommitSkillImageUploadResponse]
+	deleteSkillImage       *connect.Client[v1.DeleteSkillImageRequest, v1.DeleteSkillImageResponse]
+	reorderSkillImages     *connect.Client[v1.ReorderSkillImagesRequest, v1.ReorderSkillImagesResponse]
 }
 
 // ImportSkill calls aladdin.skill.v1.SkillAdminService.ImportSkill.
@@ -548,19 +570,24 @@ func (c *skillAdminServiceClient) DeleteSkill(ctx context.Context, req *connect.
 	return c.deleteSkill.CallUnary(ctx, req)
 }
 
-// BeginSkillCoverUpload calls aladdin.skill.v1.SkillAdminService.BeginSkillCoverUpload.
-func (c *skillAdminServiceClient) BeginSkillCoverUpload(ctx context.Context, req *connect.Request[v1.BeginSkillCoverUploadRequest]) (*connect.Response[v1.BeginSkillCoverUploadResponse], error) {
-	return c.beginSkillCoverUpload.CallUnary(ctx, req)
+// BeginSkillImageUpload calls aladdin.skill.v1.SkillAdminService.BeginSkillImageUpload.
+func (c *skillAdminServiceClient) BeginSkillImageUpload(ctx context.Context, req *connect.Request[v1.BeginSkillImageUploadRequest]) (*connect.Response[v1.BeginSkillImageUploadResponse], error) {
+	return c.beginSkillImageUpload.CallUnary(ctx, req)
 }
 
-// CommitSkillCoverUpload calls aladdin.skill.v1.SkillAdminService.CommitSkillCoverUpload.
-func (c *skillAdminServiceClient) CommitSkillCoverUpload(ctx context.Context, req *connect.Request[v1.CommitSkillCoverUploadRequest]) (*connect.Response[v1.CommitSkillCoverUploadResponse], error) {
-	return c.commitSkillCoverUpload.CallUnary(ctx, req)
+// CommitSkillImageUpload calls aladdin.skill.v1.SkillAdminService.CommitSkillImageUpload.
+func (c *skillAdminServiceClient) CommitSkillImageUpload(ctx context.Context, req *connect.Request[v1.CommitSkillImageUploadRequest]) (*connect.Response[v1.CommitSkillImageUploadResponse], error) {
+	return c.commitSkillImageUpload.CallUnary(ctx, req)
 }
 
-// DeleteSkillCover calls aladdin.skill.v1.SkillAdminService.DeleteSkillCover.
-func (c *skillAdminServiceClient) DeleteSkillCover(ctx context.Context, req *connect.Request[v1.DeleteSkillCoverRequest]) (*connect.Response[v1.DeleteSkillCoverResponse], error) {
-	return c.deleteSkillCover.CallUnary(ctx, req)
+// DeleteSkillImage calls aladdin.skill.v1.SkillAdminService.DeleteSkillImage.
+func (c *skillAdminServiceClient) DeleteSkillImage(ctx context.Context, req *connect.Request[v1.DeleteSkillImageRequest]) (*connect.Response[v1.DeleteSkillImageResponse], error) {
+	return c.deleteSkillImage.CallUnary(ctx, req)
+}
+
+// ReorderSkillImages calls aladdin.skill.v1.SkillAdminService.ReorderSkillImages.
+func (c *skillAdminServiceClient) ReorderSkillImages(ctx context.Context, req *connect.Request[v1.ReorderSkillImagesRequest]) (*connect.Response[v1.ReorderSkillImagesResponse], error) {
+	return c.reorderSkillImages.CallUnary(ctx, req)
 }
 
 // SkillAdminServiceHandler is an implementation of the aladdin.skill.v1.SkillAdminService service.
@@ -602,31 +629,43 @@ type SkillAdminServiceHandler interface {
 	// 或简介（清空即回到当前版本 SKILL.md 的回退值），标签以请求集合**整体替换**，
 	// 空集合表示去掉全部标签。
 	UpdateSkillMetadata(context.Context, *connect.Request[v1.UpdateSkillMetadataRequest]) (*connect.Response[v1.UpdateSkillMetadataResponse], error)
-	// 删除一个技能：技能行、版本行、标签、收藏与使用记录一起消失。
+	// 删除一个技能：技能行、版本行、标签、图集、收藏与使用记录一起消失。
 	//
-	// **桶上的字节不删。** 内容对象按摘要全局共享，同一份字节可能正被别处引用；
-	// "哪些对象还在被引用"要一次全量对账才答得上来，因此与 galaxy 的孤儿对象回收
-	// 合并处理。不可逆。
+	// **桶上的内容字节不删**，而**展示图的对象一起删**。两者的区别是键的归属：内容
+	// 对象按摘要全局共享，同一份字节可能正被别处引用，"哪些对象还在被引用"要一次全量
+	// 对账才答得上来（因此与 galaxy 的孤儿对象回收合并处理）；展示图一张一个键、由这
+	// 一个技能独占，删它不会动到别处。不可逆。
 	DeleteSkill(context.Context, *connect.Request[v1.DeleteSkillRequest]) (*connect.Response[v1.DeleteSkillResponse], error)
-	// 开始一次封面上传：签发一份直传凭证。
+	// 开始一次展示图上传播：签发一份直传凭证。
 	//
 	// **字节不经过服务端**（见 docs/design/objectstore/README.md）：服务端在这里
-	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的封面
-	// 这一个键、类型与大小受条件约束"的策略交给对象存储执行。
+	// 校验**声明的**类型在白名单内、按声明的大小早退，然后把"只许写这个技能的某一张
+	// 展示图这一个键、类型与大小受条件约束"的策略交给对象存储执行。
 	//
-	// 一个技能一个键，替换即原地覆盖：它与头像同属**"当前这一张"**那类对象，
-	// 而不是内容对象那种按摘要寻址、不可变、共享的字节（见
-	// docs/design/skill/catalog.md 的"封面"）。
-	BeginSkillCoverUpload(context.Context, *connect.Request[v1.BeginSkillCoverUploadRequest]) (*connect.Response[v1.BeginSkillCoverUploadResponse], error)
-	// 提交一次封面上传：核对字节确实到了，把技能指向它。
+	// 不给图标识时是**新增一张**：服务端分配标识、把它排到图集末尾。给了已有的图
+	// 标识时是**换掉那一张的字节**：对象键与它在图集里的位置都不变——展示图按图标识
+	// 定位，一张一个键，顺序不是键的一部分（见 docs/design/skill/catalog.md 的
+	// "展示图集"）。
+	BeginSkillImageUpload(context.Context, *connect.Request[v1.BeginSkillImageUploadRequest]) (*connect.Response[v1.BeginSkillImageUploadResponse], error)
+	// 提交一次展示图上传：核对字节确实到了，把它记进图集（换图时只是让它生效）。
 	//
 	// 签发之后客户端传了什么、传没传完，服务端都不知道，因此提交要对那个键做一次
-	// Head：不存在即失败，字节数超过上限即失败并删除对象。
-	CommitSkillCoverUpload(context.Context, *connect.Request[v1.CommitSkillCoverUploadRequest]) (*connect.Response[v1.CommitSkillCoverUploadResponse], error)
-	// 移除封面。没有封面时也成功（幂等）。
+	// Head：不存在即失败，字节数超过单张上限即失败并删除对象，**并按真实字节数复核
+	// 图集的合计上限**——声明可以撒谎，而这一步服务端看得见真实的字节数。
+	CommitSkillImageUpload(context.Context, *connect.Request[v1.CommitSkillImageUploadRequest]) (*connect.Response[v1.CommitSkillImageUploadResponse], error)
+	// 从图集里移除一张。没有这一张时也失败（**不是幂等**：调用方给出的标识必须
+	// 指向当前图集里的一张，"删一张已经不在的图"是一次拼错了标识，不是一个状态）。
 	//
-	// 它删的是**对象**：这个键由这一个技能独占，不像内容对象那样可能被别处引用。
-	DeleteSkillCover(context.Context, *connect.Request[v1.DeleteSkillCoverRequest]) (*connect.Response[v1.DeleteSkillCoverResponse], error)
+	// 它删的是**对象**：这个键由这一张独占，不像内容对象那样可能被别处引用。剩下的
+	// 顺序保持不变——删中间一张不会让后面任何一张的地址变（见
+	// docs/design/skill/catalog.md 的"展示图集"）。
+	DeleteSkillImage(context.Context, *connect.Request[v1.DeleteSkillImageRequest]) (*connect.Response[v1.DeleteSkillImageResponse], error)
+	// 重排图集：请求给出的是**期望的完整顺序**，与改说明层同取向。
+	//
+	// **第一项即首图**——"设为首图"就是把某一张排到第一位，没有第二个开关（卡片
+	// 显示哪一张由它唯一决定）。给出的标识不是这个技能当前图集的一个排列（少了、
+	// 多了、重复了、有别人的）时整个拒绝，顺序不变——不做"部分重排"。
+	ReorderSkillImages(context.Context, *connect.Request[v1.ReorderSkillImagesRequest]) (*connect.Response[v1.ReorderSkillImagesResponse], error)
 }
 
 // NewSkillAdminServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -666,22 +705,28 @@ func NewSkillAdminServiceHandler(svc SkillAdminServiceHandler, opts ...connect.H
 		connect.WithSchema(skillAdminServiceMethods.ByName("DeleteSkill")),
 		connect.WithHandlerOptions(opts...),
 	)
-	skillAdminServiceBeginSkillCoverUploadHandler := connect.NewUnaryHandler(
-		SkillAdminServiceBeginSkillCoverUploadProcedure,
-		svc.BeginSkillCoverUpload,
-		connect.WithSchema(skillAdminServiceMethods.ByName("BeginSkillCoverUpload")),
+	skillAdminServiceBeginSkillImageUploadHandler := connect.NewUnaryHandler(
+		SkillAdminServiceBeginSkillImageUploadProcedure,
+		svc.BeginSkillImageUpload,
+		connect.WithSchema(skillAdminServiceMethods.ByName("BeginSkillImageUpload")),
 		connect.WithHandlerOptions(opts...),
 	)
-	skillAdminServiceCommitSkillCoverUploadHandler := connect.NewUnaryHandler(
-		SkillAdminServiceCommitSkillCoverUploadProcedure,
-		svc.CommitSkillCoverUpload,
-		connect.WithSchema(skillAdminServiceMethods.ByName("CommitSkillCoverUpload")),
+	skillAdminServiceCommitSkillImageUploadHandler := connect.NewUnaryHandler(
+		SkillAdminServiceCommitSkillImageUploadProcedure,
+		svc.CommitSkillImageUpload,
+		connect.WithSchema(skillAdminServiceMethods.ByName("CommitSkillImageUpload")),
 		connect.WithHandlerOptions(opts...),
 	)
-	skillAdminServiceDeleteSkillCoverHandler := connect.NewUnaryHandler(
-		SkillAdminServiceDeleteSkillCoverProcedure,
-		svc.DeleteSkillCover,
-		connect.WithSchema(skillAdminServiceMethods.ByName("DeleteSkillCover")),
+	skillAdminServiceDeleteSkillImageHandler := connect.NewUnaryHandler(
+		SkillAdminServiceDeleteSkillImageProcedure,
+		svc.DeleteSkillImage,
+		connect.WithSchema(skillAdminServiceMethods.ByName("DeleteSkillImage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillAdminServiceReorderSkillImagesHandler := connect.NewUnaryHandler(
+		SkillAdminServiceReorderSkillImagesProcedure,
+		svc.ReorderSkillImages,
+		connect.WithSchema(skillAdminServiceMethods.ByName("ReorderSkillImages")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/aladdin.skill.v1.SkillAdminService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -696,12 +741,14 @@ func NewSkillAdminServiceHandler(svc SkillAdminServiceHandler, opts ...connect.H
 			skillAdminServiceUpdateSkillMetadataHandler.ServeHTTP(w, r)
 		case SkillAdminServiceDeleteSkillProcedure:
 			skillAdminServiceDeleteSkillHandler.ServeHTTP(w, r)
-		case SkillAdminServiceBeginSkillCoverUploadProcedure:
-			skillAdminServiceBeginSkillCoverUploadHandler.ServeHTTP(w, r)
-		case SkillAdminServiceCommitSkillCoverUploadProcedure:
-			skillAdminServiceCommitSkillCoverUploadHandler.ServeHTTP(w, r)
-		case SkillAdminServiceDeleteSkillCoverProcedure:
-			skillAdminServiceDeleteSkillCoverHandler.ServeHTTP(w, r)
+		case SkillAdminServiceBeginSkillImageUploadProcedure:
+			skillAdminServiceBeginSkillImageUploadHandler.ServeHTTP(w, r)
+		case SkillAdminServiceCommitSkillImageUploadProcedure:
+			skillAdminServiceCommitSkillImageUploadHandler.ServeHTTP(w, r)
+		case SkillAdminServiceDeleteSkillImageProcedure:
+			skillAdminServiceDeleteSkillImageHandler.ServeHTTP(w, r)
+		case SkillAdminServiceReorderSkillImagesProcedure:
+			skillAdminServiceReorderSkillImagesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -731,14 +778,18 @@ func (UnimplementedSkillAdminServiceHandler) DeleteSkill(context.Context, *conne
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.skill.v1.SkillAdminService.DeleteSkill is not implemented"))
 }
 
-func (UnimplementedSkillAdminServiceHandler) BeginSkillCoverUpload(context.Context, *connect.Request[v1.BeginSkillCoverUploadRequest]) (*connect.Response[v1.BeginSkillCoverUploadResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.skill.v1.SkillAdminService.BeginSkillCoverUpload is not implemented"))
+func (UnimplementedSkillAdminServiceHandler) BeginSkillImageUpload(context.Context, *connect.Request[v1.BeginSkillImageUploadRequest]) (*connect.Response[v1.BeginSkillImageUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.skill.v1.SkillAdminService.BeginSkillImageUpload is not implemented"))
 }
 
-func (UnimplementedSkillAdminServiceHandler) CommitSkillCoverUpload(context.Context, *connect.Request[v1.CommitSkillCoverUploadRequest]) (*connect.Response[v1.CommitSkillCoverUploadResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.skill.v1.SkillAdminService.CommitSkillCoverUpload is not implemented"))
+func (UnimplementedSkillAdminServiceHandler) CommitSkillImageUpload(context.Context, *connect.Request[v1.CommitSkillImageUploadRequest]) (*connect.Response[v1.CommitSkillImageUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.skill.v1.SkillAdminService.CommitSkillImageUpload is not implemented"))
 }
 
-func (UnimplementedSkillAdminServiceHandler) DeleteSkillCover(context.Context, *connect.Request[v1.DeleteSkillCoverRequest]) (*connect.Response[v1.DeleteSkillCoverResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.skill.v1.SkillAdminService.DeleteSkillCover is not implemented"))
+func (UnimplementedSkillAdminServiceHandler) DeleteSkillImage(context.Context, *connect.Request[v1.DeleteSkillImageRequest]) (*connect.Response[v1.DeleteSkillImageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.skill.v1.SkillAdminService.DeleteSkillImage is not implemented"))
+}
+
+func (UnimplementedSkillAdminServiceHandler) ReorderSkillImages(context.Context, *connect.Request[v1.ReorderSkillImagesRequest]) (*connect.Response[v1.ReorderSkillImagesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.skill.v1.SkillAdminService.ReorderSkillImages is not implemented"))
 }

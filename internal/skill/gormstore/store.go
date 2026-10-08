@@ -4,8 +4,9 @@
 // internal/database 完成，迁移由 internal/database/migrate 推进（见
 // migration_0013_skill_catalog.go），本包只消费一个已经准备好表的 *gorm.DB。
 //
-// 五张表：技能、版本、标签、收藏与使用日次。**字节不在其中任何一张表里**——内容
-// 是一组「路径 → 内容摘要 + 字节数」，随版本行整份读写（见 encodeFiles）。
+// 六张表：技能、版本、标签、展示图集、收藏与使用日次。**字节不在其中任何一张表里**
+// ——内容是一组「路径 → 内容摘要 + 字节数」，随版本行整份读写（见 encodeFiles）；
+// 展示图只有键与字节数，字节在对象存储（见 internal/skill/image.go）。
 package gormstore
 
 import (
@@ -62,6 +63,10 @@ func (s *Store) ListSkills(ctx context.Context) ([]skill.Skill, error) {
 	if err != nil {
 		return nil, err
 	}
+	images, err := s.imagesBySkill(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 
 	items := make([]skill.Skill, 0, len(records))
 	for _, record := range records {
@@ -73,7 +78,7 @@ func (s *Store) ListSkills(ctx context.Context) ([]skill.Skill, error) {
 			return nil, unavailable("读取当前版本",
 				fmt.Errorf("技能 %s 的当前版本 %s 不存在", record.ID, record.CurrentVersionID))
 		}
-		items = append(items, toSkill(record, version, tags[record.ID]))
+		items = append(items, toSkill(record, version, tags[record.ID], images[record.ID]))
 	}
 	return items, nil
 }
@@ -92,7 +97,11 @@ func (s *Store) GetSkill(ctx context.Context, skillID string) (skill.Skill, erro
 	if err != nil {
 		return skill.Skill{}, err
 	}
-	return toSkill(record, version, tags[skillID]), nil
+	images, err := s.imagesBySkill(ctx, []string{skillID})
+	if err != nil {
+		return skill.Skill{}, err
+	}
+	return toSkill(record, version, tags[skillID], images[skillID]), nil
 }
 
 // ListVersions 实现 skill.Store（最新的在前）。
@@ -128,7 +137,6 @@ func (s *Store) CreateSkill(ctx context.Context, item skill.Skill) error {
 			ID:               item.ID,
 			Title:            item.Title,
 			Summary:          item.Summary,
-			CoverKey:         item.CoverKey,
 			SourceOwner:      item.Source.Owner,
 			SourceName:       item.Source.Name,
 			SourceRef:        item.Source.Ref,
@@ -152,6 +160,9 @@ func (s *Store) CreateSkill(ctx context.Context, item skill.Skill) error {
 			CreatedAt:    item.Current.CreatedAt,
 		}
 		if err := tx.Create(&version).Error; err != nil {
+			return err
+		}
+		if err := insertImages(tx, item.ID, item.Images); err != nil {
 			return err
 		}
 		return insertTags(tx, item.ID, item.Tags)
@@ -280,16 +291,134 @@ func (s *Store) UpdateMetadata(ctx context.Context, skillID, title, summary stri
 	return nil
 }
 
-// SetCover 实现 skill.Store。
-func (s *Store) SetCover(ctx context.Context, skillID, coverKey string) error {
-	result := s.db.WithContext(ctx).Model(&database.SkillRecord{}).
-		Where("id = ?", skillID).
-		Updates(map[string]any{"cover_key": coverKey, "updated_at": time.Now()})
-	if result.Error != nil {
-		return unavailable("更新技能封面", result.Error)
+// PutImage 实现 skill.Store。
+//
+// **标识已经在图集里时是换图**：只更新对象键与字节数，位置不动。判断与写入在同一个
+// 事务里（与 SetCurrentVersion 同一条理由）：先查再写会多一个"查完之后它被删了"的
+// 窗口，而那种偏差的表现在界面上是"换了一张图，它自己跳到了末尾"。
+//
+// 这里刻意不用 `Updates` 的 RowsAffected 判"这一张在不在"：MySQL 在新值与旧值完全
+// 相同时返回 0 行，于是"换上一张一模一样的图"会被误判成不存在。
+func (s *Store) PutImage(ctx context.Context, skillID string, image skill.Image) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var skills int64
+		if err := tx.Model(&database.SkillRecord{}).
+			Where("id = ?", skillID).Count(&skills).Error; err != nil {
+			return err
+		}
+		if skills == 0 {
+			return skill.ErrSkillNotFound
+		}
+		var existing database.SkillImageRecord
+		err := tx.Where("id = ? AND skill_id = ?", image.ID, skillID).Take(&existing).Error
+		switch {
+		case err == nil:
+			return tx.Model(&database.SkillImageRecord{}).
+				Where("id = ?", image.ID).
+				Updates(map[string]any{
+					"object_key": image.ObjectKey,
+					"size_bytes": image.SizeBytes,
+				}).Error
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			// 新增的那一张排在末尾：位置是 `max + 1`，因此**已有的图一张都不动**。
+			var next int
+			if err := tx.Model(&database.SkillImageRecord{}).
+				Where("skill_id = ?", skillID).
+				Select("COALESCE(MAX(position), -1) + 1").
+				Scan(&next).Error; err != nil {
+				return err
+			}
+			return tx.Create(&database.SkillImageRecord{
+				ID:        image.ID,
+				SkillID:   skillID,
+				Position:  next,
+				ObjectKey: image.ObjectKey,
+				SizeBytes: image.SizeBytes,
+				CreatedAt: time.Now(),
+			}).Error
+		default:
+			return err
+		}
+	})
+	if err != nil {
+		if errors.Is(err, skill.ErrSkillNotFound) {
+			return err
+		}
+		return unavailable("写入技能展示图", err)
 	}
-	if result.RowsAffected == 0 {
-		return skill.ErrSkillNotFound
+	return nil
+}
+
+// DeleteImage 实现 skill.Store。**其余图的位置不动**：顺序与对象地址无关。
+func (s *Store) DeleteImage(ctx context.Context, skillID, imageID string) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("id = ? AND skill_id = ?", imageID, skillID).
+			Delete(&database.SkillImageRecord{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			return nil
+		}
+		// 先确认技能本身在不在：**技能不存在**与**这一张不在它的图集里**是两句
+		// 不同的话，虽然都不该暴露"别人的图存在吗"这个信息。
+		var skills int64
+		if err := tx.Model(&database.SkillRecord{}).
+			Where("id = ?", skillID).Count(&skills).Error; err != nil {
+			return err
+		}
+		if skills == 0 {
+			return skill.ErrSkillNotFound
+		}
+		return skill.ErrImageNotFound
+	})
+	if err != nil {
+		if errors.Is(err, skill.ErrSkillNotFound) || errors.Is(err, skill.ErrImageNotFound) {
+			return err
+		}
+		return unavailable("删除技能展示图", err)
+	}
+	return nil
+}
+
+// ReorderImages 实现 skill.Store。
+//
+// 排列判定与写入在同一个事务里：给出的标识必须是这个技能当前图集的**一个排列**，
+// 否则整个拒绝、顺序原样（不做"部分重排"）。
+func (s *Store) ReorderImages(ctx context.Context, skillID string, imageIDs []string) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var skills int64
+		if err := tx.Model(&database.SkillRecord{}).
+			Where("id = ?", skillID).Count(&skills).Error; err != nil {
+			return err
+		}
+		if skills == 0 {
+			return skill.ErrSkillNotFound
+		}
+		var records []database.SkillImageRecord
+		if err := tx.Where("skill_id = ?", skillID).
+			Order("position ASC, id ASC").Find(&records).Error; err != nil {
+			return err
+		}
+		// 判据与内存实现**共用同一处**：各写一遍的表现是"内存实现通过、SQL 实现
+		// 拒绝"这类只在一边出现的偏差。
+		if !skill.IsImagePermutation(toImages(records), imageIDs) {
+			return skill.ErrImageOrderMismatch
+		}
+		for position, imageID := range imageIDs {
+			if err := tx.Model(&database.SkillImageRecord{}).
+				Where("id = ? AND skill_id = ?", imageID, skillID).
+				Update("position", position).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, skill.ErrSkillNotFound) || errors.Is(err, skill.ErrImageOrderMismatch) {
+			return err
+		}
+		return unavailable("重排技能展示图", err)
 	}
 	return nil
 }
@@ -302,6 +431,7 @@ func (s *Store) DeleteSkill(ctx context.Context, skillID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, model := range []any{
 			&database.SkillVersionRecord{}, &database.SkillTagRecord{},
+			&database.SkillImageRecord{},
 			&database.SkillFavoriteRecord{}, &database.SkillUsageDailyRecord{},
 		} {
 			if err := tx.Where("skill_id = ?", skillID).Delete(model).Error; err != nil {
@@ -506,6 +636,44 @@ func insertTags(tx *gorm.DB, skillID string, tags []string) error {
 	return tx.Create(&records).Error
 }
 
+// imagesBySkill 一次读出多个技能的展示图集，**按图集顺序**。
+func (s *Store) imagesBySkill(ctx context.Context, skillIDs []string) (map[string][]skill.Image, error) {
+	var records []database.SkillImageRecord
+	// 排序键里带上标识：位置只保证"后写入的图更大"，同一个位置上的两行（并发追加）
+	// 也要有确定的先后，否则同一份数据在不同一次查询里会给出不同的顺序。
+	if err := s.db.WithContext(ctx).
+		Where("skill_id IN ?", skillIDs).
+		Order("position ASC, id ASC").
+		Find(&records).Error; err != nil {
+		return nil, unavailable("读取技能展示图", err)
+	}
+	result := map[string][]skill.Image{}
+	for _, record := range records {
+		result[record.SkillID] = append(result[record.SkillID], toImage(record))
+	}
+	return result, nil
+}
+
+// insertImages 写入一个技能初始的展示图集，**位置即给定顺序**。
+func insertImages(tx *gorm.DB, skillID string, images []skill.Image) error {
+	if len(images) == 0 {
+		return nil
+	}
+	now := time.Now()
+	records := make([]database.SkillImageRecord, 0, len(images))
+	for position, image := range images {
+		records = append(records, database.SkillImageRecord{
+			ID:        image.ID,
+			SkillID:   skillID,
+			Position:  position,
+			ObjectKey: image.ObjectKey,
+			SizeBytes: image.SizeBytes,
+			CreatedAt: now,
+		})
+	}
+	return tx.Create(&records).Error
+}
+
 // encodeFiles 把一份文件清单序列化成列里的取值（唯一入口）。
 //
 // **清单的承载方式只在这一处**：一列 JSON 而不是一组子行，因为它从来是整份读写的
@@ -526,13 +694,13 @@ func encodeFiles(files []skill.File) ([]database.SkillFileRecord, error) {
 }
 
 // toSkill 把记录折成领域类型。
-func toSkill(record database.SkillRecord, version database.SkillVersionRecord, tags []string) skill.Skill {
+func toSkill(record database.SkillRecord, version database.SkillVersionRecord, tags []string, images []skill.Image) skill.Skill {
 	return skill.Skill{
-		ID:       record.ID,
-		Title:    record.Title,
-		Summary:  record.Summary,
-		CoverKey: record.CoverKey,
-		Tags:     tags,
+		ID:      record.ID,
+		Title:   record.Title,
+		Summary: record.Summary,
+		Images:  images,
+		Tags:    tags,
 		Source: skill.Source{
 			Owner:   record.SourceOwner,
 			Name:    record.SourceName,
@@ -542,6 +710,24 @@ func toSkill(record database.SkillRecord, version database.SkillVersionRecord, t
 		},
 		Current: toVersion(version),
 	}
+}
+
+// toImage 把图集记录折成领域类型。
+func toImage(record database.SkillImageRecord) skill.Image {
+	return skill.Image{
+		ID:        record.ID,
+		ObjectKey: record.ObjectKey,
+		SizeBytes: record.SizeBytes,
+	}
+}
+
+// toImages 折一整组图集记录。
+func toImages(records []database.SkillImageRecord) []skill.Image {
+	images := make([]skill.Image, 0, len(records))
+	for _, record := range records {
+		images = append(images, toImage(record))
+	}
+	return images
 }
 
 // toVersion 把版本记录折成领域类型。

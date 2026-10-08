@@ -50,15 +50,32 @@ type Store interface {
 	// **它不碰内容层任何一项**：当前版本、文件清单与所有字节在改动前后逐字不变。
 	UpdateMetadata(ctx context.Context, skillID, title, summary string, tags []string) error
 
-	// SetCover 设置或清空一个技能的封面键。空串表示清空。
+	// PutImage 把一张展示图写进一个技能的图集。
 	//
-	// 它只改说明层的那一列：对象本身的写入与删除在服务层（见 cover.go）。
-	SetCover(ctx context.Context, skillID, coverKey string) error
+	// **标识已经在图集里时是换图**：只更新它的对象键与字节数，位置不动；不在时
+	// 追加到末尾（新增的那一张排在最后）。技能不存在时返回 ErrSkillNotFound。
+	//
+	// 它只改说明层的那几行：对象本身的写入与删除在服务层（见 image.go）。
+	PutImage(ctx context.Context, skillID string, image Image) error
 
-	// DeleteSkill 删掉技能、它的版本、标签、收藏与使用记录。
+	// DeleteImage 从图集里移除一张图。
 	//
-	// **它不删桶上的字节**：内容对象按摘要全局共享，同一份字节可能正被别处引用
-	// （见 package.go 的 ContentObjectKey）。
+	// 标识不在这个技能的图集里时返回 ErrImageNotFound。**其余图的位置不动**：
+	// 顺序与对象地址无关，删中间一张不会让后面任何一张的键变（见 image.go）。
+	DeleteImage(ctx context.Context, skillID, imageID string) error
+
+	// ReorderImages 把图集顺序整体替换为 imageIDs 给出的顺序，第一项即首图。
+	//
+	// 它是**一次原子比较与写入**：给出的标识不是该技能当前图集的一个排列时返回
+	// ErrImageOrderMismatch，且顺序保持原样；技能不存在时返回 ErrSkillNotFound。
+	// 在服务层先查再写会多一个"查完之后它被删了"的窗口。
+	ReorderImages(ctx context.Context, skillID string, imageIDs []string) error
+
+	// DeleteSkill 删掉技能、它的版本、标签、图集、收藏与使用记录。
+	//
+	// **它不删桶上的内容字节**：内容对象按摘要全局共享，同一份字节可能正被别处
+	// 引用（见 package.go 的 ContentObjectKey）。展示图的对象由服务层一起删——
+	// 那些键由这一个技能独占（见 image.go）。
 	DeleteSkill(ctx context.Context, skillID string) error
 
 	// SetFavorite 设置某个主体对一个技能的收藏状态（幂等，两个方向都是）。

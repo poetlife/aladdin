@@ -128,15 +128,60 @@ func (m *MemoryStore) UpdateMetadata(_ context.Context, skillID, title, summary 
 	return nil
 }
 
-// SetCover 实现 Store。
-func (m *MemoryStore) SetCover(_ context.Context, skillID, coverKey string) error {
+// PutImage 实现 Store。
+//
+// 标识已经在图集里时是换图：只更新那一条的对象键与字节数，位置不动。
+func (m *MemoryStore) PutImage(_ context.Context, skillID string, image Image) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	item, ok := m.skills[skillID]
 	if !ok {
 		return ErrSkillNotFound
 	}
-	item.CoverKey = coverKey
+	for i, existing := range item.Images {
+		if existing.ID == image.ID {
+			item.Images[i] = image
+			return nil
+		}
+	}
+	item.Images = append(item.Images, image)
+	return nil
+}
+
+// DeleteImage 实现 Store。其余图的位置不动。
+func (m *MemoryStore) DeleteImage(_ context.Context, skillID, imageID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	item, ok := m.skills[skillID]
+	if !ok {
+		return ErrSkillNotFound
+	}
+	for i, existing := range item.Images {
+		if existing.ID == imageID {
+			item.Images = append(item.Images[:i:i], item.Images[i+1:]...)
+			return nil
+		}
+	}
+	return ErrImageNotFound
+}
+
+// ReorderImages 实现 Store。
+func (m *MemoryStore) ReorderImages(_ context.Context, skillID string, imageIDs []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	item, ok := m.skills[skillID]
+	if !ok {
+		return ErrSkillNotFound
+	}
+	if !IsImagePermutation(item.Images, imageIDs) {
+		return ErrImageOrderMismatch
+	}
+	reordered := make([]Image, 0, len(imageIDs))
+	for _, imageID := range imageIDs {
+		image, _ := findImage(item.Images, imageID)
+		reordered = append(reordered, image)
+	}
+	item.Images = reordered
 	return nil
 }
 
@@ -269,6 +314,8 @@ func (m *MemoryStore) DeleteUsageBefore(_ context.Context, before time.Time) err
 func cloneSkill(item Skill) Skill {
 	cloned := item
 	cloned.Tags = cloneStrings(item.Tags)
+	cloned.Images = make([]Image, len(item.Images))
+	copy(cloned.Images, item.Images)
 	cloned.Current = cloneVersion(item.Current)
 	return cloned
 }

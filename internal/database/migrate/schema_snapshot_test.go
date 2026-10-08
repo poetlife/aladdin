@@ -118,6 +118,13 @@ table skill_favorites
   created_at datetime pk=false null=true
   skill_id text pk=true null=true
   subject_id text pk=true null=true
+table skill_images
+  created_at datetime pk=false null=true
+  id text pk=true null=true
+  object_key text pk=false null=true
+  position integer pk=false null=true
+  size_bytes integer pk=false null=true
+  skill_id text pk=false null=true
 table skill_tags
   skill_id text pk=true null=true
   tag text pk=true null=true
@@ -136,7 +143,6 @@ table skill_versions
   skill_id text pk=false null=true
   skipped_files integer pk=false null=true
 table skills
-  cover_key text pk=false null=true
   created_at datetime pk=false null=true
   current_version_id text pk=false null=true
   id text pk=true null=true

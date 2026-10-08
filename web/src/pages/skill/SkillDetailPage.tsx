@@ -14,7 +14,6 @@ import {
   Space,
   Tag,
   Typography,
-  Upload,
   theme,
 } from 'antd'
 import { ArrowLeft, CloudDownload, RefreshCw, Trash2 } from 'lucide-react'
@@ -25,11 +24,11 @@ import { messageOf } from '../../api/errors'
 import { PermissionGate } from '../../auth'
 import { describeBytes } from '../../format/bytes'
 import { PermissionCodes } from '../../gen/permission-codes'
-import type { Skill, SkillVersion } from '../../gen/proto/aladdin/skill/v1/skill_pb'
+import type { Skill, SkillCapabilities, SkillVersion } from '../../gen/proto/aladdin/skill/v1/skill_pb'
 import { MONOSPACE } from '../../theme/monospace'
 import { AppModal } from '../../ui/AppModal'
 import { formatTime } from '../galaxy/format-time'
-import { SkillCover } from './SkillCover'
+import { SkillGallery } from './SkillGallery'
 
 /** SKILL.md 是包契约要求的那份清单文件，也是取用时默认要读的那一份。 */
 const MANIFEST_PATH = 'SKILL.md'
@@ -66,6 +65,9 @@ export function SkillDetailPage(): React.ReactNode {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+  // 图集的上限（能放几张、单张多大、合计多大）不在前端写死：它随能力一起下发。
+  // 还没读到就是 null，画廊那一句说明据此不渲染。
+  const [capabilities, setCapabilities] = useState<SkillCapabilities | null>(null)
 
   const load = useCallback(async () => {
     if (skillId === '') {
@@ -87,6 +89,26 @@ export function SkillDetailPage(): React.ReactNode {
   useEffect(() => {
     void load()
   }, [load])
+
+  // 能力来自服务端，前端不猜（与目录页同一段写法、同一个入口）：图集上限是部署形态
+  // 的公开事实，由 GetCapabilities 下发。拿不到就不下结论——真要加图时服务端会给出
+  // 真实原因，而不是在这里编一个上限。
+  useEffect(() => {
+    let cancelled = false
+    void skillApi
+      .getCapabilities()
+      .then((resp) => {
+        if (!cancelled) {
+          setCapabilities(resp.capabilities ?? null)
+        }
+      })
+      .catch(() => {
+        // 读不到能力不等于目录不可用：这一页的主体现在照常呈现。
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function openFile(path: string): Promise<void> {
     setSelectedPath(path)
@@ -146,8 +168,8 @@ export function SkillDetailPage(): React.ReactNode {
         extra={
           /*
            * 页头只放**与"这一页"这个整体有关**的两颗：刷新（重新读一遍）与同步
-           * （追远端）。其余动作各回各的块——换封面挨着封面、改说明层挨着说明层、
-           * 删除收成图标。
+           * （追远端）。其余动作各回各的块——加图与设为首图挨着画廊、改说明层挨着
+           * 说明层、删除收成图标。
            *
            * 六颗平铺在页头时，问题不只是挤：标题被压成几个字，而且**看不出哪一颗
            * 在动哪一块**（见 docs/design/uiux/README.md 的"信息层级"）。
@@ -187,19 +209,19 @@ export function SkillDetailPage(): React.ReactNode {
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           {failure !== null && <Alert type="error" showIcon message={failure} />}
 
-          {/* 封面与说明**并排**、放不下就换行（`wrap`，与断点无关的写法，见
-              docs/design/web/responsive.md）。封面是说明层的一项、**不是包的内容**，
-              所以它在说明这一块里，不混进下面那份文件清单。 */}
+          {/* 画廊与说明**并排**、放不下就换行（`wrap`，与断点无关的写法，见
+              docs/design/web/responsive.md）。展示图集是说明层的一项、**不是包的
+              内容**，所以它在说明这一块里，不混进下面那份文件清单。 */}
           <Flex wrap gap={24} align="flex-start">
-            <div
-              style={{
-                flex: '0 1 280px',
-                minWidth: 200,
-                borderRadius: token.borderRadius,
-                overflow: 'hidden',
-              }}
-            >
-              <SkillCover skill={skill} height={168} />
+            <div style={{ flex: '1 1 360px', minWidth: 0 }}>
+              <SkillGallery
+                skill={skill}
+                busy={busy}
+                runAction={runAction}
+                maxImages={capabilities?.maxImages}
+                maxImageBytes={capabilities?.maxImageBytes}
+                maxImageTotalBytes={capabilities?.maxImageTotalBytes}
+              />
             </div>
             <div style={{ flex: '1 1 320px', minWidth: 0 }}>
               <Typography.Paragraph>{skill.summary}</Typography.Paragraph>
@@ -235,39 +257,11 @@ export function SkillDetailPage(): React.ReactNode {
             </div>
           </Flex>
 
-          {/* 说明层的三个可改项收成一排，**在这一块里**：它们改的都是上面这几项，
-              放到页头只会让"哪一颗在动哪一块"变成一个要猜的问题。 */}
+          {/* 改说明层**在这一块里**：它改的是上面那几项文字，放到页头只会让"哪一颗
+              在动哪一块"变成一个要猜的问题。图集的那几颗跟着画廊走（见
+              SkillGallery），因此这一排只剩改说明层。 */}
           <PermissionGate require={PermissionCodes.SkillCatalogWrite}>
             <Space wrap size={4} style={{ borderTop: `1px solid ${token.colorSplit}`, paddingTop: 12 }}>
-              {/* 换封面走完三步（签发 → 直传 → 提交），都在 api/skill 里。这里只负责
-                  把文件递进去：**字节不经过服务端**，也不经过这个组件。 */}
-              <Upload
-                accept="image/png,image/jpeg,image/gif"
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  void runAction(async () => {
-                    await skillApi.updateCover(skill.id, file)
-                  })
-                  // 返回 false：上传由我们自己走那条直传链路，不让 antd 再发一次。
-                  return false
-                }}
-              >
-                <Button type="text" size="small" disabled={busy}>
-                  {skill.coverUrl === '' ? '加一张封面' : '换封面'}
-                </Button>
-              </Upload>
-              {skill.coverUrl !== '' && (
-                <Popconfirm
-                  title="移除这张封面？"
-                  description="技能本身与它的内容都不受影响。"
-                  okText="移除"
-                  onConfirm={() => void runAction(() => skillApi.deleteCover(skill.id))}
-                >
-                  <Button type="text" size="small" disabled={busy}>
-                    移除封面
-                  </Button>
-                </Popconfirm>
-              )}
               <Button
                 type="text"
                 size="small"

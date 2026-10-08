@@ -180,10 +180,12 @@
 | 发行版产物的命名与平台清单（**自更新与界面上的下载命令两处都消费**） | [docs/release.md](release.md) 记录的对外契约；平台取自 Makefile 的 `PLATFORMS` | [Makefile](../Makefile) |
 | 界面里的等宽字体栈（代码块、可编辑正文） | `MONOSPACE` | [web/src/theme/monospace.ts](../web/src/theme/monospace.ts) |
 | 弹窗的高度约束、滚动行为与滚动条落在哪一侧（内容比窗口高时滚的是内容区，不是整屏遮罩；头尾与内容三块的横向边界重合） | `AppModal`（**不再从 antd 直接引 `Modal`**） | [web/src/ui/AppModal.tsx](../web/src/ui/AppModal.tsx) |
-| 技能、版本、标签、收藏与使用日次的持久化数据 | `skill.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/skill/store.go](../internal/skill/store.go) / [internal/skill/gormstore/](../internal/skill/gormstore/store.go) |
+| 技能、版本、标签、展示图集、收藏与使用日次的持久化数据 | `skill.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/skill/store.go](../internal/skill/store.go) / [internal/skill/gormstore/](../internal/skill/gormstore/store.go) |
 | 远端技能内容的拉取出口（解析引用、取回一棵树；**测试注入假实现**） | `skill.Remote` 接口 | [internal/skill/remote.go](../internal/skill/remote.go) |
 | 技能目录的接口契约（读面与维护面的划分、权限码、作用域来源） | proto 定义，经 `buf generate` 派生两端代码 | [api/proto/aladdin/skill/v1/skill.proto](../api/proto/aladdin/skill/v1/skill.proto) |
-| 一份字节能不能当**展示小图**（收哪些格式、上限多大、扩展名与文件头怎么判） | `imagetype`（**头像与技能封面共用一份**；它与 galaxy 资产的素材白名单**不是同一个判断**，不合并，理由见该包说明） | [internal/imagetype/imagetype.go](../internal/imagetype/imagetype.go) |
-| 技能封面的对象键（按技能标识、允许覆盖） | `skill.CoverKey` | [internal/skill/cover.go](../internal/skill/cover.go) |
+| 一份字节能不能当**展示小图**（收哪些格式、上限多大、扩展名与文件头怎么判） | `imagetype`（**头像与技能展示图共用一份**；它与 galaxy 资产的素材白名单**不是同一个判断**，不合并，理由见该包说明） | [internal/imagetype/imagetype.go](../internal/imagetype/imagetype.go) |
+| 技能展示图的对象键（按技能标识与图标识，一张一个键） | `skill.ImageKey` | [internal/skill/image.go](../internal/skill/image.go) |
+| 一个技能最多几张展示图、合计多少字节 | `skill.MaxImages` / `skill.MaxImageTotalBytes` | [internal/skill/image.go](../internal/skill/image.go) |
+| 一次图集重排给出的顺序是不是当前图集的一个排列（两个存储实现共用） | `skill.IsImagePermutation` | [internal/skill/image.go](../internal/skill/image.go) |
 | 代码生成与静态检查工具的版本（本机安装与 CI 缓存 key 都由此派生） | Makefile 的 `TOOLS` 清单 | [Makefile](../Makefile) |
 | 门禁里 Go 环境的准备（Go 版本的来源，以及模块 / 构建缓存与工具缓存的 key 与回退策略） | 复合动作（三个 Go job 共用一份） | [.github/actions/setup-go/action.yml](../.github/actions/setup-go/action.yml) |
