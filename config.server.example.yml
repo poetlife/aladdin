@@ -83,23 +83,30 @@ galaxy_publish_base_url: ""
 # Google 登录的客户端标识（OAuth 2.0 客户端的 "Client ID"）。
 # 留空或不写这一行表示**未启用** Google 登录——此时前端不渲染对应的登录入口。
 #
-# 注意：这个值**不是秘密**。它会明文出现在浏览器里，这是这类登录方式的设计
-# 前提，不是疏漏，因此放在配置文件里不违反"配置中不放凭证"。真正需要保密的
-# 是客户端密钥，而浏览器登录流程不使用它——服务端靠签名而非密钥确认令牌，
-# 所以这个文件里没有、也不该有那一项。
+# 注意：这个值**不是秘密**：它本来就明文出现在授权跳转的地址里，因此放在配置
+# 文件里不违反"配置中不放凭证"。真正需要保密的是客户端密钥。
 #
-# 允许发起登录的浏览器来源（协议 + 主机 + 端口）**只配置在 Google 控制台**，
-# 这里没有对应的键，也不应该有：来源不匹配时请求根本到不了服务端，在这里再
-# 放一份只会得到一份永远不会被读到、却会在迁移部署时被误改的副本。
-# 换域名时改的是 Google 控制台。
+# Google 与 GitHub 一样是**重定向型**渠道：浏览器被交给 Google，Google 把授权码
+# 送回 /auth/google/callback，服务端再用授权码与客户端密钥换回身份令牌。因此启用
+# 它需要三项齐全：本项、下面的 public_base_url、以及环境变量里的
+# ALADDIN_GOOGLE_CLIENT_SECRET。只给其中一部分会**拒绝启动**。
+#
+# **回调地址要登记在 Google 控制台**（OAuth 客户端的"已获授权的重定向 URI"），
+# 取值是 <public_base_url>/auth/google/callback。反向代理必须把 /auth/ 转发到
+# 服务端而不是前端静态页面，否则点登录会没反应（见 docs/deploy.md）。
+# 浏览器来源白名单（已获授权的 JavaScript 来源）**不再需要**：本站不在浏览器里
+# 调用 Google。
+#
+# 客户端密钥与 COS 密钥同理，**只有环境变量这一个来源**：
+#   ALADDIN_GOOGLE_CLIENT_SECRET
 google_client_id: ""
 
 # GitHub 登录的客户端标识（OAuth App 的 "Client ID"）。
 # 留空或不写这一行表示**未启用** GitHub 登录。
 #
-# GitHub 与 Google 不同：它交给浏览器的是一个**授权码**，因此服务端还要用
-# 客户端密钥去换令牌，且 GitHub 会把浏览器重定向回本服务的一个回调地址。
-# 因此启用它需要三项齐全：本项、下面的 public_base_url、以及环境变量里的
+# GitHub 与 Google 同属**重定向型**渠道：它交给浏览器的是一个**授权码**，因此
+# 服务端还要用客户端密钥去换令牌，且 GitHub 会把浏览器重定向回本服务的一个回调
+# 地址。因此启用它需要三项齐全：本项、下面的 public_base_url、以及环境变量里的
 # ALADDIN_GITHUB_CLIENT_SECRET。只给其中一部分会**拒绝启动**。
 #
 # **回调地址要登记在 GitHub 控制台**（OAuth App 的 Authorization callback URL），
@@ -110,7 +117,7 @@ google_client_id: ""
 #   ALADDIN_GITHUB_CLIENT_SECRET
 github_client_id: ""
 
-# 服务端的**对外地址**，用于构造重定向型登录（目前是 GitHub）的回调地址与
+# 服务端的**对外地址**，用于构造重定向型登录（Google、GitHub）的回调地址与
 # 回跳前端的地址、命令行登录的批准页地址，以及**已发布内容的分享地址**与发布域
 # 的 `frame-ancestors`。启用重定向型渠道或启用发布时必填。
 #

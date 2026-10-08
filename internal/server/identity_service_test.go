@@ -24,6 +24,11 @@ import (
 //
 // 它们直接调用 handler，因此冻结的是**分类与归属**；跨协议的同一性
 // 由 test/e2e 覆盖。
+//
+// **登录与绑定都走渠道重定向那条形状**：所有渠道都是重定向型，服务端没有
+// "客户端把渠道凭证交进来"的接口（见 identity_service.go 的 Login）。因此
+// 这里的助手按回调的两段走——校验凭证，然后解析主体并签发（或记成待绑定
+// 凭据再用当前会话兑换）——它们与服务端在回调里走的完全是同两段代码。
 
 // fakeVerifier 是一个可控的渠道凭证校验器：整套用例不联网、不碰 Google。
 type fakeVerifier struct {
@@ -150,18 +155,24 @@ func verifierFor(externalID string) identity.TokenVerifier {
 	return fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: externalID}}
 }
 
-// loginAs 用一份身份令牌登录，返回一次登录的产物。
-func loginAs(t *testing.T, service *IdentityService, idToken string) *identityv1.LoginResponse {
+// loginAs 走一次登录的两段：校验渠道凭证，然后解析主体并签发会话。
+//
+// 它直接把服务端在回调里走的那两段接起来（见 redirect_login_flow.go 的
+// Callback），而不是调某个 RPC：登录已经没有 RPC 形状了。
+func loginAs(t *testing.T, service *IdentityService, credential string) *identityv1.LoginResponse {
 	t.Helper()
-	resp, err := service.Login(context.Background(), connect.NewRequest(&identityv1.LoginRequest{
-		Credential: &identityv1.LoginRequest_Google{
-			Google: &identityv1.GoogleCredential{IdToken: idToken},
-		},
-	}))
+	verified, err := service.verify(context.Background(), identity.SourceGoogle, credential)
+	if err != nil {
+		t.Fatalf("校验渠道凭证失败: %v", err)
+	}
+	issued, err := service.resolveAndIssue(context.Background(), identity.SourceGoogle, verified)
 	if err != nil {
 		t.Fatalf("登录失败: %v", err)
 	}
-	return resp.Msg
+	return &identityv1.LoginResponse{
+		AccessToken: issued.Token,
+		ExpiresAt:   issued.Session.ExpiresAt.Format(time.RFC3339),
+	}
 }
 
 // loginAs 用这个装配的校验器登录。
@@ -241,195 +252,6 @@ func TestLoginLogsSubjectWithoutToken(t *testing.T) {
 	}
 }
 
-// 令牌不成立时返回"未认证"，**不是**"无权限"。
-//
-// 混为一谈会让客户端在凭证问题时反复尝试刷新，把一次凭证问题放大成
-// 一次登录风暴。
-func TestLoginInvalidTokenIsUnauthenticated(t *testing.T) {
-	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{err: identity.ErrInvalidToken}))
-
-	_, err := fixture.service.Login(context.Background(), connect.NewRequest(&identityv1.LoginRequest{
-		Credential: &identityv1.LoginRequest_Google{Google: &identityv1.GoogleCredential{IdToken: "坏令牌"}},
-	}))
-	if got := connect.CodeOf(err); got != connect.CodeUnauthenticated {
-		t.Fatalf("code = %v，期望 Unauthenticated", got)
-	}
-}
-
-// 提供方够不着是"服务不可用"，不是"凭证无效"。
-func TestLoginProviderFailureIsUnavailable(t *testing.T) {
-	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{err: identity.ErrProviderUnavailable}))
-
-	_, err := fixture.service.Login(context.Background(), connect.NewRequest(&identityv1.LoginRequest{
-		Credential: &identityv1.LoginRequest_Google{Google: &identityv1.GoogleCredential{IdToken: "任意"}},
-	}))
-	if got := connect.CodeOf(err); got != connect.CodeUnavailable {
-		t.Fatalf("code = %v，期望 Unavailable", got)
-	}
-}
-
-// 未启用的渠道报"未实现"，而不是"凭证无效"：前者说的是这条路没开，
-// 后者会说成是调用方拿错了凭证。
-func TestLoginGoogleDisabled(t *testing.T) {
-	fixture := newIdentityFixture(t)
-
-	_, err := fixture.service.Login(context.Background(), connect.NewRequest(&identityv1.LoginRequest{
-		Credential: &identityv1.LoginRequest_Google{Google: &identityv1.GoogleCredential{IdToken: "任意"}},
-	}))
-	if got := connect.CodeOf(err); got != connect.CodeUnimplemented {
-		t.Fatalf("code = %v，期望 Unimplemented", got)
-	}
-}
-
-// 绑定把渠道挂到**当前凭证代表的**主体上，而不是令牌里说的任何人。
-func TestBindIdentityBindsToCaller(t *testing.T) {
-	first := identity.VerifiedIdentity{ExternalID: "google-sub-a", Display: "a@example.com"}
-	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: first}))
-
-	login := fixture.loginAs(t)
-	ctx := caller(t, fixture.sessions, login.GetAccessToken())
-
-	resp, err := fixture.service.BindIdentity(ctx, connect.NewRequest(&identityv1.BindIdentityRequest{
-		Credential: &identityv1.BindIdentityRequest_Google{
-			Google: &identityv1.GoogleCredential{IdToken: "第二个渠道的令牌"},
-		},
-	}))
-	if err != nil {
-		t.Fatalf("绑定失败: %v", err)
-	}
-	if len(resp.Msg.GetIdentities()) != 1 {
-		t.Fatalf("绑定后渠道数 = %d，期望 1", len(resp.Msg.GetIdentities()))
-	}
-	if resp.Msg.GetIdentities()[0].GetDisplay() != "a@example.com" {
-		t.Errorf("展示信息 = %q", resp.Msg.GetIdentities()[0].GetDisplay())
-	}
-}
-
-// 绑定缺少凭证时是调用方的输入问题。
-func TestBindIdentityRequiresCredential(t *testing.T) {
-	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
-	login := fixture.loginAs(t)
-
-	_, err := fixture.service.BindIdentity(caller(t, fixture.sessions, login.GetAccessToken()),
-		connect.NewRequest(&identityv1.BindIdentityRequest{}))
-	if got := connect.CodeOf(err); got != connect.CodeInvalidArgument {
-		t.Fatalf("code = %v，期望 InvalidArgument", got)
-	}
-}
-
-// 一个身份已经属于**非空**主体时拒绝，且**不透露占用者**。
-//
-// 这里必须让第一个人不是空主体：搬运型与重定向型共用同一处归属实现，空主体的
-// 身份会被认领而不是拒绝（见 TestBindIdentityReclaimsVacantSubject）。
-func TestBindIdentityRejectsTakenIdentity(t *testing.T) {
-	// 第一个人先登录，占住 google-sub-a。
-	first := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
-	firstLogin := first.loginAs(t)
-	firstSubject, err := first.service.sessions.Verify(context.Background(), firstLogin.GetAccessToken())
-	if err != nil {
-		t.Fatalf("会话不可用: %v", err)
-	}
-	// 一条角色绑定就让"空主体"不再成立：认领只对零角色的主体开放。
-	if err := first.subjects.Bind(context.Background(), rbac.RoleBinding{
-		SubjectID: firstSubject.ID,
-		RoleID:    rbac.RoleViewer,
-		Scope:     rbac.GlobalScope,
-	}); err != nil {
-		t.Fatalf("授予角色失败: %v", err)
-	}
-
-	// 第二个人在同一套存储上登录（占住 google-sub-b），再用第一人的令牌发起绑定：
-	// 校验解出的是 google-sub-a，而归属只能落在发起者身上——于是撞上唯一归属。
-	second := first.as(googleChannel(verifierFor("google-sub-b")))
-	secondLogin := loginAs(t, second, "第二个人的令牌")
-	callerCtx := caller(t, first.sessions, secondLogin.GetAccessToken())
-
-	// 绑定请求里带的是**第一人**的令牌：用解出 google-sub-a 的校验器再装配一个
-	// 共用同一套存储的服务，而会话仍然来自第二个人。
-	binder := first.as(googleChannel(verifierFor("google-sub-a")))
-	_, err = binder.BindIdentity(callerCtx, connect.NewRequest(&identityv1.BindIdentityRequest{
-		Credential: &identityv1.BindIdentityRequest_Google{
-			Google: &identityv1.GoogleCredential{IdToken: "第一个人的令牌"},
-		},
-	}))
-	if got := connect.CodeOf(err); got != connect.CodeAlreadyExists {
-		t.Fatalf("code = %v，期望 AlreadyExists（err=%v）", got, err)
-	}
-	if strings.Contains(err.Error(), firstSubject.ID) {
-		t.Errorf("错误信息泄露了占用者：%q", err.Error())
-	}
-}
-
-// 搬运型（Google）与重定向型共用同一处归属实现：已属于空主体的身份同样被认领。
-//
-// 两条路径的差别只在凭证怎么到达服务端；归属与认领若各写一份，就会出现
-// "GitHub 能认领、Google 不能"的断裂（见 docs/design/identity/identity-linking.md）。
-func TestBindIdentityReclaimsVacantSubject(t *testing.T) {
-	// 第一个人先单独登录，得到一个只有 google-sub-a 的零权限主体。
-	throwaway := newIdentityFixture(t, googleChannel(verifierFor("google-sub-a")))
-	throwawayLogin := throwaway.loginAs(t)
-	throwawaySubject, err := throwaway.service.sessions.Verify(context.Background(), throwawayLogin.GetAccessToken())
-	if err != nil {
-		t.Fatalf("会话不可用: %v", err)
-	}
-
-	// 第二个人登录（占住 google-sub-b），再用解出 google-sub-a 的令牌发起绑定：
-	// 发起者是第二个人，因此认领落在第二个人的主体上。
-	secondLogin := loginAs(t, throwaway.as(googleChannel(verifierFor("google-sub-b"))), "第二个人的令牌")
-	secondSubject, err := throwaway.sessions.Verify(context.Background(), secondLogin.GetAccessToken())
-	if err != nil {
-		t.Fatalf("会话不可用: %v", err)
-	}
-	ctx := caller(t, throwaway.sessions, secondLogin.GetAccessToken())
-
-	binder := throwaway.as(googleChannel(verifierFor("google-sub-a")))
-	resp, err := binder.BindIdentity(ctx, connect.NewRequest(&identityv1.BindIdentityRequest{
-		Credential: &identityv1.BindIdentityRequest_Google{
-			Google: &identityv1.GoogleCredential{IdToken: "第一个人的令牌"},
-		},
-	}))
-	if err != nil {
-		t.Fatalf("认领失败: %v", err)
-	}
-	if !resp.Msg.GetReclaimed() {
-		t.Error("发生了认领，reclaimed 却为 false")
-	}
-
-	owner, err := throwaway.identityStore.Lookup(context.Background(), identity.SourceGoogle, "google-sub-a")
-	if err != nil {
-		t.Fatalf("读取归属失败: %v", err)
-	}
-	if owner.SubjectID != secondSubject.ID {
-		t.Errorf("认领后归属 = %q，期望 %q", owner.SubjectID, secondSubject.ID)
-	}
-
-	// 原主体只剩零身份、零角色。
-	left, err := binder.identities.List(context.Background(), throwawaySubject.ID)
-	if err != nil {
-		t.Fatalf("列出原主体失败: %v", err)
-	}
-	if len(left) != 0 {
-		t.Errorf("原主体还剩 %d 条身份，期望 0", len(left))
-	}
-	bindings, err := throwaway.subjects.SubjectBindings(context.Background(), throwawaySubject.ID)
-	if err != nil {
-		t.Fatalf("读取原主体角色失败: %v", err)
-	}
-	if len(bindings) != 0 {
-		t.Errorf("原主体带着 %d 条角色绑定，期望 0", len(bindings))
-	}
-
-	// 再用这个渠道登录，得到的应当是第二个人（也就是发起认领的那个）的主体。
-	resolver := identity.NewIdentities(throwaway.identityStore, throwaway.subjects)
-	again, err := resolver.ResolveOrRegister(context.Background(), identity.SourceGoogle, "google-sub-a", "")
-	if err != nil {
-		t.Fatalf("再次解析失败: %v", err)
-	}
-	if again.ID != secondSubject.ID {
-		t.Errorf("再次登录得到 %q，期望 %q", again.ID, secondSubject.ID)
-	}
-}
-
 // 解绑只作用于自己的主体：拿别人的身份标识来解绑，一行不动。
 func TestUnbindIdentityScopedToCaller(t *testing.T) {
 	fixture := newIdentityFixture(t, googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: "google-sub-a"}}))
@@ -466,15 +288,12 @@ func TestListIdentitiesReturnsCallersChannels(t *testing.T) {
 	login := fixture.loginAs(t)
 	ctx := caller(t, fixture.sessions, login.GetAccessToken())
 
-	// 第二个渠道：用解出另一个身份的校验器再装配一个共用同一套存储的服务。
+	// 第二个渠道：先用解出另一个身份的校验器把身份记成待绑定凭据（服务端在
+	// 回调里做的事），再用当前会话兑换它。
 	second := fixture.as(googleChannel(fakeVerifier{identity: identity.VerifiedIdentity{
 		ExternalID: "google-sub-b", Display: "b@example.com",
 	}}))
-	if _, err := second.BindIdentity(ctx, connect.NewRequest(&identityv1.BindIdentityRequest{
-		Credential: &identityv1.BindIdentityRequest_Google{
-			Google: &identityv1.GoogleCredential{IdToken: "第二个渠道的令牌"},
-		},
-	})); err != nil {
+	if _, err := bindOverRedirect(t, second, ctx, identity.SourceGoogle, "第二个渠道的令牌"); err != nil {
 		t.Fatalf("绑定失败: %v", err)
 	}
 
@@ -557,12 +376,30 @@ func (failingSessionStore) DeleteExpired(context.Context, time.Time) (int64, err
 }
 
 // pendingBindingRequest 造一份"带着待绑定 cookie"的兑换请求。
-func pendingBindingRequest(token string) *connect.Request[identityv1.CompleteIdentityBindingRequest] {
-	req := connect.NewRequest(&identityv1.CompleteIdentityBindingRequest{
-		Source: identity.SourceGithub,
-	})
+//
+// source 是要兑换的渠道来源：它只用于与凭据里记下的来源互相印证。
+func pendingBindingRequest(source, token string) *connect.Request[identityv1.CompleteIdentityBindingRequest] {
+	req := connect.NewRequest(&identityv1.CompleteIdentityBindingRequest{Source: source})
 	req.Header().Set("Cookie", (&http.Cookie{Name: pendingBindingCookie, Value: token}).String())
 	return req
+}
+
+// bindOverRedirect 走一次完整的绑定：校验渠道凭证、把它记成待绑定凭据
+// （服务端在回调里做的两件事），再用**当前会话**兑换它。
+//
+// 绑定只有这一条形状：凭证经浏览器导航到达服务端，归属只由兑换时那次已认证的
+// 调用决定。用例里要"绑一个渠道上去"时走它，而不是自己拼 request。
+func bindOverRedirect(t *testing.T, service *IdentityService, ctx context.Context, source, credential string) (*connect.Response[identityv1.CompleteIdentityBindingResponse], error) {
+	t.Helper()
+	verified, err := service.verify(context.Background(), source, credential)
+	if err != nil {
+		return nil, err
+	}
+	token, err := service.stagePendingBinding(source, verified)
+	if err != nil {
+		t.Fatalf("记下待绑定凭据失败: %v", err)
+	}
+	return service.CompleteIdentityBinding(ctx, pendingBindingRequest(source, token))
 }
 
 // registerGithubThrowaway 直接在存储上登记一个只有 GitHub 身份的零权限主体，
@@ -594,7 +431,7 @@ func TestCompleteIdentityBindingBindsToCaller(t *testing.T) {
 	if err != nil {
 		t.Fatalf("登记待绑定凭据失败: %v", err)
 	}
-	resp, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+	resp, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(identity.SourceGithub, token))
 	if err != nil {
 		t.Fatalf("兑换失败: %v", err)
 	}
@@ -622,14 +459,14 @@ func TestCompleteIdentityBindingRequiresSession(t *testing.T) {
 		t.Fatalf("登记待绑定凭据失败: %v", err)
 	}
 
-	if _, err := fixture.service.CompleteIdentityBinding(context.Background(), pendingBindingRequest(token)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+	if _, err := fixture.service.CompleteIdentityBinding(context.Background(), pendingBindingRequest(identity.SourceGithub, token)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("code = %v，期望 Unauthenticated（err=%v）", connect.CodeOf(err), err)
 	}
 
 	// 未认证的尝试没有读走凭据：拿到会话之后仍可兑换。
 	login := fixture.loginAs(t)
 	if _, err := fixture.service.CompleteIdentityBinding(
-		caller(t, fixture.sessions, login.GetAccessToken()), pendingBindingRequest(token)); err != nil {
+		caller(t, fixture.sessions, login.GetAccessToken()), pendingBindingRequest(identity.SourceGithub, token)); err != nil {
 		t.Fatalf("认证后兑换失败: %v", err)
 	}
 }
@@ -640,7 +477,7 @@ func TestCompleteIdentityBindingRejectsBadCredential(t *testing.T) {
 	login := fixture.loginAs(t)
 	ctx := caller(t, fixture.sessions, login.GetAccessToken())
 
-	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest("never-issued")); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(identity.SourceGithub, "never-issued")); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("缺失凭据 code = %v，期望 FailedPrecondition（err=%v）", connect.CodeOf(err), err)
 	}
 
@@ -648,10 +485,10 @@ func TestCompleteIdentityBindingRejectsBadCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("登记待绑定凭据失败: %v", err)
 	}
-	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token)); err != nil {
+	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(identity.SourceGithub, token)); err != nil {
 		t.Fatalf("第一次兑换失败: %v", err)
 	}
-	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token)); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(identity.SourceGithub, token)); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("重放 code = %v，期望 FailedPrecondition（err=%v）", connect.CodeOf(err), err)
 	}
 
@@ -685,7 +522,7 @@ func TestCompleteIdentityBindingReclaimsVacantSubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("登记待绑定凭据失败: %v", err)
 	}
-	resp, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+	resp, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(identity.SourceGithub, token))
 	if err != nil {
 		t.Fatalf("认领失败: %v", err)
 	}
@@ -746,7 +583,7 @@ func TestCompleteIdentityBindingRejectsNonVacantByRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("登记待绑定凭据失败: %v", err)
 	}
-	_, err = fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+	_, err = fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(identity.SourceGithub, token))
 	if connect.CodeOf(err) != connect.CodeAlreadyExists {
 		t.Fatalf("code = %v，期望 AlreadyExists（err=%v）", connect.CodeOf(err), err)
 	}
@@ -778,7 +615,7 @@ func TestCompleteIdentityBindingRejectsNonVacantByIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("登记待绑定凭据失败: %v", err)
 	}
-	_, err = fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+	_, err = fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(identity.SourceGithub, token))
 	if connect.CodeOf(err) != connect.CodeAlreadyExists {
 		t.Fatalf("code = %v，期望 AlreadyExists（err=%v）", connect.CodeOf(err), err)
 	}
@@ -806,7 +643,7 @@ func TestCompleteIdentityBindingHonorsLifecycleGate(t *testing.T) {
 	unlock := fixture.service.gate.lock()
 	done := make(chan error, 1)
 	go func() {
-		_, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(token))
+		_, err := fixture.service.CompleteIdentityBinding(ctx, pendingBindingRequest(identity.SourceGithub, token))
 		done <- err
 	}()
 

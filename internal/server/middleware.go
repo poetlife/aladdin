@@ -12,7 +12,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/poetlife/aladdin/internal/galaxy"
-	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
@@ -59,9 +58,19 @@ func isInfraProcedure(path string) bool {
 // **唯一一处例外是 galaxy 的发布地址**，它在下面单独处理：它的最后一段是
 // 不可猜的工程标识，因此不可能枚举成一张精确路径表。那条入口的注册、放行与
 // 指标归一都引用同一个前缀常量，三处不会漂移。
-var browserEntryPaths = map[string]bool{
-	identity.GithubStartPath:    true,
-	identity.GithubCallbackPath: true,
+// browserEntryPaths 由**渠道清单派生**（见 redirect_login_flow.go 的
+// redirectChannels）：加一个重定向型渠道时，端点注册与这里的放行一起变，
+// 不会出现"注册了却忘了放行"——那会表现为一次 401，而不是"找不到页面"。
+var browserEntryPaths = browserEntryPathsOf(redirectChannels())
+
+// browserEntryPathsOf 把渠道清单摊成一张路径表。
+func browserEntryPathsOf(channels []redirectChannel) map[string]bool {
+	paths := make(map[string]bool, len(channels)*2)
+	for _, channel := range channels {
+		paths[channel.startPath] = true
+		paths[channel.callbackPath] = true
+	}
+	return paths
 }
 
 // isBrowserEntry 判定一条路径是不是浏览器直连的非 RPC 入口（唯一入口）。

@@ -9,8 +9,16 @@
 # 而少一把能登录生产的钥匙是实打实的收窄。
 #
 # 用法：
-#   sudo ./deploy.sh            # 部署最新 Release
-#   sudo ./deploy.sh v0.1.0     # 部署指定版本
+#   sudo ./deploy.sh                     # 部署最新 Release
+#   sudo ./deploy.sh v0.1.0              # 部署指定版本
+#   sudo ./deploy.sh v0.1.0 --from <基地址>  # 产物从别处取（见下）
+#
+# `--from` 换掉的只是**产物从哪来**，其余一字不改：校验和、备份、原子替换、
+# 健康检查、失败回滚仍然走本脚本这同一条路径。因此它取的东西必须与 Release 里
+# 的是同一套——同一个地址下三个文件，命名与 `make release-build` 出来的一致。
+#
+# 它解决的是"传不动"：本机到服务器的上行很差，或者服务器取不到 GitHub。中转
+# 地址怎么来见 docs/deploy.md 的"网络不好时：产物走中转"。
 #
 # 首次部署的前置步骤、回滚的注意事项、迁移与回滚的冲突见 docs/deploy.md。
 
@@ -84,12 +92,19 @@ latest_version() {
 download_and_verify() {
   local server_pkg="aladdin-server_${VERSION}_linux_amd64.tar.gz"
   local web_pkg="aladdin-web_${VERSION}.tar.gz"
-  local base="https://github.com/${REPO}/releases/download/${VERSION}"
+  # 产物来源只有这一处判断：默认是本次版本的 Release 地址，`--from` 给了就用它。
+  # 两条来源的**产物形态完全相同**（同一个地址下三个文件），因此下面的下载、
+  # 校验与替换不需要知道自己从哪里取的。
+  local base="${ARTIFACT_BASE:-https://github.com/${REPO}/releases/download/${VERSION}}"
+  local hint="版本号是否存在？标签必须形如 vX.Y.Z"
+  if [[ -n "${ARTIFACT_BASE}" ]]; then
+    hint="基地址下有没有这三个文件？命名要与 make release-build 出来的一致"
+  fi
 
-  log "拉取 ${VERSION} 的产物"
+  log "拉取 ${VERSION} 的产物（来源：${base}）"
   for f in "${server_pkg}" "${web_pkg}" SHA256SUMS; do
     curl -fsSL -o "${WORK}/${f}" "${base}/${f}" \
-      || fail "下载失败：${base}/${f}（版本号是否存在？标签必须形如 vX.Y.Z）"
+      || fail "下载失败：${base}/${f}（${hint}）"
   done
 
   # 只校验本次要用的两个包：SHA256SUMS 里还有 darwin 与 CLI 的条目，
@@ -318,8 +333,33 @@ main() {
     || fail "nginx 站点 ${NGINX_SITE} 不存在。
 先按 docs/deploy.md 的『一次性前置』配置站点，否则前端产物放了也无人服务。"
 
-  VERSION="${1:-}"
+  # 参数解析只有这一处。两个值都赋成"后面几个函数直接读的"那样：它们是本脚本的
+  # 全局，与既有的那些（APP_DIR、PORT）同一个用法。
+  VERSION=""
+  ARTIFACT_BASE=""
+  while (($# > 0)); do
+    case "$1" in
+      --from)
+        [[ -n "${2:-}" ]] || fail "--from 后面要跟一个基地址（产物所在目录的地址）。"
+        ARTIFACT_BASE="${2%/}"
+        shift 2
+        ;;
+      -*)
+        fail "未知选项：$1（用法见本脚本顶部）"
+        ;;
+      *)
+        [[ -z "${VERSION}" ]] || fail "只接受一个版本号，多给了：$1"
+        VERSION="$1"
+        shift
+        ;;
+    esac
+  done
+
   if [[ -z "${VERSION}" ]]; then
+    # 中转地址下没有"最新"这一说：它只是一个目录，谁放的、什么时候放的都没有
+    # 记录。因此这条路上版本号必须显式给出——它同时也是产物文件名的一部分。
+    [[ -z "${ARTIFACT_BASE}" ]] || fail "用了 --from 就必须显式给出版本号。
+中转地址只是一个目录，没有「最新」这一说；版本号要与你放进去的产物文件名一致。"
     VERSION="$(latest_version)" || fail "取不到最新 Release 版本号"
     log "未指定版本，取最新 Release：${VERSION}"
   fi

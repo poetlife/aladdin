@@ -92,7 +92,10 @@ func run() error {
 		identity.Channel{
 			Source:   identity.SourceGoogle,
 			ClientID: cfg.GoogleClientID,
-			Verifier: identity.NewGoogleVerifier(cfg.GoogleClientID),
+			// 回调地址必须与授权时给出的一致，两处都从对外源与同一个
+			// 路径常量派生（见 identity.GoogleCallbackPath）。
+			Verifier: identity.NewGoogleVerifier(
+				cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.PublicURL(identity.GoogleCallbackPath)),
 		},
 		identity.Channel{
 			Source:   identity.SourceGithub,

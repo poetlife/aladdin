@@ -9,7 +9,6 @@ import { ProfilePage } from './ProfilePage'
 
 vi.mock('../api/identity', () => ({
   AuthSource: { Google: 'google', Github: 'github' },
-  bindGoogleIdentity: vi.fn(),
   getAuthMethods: vi.fn(),
   listIdentities: vi.fn(),
   unbindIdentity: vi.fn(),

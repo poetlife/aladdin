@@ -24,7 +24,7 @@ func clearEnv(t *testing.T) {
 		EnvDatabaseDriver, EnvDatabaseDSN,
 		EnvCOSBucketURL, EnvCOSSecretID, EnvCOSSecretKey,
 		EnvGalaxyPublishBaseURL,
-		EnvGoogleClientID, EnvGithubClientID, EnvGithubClientSecret, EnvPublicBaseURL,
+		EnvGoogleClientID, EnvGoogleClientSecret, EnvGithubClientID, EnvGithubClientSecret, EnvPublicBaseURL,
 		EnvBootstrapAdminSubject, EnvBootstrapAdminEmail, EnvBootstrapAdminScope,
 	} {
 		t.Setenv(k, "")
@@ -906,6 +906,7 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 			keyBootstrapAdminScope:   keyBootstrapAdminSubject + ": google:110000000000000000001\n",
 			// 重定向型登录渠道的三项也必须成对出现，理由同上。
 			keyGithubClientID: keyPublicBaseURL + ": https://aladdin.example.net\n",
+			keyGoogleClientID: keyPublicBaseURL + ": https://aladdin.example.net\n",
 			keyPublicBaseURL:  keyGithubClientID + ": Iv1.0123456789abcdef\n",
 			// 发布没有自己的桶（公开区与私有区在同一个桶里），但**没有桶就发不了
 			// 发布**，因此这个键要连桶地址一起给——否则走的是"只给发布域"那条
@@ -917,13 +918,14 @@ func TestDeclaredKeysAllTakeEffect(t *testing.T) {
 		// 生效前提来自环境变量的键。头像桶地址本身不是秘密、可以写进配置文件，
 		// 但它的两项密钥只有环境变量这一个来源（见 EnvCOSSecretID），因此这个
 		// 键必须连环境变量一起给出——否则走的是"半套配置拒绝启动"那条路径，
-		// 而那是另一回事，另有专门的用例守着。GitHub 的客户端密钥同理。
+		// 而那是另一回事，另有专门的用例守着。两个渠道的客户端密钥同理。
 		envCompanions := map[string]map[string]string{
 			keyCOSBucketURL: {
 				EnvCOSSecretID:  "test-secret-id",
 				EnvCOSSecretKey: "test-secret-key",
 			},
 			keyGithubClientID: {EnvGithubClientSecret: "test-github-secret"},
+			keyGoogleClientID: {EnvGoogleClientSecret: "test-google-secret"},
 			keyPublicBaseURL:  {EnvGithubClientSecret: "test-github-secret"},
 			// 发布需要桶，桶的密钥只有环境变量这一个来源（见上）。
 			keyGalaxyPublishBaseURL: {
@@ -1292,6 +1294,95 @@ func TestGithubClientSecretIsNotConfigKey(t *testing.T) {
 
 	if _, err := LoadServer(ServerFlags{}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("把 github_client_secret 写进配置文件 = %v，期望 ErrInvalid（未知键）", err)
+	}
+}
+
+// Google 登录的标识与密钥必须成对给出。规则与 GitHub **逐字相同**
+// （见 validateRedirectLogin），这里只验证它同样作用在 Google 上——
+// 两个渠道共用一份实现，因此不重复列举全部情形。
+func TestValidateGoogleLogin(t *testing.T) {
+	full := ServerConfig{
+		GoogleClientID:     "1234567890.apps.googleusercontent.com",
+		GoogleClientSecret: "the-secret",
+		PublicBaseURL:      "https://aladdin.example.com",
+	}
+
+	t.Run("全空即未启用", func(t *testing.T) {
+		if err := validateGoogleLogin(ServerConfig{}); err != nil {
+			t.Errorf("err = %v，期望不启用且不报错", err)
+		}
+	})
+
+	t.Run("只有对外地址是合法配置", func(t *testing.T) {
+		if err := validateGoogleLogin(ServerConfig{PublicBaseURL: full.PublicBaseURL}); err != nil {
+			t.Errorf("err = %v，期望通过——对外地址不依赖 Google", err)
+		}
+	})
+
+	t.Run("全给即启用", func(t *testing.T) {
+		if err := validateGoogleLogin(full); err != nil {
+			t.Errorf("err = %v，期望通过", err)
+		}
+	})
+
+	t.Run("缺什么就指出什么", func(t *testing.T) {
+		cases := map[string]struct {
+			cfg  ServerConfig
+			want string
+		}{
+			"缺客户端密钥": {ServerConfig{GoogleClientID: full.GoogleClientID, PublicBaseURL: full.PublicBaseURL}, EnvGoogleClientSecret},
+			"缺对外地址":  {ServerConfig{GoogleClientID: full.GoogleClientID, GoogleClientSecret: "s"}, keyPublicBaseURL},
+			"缺客户端标识": {ServerConfig{GoogleClientSecret: "s", PublicBaseURL: full.PublicBaseURL}, keyGoogleClientID},
+		}
+		for name, c := range cases {
+			err := validateGoogleLogin(c.cfg)
+			if err == nil {
+				t.Errorf("%s：期望拒绝启动", name)
+				continue
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("%s：错误信息 %q 应当指出缺的是 %q", name, err, c.want)
+			}
+		}
+	})
+}
+
+// Google 的客户端密钥同样只从环境变量来，半套配置在真实加载路径上就拒绝启动。
+func TestGoogleClientSecretComesFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	clearEnv(t)
+
+	t.Setenv(EnvGoogleClientID, "1234567890.apps.googleusercontent.com")
+	t.Setenv(EnvPublicBaseURL, "https://aladdin.example.com")
+	if _, err := LoadServer(ServerFlags{}); err == nil {
+		t.Fatal("没给客户端密钥，期望拒绝启动")
+	} else if !strings.Contains(err.Error(), EnvGoogleClientSecret) {
+		t.Errorf("错误信息 %q 应当指出缺的是 %s", err, EnvGoogleClientSecret)
+	}
+
+	t.Setenv(EnvGoogleClientSecret, "the-secret")
+	cfg, err := LoadServer(ServerFlags{})
+	if err != nil {
+		t.Fatalf("三项齐全仍加载失败: %v", err)
+	}
+	if cfg.GoogleClientSecret != "the-secret" {
+		t.Error("客户端密钥没有从环境变量读进来")
+	}
+	if got := cfg.PublicURL("/auth/google/callback"); got != "https://aladdin.example.com/auth/google/callback" {
+		t.Errorf("PublicURL = %q", got)
+	}
+}
+
+// Google 的客户端密钥同样**不可由配置提供**（见 TestGithubClientSecretIsNotConfigKey）。
+func TestGoogleClientSecretIsNotConfigKey(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	clearEnv(t)
+	write(t, filepath.Join(dir, FileName), "google_client_secret: some-secret\n")
+
+	if _, err := LoadServer(ServerFlags{}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("把 google_client_secret 写进配置文件 = %v，期望 ErrInvalid（未知键）", err)
 	}
 }
 

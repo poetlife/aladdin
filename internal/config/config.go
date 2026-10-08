@@ -53,16 +53,21 @@ const (
 	EnvGalaxyPublishBaseURL = "ALADDIN_GALAXY_PUBLISH_BASE_URL"
 	// EnvCOSSecretID 与 EnvCOSSecretKey 是头像存储的子账号密钥。
 	//
-	// **它们与 EnvGithubClientSecret、EnvGithubToken 是本仓库仅有的三组"只有
-	// 环境变量、没有配置键"的取值**，与开发种子旁路同类：一个开关一旦能写进配置文件，它就会
-	// 在某个人手上的生产环境里被写进去。配置文件会进版本库、进镜像、被贴给
-	// 别人排查问题，而凭证不可以（见 docs/design/config/credentials.md）。
+	// **它们与 EnvGithubClientSecret、EnvGoogleClientSecret、EnvGithubToken 是本仓库
+	// 仅有的"只有环境变量、没有配置键"的取值**，与开发种子旁路同类：一个开关一旦能
+	// 写进配置文件，它就会在某个人手上的生产环境里被写进去。配置文件会进版本库、
+	// 进镜像、被贴给别人排查问题，而凭证不可以（见 docs/design/config/credentials.md）。
 	// 这里是**环境变量名**，不是凭证值——gosec 按名字里的单词误报了。
 	EnvCOSSecretID  = "ALADDIN_COS_SECRET_ID"  //nolint:gosec // 取值是变量名本身
 	EnvCOSSecretKey = "ALADDIN_COS_SECRET_KEY" //nolint:gosec // 取值是变量名本身
 
 	EnvGoogleClientID = "ALADDIN_GOOGLE_CLIENT_ID"
 	EnvGithubClientID = "ALADDIN_GITHUB_CLIENT_ID"
+	// EnvGoogleClientSecret 是 Google 登录的客户端密钥。
+	//
+	// 与 COS 密钥同理：**只有环境变量，没有配置键**。这条路径是重定向型——
+	// 服务端要用它去换令牌，因此它是真密钥（见 docs/design/identity/google-login.md）。
+	EnvGoogleClientSecret = "ALADDIN_GOOGLE_CLIENT_SECRET" //nolint:gosec // 取值是变量名本身
 	// EnvGithubClientSecret 是 GitHub 登录的客户端密钥。
 	//
 	// 与 COS 密钥同理：**只有环境变量，没有配置键**。
@@ -322,10 +327,18 @@ type ServerConfig struct {
 	Skill SkillConfig
 	// GoogleClientID 是 Google 登录用的客户端标识；为空表示未启用该登录方式。
 	//
-	// 它**不是秘密**：这个值明文出现在浏览器里，是这类登录方式的设计前提，
-	// 因此放在配置里不违反"配置中不得出现凭证"。真正需要保密的是客户端
-	// 密钥，而浏览器登录流程不使用它（见 docs/design/identity/google-login.md）。
+	// 它**不是秘密**：这个值本来就明文出现在授权跳转的地址里，是这类登录方式的
+	// 设计前提，因此放在配置里不违反"配置中不得出现凭证"。真正需要保密的是
+	// 客户端密钥（见 GoogleClientSecret）。
 	GoogleClientID string
+	// GoogleClientSecret 是 Google 登录用的客户端密钥。
+	//
+	// **只从环境变量来，没有对应的配置键**（见 EnvGoogleClientSecret）。
+	// 因此它也**不得进日志**——描述本模块的配置时不要把它整体丢进日志。
+	//
+	// 这条路径的凭证是**授权码**：服务端要用客户端密钥去换令牌，因此这一项不是
+	// 可有可无的（见 docs/design/identity/google-login.md）。
+	GoogleClientSecret string
 	// GithubClientID 是 GitHub 登录用的客户端标识；为空表示未启用该登录方式。
 	//
 	// 与 GoogleClientID 同理，它不是秘密（见
@@ -539,6 +552,9 @@ func (c ServerConfig) Validate() error {
 		return err
 	}
 	if err := validatePublicBaseURL(c.PublicBaseURL); err != nil {
+		return err
+	}
+	if err := validateGoogleLogin(c); err != nil {
 		return err
 	}
 	if err := validateGithubLogin(c); err != nil {
@@ -787,40 +803,55 @@ func validatePublicBaseURL(raw string) error {
 		"带路径会衍生出一个也要登记在渠道控制台里的回调地址")
 }
 
-// validateGithubLogin 校验重定向型登录渠道的配置。
+// validateGoogleLogin 与 validateGithubLogin 是同一条规则，见 validateRedirectLogin。
+func validateGoogleLogin(c ServerConfig) error {
+	return validateRedirectLogin("Google", c.GoogleClientID, c.GoogleClientSecret,
+		c.PublicBaseURL, keyGoogleClientID, EnvGoogleClientSecret)
+}
+
+// validateGithubLogin 与 validateGoogleLogin 是同一条规则，见 validateRedirectLogin。
+func validateGithubLogin(c ServerConfig) error {
+	return validateRedirectLogin("GitHub", c.GithubClientID, c.GithubClientSecret,
+		c.PublicBaseURL, keyGithubClientID, EnvGithubClientSecret)
+}
+
+// validateRedirectLogin 校验一个**重定向型**登录渠道的配置。
 //
 // 只有两种情形放行：**三项全空**（不启用）与**三项齐全**（启用）。部分给出
 // 一律拒绝启动——它的失败方式既不是"没启用"（界面会渲染一个点不通的入口），
 // 也不是"配错了"（启动时就能看见），而是"看起来配好了"，直到有人点了登录。
 // 这与 validateCOS 是同一条取向。
 //
+// **渠道之间只有取值不同，规则逐字相同**，因此这里只有一处实现：两个渠道各写
+// 一份，迟早会出现"一个渠道放行了半套配置"。channel 只用于错误信息里指名道姓。
+//
 // 客户端密钥没有配置键、只从环境变量读，因此这里校验的是它**是否已被提供**，
 // 而不是它有没有出现在配置文件里。
 //
 // **对外地址不参与这一对。** 它有自己与渠道无关的用途——命令行登录的批准页
 // 地址也由它构造（见 docs/design/identity/device-login.md），因此"只给出对外
-// 地址"是合法配置（不启用 GitHub，但命令行登录可用）。把它绑进"三项必须同时
+// 地址"是合法配置（不启用任何渠道，但命令行登录可用）。把它绑进"三项必须同时
 // 给出"，会让"只想要命令行登录"变成一种配不出来的部署。
-func validateGithubLogin(c ServerConfig) error {
-	hasClientID := c.GithubClientID != ""
-	hasSecret := c.GithubClientSecret != ""
+func validateRedirectLogin(channel, clientID, clientSecret, publicBaseURL, keyClientID, envSecret string) error {
+	hasClientID := clientID != ""
+	hasSecret := clientSecret != ""
 	if !hasClientID && !hasSecret {
-		return nil // 未启用 GitHub 登录。这是默认情形
+		return nil // 未启用该渠道。这是默认情形
 	}
 
 	missing := make([]string, 0, 3)
 	if !hasClientID {
-		missing = append(missing, keyGithubClientID)
+		missing = append(missing, keyClientID)
 	}
 	if !hasSecret {
-		missing = append(missing, EnvGithubClientSecret)
+		missing = append(missing, envSecret)
 	}
-	if c.PublicBaseURL == "" {
+	if publicBaseURL == "" {
 		missing = append(missing, keyPublicBaseURL)
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("%w: GitHub 登录的配置不完整，缺少 %s：客户端标识与客户端密钥必须同时给出，且启用它时对外地址不能为空",
-			ErrInvalid, strings.Join(missing, " 与 "))
+		return fmt.Errorf("%w: %s 登录的配置不完整，缺少 %s：客户端标识与客户端密钥必须同时给出，且启用它时对外地址不能为空",
+			ErrInvalid, channel, strings.Join(missing, " 与 "))
 	}
 	return nil
 }

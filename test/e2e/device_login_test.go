@@ -120,16 +120,7 @@ func TestDeviceLoginDeliversApproversSessionOverConnect(t *testing.T) {
 	h := startDeviceLoginServer(t)
 	ctx := context.Background()
 
-	browserClient := connectIdentity(t, h, "")
-	login, err := browserClient.Login(ctx, connect.NewRequest(&identityv1.LoginRequest{
-		Credential: &identityv1.LoginRequest_Google{
-			Google: &identityv1.GoogleCredential{IdToken: "一份身份令牌"},
-		},
-	}))
-	if err != nil {
-		t.Fatalf("浏览器侧登录失败: %v", err)
-	}
-	browserToken := login.Msg.GetAccessToken()
+	browserToken := loginGoogleOverHTTP(t, h)
 
 	browserWho, err := connectIdentity(t, h, browserToken).WhoAmI(ctx,
 		connect.NewRequest(&identityv1.WhoAmIRequest{}))
@@ -204,15 +195,8 @@ func TestDeviceLoginDenyYieldsNoCredentialOverBothProtocols(t *testing.T) {
 	})
 
 	t.Run("Connect", func(t *testing.T) {
-		login, err := connectIdentity(t, h, "").Login(ctx, connect.NewRequest(&identityv1.LoginRequest{
-			Credential: &identityv1.LoginRequest_Google{
-				Google: &identityv1.GoogleCredential{IdToken: "一份身份令牌"},
-			},
-		}))
-		if err != nil {
-			t.Fatalf("登录失败: %v", err)
-		}
-		approver := connectIdentity(t, h, login.Msg.GetAccessToken())
+		// 浏览器侧先走一次完整的重定向登录拿到会话；之后的批准与轮询都走 Connect。
+		approver := connectIdentity(t, h, loginGoogleOverHTTP(t, h))
 		anon := connectIdentity(t, h, "")
 
 		start, err := anon.StartDeviceLogin(ctx, connect.NewRequest(&identityv1.StartDeviceLoginRequest{}))

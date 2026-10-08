@@ -37,9 +37,8 @@ function ThemedApp(): React.ReactNode {
       theme={{
         algorithm: resolved === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         // 圆角全局只留一个值：antd 默认会按尺寸派生出 LG/SM 等档位（大号按钮因此
-        // 比基础控件更圆），登录页的 Google 按钮还带着自己的 4px，三者在同一张卡片
-        // 上就能看出差别。把会出现在界面上的那几档钉成同一个数，差异就不再来自"哪
-        // 个组件"，而是由这里唯一决定。
+        // 比基础控件更圆），同一张卡片上就能看出差别。把会出现在界面上的那几档钉
+        // 成同一个数，差异就不再来自"哪个组件"，而是由这里唯一决定。
         //
         // XS 不动：它管的是组件内部的小细节（如标签上的关闭角），不是用户认得的"面"。
         token: { borderRadius: 8, borderRadiusLG: 8, borderRadiusSM: 8 },

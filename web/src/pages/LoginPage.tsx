@@ -6,7 +6,7 @@ import { KeyRound, Lamp } from 'lucide-react'
 import * as identityApi from '../api/identity'
 import { captureTrace, traceIdForAction, type TraceCapture } from '../api/call-trace'
 import { messageOf } from '../api/errors'
-import { GithubMark, GoogleSignInButton, useSession } from '../auth'
+import { GithubMark, GoogleMark, useSession } from '../auth'
 import { Action, Result, Surface } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { track } from '../telemetry/track'
 
@@ -25,11 +25,13 @@ interface LoginFormValues {
  * 报错，后者会把一次配置缺失表现成一次功能故障（见
  * docs/design/identity/channel-login.md）。
  *
- * 渠道之间的差别只在"怎么拿到凭证"：Google 是浏览器内的登录控件，GitHub 是
- * 一次整页跳转（它必须由服务端用客户端密钥换取令牌，浏览器给不出可用的码）。
+ * **渠道之间的差别只是跳向哪个起点端点**：两个渠道都是重定向型，浏览器导航
+ * 到服务端的起点端点后由服务端把整条流程走完（见
+ * docs/design/identity/google-login.md）。因此页面里没有任何渠道脚本、
+ * 也没有"把渠道凭证交给服务端"的分支。
  */
 export function LoginPage(): React.ReactNode {
-  const { signIn, signInWithGoogle, status } = useSession()
+  const { signIn, status } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
   const { token } = theme.useToken()
@@ -62,24 +64,6 @@ export function LoginPage(): React.ReactNode {
       cancelled = true
     }
   }, [])
-
-  async function handleGoogleCredential(idToken: string): Promise<void> {
-    setSubmitting(true)
-    setError(null)
-    // 链路标识跟着这一次登录调用走：成功时错误对象不存在，值只能在响应头里
-    // （见 ../api/call-trace）。
-    const trace = captureTrace()
-    try {
-      await signInWithGoogle(idToken, trace)
-      trackLogin(Result.OK, 'google', trace)
-      void navigate(from, { replace: true })
-    } catch (err) {
-      trackLogin(Result.FAIL, 'google', trace, err)
-      setError(messageOf(err))
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   async function handleSubmit(values: LoginFormValues): Promise<void> {
     setSubmitting(true)
@@ -119,13 +103,17 @@ export function LoginPage(): React.ReactNode {
         {error !== null && <Alert type="error" title={error} style={{ marginBottom: 16 }} />}
 
         {google !== undefined && (
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-            <GoogleSignInButton
-              clientId={google.clientId}
-              size="large"
-              onCredential={(idToken) => void handleGoogleCredential(idToken)}
-            />
-          </div>
+          // 与 GitHub 分支同构：整页跳转，不是一次 RPC。浏览器导航到服务端的
+          // 起点端点，换码与校验都在服务端完成，页面不经手任何渠道凭证。
+          <Button
+            href="/auth/google/start"
+            block
+            size="large"
+            icon={<GoogleMark size={18} />}
+            style={{ marginBottom: 8 }}
+          >
+            使用 Google 登录
+          </Button>
         )}
 
         {github !== undefined && (

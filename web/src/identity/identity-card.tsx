@@ -6,7 +6,7 @@ import { KeyRound } from 'lucide-react'
 import * as identityApi from '../api/identity'
 import { messageOf } from '../api/errors'
 import { GithubMark } from '../auth/github-mark'
-import { GoogleSignInButton } from '../auth/google-sign-in-button'
+import { GoogleMark } from '../auth/google-mark'
 import type { AuthMethod, Identity } from '../gen/proto/aladdin/identity/v1/identity_pb'
 
 /** 回调页带回的绑定结果。identityBound 一定存在：一份结果总是"绑定了谁"。 */
@@ -18,9 +18,8 @@ interface BindingResult {
 /**
  * 「登录方式」卡片：列出当前主体已经绑定哪些渠道，并提供绑定/解绑入口。
  *
- * 归属完全由服务端决定：GitHub 走一次浏览器导航 + HttpOnly 待绑定凭据，
- * Google 走一次把 ID token 交给 BindIdentity 的 RPC；两者都只作用于当前
- * 会话代表的主体，前端没有任何"绑到谁"的输入。
+ * 归属完全由服务端决定：两个渠道都走一次浏览器导航 + HttpOnly 待绑定凭据，
+ * 都只作用于当前会话代表的主体，前端没有任何"绑到谁"的输入。
  */
 export function IdentityCard(): React.ReactNode {
   const location = useLocation()
@@ -57,22 +56,6 @@ export function IdentityCard(): React.ReactNode {
   useEffect(() => {
     void reload()
   }, [reload])
-
-  async function handleBindGoogle(idToken: string): Promise<void> {
-    setBusy(true)
-    setError(null)
-    // 上一次的结果到此为止：再挂着一个"已绑定"，说的就是一件不再成立的事。
-    setResult(null)
-    try {
-      const resp = await identityApi.bindGoogleIdentity(idToken)
-      setIdentities(resp.identities)
-      setResult({ identityBound: identityApi.AuthSource.Google, reclaimed: resp.reclaimed })
-    } catch (err) {
-      setError(messageOf(err))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   async function handleUnbind(identity: Identity): Promise<void> {
     setBusy(true)
@@ -204,12 +187,17 @@ export function IdentityCard(): React.ReactNode {
                       </Button>                    )
                   }
                   if (method.source === identityApi.AuthSource.Google) {
+                    // 与 GitHub 分支同构：整页跳转，绑定意图只由 purpose 标记表达，
+                    // 归属在回跳后的已认证兑换里决定。
                     return (
-                      <GoogleSignInButton
+                      <Button
                         key={method.source}
-                        clientId={method.clientId}
-                        onCredential={(idToken) => void handleBindGoogle(idToken)}
-                      />
+                        href="/auth/google/start?purpose=bind"
+                        icon={<GoogleMark size={16} />}
+                        loading={busy}
+                      >
+                        绑定 Google
+                      </Button>
                     )
                   }
                   return null

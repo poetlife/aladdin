@@ -141,7 +141,8 @@
 | 前端客户端事件的上报入口（攒批、失败即时发送、页面隐藏冲刷） | `track` | [web/src/telemetry/track.ts](../web/src/telemetry/track.ts) |
 | 命令行本地失败的上报（配置/凭证/用法，退出前发出） | `recordLocalFailure` + `flushClientEvents`（只在退出路径调用） | [cmd/aladdin/telemetry-events.go](../cmd/aladdin/telemetry-events.go) |
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
-| 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh` | [deploy/deploy.sh](../deploy/deploy.sh) |
+| 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh`（产物来源由 `--from` 给出，默认是 Release；**中转不另起一份部署实现**） | [deploy/deploy.sh](../deploy/deploy.sh) |
+| 把发布产物放到中转地址（上传 + 逐个对象置公开读；用完删掉） | `deploy/relay` | [deploy/relay/main.go](../deploy/relay/main.go) |
 | 本地开发环境的拉起（服务端 + 前端，同起同停） | `make dev`；两边的命令与种子配置各只有一处来源（`DEV_SERVER_CMD` / `WEB_DEV_CMD`），`dev` 与 `dev-server` / `web-dev` 都引用它们 | [Makefile](../Makefile) |
 | 技能纳管 / 同步 / 回滚 / 删除的留痕（含来源与提交标识，**不含正文**） | `skill.Service` 的对应方法 | [internal/skill/catalog.go](../internal/skill/catalog.go) |
 | 超出保留期的技能使用日次的回收时机 | 服务端启动路径上的回收调用 | [internal/server/server.go](../internal/server/server.go) |

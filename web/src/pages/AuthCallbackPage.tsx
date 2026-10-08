@@ -6,14 +6,21 @@ import { useSession } from '../auth'
 import { isUnauthenticated, messageOf } from '../api/errors'
 import * as identityApi from '../api/identity'
 
-/** 回跳地址里三个 fragment 的键，与服务端 github_login_flow.go 中定义的取值一致。 */
+/** 回跳地址里三个 fragment 的键，与服务端 redirect_login_flow.go 中定义的取值一致。 */
 const FRAGMENT_TOKEN = 'token'
 const FRAGMENT_ERROR = 'error'
 const FRAGMENT_BINDING = 'binding'
 
-/** 服务端在失败时附上的固定标记。两者都不区分失败发生在哪一步，前端也只给通用提示。 */
-const GITHUB_LOGIN_FAILED = 'github_login_failed'
-const GITHUB_BIND_FAILED = 'github_bind_failed'
+/**
+ * 服务端在失败时附上的固定标记，形如 `<渠道>_login_failed` / `<渠道>_bind_failed`。
+ *
+ * 这里**按后缀**判断而不按渠道逐个列举：渠道只会越来越多，逐个列举的话每接一个
+ * 渠道都要回来补两个分支，漏掉一个的表现是"登录失败却提示这不是回调地址"。
+ * 前缀不参与判断——失败发生在哪一步、属于哪个渠道，本来就不该告诉浏览器
+ * （见 docs/design/identity/google-login.md 的"边界与约束"）。
+ */
+const LOGIN_FAILED_SUFFIX = '_login_failed'
+const BIND_FAILED_SUFFIX = '_bind_failed'
 
 /**
  * 重定向型登录渠道的回调页。
@@ -83,12 +90,13 @@ export function AuthCallbackPage(): React.ReactNode {
       return
     }
 
-    if (params.get(FRAGMENT_ERROR) === GITHUB_LOGIN_FAILED) {
-      setError('登录未完成，请重试。')
+    const failure = params.get(FRAGMENT_ERROR)
+    if (failure !== null && failure.endsWith(BIND_FAILED_SUFFIX)) {
+      setError('绑定未完成，请重试。')
       return
     }
-    if (params.get(FRAGMENT_ERROR) === GITHUB_BIND_FAILED) {
-      setError('绑定未完成，请重试。')
+    if (failure !== null && failure.endsWith(LOGIN_FAILED_SUFFIX)) {
+      setError('登录未完成，请重试。')
       return
     }
     setError('这个地址不是登录回调，请从登录页重新开始。')
