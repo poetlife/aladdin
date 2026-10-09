@@ -64,11 +64,10 @@ async function renderShell(path = '/'): Promise<HTMLElement> {
               <Route element={<AppLayout />}>
                 <Route path="/" element={<p>概览内容</p>} />
                 <Route path="/profile" element={<p>档案内容</p>} />
-                <Route path="/docs" element={<p>文档内容</p>} />
-                <Route path="/docs/cli" element={<p>命令行内容</p>} />
                 <Route path="/access/roles" element={<p>角色定义内容</p>} />
                 <Route path="/access/subjects" element={<p>人员授权内容</p>} />
                 <Route path="/access/scopes" element={<ScopesPage />} />
+                <Route path="/skills/:skillId" element={<p>技能详情内容</p>} />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -231,12 +230,12 @@ describe('外壳的宽窄两态', () => {
   it('抽屉里选中一个导航项后，跳转并自动关闭', async () => {
     installMatchMedia(true)
 
-    const container = await renderShell()
+    const container = await renderShell('/profile')
     await clickByLabel(container, '打开导航')
 
-    await clickDrawerNav('文档')
+    await clickDrawerNav('概览')
 
-    expect(container.textContent).toContain('文档内容')
+    expect(container.textContent).toContain('概览内容')
     expect(document.querySelector(DRAWER_OPEN)).toBeNull()
   })
 
@@ -281,26 +280,30 @@ describe('外壳的宽窄两态', () => {
 
   // 文档区不要权限码：零权限的主体最需要它，否则"先装命令行才能登录、
   // 登录了才看得到怎么装命令行"这个环闭不上（见 docs/design/web/docs-area.md）。
+  //
+  // 它现在**不在外壳之下**——公开文档区有自己的一层外壳（见 routes.tsx 与
+  // PublicDocsLayout.tsx），点进去就离开这一层。因此这里钉的只是"入口还在、
+  // 零权限也渲染得出来"；落点那一侧由 PublicDocsLayout 自己负责。
   it('导航里有文档入口，零权限也渲染得出来', async () => {
-    installMatchMedia(true)
+    installMatchMedia(false)
 
-    const container = await renderShell()
-    await clickByLabel(container, '打开导航')
-    await clickDrawerNav('文档')
+    await renderShell()
 
-    expect(container.textContent).toContain('文档内容')
+    expect(siderNavLabels().some((text) => text.includes('文档'))).toBe(true)
   })
 
-  // 导航项都是一级路径，而 /docs/cli 这类子页比它深。若拿整个路径去比对，
+  // 导航项都是一级路径，而 /skills/<技能标识> 这类子页比它深。若拿整个路径去比对，
   // 进到子页时父项就不再高亮——二级导航项一出现就会撞上。
+  //
+  // 拿技能详情当例子：它是外壳之下最深的一类页面（见 routes.tsx）。
   it('进到子页时父导航项仍然高亮', async () => {
     installMatchMedia(false)
 
-    const container = await renderShell('/docs/cli')
+    const container = await renderAuthenticated(['skill.catalog.read'], '/skills/sk-1')
 
-    expect(container.textContent).toContain('命令行内容')
+    expect(container.textContent).toContain('技能详情内容')
     const selected = container.querySelector('.ant-menu-item-selected')
-    expect(selected?.textContent).toContain('文档')
+    expect(selected?.textContent).toContain('技能')
   })
 })
 

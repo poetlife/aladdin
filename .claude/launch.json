@@ -9,6 +9,12 @@
         "cd web && ALADDIN_API_TARGET=${ALADDIN_API_TARGET:-http://127.0.0.1:9191} npm run dev"
       ],
       "port": 5173
+    },
+    {
+      "name": "aladdin-web-dist",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd web && npm run preview -- --port 4173 --strictPort"],
+      "port": 4173
     }
   ]
 }

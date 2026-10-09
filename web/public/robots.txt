@@ -1,0 +1,12 @@
+# 站内文档是**公开**的，给人和 agent 读；其余页面要登录，对抓取方没有意义。
+#
+# Allow 与 Disallow 同时出现时按**最长匹配**取，因此 /docs/ 与两个 llms 文件
+# 仍然抓得到。少了这两条 Allow，下面那条 Disallow 会把它们一起挡掉。
+#
+# 这一份是给通用爬虫的。不执行 JS 的抓取方拿到的 /docs/* 是**预渲染过的**正文，
+# 不是空壳（见 docs/design/web/agent-readable.md）。
+User-agent: *
+Allow: /docs/
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /

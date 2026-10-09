@@ -1,9 +1,11 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { FRAME_CHANNEL, FRAME_CHANNEL_VERSION, FRAME_IMAGE_PREVIEW_TYPE } from '../galaxy/frame-channel'
-import { FrameBridgePage } from './FrameBridgePage'
+import { FRAME_CHANNEL, FRAME_CHANNEL_VERSION, FRAME_IMAGE_PREVIEW_TYPE } from '../../galaxy/frame-channel'
+import { ChapterPage } from '../ChapterPage'
+import { chapterBySlug } from './manifest'
 
 // React 19 要求显式声明这是 act 环境，否则每次 render 都会打印警告。
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -18,7 +20,11 @@ async function renderPage(): Promise<HTMLElement> {
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<FrameBridgePage />)
+    root?.render(
+      <MemoryRouter>
+        <ChapterPage chapter={chapterBySlug('frame-bridge')} />
+      </MemoryRouter>,
+    )
   })
   return container
 }

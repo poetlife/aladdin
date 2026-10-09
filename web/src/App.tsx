@@ -2,9 +2,9 @@ import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { useEffect } from 'react'
 import { RouterProvider } from 'react-router-dom'
+import type { RouterProviderProps } from 'react-router-dom'
 
 import { SessionProvider } from './auth'
-import { router } from './router'
 import { ThemeProvider, useTheme } from './theme'
 
 /**
@@ -13,11 +13,15 @@ import { ThemeProvider, useTheme } from './theme'
  * 层级顺序是有意义的：ThemeProvider 先定下明暗（它要算给 ConfigProvider），
  * ConfigProvider 提供主题与本地化，AntdApp 提供 message/notification 的上下文，
  * SessionProvider 提供会话与权限——页面在这四者之内。
+ *
+ * **路由由外面传进来，不在这里 import。** 预渲染要在 Node 里把同一棵组件树渲染成
+ * 字符串，而那时用的是一棵内存路由；`createBrowserRouter` 在 Node 里会直接抛错
+ *（没有 `window.history`）。路由表因此单独放在 routes.tsx，由两侧各自建实例。
  */
-export function App(): React.ReactNode {
+export function App({ router }: { router: RouterProviderProps['router'] }): React.ReactNode {
   return (
     <ThemeProvider>
-      <ThemedApp />
+      <ThemedApp router={router} />
     </ThemeProvider>
   )
 }
@@ -28,7 +32,7 @@ export function App(): React.ReactNode {
  * 明暗只换算法、不换 token：颜色全部由 antd 从同一份种子推导，
  * 界面各处再通过 `theme.useToken()` 取，避免出现第二套手写的色值。
  */
-function ThemedApp(): React.ReactNode {
+function ThemedApp({ router }: { router: RouterProviderProps['router'] }): React.ReactNode {
   const { resolved } = useTheme()
 
   return (
