@@ -1,6 +1,6 @@
 # 对象存储直传
 
-> 本文档是**"用户上传的字节怎么进对象存储"**的唯一信源，被个人档案（头像）与 galaxy（资产）两处消费。
+> 本文档是**"用户上传的字节怎么进对象存储"**的唯一信源，被个人档案（头像）与 galaxy（资产、附件）几处消费。
 > 它描述的是**一个公共机制**，不是某个模块的特性——两处各写一份的表现是"换一个模块上传，安全性质就变了一套"。
 
 ## 背景与目标
@@ -107,6 +107,21 @@
 
 核对落在**提交**而不是上架，有一个直接的理由：**上架已经不再经过字节**——它改成让存储把对象复制进公开区（见 [../galaxy/publication.md](../galaxy/publication.md) 的"媒体上架"），那里没有字节可看。这也让资产与文本条目一致起来：文本一直是在提交时核对的。
 
+### 下发：短时读取地址，以及"强制下载"那一档
+
+下发一律给地址、服务端不代理字节。地址有两种，差别只有**响应头是不是被固定**：
+
+| 档 | 响应头 | 谁用 |
+|----|--------|------|
+| 普通读取 | 对象自己的元数据（写下去时是什么就是什么） | 头像、编辑态的资产与文本 |
+| **下载** | `Content-Type` 恒为中性的那一档、`Content-Disposition: attachment` | galaxy 的附件 |
+
+**下载那一档存在的理由**：附件收任意类型（zip、二进制，文件名也可能以 `.html` 结尾），而它**不给浏览器渲染的机会**——响应头由签发策略固定，不取上传时声明的任何值。这是"类型不限"能成立的前提（见 [galaxy/attachments.md](../galaxy/attachments.md)）。
+
+**响应头里唯一由调用方给的是文件名，因此它必须先滤一遍。** 文件名是客户端给的自由文本，可能含引号、反斜杠、控制字符与换行——直接拼进响应头就是一处响应头注入。过滤与限长**只在这一处做**（见 SSOT 注册表），调用方不得自己拼一段 disposition。
+
+**两种档的地址都是短时凭证**：在有效期内谁拿到都能用。因此它只下发给**已经通过归属校验**的调用者，且部署侧必须保证桶本身私有（见 [../galaxy/asset-library.md](../galaxy/asset-library.md)）。
+
 ### 未提交的对象
 
 签发之后没有提交（客户端放弃、网络中断、页面被关掉）时，对象留在私有区，而**元数据行不存在**。由此：
@@ -147,6 +162,8 @@
 | 提交核对存在性 | 对不存在的键提交失败（同上） |
 | 摘要被核对 | 声明一个与实际字节不符的摘要，提交失败且对象被删除（`internal/galaxy` 测试） |
 | 存储侧给不出摘要时回退 | 用一个"给不出摘要"的假存储，正确的摘要仍被放行、不符的仍被拒（同上） |
+| 下载地址的响应头被固定 | 签发的下载地址里带着中性的内容类型与 `attachment` 的 disposition，且**与上传时声明过的类型无关**（`internal/objectstore/cosupload` 测试） |
+| 文件名不构成头注入 | 含引号、反斜杠、换行与控制字符的文件名不产生额外的头，也不产生非法头（`internal/objectstore` 测试） |
 | 批量操作一次交下去 | 删一个多资产的工程时，假存储只被调用**一次**批量删除（同上） |
 | 不联网即可测 | 对象存储访问藏在接口后面，测试注入假实现；测试断言的是**策略内容**而不是"桶真的照做了"（`internal/objectstore` 与两处模块测试） |
 | 密钥不入日志 | 描述这项配置时只出桶地址、不出密钥（`internal/config` 测试） |
@@ -159,6 +176,7 @@
 |---------|---------|
 | 个人档案 — 头像 | 消费本机制：键为 `avatars/<主体标识>`，替换即原地覆盖（见 [profile/avatar-storage.md](../profile/avatar-storage.md)） |
 | galaxy — 资产库 | 消费本机制：键为 `galaxy/<工程标识>/<资产标识>`，一次上传一个新键（见 [galaxy/asset-library.md](../galaxy/asset-library.md)） |
+| galaxy — 工程附件 | 消费本机制：键为 `galaxy/<工程标识>/attachments/<附件标识>`，上传时声明中性的类型，下发走**强制下载**那一档（见 [galaxy/attachments.md](../galaxy/attachments.md)） |
 | 命令行 — galaxy | 消费本机制做资产直传：读的是与浏览器同一份凭证定义，实现在 [cmd/aladdin/direct-upload.go](../../../cmd/aladdin/direct-upload.go)（见 [galaxy/cli.md](../galaxy/cli.md)） |
 | 腾讯云 STS（`GetFederationToken`） | 用长期密钥换取被策略限定的临时凭证 |
 | 腾讯云 COS | **一个桶**：临时凭证的直传、Head、删除、签发读取地址；发布物的公开区对象也在这个桶里，靠逐对象的公开读与其余对象区分（见 [galaxy/asset-library.md](../galaxy/asset-library.md)） |
@@ -179,11 +197,12 @@
 
 | 职责 | 文件路径 |
 |------|---------|
-| 直传的领域契约（签发凭证、Head、删除、读取地址）与内存实现 | [internal/objectstore/upload.go](../../../internal/objectstore/upload.go) |
+| 直传的领域契约（签发凭证、Head、删除、读取地址、**下载的响应头与签发**）与内存实现 | [internal/objectstore/upload.go](../../../internal/objectstore/upload.go) |
 | 策略的构造（动作、资源、类型与长度条件） | [internal/objectstore/cosupload/policy.go](../../../internal/objectstore/cosupload/policy.go) |
-| COS 实现（换取临时凭证、Head、删除、签发读取地址） | [internal/objectstore/cosupload/](../../../internal/objectstore/cosupload/) |
+| COS 实现（换取临时凭证、Head、删除、签发读取与下载地址） | [internal/objectstore/cosupload/](../../../internal/objectstore/cosupload/) |
 | 头像的消费（键、白名单、上限） | [internal/profile/avatar.go](../../../internal/profile/avatar.go) |
 | 资产的消费（键、白名单、分档上限、提交时的摘要与媒体类型） | [internal/galaxy/asset.go](../../../internal/galaxy/asset.go) |
+| 附件的消费（键、单文件上限与工程配额、下载地址） | [internal/galaxy/attachment.go](../../../internal/galaxy/attachment.go) |
 | 客户端侧直传 — 浏览器 | [web/src/upload/direct-upload.ts](../../../web/src/upload/direct-upload.ts) |
 | 客户端侧直传 — 命令行 | [cmd/aladdin/direct-upload.go](../../../cmd/aladdin/direct-upload.go) |
 

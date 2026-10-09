@@ -97,6 +97,24 @@ const (
 	// GalaxyServiceUpdateAssetProcedure is the fully-qualified name of the GalaxyService's UpdateAsset
 	// RPC.
 	GalaxyServiceUpdateAssetProcedure = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
+	// GalaxyServiceListAttachmentsProcedure is the fully-qualified name of the GalaxyService's
+	// ListAttachments RPC.
+	GalaxyServiceListAttachmentsProcedure = "/aladdin.galaxy.v1.GalaxyService/ListAttachments"
+	// GalaxyServiceBeginAttachmentUploadProcedure is the fully-qualified name of the GalaxyService's
+	// BeginAttachmentUpload RPC.
+	GalaxyServiceBeginAttachmentUploadProcedure = "/aladdin.galaxy.v1.GalaxyService/BeginAttachmentUpload"
+	// GalaxyServiceCommitAttachmentUploadProcedure is the fully-qualified name of the GalaxyService's
+	// CommitAttachmentUpload RPC.
+	GalaxyServiceCommitAttachmentUploadProcedure = "/aladdin.galaxy.v1.GalaxyService/CommitAttachmentUpload"
+	// GalaxyServiceUpdateAttachmentProcedure is the fully-qualified name of the GalaxyService's
+	// UpdateAttachment RPC.
+	GalaxyServiceUpdateAttachmentProcedure = "/aladdin.galaxy.v1.GalaxyService/UpdateAttachment"
+	// GalaxyServiceDeleteAttachmentProcedure is the fully-qualified name of the GalaxyService's
+	// DeleteAttachment RPC.
+	GalaxyServiceDeleteAttachmentProcedure = "/aladdin.galaxy.v1.GalaxyService/DeleteAttachment"
+	// GalaxyServiceGetAttachmentDownloadURLProcedure is the fully-qualified name of the GalaxyService's
+	// GetAttachmentDownloadURL RPC.
+	GalaxyServiceGetAttachmentDownloadURLProcedure = "/aladdin.galaxy.v1.GalaxyService/GetAttachmentDownloadURL"
 	// GalaxyServicePublishProcedure is the fully-qualified name of the GalaxyService's Publish RPC.
 	GalaxyServicePublishProcedure = "/aladdin.galaxy.v1.GalaxyService/Publish"
 	// GalaxyServiceUnpublishProcedure is the fully-qualified name of the GalaxyService's Unpublish RPC.
@@ -260,6 +278,59 @@ type GalaxyServiceClient interface {
 	// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
 	// 备注，标签以请求集合**整体替换**。
 	UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error)
+	// 列出工程的**附件**（二进制、zip、导出文件），含**短时有效**的下载地址。
+	//
+	// 附件与资产并列而不混用（见 docs/design/galaxy/attachments.md）：资产会被网页
+	// 引用、由浏览器渲染；附件只给工程成员下载。**类型不限**，因此这条路径上没有
+	// 白名单，也没有标签与筛选——它们是构建产物，一个工程几十份就到头了。
+	//
+	// 它**不按任何东西筛选**：筛选是资产那边的问题（那里有几百张图与标签）。
+	ListAttachments(context.Context, *connect.Request[v1.ListAttachmentsRequest]) (*connect.Response[v1.ListAttachmentsResponse], error)
+	// 开始一次附件上传：分配附件标识并签发一份直传凭证。
+	//
+	// 与 BeginAssetUpload 同构，差别有三处，都由"附件收任意类型"推出：
+	//
+	//   - **请求里没有内容类型**：附件的下发类型恒为中性那一档（见 Attachment），
+	//     因此上传时那一次声明不产生任何对外可见的后果。存储侧的策略里仍带一条
+	//     类型规则——**上限绑在它上面**；
+	//   - **上限是一档**（如 500 MiB），不按类别分档；
+	//   - **另有一道工程总量配额**：声明的大小加上已占用的量超过上限时被拒。
+	//
+	// 两者都是**按声明值早退**，不是安全边界：真正的判定在 CommitAttachmentUpload，
+	// 用的是核对出来的真实字节数。
+	BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error)
+	// 提交一次附件上传：核对字节确实到了、内容与声明的摘要相符，写入附件元数据。
+	//
+	// 核对顺序与 CommitAssetUpload 相同（存在性 → 真实字节数 → 单文件上限 →
+	// 工程配额 → 摘要），任一不过即删掉那个对象并拒绝。**配额在这里是用真实字节数
+	// 复核的**：声明一个小值、传一个大值上来，走到这一步就被挡住。
+	//
+	// 标注的版本在这里**重新校验**：两次调用之间服务端不保留任何状态，那正是
+	// "未提交的上传不留痕迹"的实现方式。
+	CommitAttachmentUpload(context.Context, *connect.Request[v1.CommitAttachmentUploadRequest]) (*connect.Response[v1.CommitAttachmentUploadResponse], error)
+	// 改一份附件的说明。
+	//
+	// **它只改说明**：文件名、字节数、内容摘要、标注的版本与对象键在改动前后逐字
+	// 不变，因此已经发出去的下载地址指向的还是同一份字节（与 UpdateAsset 同源）。
+	// 请求表达**期望的完整状态**：空串清空说明。
+	UpdateAttachment(context.Context, *connect.Request[v1.UpdateAttachmentRequest]) (*connect.Response[v1.UpdateAttachmentResponse], error)
+	// 删除一份附件：删私有区的对象与元数据行。
+	//
+	// **它不被任何引用拦阻。** 附件不被文件组引用；版本标注也不构成引用——标注在
+	// 版本删除时被清空，而不是反过来拦住删除（见 docs/design/galaxy/attachments.md）。
+	// 这与"被引用的资产不可删"是两件事：那条的理由是版本不可变意味着"它此后永远
+	// 可以发布"，而附件不参与发布。
+	DeleteAttachment(context.Context, *connect.Request[v1.DeleteAttachmentRequest]) (*connect.Response[v1.DeleteAttachmentResponse], error)
+	// 签发一份附件的**下载地址**（短时有效）。
+	//
+	// 它刻意**不标 idempotency_level**：签名本身是无副作用的，但这条响应里带的是
+	// 一份**短时凭证**——把它标成"可安全用 GET"会让那条地址进浏览器的缓存与各级
+	// 访问日志。与 PollDeviceLogin 不标是同一条理由（见 AGENTS.md 的传输方式一节）。
+	//
+	// 下载的响应头由签发策略固定（中性的内容类型 + `attachment`），因此不管这份
+	// 字节是什么、文件名以什么结尾，浏览器都只会把它存下来。调用方拿到的是**整条
+	// 地址**，不要自己拼来源头。
+	GetAttachmentDownloadURL(context.Context, *connect.Request[v1.GetAttachmentDownloadURLRequest]) (*connect.Response[v1.GetAttachmentDownloadURLResponse], error)
 	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
@@ -454,6 +525,43 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(galaxyServiceMethods.ByName("UpdateAsset")),
 			connect.WithClientOptions(opts...),
 		),
+		listAttachments: connect.NewClient[v1.ListAttachmentsRequest, v1.ListAttachmentsResponse](
+			httpClient,
+			baseURL+GalaxyServiceListAttachmentsProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("ListAttachments")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		beginAttachmentUpload: connect.NewClient[v1.BeginAttachmentUploadRequest, v1.BeginAttachmentUploadResponse](
+			httpClient,
+			baseURL+GalaxyServiceBeginAttachmentUploadProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("BeginAttachmentUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		commitAttachmentUpload: connect.NewClient[v1.CommitAttachmentUploadRequest, v1.CommitAttachmentUploadResponse](
+			httpClient,
+			baseURL+GalaxyServiceCommitAttachmentUploadProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("CommitAttachmentUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		updateAttachment: connect.NewClient[v1.UpdateAttachmentRequest, v1.UpdateAttachmentResponse](
+			httpClient,
+			baseURL+GalaxyServiceUpdateAttachmentProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("UpdateAttachment")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteAttachment: connect.NewClient[v1.DeleteAttachmentRequest, v1.DeleteAttachmentResponse](
+			httpClient,
+			baseURL+GalaxyServiceDeleteAttachmentProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("DeleteAttachment")),
+			connect.WithClientOptions(opts...),
+		),
+		getAttachmentDownloadURL: connect.NewClient[v1.GetAttachmentDownloadURLRequest, v1.GetAttachmentDownloadURLResponse](
+			httpClient,
+			baseURL+GalaxyServiceGetAttachmentDownloadURLProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("GetAttachmentDownloadURL")),
+			connect.WithClientOptions(opts...),
+		),
 		publish: connect.NewClient[v1.PublishRequest, v1.PublishResponse](
 			httpClient,
 			baseURL+GalaxyServicePublishProcedure,
@@ -484,32 +592,38 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // galaxyServiceClient implements GalaxyServiceClient.
 type galaxyServiceClient struct {
-	getCapabilities     *connect.Client[v1.GetCapabilitiesRequest, v1.GetCapabilitiesResponse]
-	listProjects        *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
-	createProject       *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
-	addProjectSlot      *connect.Client[v1.AddProjectSlotRequest, v1.AddProjectSlotResponse]
-	getProject          *connect.Client[v1.GetProjectRequest, v1.GetProjectResponse]
-	updateProject       *connect.Client[v1.UpdateProjectRequest, v1.UpdateProjectResponse]
-	deleteProject       *connect.Client[v1.DeleteProjectRequest, v1.DeleteProjectResponse]
-	getDraft            *connect.Client[v1.GetDraftRequest, v1.GetDraftResponse]
-	pushDraft           *connect.Client[v1.PushDraftRequest, v1.PushDraftResponse]
-	saveVersion         *connect.Client[v1.SaveVersionRequest, v1.SaveVersionResponse]
-	listVersions        *connect.Client[v1.ListVersionsRequest, v1.ListVersionsResponse]
-	getVersion          *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
-	deleteVersion       *connect.Client[v1.DeleteVersionRequest, v1.DeleteVersionResponse]
-	validateDraft       *connect.Client[v1.ValidateDraftRequest, v1.ValidateDraftResponse]
-	previewDraft        *connect.Client[v1.PreviewDraftRequest, v1.PreviewDraftResponse]
-	beginContentUpload  *connect.Client[v1.BeginContentUploadRequest, v1.BeginContentUploadResponse]
-	commitContentUpload *connect.Client[v1.CommitContentUploadRequest, v1.CommitContentUploadResponse]
-	listAssets          *connect.Client[v1.ListAssetsRequest, v1.ListAssetsResponse]
-	beginAssetUpload    *connect.Client[v1.BeginAssetUploadRequest, v1.BeginAssetUploadResponse]
-	commitAssetUpload   *connect.Client[v1.CommitAssetUploadRequest, v1.CommitAssetUploadResponse]
-	deleteAsset         *connect.Client[v1.DeleteAssetRequest, v1.DeleteAssetResponse]
-	updateAsset         *connect.Client[v1.UpdateAssetRequest, v1.UpdateAssetResponse]
-	publish             *connect.Client[v1.PublishRequest, v1.PublishResponse]
-	unpublish           *connect.Client[v1.UnpublishRequest, v1.UnpublishResponse]
-	getPublication      *connect.Client[v1.GetPublicationRequest, v1.GetPublicationResponse]
-	resolveSharedPage   *connect.Client[v1.ResolveSharedPageRequest, v1.ResolveSharedPageResponse]
+	getCapabilities          *connect.Client[v1.GetCapabilitiesRequest, v1.GetCapabilitiesResponse]
+	listProjects             *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
+	createProject            *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
+	addProjectSlot           *connect.Client[v1.AddProjectSlotRequest, v1.AddProjectSlotResponse]
+	getProject               *connect.Client[v1.GetProjectRequest, v1.GetProjectResponse]
+	updateProject            *connect.Client[v1.UpdateProjectRequest, v1.UpdateProjectResponse]
+	deleteProject            *connect.Client[v1.DeleteProjectRequest, v1.DeleteProjectResponse]
+	getDraft                 *connect.Client[v1.GetDraftRequest, v1.GetDraftResponse]
+	pushDraft                *connect.Client[v1.PushDraftRequest, v1.PushDraftResponse]
+	saveVersion              *connect.Client[v1.SaveVersionRequest, v1.SaveVersionResponse]
+	listVersions             *connect.Client[v1.ListVersionsRequest, v1.ListVersionsResponse]
+	getVersion               *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
+	deleteVersion            *connect.Client[v1.DeleteVersionRequest, v1.DeleteVersionResponse]
+	validateDraft            *connect.Client[v1.ValidateDraftRequest, v1.ValidateDraftResponse]
+	previewDraft             *connect.Client[v1.PreviewDraftRequest, v1.PreviewDraftResponse]
+	beginContentUpload       *connect.Client[v1.BeginContentUploadRequest, v1.BeginContentUploadResponse]
+	commitContentUpload      *connect.Client[v1.CommitContentUploadRequest, v1.CommitContentUploadResponse]
+	listAssets               *connect.Client[v1.ListAssetsRequest, v1.ListAssetsResponse]
+	beginAssetUpload         *connect.Client[v1.BeginAssetUploadRequest, v1.BeginAssetUploadResponse]
+	commitAssetUpload        *connect.Client[v1.CommitAssetUploadRequest, v1.CommitAssetUploadResponse]
+	deleteAsset              *connect.Client[v1.DeleteAssetRequest, v1.DeleteAssetResponse]
+	updateAsset              *connect.Client[v1.UpdateAssetRequest, v1.UpdateAssetResponse]
+	listAttachments          *connect.Client[v1.ListAttachmentsRequest, v1.ListAttachmentsResponse]
+	beginAttachmentUpload    *connect.Client[v1.BeginAttachmentUploadRequest, v1.BeginAttachmentUploadResponse]
+	commitAttachmentUpload   *connect.Client[v1.CommitAttachmentUploadRequest, v1.CommitAttachmentUploadResponse]
+	updateAttachment         *connect.Client[v1.UpdateAttachmentRequest, v1.UpdateAttachmentResponse]
+	deleteAttachment         *connect.Client[v1.DeleteAttachmentRequest, v1.DeleteAttachmentResponse]
+	getAttachmentDownloadURL *connect.Client[v1.GetAttachmentDownloadURLRequest, v1.GetAttachmentDownloadURLResponse]
+	publish                  *connect.Client[v1.PublishRequest, v1.PublishResponse]
+	unpublish                *connect.Client[v1.UnpublishRequest, v1.UnpublishResponse]
+	getPublication           *connect.Client[v1.GetPublicationRequest, v1.GetPublicationResponse]
+	resolveSharedPage        *connect.Client[v1.ResolveSharedPageRequest, v1.ResolveSharedPageResponse]
 }
 
 // GetCapabilities calls aladdin.galaxy.v1.GalaxyService.GetCapabilities.
@@ -620,6 +734,36 @@ func (c *galaxyServiceClient) DeleteAsset(ctx context.Context, req *connect.Requ
 // UpdateAsset calls aladdin.galaxy.v1.GalaxyService.UpdateAsset.
 func (c *galaxyServiceClient) UpdateAsset(ctx context.Context, req *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error) {
 	return c.updateAsset.CallUnary(ctx, req)
+}
+
+// ListAttachments calls aladdin.galaxy.v1.GalaxyService.ListAttachments.
+func (c *galaxyServiceClient) ListAttachments(ctx context.Context, req *connect.Request[v1.ListAttachmentsRequest]) (*connect.Response[v1.ListAttachmentsResponse], error) {
+	return c.listAttachments.CallUnary(ctx, req)
+}
+
+// BeginAttachmentUpload calls aladdin.galaxy.v1.GalaxyService.BeginAttachmentUpload.
+func (c *galaxyServiceClient) BeginAttachmentUpload(ctx context.Context, req *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error) {
+	return c.beginAttachmentUpload.CallUnary(ctx, req)
+}
+
+// CommitAttachmentUpload calls aladdin.galaxy.v1.GalaxyService.CommitAttachmentUpload.
+func (c *galaxyServiceClient) CommitAttachmentUpload(ctx context.Context, req *connect.Request[v1.CommitAttachmentUploadRequest]) (*connect.Response[v1.CommitAttachmentUploadResponse], error) {
+	return c.commitAttachmentUpload.CallUnary(ctx, req)
+}
+
+// UpdateAttachment calls aladdin.galaxy.v1.GalaxyService.UpdateAttachment.
+func (c *galaxyServiceClient) UpdateAttachment(ctx context.Context, req *connect.Request[v1.UpdateAttachmentRequest]) (*connect.Response[v1.UpdateAttachmentResponse], error) {
+	return c.updateAttachment.CallUnary(ctx, req)
+}
+
+// DeleteAttachment calls aladdin.galaxy.v1.GalaxyService.DeleteAttachment.
+func (c *galaxyServiceClient) DeleteAttachment(ctx context.Context, req *connect.Request[v1.DeleteAttachmentRequest]) (*connect.Response[v1.DeleteAttachmentResponse], error) {
+	return c.deleteAttachment.CallUnary(ctx, req)
+}
+
+// GetAttachmentDownloadURL calls aladdin.galaxy.v1.GalaxyService.GetAttachmentDownloadURL.
+func (c *galaxyServiceClient) GetAttachmentDownloadURL(ctx context.Context, req *connect.Request[v1.GetAttachmentDownloadURLRequest]) (*connect.Response[v1.GetAttachmentDownloadURLResponse], error) {
+	return c.getAttachmentDownloadURL.CallUnary(ctx, req)
 }
 
 // Publish calls aladdin.galaxy.v1.GalaxyService.Publish.
@@ -793,6 +937,59 @@ type GalaxyServiceHandler interface {
 	// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
 	// 备注，标签以请求集合**整体替换**。
 	UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error)
+	// 列出工程的**附件**（二进制、zip、导出文件），含**短时有效**的下载地址。
+	//
+	// 附件与资产并列而不混用（见 docs/design/galaxy/attachments.md）：资产会被网页
+	// 引用、由浏览器渲染；附件只给工程成员下载。**类型不限**，因此这条路径上没有
+	// 白名单，也没有标签与筛选——它们是构建产物，一个工程几十份就到头了。
+	//
+	// 它**不按任何东西筛选**：筛选是资产那边的问题（那里有几百张图与标签）。
+	ListAttachments(context.Context, *connect.Request[v1.ListAttachmentsRequest]) (*connect.Response[v1.ListAttachmentsResponse], error)
+	// 开始一次附件上传：分配附件标识并签发一份直传凭证。
+	//
+	// 与 BeginAssetUpload 同构，差别有三处，都由"附件收任意类型"推出：
+	//
+	//   - **请求里没有内容类型**：附件的下发类型恒为中性那一档（见 Attachment），
+	//     因此上传时那一次声明不产生任何对外可见的后果。存储侧的策略里仍带一条
+	//     类型规则——**上限绑在它上面**；
+	//   - **上限是一档**（如 500 MiB），不按类别分档；
+	//   - **另有一道工程总量配额**：声明的大小加上已占用的量超过上限时被拒。
+	//
+	// 两者都是**按声明值早退**，不是安全边界：真正的判定在 CommitAttachmentUpload，
+	// 用的是核对出来的真实字节数。
+	BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error)
+	// 提交一次附件上传：核对字节确实到了、内容与声明的摘要相符，写入附件元数据。
+	//
+	// 核对顺序与 CommitAssetUpload 相同（存在性 → 真实字节数 → 单文件上限 →
+	// 工程配额 → 摘要），任一不过即删掉那个对象并拒绝。**配额在这里是用真实字节数
+	// 复核的**：声明一个小值、传一个大值上来，走到这一步就被挡住。
+	//
+	// 标注的版本在这里**重新校验**：两次调用之间服务端不保留任何状态，那正是
+	// "未提交的上传不留痕迹"的实现方式。
+	CommitAttachmentUpload(context.Context, *connect.Request[v1.CommitAttachmentUploadRequest]) (*connect.Response[v1.CommitAttachmentUploadResponse], error)
+	// 改一份附件的说明。
+	//
+	// **它只改说明**：文件名、字节数、内容摘要、标注的版本与对象键在改动前后逐字
+	// 不变，因此已经发出去的下载地址指向的还是同一份字节（与 UpdateAsset 同源）。
+	// 请求表达**期望的完整状态**：空串清空说明。
+	UpdateAttachment(context.Context, *connect.Request[v1.UpdateAttachmentRequest]) (*connect.Response[v1.UpdateAttachmentResponse], error)
+	// 删除一份附件：删私有区的对象与元数据行。
+	//
+	// **它不被任何引用拦阻。** 附件不被文件组引用；版本标注也不构成引用——标注在
+	// 版本删除时被清空，而不是反过来拦住删除（见 docs/design/galaxy/attachments.md）。
+	// 这与"被引用的资产不可删"是两件事：那条的理由是版本不可变意味着"它此后永远
+	// 可以发布"，而附件不参与发布。
+	DeleteAttachment(context.Context, *connect.Request[v1.DeleteAttachmentRequest]) (*connect.Response[v1.DeleteAttachmentResponse], error)
+	// 签发一份附件的**下载地址**（短时有效）。
+	//
+	// 它刻意**不标 idempotency_level**：签名本身是无副作用的，但这条响应里带的是
+	// 一份**短时凭证**——把它标成"可安全用 GET"会让那条地址进浏览器的缓存与各级
+	// 访问日志。与 PollDeviceLogin 不标是同一条理由（见 AGENTS.md 的传输方式一节）。
+	//
+	// 下载的响应头由签发策略固定（中性的内容类型 + `attachment`），因此不管这份
+	// 字节是什么、文件名以什么结尾，浏览器都只会把它存下来。调用方拿到的是**整条
+	// 地址**，不要自己拼来源头。
+	GetAttachmentDownloadURL(context.Context, *connect.Request[v1.GetAttachmentDownloadURLRequest]) (*connect.Response[v1.GetAttachmentDownloadURLResponse], error)
 	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
@@ -983,6 +1180,43 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(galaxyServiceMethods.ByName("UpdateAsset")),
 		connect.WithHandlerOptions(opts...),
 	)
+	galaxyServiceListAttachmentsHandler := connect.NewUnaryHandler(
+		GalaxyServiceListAttachmentsProcedure,
+		svc.ListAttachments,
+		connect.WithSchema(galaxyServiceMethods.ByName("ListAttachments")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	galaxyServiceBeginAttachmentUploadHandler := connect.NewUnaryHandler(
+		GalaxyServiceBeginAttachmentUploadProcedure,
+		svc.BeginAttachmentUpload,
+		connect.WithSchema(galaxyServiceMethods.ByName("BeginAttachmentUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	galaxyServiceCommitAttachmentUploadHandler := connect.NewUnaryHandler(
+		GalaxyServiceCommitAttachmentUploadProcedure,
+		svc.CommitAttachmentUpload,
+		connect.WithSchema(galaxyServiceMethods.ByName("CommitAttachmentUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	galaxyServiceUpdateAttachmentHandler := connect.NewUnaryHandler(
+		GalaxyServiceUpdateAttachmentProcedure,
+		svc.UpdateAttachment,
+		connect.WithSchema(galaxyServiceMethods.ByName("UpdateAttachment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	galaxyServiceDeleteAttachmentHandler := connect.NewUnaryHandler(
+		GalaxyServiceDeleteAttachmentProcedure,
+		svc.DeleteAttachment,
+		connect.WithSchema(galaxyServiceMethods.ByName("DeleteAttachment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	galaxyServiceGetAttachmentDownloadURLHandler := connect.NewUnaryHandler(
+		GalaxyServiceGetAttachmentDownloadURLProcedure,
+		svc.GetAttachmentDownloadURL,
+		connect.WithSchema(galaxyServiceMethods.ByName("GetAttachmentDownloadURL")),
+		connect.WithHandlerOptions(opts...),
+	)
 	galaxyServicePublishHandler := connect.NewUnaryHandler(
 		GalaxyServicePublishProcedure,
 		svc.Publish,
@@ -1054,6 +1288,18 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 			galaxyServiceDeleteAssetHandler.ServeHTTP(w, r)
 		case GalaxyServiceUpdateAssetProcedure:
 			galaxyServiceUpdateAssetHandler.ServeHTTP(w, r)
+		case GalaxyServiceListAttachmentsProcedure:
+			galaxyServiceListAttachmentsHandler.ServeHTTP(w, r)
+		case GalaxyServiceBeginAttachmentUploadProcedure:
+			galaxyServiceBeginAttachmentUploadHandler.ServeHTTP(w, r)
+		case GalaxyServiceCommitAttachmentUploadProcedure:
+			galaxyServiceCommitAttachmentUploadHandler.ServeHTTP(w, r)
+		case GalaxyServiceUpdateAttachmentProcedure:
+			galaxyServiceUpdateAttachmentHandler.ServeHTTP(w, r)
+		case GalaxyServiceDeleteAttachmentProcedure:
+			galaxyServiceDeleteAttachmentHandler.ServeHTTP(w, r)
+		case GalaxyServiceGetAttachmentDownloadURLProcedure:
+			galaxyServiceGetAttachmentDownloadURLHandler.ServeHTTP(w, r)
 		case GalaxyServicePublishProcedure:
 			galaxyServicePublishHandler.ServeHTTP(w, r)
 		case GalaxyServiceUnpublishProcedure:
@@ -1157,6 +1403,30 @@ func (UnimplementedGalaxyServiceHandler) DeleteAsset(context.Context, *connect.R
 
 func (UnimplementedGalaxyServiceHandler) UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.UpdateAsset is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) ListAttachments(context.Context, *connect.Request[v1.ListAttachmentsRequest]) (*connect.Response[v1.ListAttachmentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.ListAttachments is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.BeginAttachmentUpload is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) CommitAttachmentUpload(context.Context, *connect.Request[v1.CommitAttachmentUploadRequest]) (*connect.Response[v1.CommitAttachmentUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.CommitAttachmentUpload is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) UpdateAttachment(context.Context, *connect.Request[v1.UpdateAttachmentRequest]) (*connect.Response[v1.UpdateAttachmentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.UpdateAttachment is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) DeleteAttachment(context.Context, *connect.Request[v1.DeleteAttachmentRequest]) (*connect.Response[v1.DeleteAttachmentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.DeleteAttachment is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) GetAttachmentDownloadURL(context.Context, *connect.Request[v1.GetAttachmentDownloadURLRequest]) (*connect.Response[v1.GetAttachmentDownloadURLResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.GetAttachmentDownloadURL is not implemented"))
 }
 
 func (UnimplementedGalaxyServiceHandler) Publish(context.Context, *connect.Request[v1.PublishRequest]) (*connect.Response[v1.PublishResponse], error) {

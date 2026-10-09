@@ -193,6 +193,90 @@ export async function deleteAsset(projectId: string, assetId: string) {
   return galaxyClient().deleteAsset({ projectId, assetId })
 }
 
+/**
+ * 列出工程里的**附件**（二进制、zip、导出文件），含短时下载地址。
+ *
+ * 附件与资产并列而不混用（见 docs/design/galaxy/attachments.md）：资产会被网页
+ * 引用、由浏览器渲染；附件只给工程成员下载，类型不限。因此这里没有筛选参数——
+ * 它们是构建产物，一个工程几十份就到头了。
+ *
+ * 那个地址是**短时凭证**，响应头被固定成强制下载：拿它 `<a download>` 或直接
+ * 打开都只会把文件存下来，不会渲染。
+ */
+export async function listAttachments(projectId: string) {
+  return galaxyClient().listAttachments({ projectId })
+}
+
+/**
+ * 开始一次附件上传：服务端分配附件标识并签发一份只对那一个键、只允许写、短时
+ * 有效的直传凭证。
+ *
+ * **请求里没有内容类型**：附件的下发类型恒为中性那一档（响应头由签发策略固定），
+ * 因此上传时那一次声明不产生任何对外可见的后果。服务端把"单文件上限"与"工程
+ * 总量配额"两件事按声明值早退一次，真正的判定在提交那一步。
+ *
+ * versionId 是可选**标注**（"这一份是那一版的构建产物"），它不是引用。
+ */
+export async function beginAttachmentUpload(projectId: string, versionId: string, sizeBytes: number) {
+  return galaxyClient().beginAttachmentUpload({
+    projectId,
+    versionId,
+    sizeBytes: BigInt(sizeBytes),
+  })
+}
+
+/**
+ * 提交一次附件上传。
+ *
+ * digest 是文件字节的 **SHA-256 十六进制**（见 upload/content-digest.ts），由浏览
+ * 器算好带上来——服务端没有字节可以算它。它在提交时被核对（让存储侧算，给不出时
+ * 读回自己算），不符即拒绝并删掉那个对象。
+ *
+ * filename 只进下载响应头（服务端会先滤掉会破坏头的字符）与展示，不进对象键。
+ */
+export async function commitAttachmentUpload(
+  projectId: string,
+  attachmentId: string,
+  versionId: string,
+  digest: string,
+  filename: string,
+  description = '',
+) {
+  return galaxyClient().commitAttachmentUpload({
+    projectId,
+    attachmentId,
+    versionId,
+    digest,
+    filename,
+    description,
+  })
+}
+
+/**
+ * 改一份附件的说明。表达的是**期望的完整状态**：空串清空。
+ *
+ * 它只动说明：文件名、字节数、摘要、标注的版本与对象键都不变，因此已经发出去的
+ * 下载地址指向的还是同一份字节。
+ */
+export async function updateAttachment(projectId: string, attachmentId: string, description: string) {
+  return galaxyClient().updateAttachment({ projectId, attachmentId, description })
+}
+
+/** 删除一份附件。**不被任何引用拦阻**（版本标注不是引用）。 */
+export async function deleteAttachment(projectId: string, attachmentId: string) {
+  return galaxyClient().deleteAttachment({ projectId, attachmentId })
+}
+
+/**
+ * 重新签发一份附件的下载地址。
+ *
+ * 列表里已经带了一条地址，但它只有几分钟；用户隔一会儿再点下载就该重新签一次。
+ * **不要自己拼地址**：响应头是签发策略定下来的，自己拼一条就少了那一层保证。
+ */
+export async function getAttachmentDownloadURL(projectId: string, attachmentId: string) {
+  return galaxyClient().getAttachmentDownloadURL({ projectId, attachmentId })
+}
+
 /** 发布**某一个槽**的一个版本。只能发布版本，不能发布草稿。 */
 export async function publish(projectId: string, slot: ContentSlot, versionId: string) {
   return galaxyClient().publish({ projectId, slot, versionId })

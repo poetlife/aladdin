@@ -1,6 +1,6 @@
 import { Button, Dropdown, Flex, Segmented, Space } from 'antd'
 import type { MenuProps } from 'antd'
-import { ArrowLeft, ChevronDown, Ellipsis, History, Images, Layers, Plus, Rocket } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Ellipsis, History, Images, Layers, Package, Plus, Rocket } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import {
@@ -53,6 +53,8 @@ interface WorkbenchTopBarProps {
   contentEnabled: boolean
   /** 资产面板是否可以打开（能力启用且持有读权限）。 */
   assetPanelEnabled: boolean
+  /** 附件面板是否可以打开（能力启用且持有读权限）。 */
+  attachmentPanelEnabled: boolean
   versionBusy: boolean
   publishBusy: boolean
   /**
@@ -66,6 +68,7 @@ interface WorkbenchTopBarProps {
   draftEntries: readonly FileEntry[]
   onOpenAssets: () => void
   onOpenVersions: () => void
+  onOpenAttachments: () => void
   onSaveVersion: () => void
   onPublish: (versionId: string) => void
   onProjectChange: (project: Project) => void
@@ -105,12 +108,14 @@ export function WorkbenchTopBar({
   publishEnabled,
   contentEnabled,
   assetPanelEnabled,
+  attachmentPanelEnabled,
   versionBusy,
   publishBusy,
   draftHasProblems,
   draftEntries,
   onOpenAssets,
   onOpenVersions,
+  onOpenAttachments,
   onSaveVersion,
   onPublish,
   onProjectChange,
@@ -195,6 +200,14 @@ export function WorkbenchTopBar({
     </Button>
   )
 
+  // 附件与资产是两个入口：资产是"页面要用的素材"，附件是"给成员下载的构建产物"，
+  // 两者的类型规则与去向都不同（见 docs/design/galaxy/attachments.md）。
+  const attachmentsButton = attachmentPanelEnabled && (
+    <Button icon={<Package size={16} />} onClick={onOpenAttachments}>
+      附件
+    </Button>
+  )
+
   const versionsButton = contentEnabled && (
     <Button icon={<History size={16} />} onClick={onOpenVersions}>
       版本
@@ -257,6 +270,9 @@ export function WorkbenchTopBar({
     const moreItems: NonNullable<MenuProps['items']> = []
     if (assetPanelEnabled) {
       moreItems.push({ key: 'assets', icon: <Images size={16} />, label: '资产' })
+    }
+    if (attachmentPanelEnabled) {
+      moreItems.push({ key: 'attachments', icon: <Package size={16} />, label: '附件' })
     }
     if (contentEnabled) {
       moreItems.push({ key: 'versions', icon: <History size={16} />, label: '版本' })
@@ -330,6 +346,10 @@ export function WorkbenchTopBar({
                     onOpenAssets()
                     return
                   }
+                  if (key === 'attachments') {
+                    onOpenAttachments()
+                    return
+                  }
                   if (key === 'versions') {
                     onOpenVersions()
                     return
@@ -366,6 +386,7 @@ export function WorkbenchTopBar({
 
       <Space wrap>
         {assetsButton}
+        {attachmentsButton}
         {versionsButton}
         {saveVersionButton}
         {publishButton}

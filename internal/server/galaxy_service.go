@@ -461,6 +461,135 @@ func (s *GalaxyService) DeleteAsset(ctx context.Context, req *connect.Request[ga
 	return connect.NewResponse(&galaxyv1.DeleteAssetResponse{}), nil
 }
 
+// ListAttachments 实现 GalaxyService。
+//
+// 附件与资产并列而不混用：这里没有筛选参数，也没有标签候选——它们是构建产物，
+// 一个工程几十份就到头了（见 docs/design/galaxy/attachments.md）。
+func (s *GalaxyService) ListAttachments(ctx context.Context, req *connect.Request[galaxyv1.ListAttachmentsRequest]) (*connect.Response[galaxyv1.ListAttachmentsResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	attachments, err := s.galaxy.ListAttachments(ctx, subject.ID, req.Msg.GetProjectId())
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	resp := &galaxyv1.ListAttachmentsResponse{Attachments: make([]*galaxyv1.Attachment, 0, len(attachments))}
+	for _, attachment := range attachments {
+		resp.Attachments = append(resp.Attachments, toProtoAttachment(attachment))
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// BeginAttachmentUpload 实现 GalaxyService：分配附件标识并签发直传凭证。
+//
+// 请求里**没有内容类型**：附件的下发类型恒为中性那一档，因此上传时那一次声明不
+// 产生任何对外可见的后果（见 proto 的说明）。凭证**不进日志**。
+func (s *GalaxyService) BeginAttachmentUpload(ctx context.Context, req *connect.Request[galaxyv1.BeginAttachmentUploadRequest]) (*connect.Response[galaxyv1.BeginAttachmentUploadResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	declaredSize, err := declaredBytes(req.Msg.GetSizeBytes())
+	if err != nil {
+		return nil, err
+	}
+	attachmentID, credential, err := s.galaxy.BeginAttachmentUpload(ctx, subject.ID,
+		req.Msg.GetProjectId(), req.Msg.GetVersionId(), declaredSize)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	s.logger.Info("已签发附件直传凭证",
+		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("attachment_id", attachmentID),
+		zap.String("subject_id", subject.ID),
+		zap.Uint64("declared_bytes", req.Msg.GetSizeBytes()))
+	return connect.NewResponse(&galaxyv1.BeginAttachmentUploadResponse{
+		AttachmentId: attachmentID,
+		Upload:       toProtoUpload(credential),
+	}), nil
+}
+
+// CommitAttachmentUpload 实现 GalaxyService：核对对象确实到了，写入附件元数据。
+func (s *GalaxyService) CommitAttachmentUpload(ctx context.Context, req *connect.Request[galaxyv1.CommitAttachmentUploadRequest]) (*connect.Response[galaxyv1.CommitAttachmentUploadResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	attachment, err := s.galaxy.CommitAttachmentUpload(ctx, subject.ID, req.Msg.GetProjectId(),
+		req.Msg.GetAttachmentId(), req.Msg.GetVersionId(), req.Msg.GetDigest(),
+		req.Msg.GetFilename(), req.Msg.GetDescription())
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	url, err := s.galaxy.AttachmentDownloadURL(ctx, subject.ID, attachment.ProjectID, attachment.ID)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	return connect.NewResponse(&galaxyv1.CommitAttachmentUploadResponse{
+		Attachment: toProtoAttachment(galaxy.AttachmentView{Attachment: attachment, DownloadURL: url}),
+	}), nil
+}
+
+// UpdateAttachment 实现 GalaxyService：改附件的说明。
+//
+// 它只动说明那一层：文件名、字节数、摘要与标注的版本都不变（见领域层）。日志只
+// 记标识，**不记说明原文**——它是用户内容，与文件名同级。
+func (s *GalaxyService) UpdateAttachment(ctx context.Context, req *connect.Request[galaxyv1.UpdateAttachmentRequest]) (*connect.Response[galaxyv1.UpdateAttachmentResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	attachment, err := s.galaxy.UpdateAttachment(ctx, subject.ID, req.Msg.GetProjectId(),
+		req.Msg.GetAttachmentId(), req.Msg.GetDescription())
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	url, err := s.galaxy.AttachmentDownloadURL(ctx, subject.ID, attachment.ProjectID, attachment.ID)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	s.logger.Info("已更新附件说明",
+		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("attachment_id", req.Msg.GetAttachmentId()),
+		zap.String("subject_id", subject.ID))
+	return connect.NewResponse(&galaxyv1.UpdateAttachmentResponse{
+		Attachment: toProtoAttachment(galaxy.AttachmentView{Attachment: attachment, DownloadURL: url}),
+	}), nil
+}
+
+// DeleteAttachment 实现 GalaxyService。**它不被任何引用拦阻**（标注不是引用）。
+func (s *GalaxyService) DeleteAttachment(ctx context.Context, req *connect.Request[galaxyv1.DeleteAttachmentRequest]) (*connect.Response[galaxyv1.DeleteAttachmentResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.galaxy.DeleteAttachment(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetAttachmentId()); err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	s.logger.Info("已删除附件",
+		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("attachment_id", req.Msg.GetAttachmentId()),
+		zap.String("subject_id", subject.ID))
+	return connect.NewResponse(&galaxyv1.DeleteAttachmentResponse{}), nil
+}
+
+// GetAttachmentDownloadURL 实现 GalaxyService：签发一份附件的下载地址。
+//
+// 地址由用例层算好下发，**客户端不拼**：响应头是签发策略定下来的，客户端自己拼
+// 一条就少了那一层保证。
+func (s *GalaxyService) GetAttachmentDownloadURL(ctx context.Context, req *connect.Request[galaxyv1.GetAttachmentDownloadURLRequest]) (*connect.Response[galaxyv1.GetAttachmentDownloadURLResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	url, err := s.galaxy.AttachmentDownloadURL(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetAttachmentId())
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	return connect.NewResponse(&galaxyv1.GetAttachmentDownloadURLResponse{Url: url}), nil
+}
+
 // Publish 实现 GalaxyService：受理与校验、媒体上架、产物落库、切换与生效。
 func (s *GalaxyService) Publish(ctx context.Context, req *connect.Request[galaxyv1.PublishRequest]) (*connect.Response[galaxyv1.PublishResponse], error) {
 	subject, err := callerSubject(ctx)
@@ -598,13 +727,16 @@ func toProtoCapabilities(capabilities galaxy.Capabilities) *galaxyv1.Capabilitie
 		})
 	}
 	return &galaxyv1.Capabilities{
-		AssetUploadEnabled: capabilities.AssetUploadEnabled,
-		PublishEnabled:     capabilities.PublishEnabled,
-		PreviewEnabled:     capabilities.PreviewEnabled,
-		MaxTextBytes:       fitUint32(capabilities.MaxTextBytes),
-		MaxFileSetBytes:    fitUint32(capabilities.MaxFileSetBytes),
-		MaxFiles:           fitUint32(capabilities.MaxFiles),
-		AssetLimits:        limits,
+		AssetUploadEnabled:          capabilities.AssetUploadEnabled,
+		PublishEnabled:              capabilities.PublishEnabled,
+		PreviewEnabled:              capabilities.PreviewEnabled,
+		MaxTextBytes:                fitUint32(capabilities.MaxTextBytes),
+		MaxFileSetBytes:             fitUint32(capabilities.MaxFileSetBytes),
+		MaxFiles:                    fitUint32(capabilities.MaxFiles),
+		AssetLimits:                 limits,
+		AttachmentEnabled:           capabilities.AttachmentEnabled,
+		MaxAttachmentBytes:          fitUint64(capabilities.MaxAttachmentBytes),
+		ProjectAttachmentQuotaBytes: fitUint64(capabilities.ProjectAttachmentQuotaBytes),
 	}
 }
 
@@ -809,6 +941,24 @@ func toProtoAsset(view galaxy.AssetView) *galaxyv1.Asset {
 	}
 }
 
+// toProtoAttachment 把附件视图翻译成接口类型。
+//
+// download_url 取的是**签发策略定下来**的那条地址（响应头是强制下载），因此它
+// 在客户端只是一个可以直接点的链接，不需要任何附加说明。
+func toProtoAttachment(view galaxy.AttachmentView) *galaxyv1.Attachment {
+	return &galaxyv1.Attachment{
+		Id:          view.Attachment.ID,
+		ProjectId:   view.Attachment.ProjectID,
+		VersionId:   view.Attachment.VersionID,
+		Filename:    view.Attachment.Filename,
+		SizeBytes:   fitUint64(view.Attachment.SizeBytes),
+		Digest:      view.Attachment.Digest,
+		Description: view.Attachment.Description,
+		UploadedAt:  view.Attachment.UploadedAt.UTC().Format(time.RFC3339),
+		DownloadUrl: view.DownloadURL,
+	}
+}
+
 // toProtoPublication 把发布记录翻译成接口类型。
 func toProtoPublication(publication galaxy.Publication, pageURL string) *galaxyv1.Publication {
 	return &galaxyv1.Publication{
@@ -845,6 +995,8 @@ func toGalaxyConnectError(err error) error {
 		return connect.NewError(connect.CodeNotFound, errors.New("版本不存在"))
 	case errors.Is(err, galaxy.ErrAssetNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("资产不存在"))
+	case errors.Is(err, galaxy.ErrAttachmentNotFound):
+		return connect.NewError(connect.CodeNotFound, errors.New("附件不存在"))
 	case errors.Is(err, galaxy.ErrProjectNameTooLong):
 		return connect.NewError(connect.CodeInvalidArgument,
 			fmt.Errorf("工程名称不能超过 %d 个字", galaxy.ProjectNameMaxRunes))
@@ -895,7 +1047,21 @@ func toGalaxyConnectError(err error) error {
 	case errors.Is(err, galaxy.ErrInvalidContent):
 		// 消息里带具体位置（哪一份文件、哪一处），因此原样透出。
 		return connect.NewError(connect.CodeInvalidArgument, errors.New(err.Error()))
-	case errors.Is(err, galaxy.ErrAssetUnavailable):
+	case errors.Is(err, galaxy.ErrAttachmentTooLarge):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("附件不能超过 %d MiB", galaxy.AttachmentMaxBytes/(1024*1024)))
+	case errors.Is(err, galaxy.ErrAttachmentQuotaExceeded):
+		// 它与"这一份太大"是两件事：用户要做的是先删掉一些（见领域层的说明）。
+		return connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("这个工程的附件总量已满（上限 %d GiB），先删掉一些再传",
+				galaxy.ProjectAttachmentQuotaBytes/(1024*1024*1024)))
+	case errors.Is(err, galaxy.ErrAttachmentDescriptionTooLong):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("附件说明不能超过 %d 个字", galaxy.AttachmentDescriptionMaxRunes))
+	case errors.Is(err, galaxy.ErrAttachmentObjectMissing):
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("上传没有完成：对象不存在，请重试"))
+	case errors.Is(err, galaxy.ErrAssetUnavailable), errors.Is(err, galaxy.ErrAttachmentUnavailable):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("本部署未配置对象存储"))
 	case errors.Is(err, galaxy.ErrPublishUnavailable):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("本部署未启用发布功能"))

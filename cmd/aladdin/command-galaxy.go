@@ -35,6 +35,7 @@ func newGalaxyCommand() *cobra.Command {
 		newGalaxyVersionCommand(),
 		newGalaxyValidateCommand(),
 		newGalaxyAssetCommand(),
+		newGalaxyAttachmentCommand(),
 		newGalaxyPublishCommand(),
 		newGalaxyUnpublishCommand(),
 		newGalaxyPublicationCommand(),
@@ -85,6 +86,7 @@ func newGalaxyCapabilitiesCommand() *cobra.Command {
 
 			caps := resp.Msg.GetCapabilities()
 			printf(cmd.OutOrStdout(), "素材上传: %s\n", yesNo(caps.GetAssetUploadEnabled()))
+			printf(cmd.OutOrStdout(), "附件: %s\n", yesNo(caps.GetAttachmentEnabled()))
 			printf(cmd.OutOrStdout(), "发布: %s\n", yesNo(caps.GetPublishEnabled()))
 			printf(cmd.OutOrStdout(), "单份文本上限: %d 字节\n", caps.GetMaxTextBytes())
 			printf(cmd.OutOrStdout(), "整组内容上限: %d 字节\n", caps.GetMaxFileSetBytes())
@@ -93,6 +95,8 @@ func newGalaxyCapabilitiesCommand() *cobra.Command {
 				printf(cmd.OutOrStdout(), "%s上限: %d 字节\n",
 					mediaKindLabel(limit.GetKind()), limit.GetMaxBytes())
 			}
+			printf(cmd.OutOrStdout(), "单份附件上限: %d 字节\n", caps.GetMaxAttachmentBytes())
+			printf(cmd.OutOrStdout(), "每工程附件总量: %d 字节\n", caps.GetProjectAttachmentQuotaBytes())
 			return nil
 		},
 	})

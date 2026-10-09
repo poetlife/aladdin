@@ -47,6 +47,16 @@ table galaxy_assets
   size_bytes integer pk=false null=true
   title text pk=false null=true
   uploaded_at datetime pk=false null=true
+table galaxy_attachments
+  description text pk=false null=true
+  digest text pk=false null=true
+  filename text pk=false null=true
+  id text pk=true null=true
+  project_id text pk=false null=true
+  size_bytes integer pk=false null=true
+  uploaded_at datetime pk=false null=true
+  uploaded_by_subject_id text pk=false null=true
+  version_id text pk=false null=true
 table galaxy_drafts
   manifest text pk=false null=true
   project_id text pk=true null=true

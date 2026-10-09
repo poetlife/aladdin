@@ -36,12 +36,16 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | `galaxy asset list` | 列出工程资产库（含短时读取地址、标题、标签与备注摘要），可按标签筛选 | `galaxy.asset.read` |
 | `galaxy asset upload` / `delete` | 上传、删除资产 | `galaxy.asset.write` |
 | `galaxy asset update` | 改资产的展示标题、标签与备注 | `galaxy.asset.write` |
+| `galaxy attachment list` | 列出工程附件（含短时下载地址、标注的版本与摘要） | `galaxy.attachment.read` |
+| `galaxy attachment upload` / `delete` | 上传、删除附件（类型不限的构建产物） | `galaxy.attachment.write` |
+| `galaxy attachment update` | 改附件的说明 | `galaxy.attachment.write` |
+| `galaxy attachment download` | 把一份附件下载到本地 | `galaxy.attachment.read` |
 | `galaxy publish` / `unpublish` | 发布某个槽的一个版本、撤回该槽的发布 | `galaxy.project.publish` |
 | `galaxy publication get` | 读回某个槽**当前发布**的产物清单（`--path` 取其中一份的字节） | `galaxy.project.read` |
 | `galaxy publication pull` | 把某个槽当前发布的产物整组写到本地目录 | `galaxy.project.read` |
 | `galaxy publication verify` | 按访客路径逐条复核当前发布的产物：字节与发布记录一致、引用都解开了、资产可达 | `galaxy.project.read` |
 
-工程、版本与资产的标识一律**显式给出**，都是命令的位置参数。**资产库里没有槽**：它是工程级的共享库，两个槽引用同一份资产。
+工程、版本、资产与附件的标识一律**显式给出**，都是命令的位置参数。**资产与附件都不属于某一个槽**：它们是工程级的东西，两个槽引用同一份资产。
 
 ### 内容槽怎么给
 
@@ -109,6 +113,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 - `galaxy project delete`
 - `galaxy version delete`
 - `galaxy asset delete`
+- `galaxy attachment delete`
 - `galaxy publish`
 
 **发布进这个集合**的理由：它是唯一一个让内容离开私有边界的动作——发出去之后，拿到地址的任何人都能看，且地址可能被转发（见 [README.md](README.md) 的"发布即公开"）。它是本仓库里第一条把用户内容交给未认证陌生人的路径，值得一次显式确认。
@@ -142,6 +147,27 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 
 备注**不进日志原文**（见 [../../observability.md](../../observability.md)），与文件名同级。
 
+### 附件上传：类型不限、下载强制、可以标一版
+
+`attachment upload` 把一份**发布物**（二进制、zip、导出文件）传进工程。它与资产那条路走的是同一套直传链路，但两点不同：
+
+| 项 | 资产 | 附件 |
+|----|------|------|
+| 声明的类型 | `--content-type` 或按扩展名推断，必须在白名单内 | **命令不给**：上传声明的是中性类型，服务端签发策略时用的就是它 |
+| 上限 | 按类别分档（图 10 MiB / 视频 100 MiB / 音频 20 MiB / 字体 5 MiB） | 一档（500 MiB），另有一道**工程总量配额**（10 GiB），超了先删一些 |
+
+**类型不需要推断、也不会被拒**：附件的下发类型恒为中性那一档，响应头由签发策略固定成强制下载（见 [attachments.md](attachments.md)）。因此把一份 `.zip` 或一个无扩展名的二进制推上去都不需要额外参数——这正是它在构建脚本里最常用的一面。
+
+**`--save-version` 把"产物"与"产出它的那一版内容"绑在一起**：它先存一个版本，再把那个版本标识标到这份附件上。构建脚本里最自然的一条是：
+
+```
+aladdin galaxy attachment upload <工程标识> dist/pkg.zip --save-version --description "加了封面"
+```
+
+标注**不是引用**：它不拦阻那个版本被删除，删掉时标注被清空，而附件本身与它的字节不受影响。用 `--version <版本标识>` 可以显式标一个已有的版本。
+
+**`download` 取的是服务端签发的那条短时地址**（默认 5 分钟），命令行直接对对象存储发起，服务端不代理字节。目标路径不给时写到当前目录，文件名取上传时的那个；目标是目录时写进去，不会覆盖目录本身。**这条地址在有效期内谁拿到都能用**，因此别把它贴给不该拿到这份文件的人——附件是私有的，不进公开区。
+
 ### 未配置时
 
 未配置桶时上传、内容与资产都由服务端拒绝（字节没有地方放）；未配置发布域时发布由服务端拒绝。两者都是"这个能力没开"，不是故障，命令行的提示要照此措辞。
@@ -166,7 +192,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 核查项 | 判据（验证手段） |
 |--------|----------------|
 | 命令覆盖 | 每个可执行命令声明了权限码，或标记为只需认证，或进入公开白名单（构建期静态检查，每次执行时运行） |
-| 危险集合正确 | `project delete` / `version delete` / `asset delete` / `publish` 带危险标记；`unpublish` 不带（`cmd/aladdin` 测试） |
+| 危险集合正确 | `project delete` / `version delete` / `asset delete` / `attachment delete` / `publish` 带危险标记；`unpublish` 不带（`cmd/aladdin` 测试） |
 | 位置参数是用法错误 | 参数个数不对时退出码与其它用法错误同类，而不是落进"未分类失败"（`cmd/aladdin` 测试） |
 | 扩展名表与白名单一致 | 表中每个取值都能通过服务端那一个类型入口（`cmd/aladdin` 测试） |
 | 元数据只改显式项 | `asset update` 只给 `--title` 时标签与备注保持原值，给出空串才清空（`cmd/aladdin` 测试） |
@@ -182,6 +208,8 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 回读的是发布记录 | `publication get` 列出的清单与发布记录一致，地址落在发布域的槽根下（端到端测试 + `internal/galaxy` 测试） |
 | 复核逐条报问题 | 残留记号、字节与摘要不符、资产不可达各自被报出来并以非零状态退出；三者都自洽时退出码为零（`cmd/aladdin` 测试） |
 | 复核不另写一套扫描 | `publication verify` 调用的是发布前置校验那一处产物复核入口（代码审查 + `cmd/aladdin` 测试） |
+| 附件不带类型参数 | `attachment upload` 不对任何扩展名要求 `--content-type`；上传声明的是与签发策略一致的中性类型（`cmd/aladdin` 测试 + `internal/galaxy` 测试） |
+| 下载名不信任原始文件名 | 目标路径缺省时取文件名的最后一段，含路径分隔符与 `..` 的名字不会写到目录之外（`cmd/aladdin` 测试） |
 
 > **直传的 PUT 不在自动化覆盖内。** 测试装配里的对象存储是内存假实现，凭证指向真实的存储主机——没有真桶可写。"桶真的照做了策略"只能在部署后冒烟里验，这条边界与 [../objectstore/README.md](../objectstore/README.md) 写的是同一处。**不会为了测试给生产代码加一个"换地址"的开关**：那正是 [AGENTS.md](../../../AGENTS.md) 第 7 条禁止的那类开关。
 
