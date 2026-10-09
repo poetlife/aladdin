@@ -87,9 +87,20 @@ nginx 在这里只做三件事：终止 TLS、服务静态文件、把两类前�
 
 ### 前端是 history 路由
 
-前端用 `createBrowserRouter`（[web/src/router.tsx](../web/src/router.tsx)），直接访问 `/roles` 这类路径必须回落到 `index.html`。少了 `try_files ... /index.html` 这一行，刷新页面就是 404。
+前端用 `createBrowserRouter`（[web/src/routes.tsx](../web/src/routes.tsx)），直接访问 `/roles` 这类路径必须回落到 `index.html`。少了 `try_files ... /index.html` 这一行，刷新页面就是 404。
 
 本地开发环境复现不出这个问题：Vite 的 dev server 自带回落。**因此这一条只能在部署形态上保证，测试覆盖不到。**
+
+### 文档区不靠这条回落
+
+公开文档区那几页在**构建时被预渲染**成 `/opt/aladdin/web/docs/<章>/index.html`，因此 `try_files $uri $uri/` 的中间那一段就把它们找到了——不执行 JS 的抓取方也能读到正文（见 [design/web/agent-readable.md](design/web/agent-readable.md)）。
+
+随它一起的两条规则也在站点配置里，**必须排在 `location /` 之前**（模板里用的是正则 location，nginx 天然先看它）：
+
+- `.md` / `.txt` 找不到时给 **404**，不再兜底成 200 首页。少了它，`/docs/does-not-exist.md` 会返回一份 200 的 `index.html`——一个软 404，抓取方会以为地址存在。
+- 请求头带 `Accept: text/markdown` 时，`/docs/<章>` 直接给 `/docs/<章>.md`。
+
+两条规则在开发服务器里有**一一对应**的实现（[web/vite.config.ts](../web/vite.config.ts)），判据一致：两处各写一份就会漂，而漂的表现是"线上取到的是文档、本地取到的是首页"，只在一边复现。
 
 ## 一次性前置
 
@@ -123,6 +134,10 @@ sudo ln -sf /etc/nginx/sites-available/<域名> /etc/nginx/sites-enabled/
 > **已有的站点要手工补一条 location。** 模板里新增了 `/cli/latest/`（命令行自更新的兜底镜像，见 [design/cli/self-update.md](design/cli/self-update.md)）。已经装好的站点是按当时的模板装的，**也可能是宿主机上的自有配置**（例如 443 经 SNI 分流到 4443 的形态）——两者都不会自己更新。把那条 location 加进去，再 `sudo nginx -t && sudo systemctl reload nginx`。
 >
 > 漏了它的表现不显眼：主站镜像整体 404，于是客户端在发布源不可用时**兜底失败**（错误信息会同时交代两路），而不是任何一条指向配置的报错。镜像的目录由 `deploy.sh` 自己创建，不必预先建。
+
+> **同一处还要补文档区那三条。** 模板里另新增了一段 `map`（`Accept: text/markdown` 的判定）与一条 `.md` / `.txt` 的正则 location（找不到即 404），以及 `location /` 里那句条件 rewrite。老站点同样不会自己更新，做法与上面相同：补齐、`nginx -t`、reload。
+>
+> 漏了它们的表现**比上面那条更安静**：一切都是 200，只是 `/docs/galaxy.md`、`/llms.txt`、`/not-exist.md` 拿回来的都是首页那份 HTML——一个软 404，而"文档对 agent 可读"这件事恰恰死在这里（见 [design/web/agent-readable.md](design/web/agent-readable.md)）。
 
 模板里的 `/aladdin.` 与 `/grpc.health.v1.Health/` **按 HTTP/1.1 转发上游即可**：浏览器与命令行都走 Connect，它把错误放在 HTTP 状态与响应体里。
 

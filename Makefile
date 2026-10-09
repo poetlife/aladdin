@@ -295,4 +295,4 @@ dev: ## 一键拉起开发环境（服务端 + 前端），Ctrl-C 一并停止
 
 .PHONY: clean
 clean: ## 清理构建产物
-	rm -rf $(BIN_DIR) $(DIST_DIR) coverage.out coverage.html web/dist
+	rm -rf $(BIN_DIR) $(DIST_DIR) coverage.out coverage.html web/dist web/dist-prerender

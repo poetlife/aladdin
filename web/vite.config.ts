@@ -1,6 +1,13 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { defineConfig } from 'vitest/config'
-import type { Plugin } from 'vite'
+import type { Plugin, ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
+
+// 带扩展名是有意为之：Vite 的配置文件加载器将来会换成不需要打包的那一种，
+// 那时相对导入必须写全扩展名（不带扩展名现在就会打一条警告）。
+import { servedArtifactPath } from './prerender/served-paths.ts'
 
 // dev 下让 /api-docs/ 落到目录里的 index.html。
 //
@@ -19,6 +26,64 @@ function serveApiDocsIndex(): Plugin {
   }
 }
 
+/** 一份送给 agent 的产物。形状与 src/pages/docs/chapters/artifacts.ts 里那个一致。 */
+interface DocsArtifact {
+  path: string
+  contentType: string
+  source: string
+}
+
+/**
+ * dev 下提供送给 agent 的那几份产物（`/llms.txt`、`/docs/<章>.md`）。
+ *
+ * 生产里它们是**构建产物**（见 prerender/generate.tsx），由静态目录直接服务。
+ * dev 没有那一趟构建，因此这里按同一份清单现场回答——用的是 Vite 自己的模块加载
+ * （`ssrLoadModule`），因此读到的正是应用读的那一份源，不是另抄的一份。
+ *
+ * 顺带把"未知的 .md / .txt 不再兜底成 200 首页"这条也补上：那是个软 404，
+ * 会让 agent 以为地址存在。判据在 prerender/served-paths.ts，与 nginx 那两条
+ * 规则一一对应。
+ */
+function serveDocsArtifacts(): Plugin {
+  return {
+    name: 'serve-docs-artifacts',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = new URL(req.url ?? '/', 'http://localhost').pathname
+        const target = servedArtifactPath(path, req.headers.accept)
+        if (target === null) {
+          next()
+          return
+        }
+
+        void (async () => {
+          const artifact = (await loadArtifacts(server)).find((item) => item.path === target)
+          if (artifact !== undefined) {
+            res.setHeader('Content-Type', artifact.contentType)
+            res.end(artifact.source)
+            return
+          }
+          // public/ 下的真文件由 Vite 自己服务（robots.txt 就在那里）；其余一律 404。
+          if (existsSync(join(server.config.publicDir, target))) {
+            next()
+            return
+          }
+          res.statusCode = 404
+          res.end('Not Found')
+        })().catch(next)
+      })
+    },
+  }
+}
+
+/** 走 Vite 自己的模块加载取那份清单，因此 `?raw` 导入的章节源照常解析。 */
+async function loadArtifacts(server: ViteDevServer): Promise<DocsArtifact[]> {
+  const module = (await server.ssrLoadModule('/src/pages/docs/chapters/artifacts.ts')) as {
+    docsArtifacts: () => DocsArtifact[]
+  }
+  return module.docsArtifacts()
+}
+
 /**
  * 构建期注入的版本三项。
  *
@@ -35,7 +100,7 @@ const buildCommit = process.env.ALADDIN_BUILD_COMMIT ?? ''
 const buildTime = process.env.ALADDIN_BUILD_TIME ?? ''
 
 export default defineConfig({
-  plugins: [react(), serveApiDocsIndex()],
+  plugins: [react(), serveApiDocsIndex(), serveDocsArtifacts()],
   // 值的读取只有一处实现：web/src/build/build-info.ts 在这里声明的三个全局上。
   // define 是**文本替换**，因此名字必须与那边声明的完全一致——写错不会报错，
   // 只会在运行时抛 ReferenceError。

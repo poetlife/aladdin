@@ -17,7 +17,7 @@ const TOGGLE_ICON_SIZE = 18
  * 应用外壳。
  *
  * 外壳本身只要**已认证**：零权限的主体也看得到它，界面是空的。
- * 见 router.tsx 的两层准入。
+ * 见 routes.tsx 的三层准入（公开 / 已认证 / 要权限码）。
  *
  * 宽窄两态：宽屏是常驻侧边栏（可收成导轨），窄屏换成抽屉。
  * 两者承载的是同一个 AppSidebar，见 docs/design/web/README.md 的「响应式与窄屏」。

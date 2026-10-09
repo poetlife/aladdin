@@ -1,31 +1,34 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { CliPage } from './CliPage'
+import { ChapterPage } from '../ChapterPage'
+import { chapterBySlug } from './manifest'
 
 // React 19 要求显式声明这是 act 环境，否则每次 render 都会打印警告。
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let root: Root | null = null
 
+/**
+ * 渲染这一章。
+ *
+ * 走 `MemoryRouter` 是因为正文里的站内链接渲染成路由的 `<Link>`——它没有路由
+ * 上下文就抛错。路由本身是文档区那一层的事，这里只需要它在。
+ */
 async function renderPage(): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<CliPage />)
+    root?.render(
+      <MemoryRouter>
+        <ChapterPage chapter={chapterBySlug('cli')} />
+      </MemoryRouter>,
+    )
   })
   return container
-}
-
-/** 点第 index 个标签页（0 起）。antd 的标签页是懒渲染的，不点就取不到内容。 */
-async function clickTab(container: HTMLElement, index: number): Promise<void> {
-  const tabs = Array.from(container.querySelectorAll('[role="tab"]'))
-  expect(tabs[index], `没有第 ${index + 1} 个标签页`).not.toBeUndefined()
-  await act(async () => {
-    tabs[index]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-  })
 }
 
 afterEach(async () => {
@@ -55,25 +58,21 @@ describe('命令行介绍页', () => {
     expect(text).toContain('aladdin_${tag}_darwin_arm64.tar.gz')
   })
 
-  it('两个平台都可选，各自的产物名与校验工具都对', async () => {
+  it('两个平台各自的产物名与校验工具都对', async () => {
     const container = await renderPage()
+    const text = container.textContent ?? ''
 
-    expect(container.textContent).toContain('macOS（Apple Silicon）')
-    expect(container.textContent).toContain('Linux（x86-64）')
-    expect(container.textContent).toContain('shasum -a 256 -c -')
-    // 未选中的标签页还没渲染，先确认它此刻确实不在。
-    expect(container.textContent).not.toContain('aladdin_${tag}_linux_amd64.tar.gz')
-
-    await clickTab(container, 1)
-
-    expect(container.textContent).toContain('aladdin_${tag}_linux_amd64.tar.gz')
-    expect(container.textContent).toContain('sha256sum -c -')
+    expect(text).toContain('macOS（Apple Silicon）')
+    expect(text).toContain('Linux（x86-64）')
+    expect(text).toContain('aladdin_${tag}_darwin_arm64.tar.gz')
+    expect(text).toContain('shasum -a 256 -c -')
+    expect(text).toContain('aladdin_${tag}_linux_amd64.tar.gz')
+    expect(text).toContain('sha256sum -c -')
   })
 
   // 这些命令要么长、要么多行，手动选中容易漏掉续行。见 install.md 第 5 条。
   it('每个命令块都自带复制入口', async () => {
     const container = await renderPage()
-    await clickTab(container, 1)
 
     const blocks = Array.from(container.querySelectorAll('pre'))
     expect(blocks.length).toBeGreaterThan(1)
@@ -92,7 +91,6 @@ describe('命令行介绍页', () => {
   // 命令旁边的注释里。
   it('两个平台的安装落点都是用户可写目录', async () => {
     const container = await renderPage()
-    await clickTab(container, 1)
 
     const installs = Array.from(container.querySelectorAll('pre'))
       .map((block) => /^install -m 0755 aladdin (\S+)$/m.exec(block.textContent ?? '')?.[1])

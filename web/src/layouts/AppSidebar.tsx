@@ -65,7 +65,7 @@ const NAV: NavEntry[] = [
   { path: '/galaxy', label: '创作', icon: <Sparkles size={ICON_SIZE} />, permission: PermissionCodes.GalaxyProjectRead },
   // 「个人资料」**不在这里**：它是"要去哪一页"里唯一一项只关于我自己的，
   // 由底部账号区承载（见下方 SidebarAccount），主导航这一排留给功能区。
-  // 路由本身照旧（见 router.tsx 与 docs/design/web/README.md 的「外壳」）。
+  // 路由本身照旧（见 routes.tsx 与 docs/design/web/README.md 的「外壳」）。
   // 平台技能目录。它与创作面并列而不是收在它里面：技能由平台维护、对所有创作者
   // 可用，而工程是"我自己的东西"（见 docs/design/skill/README.md）。
   { path: '/skills', label: '技能', icon: <Wand2 size={ICON_SIZE} />, permission: PermissionCodes.SkillCatalogRead },
@@ -83,6 +83,9 @@ const NAV: NavEntry[] = [
   { path: '/admin/deployment', label: '部署信息', icon: <ServerCog size={ICON_SIZE} />, group: GROUP_ADMIN, permission: PermissionCodes.OpsDeploymentRead },
   // 文档区也不需要权限码：它讲的是"怎么把命令行装上并登录"，
   // 而零权限的主体恰恰最需要它（见 docs/design/web/docs-area.md）。
+  //
+  // 它还是**公开**的：点进这一项会走到文档区自己那层外壳上（没有账号区与管理
+  // 范围），因为准入是从"已认证"放到了"匿名可读"（见 routes.tsx 的那条分支）。
   // 导航**只有这一项**：章节加页只往区域里加，这里不再变。
   { path: '/docs', label: '文档', icon: <BookOpen size={ICON_SIZE} /> },
 ]
@@ -90,7 +93,7 @@ const NAV: NavEntry[] = [
 /**
  * 路径是否落在这一项上。
  *
- * 不能只比路径本身：页面可以更深（`/docs/cli`、`/galaxy/<工程标识>`），
+ * 不能只比路径本身：页面可以更深（`/skills/<技能标识>`、`/galaxy/<工程标识>`），
  * 进到子页时父项仍要高亮。
  */
 function matchesPath(path: string, pathname: string): boolean {

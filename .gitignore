@@ -11,6 +11,8 @@ coverage.html
 # 前端
 web/node_modules/
 web/dist/
+# 预渲染那一趟的中间产物（SSR 包，见 web/prerender/generate.tsx）
+web/dist-prerender/
 web/.vite/
 web/*.tsbuildinfo
 web/node_modules/.vite/

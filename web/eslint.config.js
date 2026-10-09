@@ -6,7 +6,10 @@ export default [
   // public 下的文件原样进产物、不经过构建，属于静态资源而非源码。
   // 其中 api-docs/redoc.standalone.js 是第三方压缩产物，lint 它只会刷屏
   // （三千多条报错），而它并不该被我们修改。
-  { ignores: ['dist', 'src/gen', 'node_modules', 'public'] },
+  //
+  // dist-prerender 是预渲染那一趟的 SSR 包（见 prerender/generate.tsx），
+  // 与 dist 一样是产物。
+  { ignores: ['dist', 'dist-prerender', 'src/gen', 'node_modules', 'public'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
