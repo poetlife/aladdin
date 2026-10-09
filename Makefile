@@ -6,12 +6,32 @@
 MODULE      := github.com/poetlife/aladdin
 BIN_DIR     := bin
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS     := -s -w -X main.version=$(VERSION)
+COMMIT      ?= $(shell git rev-parse HEAD 2>/dev/null)
+BUILD_TIME  ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# 构建期注入**只有一个目标包**：internal/buildinfo。服务端与命令行都从它读版本，
+# 因此"命令行报的版本"与"页面上报的版本"不可能不一致——它们是同一个变量。
+#
+# 每加一项仍要在这里加一行，且符号名必须与包里声明的完全一致：链接器的 -X 在
+# 符号名写错时**静默失效**，产物会悄悄回落到默认值而构建一路绿灯。这件事由
+# internal/buildinfo/makefile_test.go 在构建期兜住。
+BUILDINFO   := $(MODULE)/internal/buildinfo
+LDFLAGS     := -s -w \
+	-X $(BUILDINFO).Version=$(VERSION) \
+	-X $(BUILDINFO).Commit=$(COMMIT) \
+	-X $(BUILDINFO).BuildTime=$(BUILD_TIME)
 
 # 发布产物比本机构建多带一个标记，自更新据此区分两者（见 internal/upgrade）。
 # 版本号形态单独作不了判据：在恰好处于某个 tag 的干净工作树上，
 # `git describe --tags` 输出的就是一个合法的 vX.Y.Z。
-RELEASE_LDFLAGS := $(LDFLAGS) -X main.released=true
+RELEASE_LDFLAGS := $(LDFLAGS) -X $(BUILDINFO).Released=true
+
+# 前端的构建版本与后端**同源**：同一个 VERSION / COMMIT / BUILD_TIME 一处取值、
+# 传两边，页面才能回答"前后端是不是同一次构建"（见 docs/design/deployment/README.md）。
+#
+# 注入的是 ALADDIN_BUILD_* 而不是 VERSION：前端构建可能由别的入口发起（vite
+# 直接跑、IDE 里的任务），那几个名字是给这里用的，不占用通用名。
+WEB_BUILD_ENV := ALADDIN_BUILD_VERSION=$(VERSION) ALADDIN_BUILD_COMMIT=$(COMMIT) ALADDIN_BUILD_TIME=$(BUILD_TIME)
 
 # 发布产物的形态（make release-build）。发版时 VERSION 由 tag 传入，
 # 与 LDFLAGS 共用同一处版本注入，不另起一份 -X。
@@ -151,7 +171,9 @@ web-install: ## 安装前端依赖
 
 .PHONY: web-build
 web-build: ## 构建前端
-	cd web && npm run build
+	@# 版本三项由 WEB_BUILD_ENV 传进去，与后端 LDFLAGS 取自同一处
+	@# （见文件开头的说明）。缺省时前端退化成 dev，与后端的缺省值一样诚实。
+	cd web && $(WEB_BUILD_ENV) npm run build
 
 .PHONY: release-build
 release-build: web-build ## 产出发布产物到 dist/（跨平台二进制、前端包、校验和）

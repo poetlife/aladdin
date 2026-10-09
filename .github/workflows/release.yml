@@ -90,8 +90,15 @@ jobs:
 
       # 交叉编译、归档与校验和都在 Makefile 里，这里不重写一遍 go build：
       # 构建命令若有第二个入口，就会与 make build 漂移。
+      #
       # VERSION 由 tag 传入，与 make build 共用同一处 LDFLAGS；地址另有一处注入，
       # 只作用于 CLI 那个二进制（见 docs/release.md 的"产物"）。
+      #
+      # 前端也取自这个 VERSION：release-build 依赖 web-build，而 Makefile 的
+      # WEB_BUILD_ENV 把同一个 VERSION / COMMIT / BUILD_TIME 传给 Vite。**这里不传
+      # 构建参数**是有意的——再传一遍就等于有了第二个取值处，而两处不一致的表现是
+      # 部署信息页报"前后端不是同一次构建"，却查不出为什么（见
+      # docs/design/deployment/README.md）。
       - name: 构建
         run: make release-build VERSION="${GITHUB_REF_NAME}" RELEASE_CLI_ADDRESS="${ALADDIN_CLI_DEFAULT_ADDRESS}"
 

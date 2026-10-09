@@ -19,8 +19,31 @@ function serveApiDocsIndex(): Plugin {
   }
 }
 
+/**
+ * 构建期注入的版本三项。
+ *
+ * 取值由 Makefile 的 WEB_BUILD_ENV 传进来，与后端 LDFLAGS 取自**同一处**
+ * （同一个 VERSION / COMMIT / BUILD_TIME）——这正是部署信息页能回答"前后端是不是
+ * 同一次构建"的前提：两侧各算一份，那道比较就只是在比两个不相干的字符串
+ * （见 docs/design/deployment/README.md）。
+ *
+ * 缺省值是 dev：不经 Makefile 的构建（IDE 里直接跑 vite、CI 里的裸 vite build）
+ * 得到的就是它，与后端的缺省值一样诚实——不编一个看起来像真的版本号。
+ */
+const buildVersion = process.env.ALADDIN_BUILD_VERSION ?? 'dev'
+const buildCommit = process.env.ALADDIN_BUILD_COMMIT ?? ''
+const buildTime = process.env.ALADDIN_BUILD_TIME ?? ''
+
 export default defineConfig({
   plugins: [react(), serveApiDocsIndex()],
+  // 值的读取只有一处实现：web/src/build/build-info.ts 在这里声明的三个全局上。
+  // define 是**文本替换**，因此名字必须与那边声明的完全一致——写错不会报错，
+  // 只会在运行时抛 ReferenceError。
+  define: {
+    __BUILD_VERSION__: JSON.stringify(buildVersion),
+    __BUILD_COMMIT__: JSON.stringify(buildCommit),
+    __BUILD_TIME__: JSON.stringify(buildTime),
+  },
   server: {
     port: 5173,
     // 开发期把 RPC 请求转发到后端。

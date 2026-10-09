@@ -43,6 +43,8 @@
 | 一个主体的展示名（昵称，未设则回退到渠道标识，再回退到主体标识） | 档案的展示名解析入口 | [internal/profile/profiles.go](../internal/profile/profiles.go) |
 | 一批主体的展示名与头像（读侧把事件里的标识换成展示信息） | `Profiles.GetMany`（`Get` 的批量形式，**回退规则仍是上面那一条实现**，不另写一份批量版拼接） | [internal/profile/profiles.go](../internal/profile/profiles.go) |
 | 字节数的展示文案（头像上限、资产上限、文件大小） | `describeBytes` | [web/src/format/bytes.ts](../web/src/format/bytes.ts) |
+| 一段时长的展示文案（运行时长） | `describeDuration` | [web/src/format/duration.ts](../web/src/format/duration.ts) |
+| 前端与后端是不是同一次构建（一致 / 不一致 / **无从比较**——三者不可合并） | `compareCommits` | [web/src/build/build-info.ts](../web/src/build/build-info.ts) |
 | 一段源里出现了哪些 `asset://` 记号（去重且有序） | 记号的识别入口（逐字扫描，不解析 HTML） | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) |
 | 一处引用（记号、文档间链接、站点内路径）解析成什么地址 | 引用的解析入口（发布态给发布根下的绝对地址、预览态给预览根下的绝对地址；两处共用同一处"落在哪一条条目上"的判断，预览那处只是不因坏引用而失败） | [internal/galaxy/link_resolver.go](../internal/galaxy/link_resolver.go) |
 | 预览里草稿按哪条地址取字节（路径形状、短时凭证、"发布根换成预览根"） | 预览通道的路径与凭证入口 | [internal/galaxy/preview.go](../internal/galaxy/preview.go) |
@@ -180,6 +182,7 @@
 | CLI 凭证（令牌、绑定作用域、过期时间） | 用户配置目录下的 `credentials.json`，经 `auth.Resolve` 读取 | [internal/auth/credentials.go](../internal/auth/credentials.go) |
 | 环境变量名（`ALADDIN_` 前缀） | 各模块内集中定义：配置项在 config、凭证在 auth、开发旁路在 server；调用方不得手写字符串字面量 | [internal/config/config.go](../internal/config/config.go) |
 | 发布产物清单与校验和（自更新的唯一来源） | `upgrade` 的发布源读取入口 | [internal/upgrade/release.go](../internal/upgrade/release.go) |
+| 构建期注入的版本信息（版本、提交号、构建时间、发布标记） | 唯一的注入目标；服务端与命令行都从它读，**不再有第二个版本变量**。前端那三项由 Makefile 的 `WEB_BUILD_ENV` 从同一处取值传给 Vite | [internal/buildinfo/buildinfo.go](../internal/buildinfo/buildinfo.go) / [Makefile](../Makefile) |
 | 发行版产物的命名与平台清单（**自更新与界面上的下载命令两处都消费**） | [docs/release.md](release.md) 记录的对外契约；平台取自 Makefile 的 `PLATFORMS` | [Makefile](../Makefile) |
 | 界面里的等宽字体栈（代码块、可编辑正文） | `MONOSPACE` | [web/src/theme/monospace.ts](../web/src/theme/monospace.ts) |
 | 弹窗的高度约束、滚动行为与滚动条落在哪一侧（内容比窗口高时滚的是内容区，不是整屏遮罩；头尾与内容三块的横向边界重合） | `AppModal`（**不再从 antd 直接引 `Modal`**） | [web/src/ui/AppModal.tsx](../web/src/ui/AppModal.tsx) |

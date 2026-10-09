@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/poetlife/aladdin/internal/buildinfo"
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/observability"
 )
@@ -27,7 +28,7 @@ var (
 // 配置有问题而失败——一个写坏的 otel_endpoint 不该让人连版本号都查不到。
 func ensureTelemetry(cfg config.CLIConfig) error {
 	telemetryOnce.Do(func() {
-		opts := cfg.TelemetryOptions(observability.ServiceCLI, version)
+		opts := cfg.TelemetryOptions(observability.ServiceCLI, buildinfo.Version)
 		telemetryProvider, telemetryErr = observability.NewProvider(context.Background(), opts)
 	})
 	return telemetryErr

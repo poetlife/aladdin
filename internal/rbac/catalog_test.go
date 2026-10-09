@@ -18,6 +18,7 @@ import (
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/events/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
+	_ "github.com/poetlife/aladdin/api/gen/aladdin/ops/v1"
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/skill/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/telemetry/v1"

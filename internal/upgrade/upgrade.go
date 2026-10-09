@@ -110,8 +110,8 @@ type Options struct {
 	// Released 表示这份二进制来自发布产物，由发布流水线注入的标记决定。
 	//
 	// **这才是"能不能自更新"的判据，版本号的形态不是。** 本机构建（make build、
-	// go install）注入的是同一处 -X main.version，在恰好处于某个 tag 的干净
-	// 工作树上它同样是一个合法的 vX.Y.Z——按形态判断会把某人的工作副本
+	// go install）注入的是同一处 -X internal/buildinfo.Version，在恰好处于某个
+	// tag 的干净工作树上它同样是一个合法的 vX.Y.Z——按形态判断会把某人的工作副本
 	// 当成发布产物替换掉。
 	Released bool
 	// GOOS 与 GOARCH 是挑选产物的平台；留空时取运行期平台。
