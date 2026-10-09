@@ -69,8 +69,9 @@ HTML 的 `<head>` 里有真实的 `<title>`、`<meta name="description">`、`<li
 
 三条都在 [deploy/nginx-aladdin-site.conf](../../../deploy/nginx-aladdin-site.conf)，与开发期 Vite 的中间件**一一对应**（[web/vite.config.ts](../../../web/vite.config.ts)）——两处各写一份就会漂，而漂的表现是"线上取到的是文档、本地取到的是首页"，只在一边复现。
 
-1. **预渲染出来的目录由 `try_files $uri $uri/` 找到**。`/docs/cli` 落到 `docs/cli/index.html`，不需要任何额外规则。
-2. **`.md` / `.txt` 找不到就是 404**。少了这条，未知路径会被 SPA 兜底接成 200 首页——软 404，正是本文件开头那件事。
+1. **预渲染出来的那几页由 `try_files` 的 `$uri/index.html` 那一段找到**。`/docs/cli` 落到 `docs/cli/index.html`，不需要任何额外规则。
+   **那一段必须排在 `$uri` 前面**：它们的地址（也是写进 head 里那条 canonical 的地址）不带斜杠，而 nginx 看到请求路径是个目录时的默认行为是 301 到带斜杠的那一份——于是 `curl /docs/galaxy` 拿回一个 301、正文在第二跳里，canonical 指着的那个地址自己也成了个重定向。先试 `$uri/index.html` 就绕开了"这是个目录"这个判断。
+2. **`.md` / `.txt` 找不到就是 404**。少了这条，未知路径会被 SPA 兜底接成 200 首页——软 404，正是本文件开头那件事。`.md` 那条还要显式给 `text/markdown`：**nginx 自带的 mime.types 里没有 `md`**（1.24 也没有），不指定就退成 `application/octet-stream`，内容读得到、"这是一份 Markdown"这件事却丢了。
 3. **`Accept: text/markdown` 时 `/docs/<章>` 直接给 `.md`**。只对**章**这一级生效：放开到任意路径会让一个带该请求头的浏览器把整个应用取成 404。
 
 `robots.txt` 允许抓 `/docs/` 与两个 llms 文件，其余 `Disallow`。它是真文件（`web/public/robots.txt`），不是兜底出来的页面。
