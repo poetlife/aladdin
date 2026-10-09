@@ -6663,9 +6663,44 @@ components:
             $ref: '#/components/schemas/aladdin.telemetry.v1.RecentEvent'
           title: events
           description: 按发生时间**从新到旧**排列。
+        subjects:
+          type: object
+          title: subjects
+          additionalProperties:
+            allOf:
+              - title: value
+              - $ref: '#/components/schemas/aladdin.telemetry.v1.SubjectProfile'
+          description: |-
+            本页事件里出现过的主体 → 它的展示信息，键是主体标识。
+
+             **它是读侧的附加投影，不是事件的一部分。** 事件本身仍然只存主体标识：昵称与
+             头像既不写进事件、也不进日志、也不落库，它们是在这次读取时按档案模块那唯一
+             一套回退规则算出来的（见 docs/observability.md 的「读侧 / 管理视图」）。
+
+             本页出现过的每一个**非空** subject_id 都在里面，包括"没有更好的名字、展示名
+             就是标识"的那些——少一个键与"这个人就叫这个"在界面上是同一种呈现，因此不必
+             再分。匿名事件（subject_id 为空）不占键。
+
+             取不到档案时整个字段为空，客户端据此回退到只显示标识。**展示信息的缺失不该
+             让这一页读不出来**——排障要看的第一件事是事件本身。
+
+             能拿到它的人与能读事件的人是同一批：整个方法就要求 `telemetry.read`，这里
+             不另设一道门槛。
       title: ListRecentEventsResponse
       additionalProperties: false
       description: ListRecentEventsResponse 是最新的一页明细。
+    aladdin.telemetry.v1.ListRecentEventsResponse.SubjectsEntry:
+      type: object
+      properties:
+        key:
+          type: string
+          title: key
+        value:
+          allOf:
+            - title: value
+            - $ref: '#/components/schemas/aladdin.telemetry.v1.SubjectProfile'
+      title: SubjectsEntry
+      additionalProperties: false
     aladdin.telemetry.v1.RecentEvent:
       type: object
       properties:
@@ -6695,7 +6730,12 @@ components:
         durationMs:
           type: integer
           title: duration_ms
-          description: 耗时（毫秒）。0 表示上报端未提供。
+          description: |-
+            耗时（毫秒）。0 表示上报端未提供。
+
+             **0 是常见且正确的取值**：只有带明确起止的动作才量得出耗时（打开列表/工作台/
+             预览、打开面板、登录、命令行本地失败）。被拦下、确认框被取消、纯前端切换这类
+             瞬时动作没有起止，如实报 0，而不是编一个 0 毫秒的"测量结果"出来。
         clientTraceId:
           type: string
           title: client_trace_id
@@ -6725,6 +6765,33 @@ components:
           title: value
       title: AttrsEntry
       additionalProperties: false
+    aladdin.telemetry.v1.SubjectProfile:
+      type: object
+      properties:
+        displayName:
+          type: string
+          title: display_name
+          description: |-
+            界面应当显示的名字，由服务端按档案模块的回退规则算好，客户端**不得**自行
+             拼接（规则只有那一处实现，见 docs/ssot-registry.md）。
+
+             回退的最后一步是主体标识本身，因此它只会为空字符串之外的展示名——但客户端
+             仍不得假设两者不同：相同表示"没有更好的名字"，此时只渲染标识即可。
+        avatarUrl:
+          type: string
+          title: avatar_url
+          description: |-
+            头像的**短时有效**预签名读取地址，可直接放进 <img src>。空表示当前没有可
+             显示的头像（真的没设、或这个部署没有配置对象存储）。
+
+             与档案面的 avatar_url 同性质：它是一份短期凭证，地址里头不得承载任何秘密。
+      title: SubjectProfile
+      additionalProperties: false
+      description: |-
+        SubjectProfile 是一个主体在**这里**要显示的样子。
+
+         刻意比 aladdin.profile.v1.Profile 小：只有"显示成什么"这件事需要的两个字段。
+         昵称、简介、邮箱都不进这里——读侧换的是展示信息，不是把档案面整个搬过来。
 tags:
   - name: aladdin.events.v1.EventsService
     description: |-
@@ -6860,11 +6927,15 @@ tags:
        两者的准入条件正相反，写在同一份接口里会让"这个服务要不要认证"变成一个需要
        逐方法去看的问题——那正是注解漏写的温床。
 
-       两条边界同样写死在这里：
+       三条边界同样写死在这里：
 
-         - **读侧不放大字段面**。返回的都是写侧已经脱敏后的字段（有界枚举、服务端从
-           会话得出的主体标识、校验过的 trace_id、白名单属性），没有请求体、没有自由
-           文本。读侧能看见的东西不会比写侧落盘的多。
+         - **事件本身的字段面不放大**。返回的都是写侧已经脱敏后的字段（有界枚举、
+           服务端从会话得出的主体标识、校验过的 trace_id、白名单属性），没有请求体、
+           没有自由文本。落在库里的那一条记录，读侧看见的不会比写侧多一个字段。
+         - **主体标识可以在读侧换成展示信息，仅限读侧**。`subject_id` 是脱敏后的
+           标识，而"这个人叫什么"是排查时要问的第一个问题（见 ListRecentEvents 的
+           `subjects`）。解析发生在**读取的这一刻**：昵称与头像不写进事件、不进日志、
+           不落库——写侧的脱敏硬规则一个字不改（见 docs/observability.md）。
          - **它不是第二套观测平台**。查询参数有界——时间窗是一个枚举，条数有上限，
            没有任意过滤表达式。需要那种能力的分析走外部日志系统（见
            docs/observability.md）。

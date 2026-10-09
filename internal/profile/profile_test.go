@@ -171,6 +171,85 @@ func TestDisplayNameSkipsEmptyChannelIdentifiers(t *testing.T) {
 	}
 }
 
+// 批量读取与逐条读取给出**同一份结果**。
+//
+// 这条用例钉的是"回退规则只有一处实现"：批量版若另写一份拼接（先批量取昵称、
+// 再各自补渠道标识），它迟早会与逐条那份不一致，而漂移的表现是"同一个人在两个
+// 页面上叫两个名字"。
+func TestGetManyMatchesGet(t *testing.T) {
+	profiles, _ := newTestProfiles(t, testOptions{
+		register:   true,
+		identities: fakeIdentities{list: []identity.Identity{display("a@example.com")}},
+	})
+	ctx := context.Background()
+	if _, err := profiles.Update(ctx, subjectA, "阿拉丁", ""); err != nil {
+		t.Fatalf("写入档案失败: %v", err)
+	}
+	// 第二个主体没有档案行：**它不是错误**，展示名按回退规则落到渠道标识。
+	const subjectB = "usr_b"
+
+	views, err := profiles.GetMany(ctx, []string{subjectA, subjectB, subjectA, ""})
+	if err != nil {
+		t.Fatalf("批量读取失败: %v", err)
+	}
+	// 去重且丢空串：两个主体各一项，空串不占键。
+	if len(views) != 2 {
+		t.Fatalf("项数 = %d，期望 2（去重、丢空串）", len(views))
+	}
+	for _, subjectID := range []string{subjectA, subjectB} {
+		single, err := profiles.Get(ctx, subjectID)
+		if err != nil {
+			t.Fatalf("读取 %s 失败: %v", subjectID, err)
+		}
+		if views[subjectID] != single {
+			t.Errorf("%s 的批量结果 = %+v，与逐条读取的 %+v 不一致", subjectID, views[subjectID], single)
+		}
+	}
+	if views[subjectA].DisplayName != "阿拉丁" {
+		t.Errorf("有昵称的那一个 DisplayName = %q，期望昵称", views[subjectA].DisplayName)
+	}
+	if views[subjectB].DisplayName != "a@example.com" {
+		t.Errorf("没档案的那一个 DisplayName = %q，期望回退到渠道标识", views[subjectB].DisplayName)
+	}
+}
+
+// 空输入不报错，也不去查存储：调用方不必为"这一页一条带主体的都没有"单独分支。
+func TestGetManyWithNothingToResolve(t *testing.T) {
+	profiles, _ := newTestProfiles(t, testOptions{})
+	views, err := profiles.GetMany(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("空输入不应失败: %v", err)
+	}
+	if len(views) != 0 {
+		t.Errorf("项数 = %d，期望 0", len(views))
+	}
+}
+
+// 存储用不了时**整体失败、不返回部分结果**。
+//
+// 只回一半会让调用方把"这次解析没做成"读成"另外那些人没有名字"——降级必须是一个
+// 要么全有要么全无的结论，否则界面上会出现一半有名字、一半是标识的假象。
+func TestGetManyFailsWholeWhenStoreUnavailable(t *testing.T) {
+	profiles := NewProfiles(ProfilesDeps{
+		Store:  unavailableStore{},
+		Logger: zap.NewNop(),
+	})
+	views, err := profiles.GetMany(context.Background(), []string{subjectA, "usr_b"})
+	if !errors.Is(err, ErrStoreUnavailable) {
+		t.Fatalf("err = %v，期望包着 ErrStoreUnavailable", err)
+	}
+	if views != nil {
+		t.Errorf("返回了部分结果 %+v，期望 nil", views)
+	}
+}
+
+// unavailableStore 让读取一律失败。
+type unavailableStore struct{ Store }
+
+func (unavailableStore) Get(context.Context, string) (Profile, error) {
+	return Profile{}, ErrStoreUnavailable
+}
+
 // 空值就是"未设置"：清空昵称之后展示名回到回退序列的下一条。
 func TestUpdateClearsAndTrims(t *testing.T) {
 	profiles, _ := newTestProfiles(t, testOptions{

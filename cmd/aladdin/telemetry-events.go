@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -53,12 +54,33 @@ func recordLocalFailure(err error) {
 		attrs["command"] = executedCommand
 	}
 	pendingLocalFailure = &telemetryv1.Event{
-		Client:  telemetryv1.Client_CLIENT_CLI,
-		Surface: telemetryv1.Surface_SURFACE_CLI,
-		Action:  telemetryv1.Action_ACTION_CLI_LOCAL_FAIL,
-		Result:  telemetryv1.Result_RESULT_FAIL,
-		Attrs:   attrs,
+		Client:     telemetryv1.Client_CLIENT_CLI,
+		Surface:    telemetryv1.Surface_SURFACE_CLI,
+		Action:     telemetryv1.Action_ACTION_CLI_LOCAL_FAIL,
+		Result:     telemetryv1.Result_RESULT_FAIL,
+		DurationMs: localFailureDurationMs(),
+		Attrs:      attrs,
 	}
+}
+
+// localFailureDurationMs 是这次本地失败从**进程启动**到此刻的毫秒数。
+//
+// 起止两头都必须说清楚：起点是进程启动而不是某条命令的 RunE 开头——配置读不出来、
+// 凭证解析失败恰恰发生在命令体之前，而从命令体起算会让它们全都记成 0。终点就是
+// 失败被记下的这一刻，它已经在退出路径上，中间没有任何会被漏掉的工作。
+//
+// 超范围与未开始时一律报 0（0 的语义是"未提供"）：耗时是"我们量出来的一个数"，
+// 算不出来时宁可交白卷，也不截断成一个看似合理的假点——与服务端的 maxDurationMS
+// 同一取向（见 internal/telemetry/sanitize.go）。
+func localFailureDurationMs() uint32 {
+	if commandStartedAt.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(commandStartedAt).Milliseconds()
+	if elapsed <= 0 || elapsed > math.MaxUint32 {
+		return 0
+	}
+	return uint32(elapsed)
 }
 
 // localFailureReason 判定一个错误是不是"本地失败"，并给出原因类别。

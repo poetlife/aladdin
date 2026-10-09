@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aladdin/telemetry/v1/telemetry_admin.proto.
  */
 export const file_aladdin_telemetry_v1_telemetry_admin: GenFile = /*@__PURE__*/
-  fileDesc("CiphbGFkZGluL3RlbGVtZXRyeS92MS90ZWxlbWV0cnlfYWRtaW4ucHJvdG8SFGFsYWRkaW4udGVsZW1ldHJ5LnYxIlgKFUxpc3RFdmVudFN0YXRzUmVxdWVzdBINCgVzY29wZRgBIAEoCRIwCgZ3aW5kb3cYAiABKA4yIC5hbGFkZGluLnRlbGVtZXRyeS52MS5UaW1lV2luZG93IkgKFkxpc3RFdmVudFN0YXRzUmVzcG9uc2USLgoFc3RhdHMYASADKAsyHy5hbGFkZGluLnRlbGVtZXRyeS52MS5FdmVudFN0YXQihgEKCUV2ZW50U3RhdBIsCgZjbGllbnQYASABKA4yHC5hbGFkZGluLnRlbGVtZXRyeS52MS5DbGllbnQSDgoGYWN0aW9uGAIgASgJEiwKBnJlc3VsdBgDIAEoDjIcLmFsYWRkaW4udGVsZW1ldHJ5LnYxLlJlc3VsdBINCgVjb3VudBgEIAEoAyJpChdMaXN0UmVjZW50RXZlbnRzUmVxdWVzdBINCgVzY29wZRgBIAEoCRIwCgZ3aW5kb3cYAiABKA4yIC5hbGFkZGluLnRlbGVtZXRyeS52MS5UaW1lV2luZG93Eg0KBWxpbWl0GAMgASgNIk0KGExpc3RSZWNlbnRFdmVudHNSZXNwb25zZRIxCgZldmVudHMYASADKAsyIS5hbGFkZGluLnRlbGVtZXRyeS52MS5SZWNlbnRFdmVudCLrAgoLUmVjZW50RXZlbnQSEwoLb2NjdXJyZWRfYXQYASABKAkSLAoGY2xpZW50GAIgASgOMhwuYWxhZGRpbi50ZWxlbWV0cnkudjEuQ2xpZW50Ei4KB3N1cmZhY2UYAyABKA4yHS5hbGFkZGluLnRlbGVtZXRyeS52MS5TdXJmYWNlEg4KBmFjdGlvbhgEIAEoCRIsCgZyZXN1bHQYBSABKA4yHC5hbGFkZGluLnRlbGVtZXRyeS52MS5SZXN1bHQSEwoLZHVyYXRpb25fbXMYBiABKA0SFwoPY2xpZW50X3RyYWNlX2lkGAcgASgJEhIKCnN1YmplY3RfaWQYCCABKAkSOwoFYXR0cnMYCSADKAsyLC5hbGFkZGluLnRlbGVtZXRyeS52MS5SZWNlbnRFdmVudC5BdHRyc0VudHJ5GiwKCkF0dHJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASp7CgpUaW1lV2luZG93EhsKF1RJTUVfV0lORE9XX1VOU1BFQ0lGSUVEEAASFQoRVElNRV9XSU5ET1dfVE9EQVkQARIbChdUSU1FX1dJTkRPV19MQVNUXzdfREFZUxACEhwKGFRJTUVfV0lORE9XX0xBU1RfMzBfREFZUxADMq8CChVUZWxlbWV0cnlBZG1pblNlcnZpY2UShgEKDkxpc3RFdmVudFN0YXRzEisuYWxhZGRpbi50ZWxlbWV0cnkudjEuTGlzdEV2ZW50U3RhdHNSZXF1ZXN0GiwuYWxhZGRpbi50ZWxlbWV0cnkudjEuTGlzdEV2ZW50U3RhdHNSZXNwb25zZSIZkAIBiognDnRlbGVtZXRyeS5yZWFkkIgnARKMAQoQTGlzdFJlY2VudEV2ZW50cxItLmFsYWRkaW4udGVsZW1ldHJ5LnYxLkxpc3RSZWNlbnRFdmVudHNSZXF1ZXN0Gi4uYWxhZGRpbi50ZWxlbWV0cnkudjEuTGlzdFJlY2VudEV2ZW50c1Jlc3BvbnNlIhmQAgGKiCcOdGVsZW1ldHJ5LnJlYWSQiCcBQkZaRGdpdGh1Yi5jb20vcG9ldGxpZmUvYWxhZGRpbi9hcGkvZ2VuL2FsYWRkaW4vdGVsZW1ldHJ5L3YxO3RlbGVtZXRyeXYxYgZwcm90bzM", [file_aladdin_rbac_v1_annotations, file_aladdin_telemetry_v1_telemetry]);
+  fileDesc("CiphbGFkZGluL3RlbGVtZXRyeS92MS90ZWxlbWV0cnlfYWRtaW4ucHJvdG8SFGFsYWRkaW4udGVsZW1ldHJ5LnYxIlgKFUxpc3RFdmVudFN0YXRzUmVxdWVzdBINCgVzY29wZRgBIAEoCRIwCgZ3aW5kb3cYAiABKA4yIC5hbGFkZGluLnRlbGVtZXRyeS52MS5UaW1lV2luZG93IkgKFkxpc3RFdmVudFN0YXRzUmVzcG9uc2USLgoFc3RhdHMYASADKAsyHy5hbGFkZGluLnRlbGVtZXRyeS52MS5FdmVudFN0YXQihgEKCUV2ZW50U3RhdBIsCgZjbGllbnQYASABKA4yHC5hbGFkZGluLnRlbGVtZXRyeS52MS5DbGllbnQSDgoGYWN0aW9uGAIgASgJEiwKBnJlc3VsdBgDIAEoDjIcLmFsYWRkaW4udGVsZW1ldHJ5LnYxLlJlc3VsdBINCgVjb3VudBgEIAEoAyJpChdMaXN0UmVjZW50RXZlbnRzUmVxdWVzdBINCgVzY29wZRgBIAEoCRIwCgZ3aW5kb3cYAiABKA4yIC5hbGFkZGluLnRlbGVtZXRyeS52MS5UaW1lV2luZG93Eg0KBWxpbWl0GAMgASgNIvQBChhMaXN0UmVjZW50RXZlbnRzUmVzcG9uc2USMQoGZXZlbnRzGAEgAygLMiEuYWxhZGRpbi50ZWxlbWV0cnkudjEuUmVjZW50RXZlbnQSTgoIc3ViamVjdHMYAiADKAsyPC5hbGFkZGluLnRlbGVtZXRyeS52MS5MaXN0UmVjZW50RXZlbnRzUmVzcG9uc2UuU3ViamVjdHNFbnRyeRpVCg1TdWJqZWN0c0VudHJ5EgsKA2tleRgBIAEoCRIzCgV2YWx1ZRgCIAEoCzIkLmFsYWRkaW4udGVsZW1ldHJ5LnYxLlN1YmplY3RQcm9maWxlOgI4ASI6Cg5TdWJqZWN0UHJvZmlsZRIUCgxkaXNwbGF5X25hbWUYASABKAkSEgoKYXZhdGFyX3VybBgCIAEoCSLrAgoLUmVjZW50RXZlbnQSEwoLb2NjdXJyZWRfYXQYASABKAkSLAoGY2xpZW50GAIgASgOMhwuYWxhZGRpbi50ZWxlbWV0cnkudjEuQ2xpZW50Ei4KB3N1cmZhY2UYAyABKA4yHS5hbGFkZGluLnRlbGVtZXRyeS52MS5TdXJmYWNlEg4KBmFjdGlvbhgEIAEoCRIsCgZyZXN1bHQYBSABKA4yHC5hbGFkZGluLnRlbGVtZXRyeS52MS5SZXN1bHQSEwoLZHVyYXRpb25fbXMYBiABKA0SFwoPY2xpZW50X3RyYWNlX2lkGAcgASgJEhIKCnN1YmplY3RfaWQYCCABKAkSOwoFYXR0cnMYCSADKAsyLC5hbGFkZGluLnRlbGVtZXRyeS52MS5SZWNlbnRFdmVudC5BdHRyc0VudHJ5GiwKCkF0dHJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASp7CgpUaW1lV2luZG93EhsKF1RJTUVfV0lORE9XX1VOU1BFQ0lGSUVEEAASFQoRVElNRV9XSU5ET1dfVE9EQVkQARIbChdUSU1FX1dJTkRPV19MQVNUXzdfREFZUxACEhwKGFRJTUVfV0lORE9XX0xBU1RfMzBfREFZUxADMq8CChVUZWxlbWV0cnlBZG1pblNlcnZpY2UShgEKDkxpc3RFdmVudFN0YXRzEisuYWxhZGRpbi50ZWxlbWV0cnkudjEuTGlzdEV2ZW50U3RhdHNSZXF1ZXN0GiwuYWxhZGRpbi50ZWxlbWV0cnkudjEuTGlzdEV2ZW50U3RhdHNSZXNwb25zZSIZkAIBiognDnRlbGVtZXRyeS5yZWFkkIgnARKMAQoQTGlzdFJlY2VudEV2ZW50cxItLmFsYWRkaW4udGVsZW1ldHJ5LnYxLkxpc3RSZWNlbnRFdmVudHNSZXF1ZXN0Gi4uYWxhZGRpbi50ZWxlbWV0cnkudjEuTGlzdFJlY2VudEV2ZW50c1Jlc3BvbnNlIhmQAgGKiCcOdGVsZW1ldHJ5LnJlYWSQiCcBQkZaRGdpdGh1Yi5jb20vcG9ldGxpZmUvYWxhZGRpbi9hcGkvZ2VuL2FsYWRkaW4vdGVsZW1ldHJ5L3YxO3RlbGVtZXRyeXYxYgZwcm90bzM", [file_aladdin_rbac_v1_annotations, file_aladdin_telemetry_v1_telemetry]);
 
 /**
  * ListEventStatsRequest 是一次计数查询。
@@ -162,6 +162,27 @@ export type ListRecentEventsResponse = Message<"aladdin.telemetry.v1.ListRecentE
    * @generated from field: repeated aladdin.telemetry.v1.RecentEvent events = 1;
    */
   events: RecentEvent[];
+
+  /**
+   * 本页事件里出现过的主体 → 它的展示信息，键是主体标识。
+   *
+   * **它是读侧的附加投影，不是事件的一部分。** 事件本身仍然只存主体标识：昵称与
+   * 头像既不写进事件、也不进日志、也不落库，它们是在这次读取时按档案模块那唯一
+   * 一套回退规则算出来的（见 docs/observability.md 的「读侧 / 管理视图」）。
+   *
+   * 本页出现过的每一个**非空** subject_id 都在里面，包括"没有更好的名字、展示名
+   * 就是标识"的那些——少一个键与"这个人就叫这个"在界面上是同一种呈现，因此不必
+   * 再分。匿名事件（subject_id 为空）不占键。
+   *
+   * 取不到档案时整个字段为空，客户端据此回退到只显示标识。**展示信息的缺失不该
+   * 让这一页读不出来**——排障要看的第一件事是事件本身。
+   *
+   * 能拿到它的人与能读事件的人是同一批：整个方法就要求 `telemetry.read`，这里
+   * 不另设一道门槛。
+   *
+   * @generated from field: map<string, aladdin.telemetry.v1.SubjectProfile> subjects = 2;
+   */
+  subjects: { [key: string]: SubjectProfile };
 };
 
 /**
@@ -170,6 +191,44 @@ export type ListRecentEventsResponse = Message<"aladdin.telemetry.v1.ListRecentE
  */
 export const ListRecentEventsResponseSchema: GenMessage<ListRecentEventsResponse> = /*@__PURE__*/
   messageDesc(file_aladdin_telemetry_v1_telemetry_admin, 4);
+
+/**
+ * SubjectProfile 是一个主体在**这里**要显示的样子。
+ *
+ * 刻意比 aladdin.profile.v1.Profile 小：只有"显示成什么"这件事需要的两个字段。
+ * 昵称、简介、邮箱都不进这里——读侧换的是展示信息，不是把档案面整个搬过来。
+ *
+ * @generated from message aladdin.telemetry.v1.SubjectProfile
+ */
+export type SubjectProfile = Message<"aladdin.telemetry.v1.SubjectProfile"> & {
+  /**
+   * 界面应当显示的名字，由服务端按档案模块的回退规则算好，客户端**不得**自行
+   * 拼接（规则只有那一处实现，见 docs/ssot-registry.md）。
+   *
+   * 回退的最后一步是主体标识本身，因此它只会为空字符串之外的展示名——但客户端
+   * 仍不得假设两者不同：相同表示"没有更好的名字"，此时只渲染标识即可。
+   *
+   * @generated from field: string display_name = 1;
+   */
+  displayName: string;
+
+  /**
+   * 头像的**短时有效**预签名读取地址，可直接放进 <img src>。空表示当前没有可
+   * 显示的头像（真的没设、或这个部署没有配置对象存储）。
+   *
+   * 与档案面的 avatar_url 同性质：它是一份短期凭证，地址里头不得承载任何秘密。
+   *
+   * @generated from field: string avatar_url = 2;
+   */
+  avatarUrl: string;
+};
+
+/**
+ * Describes the message aladdin.telemetry.v1.SubjectProfile.
+ * Use `create(SubjectProfileSchema)` to create a new message.
+ */
+export const SubjectProfileSchema: GenMessage<SubjectProfile> = /*@__PURE__*/
+  messageDesc(file_aladdin_telemetry_v1_telemetry_admin, 5);
 
 /**
  * RecentEvent 是一条事件的明细，字段与写侧落盘的日志字段一一对应。
@@ -215,6 +274,10 @@ export type RecentEvent = Message<"aladdin.telemetry.v1.RecentEvent"> & {
   /**
    * 耗时（毫秒）。0 表示上报端未提供。
    *
+   * **0 是常见且正确的取值**：只有带明确起止的动作才量得出耗时（打开列表/工作台/
+   * 预览、打开面板、登录、命令行本地失败）。被拦下、确认框被取消、纯前端切换这类
+   * 瞬时动作没有起止，如实报 0，而不是编一个 0 毫秒的"测量结果"出来。
+   *
    * @generated from field: uint32 duration_ms = 6;
    */
   durationMs: number;
@@ -246,7 +309,7 @@ export type RecentEvent = Message<"aladdin.telemetry.v1.RecentEvent"> & {
  * Use `create(RecentEventSchema)` to create a new message.
  */
 export const RecentEventSchema: GenMessage<RecentEvent> = /*@__PURE__*/
-  messageDesc(file_aladdin_telemetry_v1_telemetry_admin, 5);
+  messageDesc(file_aladdin_telemetry_v1_telemetry_admin, 6);
 
 /**
  * TimeWindow 是允许选择的观察窗口。**枚举而不是时间戳对**：有界取值让服务端不必
@@ -309,11 +372,15 @@ export const TimeWindowSchema: GenEnum<TimeWindow> = /*@__PURE__*/
  * 两者的准入条件正相反，写在同一份接口里会让"这个服务要不要认证"变成一个需要
  * 逐方法去看的问题——那正是注解漏写的温床。
  *
- * 两条边界同样写死在这里：
+ * 三条边界同样写死在这里：
  *
- *   - **读侧不放大字段面**。返回的都是写侧已经脱敏后的字段（有界枚举、服务端从
- *     会话得出的主体标识、校验过的 trace_id、白名单属性），没有请求体、没有自由
- *     文本。读侧能看见的东西不会比写侧落盘的多。
+ *   - **事件本身的字段面不放大**。返回的都是写侧已经脱敏后的字段（有界枚举、
+ *     服务端从会话得出的主体标识、校验过的 trace_id、白名单属性），没有请求体、
+ *     没有自由文本。落在库里的那一条记录，读侧看见的不会比写侧多一个字段。
+ *   - **主体标识可以在读侧换成展示信息，仅限读侧**。`subject_id` 是脱敏后的
+ *     标识，而"这个人叫什么"是排查时要问的第一个问题（见 ListRecentEvents 的
+ *     `subjects`）。解析发生在**读取的这一刻**：昵称与头像不写进事件、不进日志、
+ *     不落库——写侧的脱敏硬规则一个字不改（见 docs/observability.md）。
  *   - **它不是第二套观测平台**。查询参数有界——时间窗是一个枚举，条数有上限，
  *     没有任意过滤表达式。需要那种能力的分析走外部日志系统（见
  *     docs/observability.md）。

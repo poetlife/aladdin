@@ -21,6 +21,14 @@ const COVER_TIMEOUT_SECONDS = Math.round(COVER_TIMEOUT_MS / 1000)
 /** 内容到哪一步了：还在遮着、到点撤了遮罩、还是已经到齐。 */
 type FrameLoad = 'covering' | 'overdue' | 'loaded'
 
+/**
+ * 这一帧**这一次尝试**的结论。`covering` 是过程，不是结论，因此不在其中。
+ *
+ * 两个取值都要报给宿主，不能只报 `loaded`：只报到齐的话，"最慢的那一次加载"反而
+ * 永远等不到回调，而它恰恰是唯一值得看的那一条（见 SandboxFrameProps.onSettled）。
+ */
+export type FrameSettled = Exclude<FrameLoad, 'covering'>
+
 interface SandboxFrameProps {
   /**
    * 要加载的地址：**用户内容整站的入口**，落在发布域上。
@@ -41,6 +49,18 @@ interface SandboxFrameProps {
    * 窄屏下高度不随宽度变，因此不按断点调整。
    */
   height?: number | string
+  /**
+   * 这一帧这一次尝试有了结论时调用一次：`loaded` 到齐了、`overdue` 到点仍未到齐。
+   * 省略时不回调。
+   *
+   * **宿主需要它是因为只有这里知道那一刻**：`load` 是帧自己的事件，而宿主侧
+   * "什么时候把地址交出去"与它不是同一件事。遥测用它量"打开这一步用了多久"
+   * （见 docs/observability.md 的「客户端事件」）——而那个耗时是这一页上唯一
+   * 只有客户端答得了的量。
+   *
+   * 换地址或点了重试都会**重新计一次**：那是新的一次尝试，结论也该是新的。
+   */
+  onSettled?: (outcome: FrameSettled) => void
 }
 
 /**
@@ -72,7 +92,7 @@ interface SandboxFrameProps {
  * 属性一样只有这一处**——预览与壳各写一份的表现是"壳里补上了、工作台里的预览仍然
  * 白着"。
  */
-export function SandboxFrame({ url, title, height = 420 }: SandboxFrameProps): React.ReactNode {
+export function SandboxFrame({ url, title, height = 420, onSettled }: SandboxFrameProps): React.ReactNode {
   const { token } = theme.useToken()
   const frame = useRef<HTMLIFrameElement>(null)
   const [preview, setPreview] = useState<FrameImagePreview | null>(null)
@@ -81,13 +101,39 @@ export function SandboxFrame({ url, title, height = 420 }: SandboxFrameProps): R
   // 把重试次数交给 `key`，帧因此重挂、重新发一次请求。
   const [attempt, setAttempt] = useState(0)
 
-  // 地址换了或用户点了重试，都从头等起。计时器到点时若已经到过 `load`，这一档就
-  // 不再改写状态（`covering` 之外一律不动）。
+  // 这一次尝试是否已经报过结论，以及报的是哪一条。
+  //
+  // 它挡的是"同一次尝试报两遍"：`overdue` 之后帧仍可能到齐（那时状态从 overdue
+  // 走到 loaded），而宿主拿它量的是"等了多久"，报两遍会让一条动作变成两条事件。
+  // **第一个结论为准**，后面的不再改写——这也是 `load` 状态本来的语义。
+  const settled = useRef<FrameSettled | null>(null)
+  // 回调放进 ref：它常常是宿主每次渲染新建的箭头函数，而下面那个函数不该因为
+  // 宿主重渲染就拿到另一个版本。
+  const settledCallback = useRef(onSettled)
+  settledCallback.current = onSettled
+
+  /**
+   * 记下这一次尝试的结论并通知宿主一次。
+   *
+   * 它**不放在 effect 里**：`load` 是这一次尝试的状态，而地址一变它就是上一轮的
+   * 值——按 `load` 变化触发的 effect 会在换地址后的第一帧就把上一轮的 `loaded`
+   * 当成新一轮的结论报出去。结论由"谁让它结束的"直接给出，中间不经过状态。
+   */
+  const settle = (outcome: FrameSettled): void => {
+    if (settled.current !== null) {
+      return
+    }
+    settled.current = outcome
+    setLoad(outcome)
+    settledCallback.current?.(outcome)
+  }
+
+  // 地址换了或用户点了重试，都从头等起。计时器到点时若已经有结论，这一档就
+  // 不再改写（结论是第一个说了算）。
   useEffect(() => {
+    settled.current = null
     setLoad('covering')
-    const timer = window.setTimeout(() => {
-      setLoad((current) => (current === 'covering' ? 'overdue' : current))
-    }, COVER_TIMEOUT_MS)
+    const timer = window.setTimeout(() => settle('overdue'), COVER_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
   }, [url, attempt])
 
@@ -137,7 +183,7 @@ export function SandboxFrame({ url, title, height = 420 }: SandboxFrameProps): R
           // 逐字写死沙箱属性：不得出现 allow-same-origin，见上方注释。
           sandbox="allow-scripts"
           src={url}
-          onLoad={() => setLoad('loaded')}
+          onLoad={() => settle('loaded')}
           style={{
             width: '100%',
             height: '100%',

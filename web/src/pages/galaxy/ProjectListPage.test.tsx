@@ -26,7 +26,19 @@ import { ProjectListPage } from './ProjectListPage'
 // 遥测走真实模块的话它会去调还没初始化的传输层（本文件没有初始化它），
 // 于是每次上报都只落一条 console.debug。这里换成替身，好让"报了没有、带了什么"
 // 变成可断言的事实。
-vi.mock('../../telemetry/track', () => ({ track: vi.fn() }))
+// 计时器替身与 track 共用同一个 spy，并照真实现的形状把耗时并进事件——这样
+// "这一页量了耗时"与"耗时被带上了"两件事都能在下面的断言里看见（真实现的取整与
+// 单调性由 telemetry/track.test.ts 钉住）。
+vi.mock('../../telemetry/track', () => {
+  const track = vi.fn()
+  return {
+    track,
+    startTimer: () => ({
+      elapsedMs: () => 12,
+      end: (event: Record<string, unknown>) => track({ ...event, durationMs: 12 }),
+    }),
+  }
+})
 
 vi.mock('../../api/identity', () => ({
   AuthSource: { Google: 'google', Github: 'github' },
@@ -264,6 +276,9 @@ describe('打开列表的遥测', () => {
         action: Action.PROJECT_LIST_OPEN,
         result: Result.OK,
         traceId: traceID,
+        // 这一页唯一只有客户端知道起止的动作：耗时必须真的跟着这条事件走，
+        // 否则管理页那一列会永远是「—」（见 docs/observability.md）。
+        durationMs: 12,
       }),
     )
   })

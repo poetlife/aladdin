@@ -39,8 +39,17 @@ var flags globalFlags
 // 用户不知道要加多少、加完够不够。零值表示配置没解析成功，此时不可能出现超时错误。
 var effectiveTimeout time.Duration
 
+// commandStartedAt 是本进程开始执行命令的时刻。
+//
+// 它在 Execute 开头记下：退出路径只知道"失败了"，而"这条命令从启动到失败用了多久"
+// 是判断"卡在哪里"的第一手材料（本地失败尤其如此——配置读不出来本不该让人等）。
+// 放在这里而不是 PersistentPreRunE：标志解析失败、命令不存在都到不了那一步，
+// 而它们同样是本地失败。
+var commandStartedAt time.Time
+
 // Execute 运行命令行并返回进程退出码。
 func Execute() int {
+	commandStartedAt = time.Now()
 	root := newRootCommand()
 	err := root.Execute()
 

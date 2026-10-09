@@ -41,6 +41,7 @@
 | 一份会话凭证是否有效、代表谁 | 会话存储的查询入口 | [internal/identity/session.go](../internal/identity/session.go) |
 | 某个邮箱（展示值）对应哪些已登记身份 | 身份别名的按展示值查询 | [internal/identity/identity.go](../internal/identity/identity.go) |
 | 一个主体的展示名（昵称，未设则回退到渠道标识，再回退到主体标识） | 档案的展示名解析入口 | [internal/profile/profiles.go](../internal/profile/profiles.go) |
+| 一批主体的展示名与头像（读侧把事件里的标识换成展示信息） | `Profiles.GetMany`（`Get` 的批量形式，**回退规则仍是上面那一条实现**，不另写一份批量版拼接） | [internal/profile/profiles.go](../internal/profile/profiles.go) |
 | 字节数的展示文案（头像上限、资产上限、文件大小） | `describeBytes` | [web/src/format/bytes.ts](../web/src/format/bytes.ts) |
 | 一段源里出现了哪些 `asset://` 记号（去重且有序） | 记号的识别入口（逐字扫描，不解析 HTML） | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) |
 | 一处引用（记号、文档间链接、站点内路径）解析成什么地址 | 引用的解析入口（发布态给发布根下的绝对地址、预览态给预览根下的绝对地址；两处共用同一处"落在哪一条条目上"的判断，预览那处只是不因坏引用而失败） | [internal/galaxy/link_resolver.go](../internal/galaxy/link_resolver.go) |
@@ -138,7 +139,8 @@
 | 指标名、属性键与记录入口 | 常量定义 + `observability.Metrics` 的方法 | [internal/observability/metrics.go](../internal/observability/metrics.go) |
 | 客户端事件的校验、脱敏、限流与落盘（日志与库两个去处） | `telemetry.Recorder.Report`（RPC 那一层只是薄壳） | [internal/telemetry/recorder.go](../internal/telemetry/recorder.go) |
 | 上报端标识 `x-aladdin-client` 的注入 | Web 传输层的拦截器 / CLI 客户端的请求头注入处 | [web/src/api/transport.ts](../web/src/api/transport.ts) / [pkg/client/client.go](../pkg/client/client.go) |
-| 前端客户端事件的上报入口（攒批、失败即时发送、页面隐藏冲刷） | `track` | [web/src/telemetry/track.ts](../web/src/telemetry/track.ts) |
+| 前端客户端事件的上报入口（攒批、失败即时发送、页面隐藏冲刷） | `track`（`startTimer().end` 是它的薄封装，不另起一条上报链路） | [web/src/telemetry/track.ts](../web/src/telemetry/track.ts) |
+| 一次客户端动作的耗时怎么量（起点、取整、下限） | `startTimer()` | [web/src/telemetry/track.ts](../web/src/telemetry/track.ts) |
 | 命令行本地失败的上报（配置/凭证/用法，退出前发出） | `recordLocalFailure` + `flushClientEvents`（只在退出路径调用） | [cmd/aladdin/telemetry-events.go](../cmd/aladdin/telemetry-events.go) |
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
 | 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh`（产物来源由 `--from` 给出，默认是 Release；**中转不另起一份部署实现**） | [deploy/deploy.sh](../deploy/deploy.sh) |

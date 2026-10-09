@@ -104,6 +104,38 @@ func (p *Profiles) Get(ctx context.Context, subjectID string) (View, error) {
 	}, nil
 }
 
+// GetMany 批量读取多个主体的档案视图，返回 subjectID → View。
+//
+// 它是 Get 的批量形式，为"读侧要把一批标识换成展示信息"这类场景而存在
+// （例如遥测管理页的明细）。**回退规则仍然只有一处实现**：逐条走 Get，不另写
+// 一份"批量版"的拼接——两份实现迟早在某个渠道组合上不一致（例如批量版忘了按
+// 身份模块的顺序取第一条），而漂移的表现是"同一个人在两处叫两个名字"。
+//
+// 输入会去重并丢掉空串；返回值只含读到的那些主体，**不含**没被请求的键。
+// 某一主体没有档案行不是错误（行是惰性创建的，见 load），它的展示名按回退规则
+// 落到渠道标识或主体标识。
+//
+// 任何一条出错即整体失败、不返回部分结果：现实中的错误只有"存储用不了"，它是
+// 系统性的，而不是某一个主体的问题。调用方因此可以放心地把"整体为空"读成
+// "这一次解析没做成"，并据此降级——展示信息的缺失不该让调用方的主功能失败。
+func (p *Profiles) GetMany(ctx context.Context, subjectIDs []string) (map[string]View, error) {
+	out := make(map[string]View, len(subjectIDs))
+	for _, subjectID := range subjectIDs {
+		if subjectID == "" {
+			continue
+		}
+		if _, done := out[subjectID]; done {
+			continue
+		}
+		view, err := p.Get(ctx, subjectID)
+		if err != nil {
+			return nil, err
+		}
+		out[subjectID] = view
+	}
+	return out, nil
+}
+
 // Update 设置昵称与简介。传空串表示清空该项，此时展示名回退到下一条规则。
 func (p *Profiles) Update(ctx context.Context, subjectID, nickname, bio string) (View, error) {
 	// 去首尾空白放在长度校验之前：一个只由空格组成的昵称应当被判成"清空"，
