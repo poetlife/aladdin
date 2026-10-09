@@ -5,6 +5,10 @@ import { defineConfig } from 'vitest/config'
 import type { Plugin, ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// 带扩展名是有意为之：Vite 的配置文件加载器将来会换成不需要打包的那一种，
+// 那时相对导入必须写全扩展名（不带扩展名现在就会打一条警告）。
+import { servedArtifactPath } from './prerender/served-paths.ts'
+
 // dev 下让 /api-docs/ 落到目录里的 index.html。
 //
 // 生产由 nginx 的 try_files $uri $uri/ 处理，dev 不会——Vite 对目录请求会走
@@ -30,25 +34,6 @@ interface DocsArtifact {
 }
 
 /**
- * 请求该由这里回答吗；该的话回答哪一份。
- *
- * 与 nginx 那两条规则**一一对应**（见 deploy/nginx-aladdin-site.conf）：
- * 静态资源类后缀找不到就 404，而不是落回 index.html；`Accept: text/markdown`
- * 时 `/docs/<章>` 直接给 Markdown。两处各写一份就会漂，而漂的表现是
- * "线上取到的是文档、本地取到的是首页"——只在一边复现。
- */
-function artifactPathFor(path: string, accept: string | undefined): string | null {
-  if (path.endsWith('.md') || path.endsWith('.txt')) {
-    return path
-  }
-  // 只对**章**做这一条：放开到任意路径会让一个带该请求头的浏览器把整个应用取成 404。
-  if (/^\/docs\/[a-z-]+$/.test(path) && accept?.includes('text/markdown') === true) {
-    return `${path}.md`
-  }
-  return null
-}
-
-/**
  * dev 下提供送给 agent 的那几份产物（`/llms.txt`、`/docs/<章>.md`）。
  *
  * 生产里它们是**构建产物**（见 prerender/generate.tsx），由静态目录直接服务。
@@ -56,7 +41,8 @@ function artifactPathFor(path: string, accept: string | undefined): string | nul
  * （`ssrLoadModule`），因此读到的正是应用读的那一份源，不是另抄的一份。
  *
  * 顺带把"未知的 .md / .txt 不再兜底成 200 首页"这条也补上：那是个软 404，
- * 会让 agent 以为地址存在。
+ * 会让 agent 以为地址存在。判据在 prerender/served-paths.ts，与 nginx 那两条
+ * 规则一一对应。
  */
 function serveDocsArtifacts(): Plugin {
   return {
@@ -64,7 +50,7 @@ function serveDocsArtifacts(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const path = new URL(req.url ?? '/', 'http://localhost').pathname
-        const target = artifactPathFor(path, req.headers.accept)
+        const target = servedArtifactPath(path, req.headers.accept)
         if (target === null) {
           next()
           return
