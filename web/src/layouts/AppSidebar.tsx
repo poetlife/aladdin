@@ -7,7 +7,6 @@ import {
   CircleUserRound,
   FolderTree,
   KeyRound,
-  Lamp,
   LayoutDashboard,
   LogOut,
   ServerCog,
@@ -24,6 +23,7 @@ import { usePermissionSet, useSession } from '../auth'
 import type { PermissionCode } from '../gen/permission-codes'
 import { PermissionCodes } from '../gen/permission-codes'
 import { avatarFallbackInitial, useProfile } from '../profile'
+import { BrandMark } from '../ui/BrandMark'
 
 const ICON_SIZE = 16
 
@@ -225,7 +225,14 @@ function Brand({
         overflow: 'hidden',
       }}
     >
-      <Lamp size={20} color={token.colorPrimary} />
+      {/* 标识自身带明暗两版，因此这里不再给它上色——上色会把渐变整个盖掉
+          （那是 lucide 那种单色图标的做法，见 docs/design/web/brand/README.md）。
+          收起成导轨时旁边没有文字，标识就成了这一行唯一说明"这是哪个站"的东西，
+          名字这时走 alt。
+
+          22 而不是导航图标的 16：标识是**面**，导航图标是**线**，同样边长下面比线
+          占的视觉重量小，等大看着就偏小。 */}
+      <BrandMark size={22} label={collapsed ? '阿拉丁神灯' : ''} />
       {!collapsed && (
         <span style={{ fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap' }}>阿拉丁神灯</span>
       )}

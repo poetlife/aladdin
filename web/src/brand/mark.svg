@@ -1,0 +1,27 @@
+<!--
+  由 docs/design/web/brand/generate-icons.sh 生成，请勿手工修改。
+  形状的唯一来源是 docs/design/web/brand/aladdin-mark.svg。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="阿拉丁神灯">
+  <title>阿拉丁神灯</title>
+  <!--
+    图标本体的唯一几何来源（浅色版）。
+
+    一笔渐变丝带上卷化为星光：下端是渐细的丝带尾，向上收束成星芒。它**不带底**——
+    底色属于"用在哪"，不属于"是什么"。方形的应用图标（favicon、主屏图标）由
+    generate-icons.sh 在这个形状外面套一层圆角底得到，侧边栏那类已经站在底色上的
+    地方直接用它。
+
+    暗色版见 aladdin-mark-dark.svg：几何完全相同，只多一层发光。
+    改动这里的路径要重新跑 generate-icons.sh（见 README.md）。
+  -->
+  <defs>
+    <!-- 渐变端点用 userSpaceOnUse 锚在坐标上，而不是跟着包围盒缩放：
+         同一个渐变在图标、侧边栏、不同尺寸的导出里都落在同一个位置。 -->
+    <linearGradient id="brand-gradient" x1="6" y1="58" x2="56" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00C2FF"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#brand-gradient)" d="M40 2 Q45.2 16.5 58.5 20.5 Q47.8 24 46 29.5 C 48.5 38 46.5 47.5 33 54 C 23 58.5 13 59 3.5 59 C 11.5 54.5 24 49 31.5 41 C 35.2 35.5 35.2 30.5 35.8 29.5 Q 32.2 24 21.5 20.5 Q 34.8 16.5 40 2 Z"/>
+</svg>
