@@ -7,8 +7,11 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"go.uber.org/zap"
 
 	telemetryv1 "github.com/poetlife/aladdin/api/gen/aladdin/telemetry/v1"
+	"github.com/poetlife/aladdin/internal/profile"
+	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/telemetry"
 )
 
@@ -53,7 +56,7 @@ func (s *stubStore) DeleteBefore(_ context.Context, cutoff time.Time) (int64, er
 // 未指定或越界的时间窗是**拒绝**，不是回落到默认窗口——静默回落会让一个拼错的
 // 取值看起来像是生效了。
 func TestTelemetryAdminRejectsUnknownWindow(t *testing.T) {
-	svc := NewTelemetryAdminService(&stubStore{})
+	svc := NewTelemetryAdminService(&stubStore{}, nil, nil)
 	ctx := context.Background()
 
 	if _, err := svc.ListEventStats(ctx, connect.NewRequest(&telemetryv1.ListEventStatsRequest{})); err == nil {
@@ -75,7 +78,7 @@ func TestTelemetryAdminListEventStats(t *testing.T) {
 		{Client: "web", Action: "draft.save", Result: "blocked", Count: 3},
 		{Client: "cli", Action: "cli.local_fail", Result: "fail", Count: 1},
 	}}
-	svc := NewTelemetryAdminService(store)
+	svc := NewTelemetryAdminService(store, nil, nil)
 	svc.now = func() time.Time { return time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) }
 
 	resp, err := svc.ListEventStats(context.Background(), connect.NewRequest(&telemetryv1.ListEventStatsRequest{
@@ -117,7 +120,7 @@ func TestTelemetryAdminRecentLimitIsBounded(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &stubStore{}
-			svc := NewTelemetryAdminService(store)
+			svc := NewTelemetryAdminService(store, nil, nil)
 			_, err := svc.ListRecentEvents(context.Background(), connect.NewRequest(&telemetryv1.ListRecentEventsRequest{
 				Window: telemetryv1.TimeWindow_TIME_WINDOW_TODAY,
 				Limit:  tc.limit,
@@ -148,7 +151,7 @@ func TestTelemetryAdminListRecentEvents(t *testing.T) {
 		},
 		OccurredAt: occurred,
 	}}}
-	svc := NewTelemetryAdminService(store)
+	svc := NewTelemetryAdminService(store, nil, nil)
 
 	resp, err := svc.ListRecentEvents(context.Background(), connect.NewRequest(&telemetryv1.ListRecentEventsRequest{
 		Window: telemetryv1.TimeWindow_TIME_WINDOW_TODAY,
@@ -172,11 +175,121 @@ func TestTelemetryAdminListRecentEvents(t *testing.T) {
 		e.GetSubjectId() != "subject/abc" || e.GetAttrs()["command"] != "galaxy" {
 		t.Errorf("字段回填不一致：%v", e)
 	}
+	// 没装配档案入口时不做解析：这是"读侧换展示信息"这件事的开关，它默认是关的。
+	if len(resp.Msg.GetSubjects()) != 0 {
+		t.Errorf("subjects = %v，期望为空", resp.Msg.GetSubjects())
+	}
+}
+
+// resolvedSubject 是读侧解析用例里那个有昵称的主体。
+const resolvedSubject = "usr_resolved"
+
+// 明细里的主体标识在读侧换成展示名与头像。
+//
+// 同时钉住两件事：**事件本身仍然只有标识**（返回的 events 与写侧落库的一模一样），
+// 以及匿名事件不占 subjects 的键。
+func TestTelemetryAdminResolvesSubjectProfiles(t *testing.T) {
+	ctx := context.Background()
+	profileStore := profile.NewMemoryStore()
+	if err := profileStore.PutText(ctx, resolvedSubject, "阿拉丁", "", time.Now()); err != nil {
+		t.Fatalf("写入档案失败: %v", err)
+	}
+
+	store := &stubStore{stored: []telemetry.Entry{
+		{Record: telemetry.Record{
+			Client: "web", Surface: "web.editor", Action: "editor.open", Result: "ok",
+			SubjectID: resolvedSubject,
+		}},
+		// 匿名：允许匿名的动作会是这个形状（登录页上的失败）。
+		{Record: telemetry.Record{
+			Client: "web", Surface: "web.auth", Action: "auth.login", Result: "fail",
+		}},
+		// 同一个人又出现一次：项数不因此变多。
+		{Record: telemetry.Record{
+			Client: "web", Surface: "web.editor", Action: "publish", Result: "blocked",
+			SubjectID: resolvedSubject,
+		}},
+	}}
+	svc := NewTelemetryAdminService(store, newTestProfiles(t, profileStore), zap.NewNop())
+
+	resp, err := svc.ListRecentEvents(ctx, connect.NewRequest(&telemetryv1.ListRecentEventsRequest{
+		Window: telemetryv1.TimeWindow_TIME_WINDOW_TODAY,
+	}))
+	if err != nil {
+		t.Fatalf("查询失败: %v", err)
+	}
+
+	subjects := resp.Msg.GetSubjects()
+	if len(subjects) != 1 {
+		t.Fatalf("subjects 项数 = %d，期望 1（只有带主体的那些，且同一个只算一项）", len(subjects))
+	}
+	if got := subjects[resolvedSubject].GetDisplayName(); got != "阿拉丁" {
+		t.Errorf("display_name = %q，期望昵称", got)
+	}
+	// 头像没设、这个部署也没有对象存储：地址为空是"没有可显示的头像"，不是错误。
+	if got := subjects[resolvedSubject].GetAvatarUrl(); got != "" {
+		t.Errorf("avatar_url = %q，期望为空", got)
+	}
+
+	// 解析只发生在读侧：事件本身与写侧落库的那一份逐字一致。
+	events := resp.Msg.GetEvents()
+	if len(events) != 3 {
+		t.Fatalf("事件条数 = %d，期望 3", len(events))
+	}
+	if events[0].GetSubjectId() != resolvedSubject || events[1].GetSubjectId() != "" {
+		t.Errorf("事件的 subject_id 被改写了：%q / %q", events[0].GetSubjectId(), events[1].GetSubjectId())
+	}
+}
+
+// 解析失败**降级不失败**：档案存储抖动不该让排障要看的那一页读不出来。
+//
+// 界面上表现为主体列回退到只显示标识——这是可接受的降级，而整页报错不是。
+func TestTelemetryAdminDegradesWhenSubjectResolutionFails(t *testing.T) {
+	store := &stubStore{stored: []telemetry.Entry{{
+		Record: telemetry.Record{
+			Client: "web", Surface: "web.editor", Action: "editor.open", Result: "ok",
+			SubjectID: resolvedSubject,
+		},
+	}}}
+	svc := NewTelemetryAdminService(store, newTestProfiles(t, failingProfileStore{}), zap.NewNop())
+
+	resp, err := svc.ListRecentEvents(context.Background(), connect.NewRequest(&telemetryv1.ListRecentEventsRequest{
+		Window: telemetryv1.TimeWindow_TIME_WINDOW_TODAY,
+	}))
+	if err != nil {
+		t.Fatalf("解析失败不应让明细查询失败: %v", err)
+	}
+	if len(resp.Msg.GetEvents()) != 1 {
+		t.Errorf("事件条数 = %d，期望 1", len(resp.Msg.GetEvents()))
+	}
+	if len(resp.Msg.GetSubjects()) != 0 {
+		t.Errorf("subjects = %v，期望为空", resp.Msg.GetSubjects())
+	}
+}
+
+// newTestProfiles 构造一个接在给定存储上的档案入口。
+//
+// Subjects 用空的内存实现、Identities 留 nil：这些用例要的是"昵称读得回来"，
+// 身份的加入会让断言多出与本层无关的前提。
+func newTestProfiles(t *testing.T, store profile.Store) *profile.Profiles {
+	t.Helper()
+	return profile.NewProfiles(profile.ProfilesDeps{
+		Store:    store,
+		Subjects: rbac.NewMemoryStore(),
+		Logger:   zap.NewNop(),
+	})
+}
+
+// failingProfileStore 让档案读取一律失败。
+type failingProfileStore struct{ profile.Store }
+
+func (failingProfileStore) Get(context.Context, string) (profile.Profile, error) {
+	return profile.Profile{}, profile.ErrStoreUnavailable
 }
 
 // "库用不了"必须让请求失败，而不是被读成"最近没有事件"。
 func TestTelemetryAdminStoreUnavailable(t *testing.T) {
-	svc := NewTelemetryAdminService(&stubStore{err: telemetry.ErrStoreUnavailable})
+	svc := NewTelemetryAdminService(&stubStore{err: telemetry.ErrStoreUnavailable}, nil, nil)
 	ctx := context.Background()
 
 	_, err := svc.ListEventStats(ctx, connect.NewRequest(&telemetryv1.ListEventStatsRequest{

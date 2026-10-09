@@ -213,7 +213,10 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	if ident.Identities != nil {
 		profileDeps.Identities = ident.Identities
 	}
-	profileSrv := NewProfileService(profile.NewProfiles(profileDeps), logger)
+	// 同一个档案入口也交给下面的遥测读侧：它要用**同一套**展示名回退规则把事件里的
+	// 主体标识换成展示信息（见 telemetry_admin_service.go）。
+	profiles := profile.NewProfiles(profileDeps)
+	profileSrv := NewProfileService(profiles, logger)
 
 	// 请求凭证的认证入口：机器凭证与会话凭证两条路径合到一处，
 	// 见 credential_authenticator.go。
@@ -327,8 +330,12 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 
 	// 客户端事件的只读管理面。它与上面的上报服务**准入条件正相反**（那边公开、
 	// 这边要 telemetry.read），因此是两个服务而不是一个服务的两个方法。
+	//
+	// 它拿到档案入口是为了把明细里的主体标识**在读侧**换成展示名与头像：昵称与
+	// 头像不进事件、不进日志、不落库，写侧的脱敏规则一个字不改（见
+	// docs/observability.md）。
 	telemetryAdminPath, telemetryAdminHandler := telemetryv1connect.NewTelemetryAdminServiceHandler(
-		NewTelemetryAdminService(tel.Events), opts...)
+		NewTelemetryAdminService(tel.Events, profiles, logger), opts...)
 	register(telemetryAdminPath, telemetryAdminHandler)
 
 	// 技能目录。**它的字节与 galaxy 的资产在同一个桶里**，靠 `skills/` 那一段

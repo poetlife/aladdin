@@ -8,7 +8,7 @@ import { captureTrace, traceIdForAction, type TraceCapture } from '../api/call-t
 import { messageOf } from '../api/errors'
 import { GithubMark, GoogleMark, useSession } from '../auth'
 import { Action, Result, Surface } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
-import { track } from '../telemetry/track'
+import { startTimer, type ActionTimer } from '../telemetry/track'
 
 interface LoginFormValues {
   token: string
@@ -69,12 +69,15 @@ export function LoginPage(): React.ReactNode {
     setSubmitting(true)
     setError(null)
     const trace = captureTrace()
+    // 起点在发起之前、终点是回调返回：这一条事件的耗时就是"等这一次登录的结果"
+    // 等了多久，成功与失败在同一口径上（失败的往往还更长）。
+    const timer = startTimer()
     try {
       await signIn(values.token, trace)
-      trackLogin(Result.OK, 'password', trace)
+      trackLogin(Result.OK, 'password', trace, timer)
       void navigate(from, { replace: true })
     } catch (err) {
-      trackLogin(Result.FAIL, 'password', trace, err)
+      trackLogin(Result.FAIL, 'password', trace, timer, err)
       setError(messageOf(err))
     } finally {
       setSubmitting(false)
@@ -173,9 +176,18 @@ export function LoginPage(): React.ReactNode {
  *
  * `trace` 是这次登录调用的链路标识捕获：**成功与失败都要带**，否则这条事件与
  * 它对应的那次请求只能靠时间戳对账（见 api/call-trace）。
+ *
+ * `timer` 量的是"点了登录到拿到结果"的那一段。**整页重定向的那两个渠道不走这里**
+ * ——它们在回调页才有结果，起止跨了页面，本次不覆盖（见 docs/observability.md）。
  */
-function trackLogin(result: Result, channel: string, trace: TraceCapture, error?: unknown): void {
-  track({
+function trackLogin(
+  result: Result,
+  channel: string,
+  trace: TraceCapture,
+  timer: ActionTimer,
+  error?: unknown,
+): void {
+  timer.end({
     surface: Surface.WEB_AUTH,
     action: Action.AUTH_LOGIN,
     result,

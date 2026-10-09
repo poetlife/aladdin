@@ -45,6 +45,51 @@ export interface TrackedEvent {
 let buffer: EventBuffer | null = null
 let triggersInstalled = false
 
+/**
+ * 一次动作的计时器：只有"从哪一刻起、到哪一刻止"这两个时刻由调用方给。
+ *
+ * 它存在是因为**耗时的算法只能有一处实现**（见 docs/ssot-registry.md）：每个
+ * 调用点自己写 `Date.now() - start` 的下场是有人忘了取整、有人从另一个时刻起算，
+ * 而这类偏差在页面上看不出来——两边都是"一个数字"。
+ */
+export interface ActionTimer {
+  /**
+   * 从开始到现在的毫秒数，不小于 0 的整数。
+   *
+   * 取整之后**可能是 0**：那表示"这一下没花时间"，与服务端约定的"0 表示未提供"
+   * 落在同一个呈现上（页面上是一个「—」）。不补一个最小值——那是编数字。
+   */
+  elapsedMs(): number
+  /**
+   * 结束计时：把耗时填进这条事件并上报。**只是 `track` 的薄封装**，不另起一条
+   * 上报链路（攒批、失败即时发送、页面隐藏冲刷仍然只有 `track` 那一处）。
+   */
+  end(event: Omit<TrackedEvent, 'durationMs'>): void
+}
+
+/**
+ * 开始量一次动作的耗时。
+ *
+ * 用 `performance.now()` 而不是 `Date.now()`：前者是单调时钟，系统对时或用户改
+ * 时间都不会让它倒退，而倒退算出来的是一个负数——那会变成一条"未提供"，把一次
+ * 真实的缓慢悄悄抹掉。
+ */
+export function startTimer(): ActionTimer {
+  const startedAt = performance.now()
+  // 取整前先兜一下负数：单调时钟理论上不会倒退，代价是一个比较，换来的是
+  // "耗时永远不是一个负数"这条不需要调用方记住的保证。
+  const elapsedMs = (): number => {
+    const elapsed = performance.now() - startedAt
+    return elapsed > 0 ? Math.round(elapsed) : 0
+  }
+  return {
+    elapsedMs,
+    end(event: Omit<TrackedEvent, 'durationMs'>): void {
+      track({ ...event, durationMs: elapsedMs() })
+    },
+  }
+}
+
 /** 上报一条客户端事件。 */
 export function track(event: TrackedEvent): void {
   const pending = ensureBuffer()

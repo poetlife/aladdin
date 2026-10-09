@@ -18,7 +18,7 @@ import {
 } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { useNarrowViewport } from '../../layouts/use-narrow-viewport'
-import { track } from '../../telemetry/track'
+import { startTimer, track, type ActionTimer } from '../../telemetry/track'
 import { AppModal } from '../../ui/AppModal'
 import { useWatch } from '../../watch/use-watch'
 import { projectTopic } from '../../watch/topics'
@@ -131,6 +131,29 @@ export function ProjectEditorPage(): React.ReactNode {
   const previewSeq = useRef(0)
   const refreshSeq = useRef(0)
   const sourceSeq = useRef(0)
+
+  // 正在等的"切到预览"那一次计时器。null 表示这一次切换没有帧可等（切回源码、
+  // 草稿为空、预览出错），或者上一次已经收过尾。
+  //
+  // 它挂在 ref 上而不是 state：帧的 `load` 要等一会儿才来，而那期间组件会重渲染
+  // 好几次，计时器不该跟着换一份。**一次切换只报一条事件**——见 settlePreviewToggle。
+  const previewToggleTimer = useRef<ActionTimer | null>(null)
+
+  /**
+   * 收尾一次"切到预览"：报一条事件，带上传到帧有结论为止的耗时。
+   *
+   * 帧的 `load`（或到点仍未到齐）是这一次切换的终点，而那一刻**只有 SandboxFrame
+   * 知道**。切回源码、草稿为空、预览出错这几条路上根本没有帧，因此它们各自就地
+   * 收尾、不带耗时（0 表示未提供，页面上是一个「—」，那是正确的结论）。
+   */
+  const settlePreviewToggle = useCallback((): void => {
+    const timer = previewToggleTimer.current
+    if (timer === null) {
+      return
+    }
+    previewToggleTimer.current = null
+    timer.end({ surface: Surface.WEB_PREVIEW, action: Action.PREVIEW_TOGGLE, result: Result.OK })
+  }, [])
 
   // 当前看哪个槽，以及它的发布状态。**这一页的一切都挂在 activeSlot 上**：
   // 草稿、版本、校验结论、预览与状态条说的都是它。
@@ -261,6 +284,28 @@ export function ProjectEditorPage(): React.ReactNode {
     setVersions(response.versions)
   }, [projectId])
 
+  /**
+   * 打开一个集合弹层：先把弹层开出来，再顺手重拉一次数据。
+   *
+   * **重拉不阻塞弹层**：面板立刻出现（先显示手上那一份），拿到新数据再替换。打开时
+   * 重拉是这一页本来就有的需求——资产的地址是短时的、版本清单会被命令行改掉，而
+   * 用户点开这个面板就是想看"现在有什么"。
+   *
+   * 它同时是这条动作**唯一可量的起止**：弹层本身是瞬间出现的，只量"点击到渲染"
+   * 只会得到一个恒为 0 的数（事件那一栏会永远显示「—」）。耗时因此是"点击到这批
+   * 数据拉回来"，见 docs/observability.md。
+   */
+  async function openPanel(action: Action, reload: () => Promise<void>): Promise<void> {
+    const timer = startTimer()
+    try {
+      await reload()
+      timer.end({ surface: Surface.WEB_EDITOR, action, result: Result.OK })
+    } catch (err) {
+      timer.end({ surface: Surface.WEB_EDITOR, action, result: Result.FAIL })
+      setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
+    }
+  }
+
   const load = useCallback(async (): Promise<void> => {
     if (projectId === undefined) {
       return
@@ -272,6 +317,10 @@ export function ProjectEditorPage(): React.ReactNode {
     // 取——它是这次打开的必要条件，且不随"有没有配置资产桶/发布域"改变条数
     // （见 ../../api/call-trace 的 traceIdForAction）。
     const trace = captureTrace()
+    // 起点在第一个请求之前，终点是下面报事件的那一刻：这一段横跨这一页开的每一次
+    // 请求（工程、能力、草稿、版本、资产、校验、预览地址），是"用户等了多久"最
+    // 接近的那个数——而请求留痕只答得了其中每一次。
+    const timer = startTimer()
     try {
       const [projectResponse, capabilityResponse] = await Promise.all([
         galaxyApi.getProject(projectId, trace),
@@ -322,9 +371,9 @@ export function ProjectEditorPage(): React.ReactNode {
       if (capabilityResponse.capabilities?.previewEnabled === true) {
         await renderPreview(loadedSlot, defaultPreviewPath(loadedSlot, loadedEntries))
       }
-      trackEditorOpen(Result.OK, trace)
+      trackEditorOpen(Result.OK, trace, timer)
     } catch (err) {
-      trackEditorOpen(Result.FAIL, trace, err)
+      trackEditorOpen(Result.FAIL, trace, timer, err)
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
       setLoading(false)
@@ -661,11 +710,11 @@ export function ProjectEditorPage(): React.ReactNode {
       draftEntries={entries}
       onOpenAssets={() => {
         setPanel('assets')
-        trackPanelOpen(Action.ASSETS_OPEN)
+        void openPanel(Action.ASSETS_OPEN, () => loadAssets(assetFilter))
       }}
       onOpenVersions={() => {
         setPanel('versions')
-        trackPanelOpen(Action.VERSIONS_OPEN)
+        void openPanel(Action.VERSIONS_OPEN, () => reloadVersions(activeSlot))
       }}
       onSaveVersion={() => void handleSaveVersion()}
       onPublish={(versionId) => void handlePublish(versionId)}
@@ -763,6 +812,28 @@ export function ProjectEditorPage(): React.ReactNode {
   const previewEnabled = capabilities?.previewEnabled === true
   const stageMode: StageMode = previewEnabled ? mode : 'source'
 
+  /**
+   * 切预览 / 切源码。
+   *
+   * 两条路的终点不一样，因此事件的**时机**也不一样：
+   *
+   *   - 切到**预览**：这一刻的实质是"等帧把内容画出来"，因此事件留到帧有结论才报
+   *     （见 SandboxFrame 的 onSettled），耗时就是"从点到看见内容"；
+   *   - 切到**源码**、以及这一刻根本没有可加载的地址（草稿空、预览出错）：没有帧
+   *     可等，两个时刻是同一个，如实不带耗时——页面上显示「—」，那是正确结论
+   *     而不是缺数据。
+   */
+  function onToggleStage(next: StageMode): void {
+    if (next !== 'preview' || previewUrl === '' || previewError !== null) {
+      // 上一次切换的计时器在这里被丢掉：那一次没有等到终点，它的耗时无从谈起，
+      // 编一个出来只会让这一列变成噪声。
+      previewToggleTimer.current = null
+      track({ surface: Surface.WEB_PREVIEW, action: Action.PREVIEW_TOGGLE, result: Result.OK })
+      return
+    }
+    previewToggleTimer.current = startTimer()
+  }
+
   const stage = contentEnabled && (
     <Flex
       vertical
@@ -775,7 +846,7 @@ export function ProjectEditorPage(): React.ReactNode {
             value={stageMode}
             onChange={(next) => {
               setMode(next)
-              track({ surface: Surface.WEB_PREVIEW, action: Action.PREVIEW_TOGGLE, result: Result.OK })
+              onToggleStage(next)
             }}
             options={[
               { value: 'preview', label: '预览', icon: <Eye size={14} /> },
@@ -845,7 +916,12 @@ export function ProjectEditorPage(): React.ReactNode {
               image={Empty.PRESENTED_IMAGE_SIMPLE}
             />
           ) : (
-            <SandboxFrame url={previewUrl} title="预览" height="100%" />
+            <SandboxFrame
+              url={previewUrl}
+              title="预览"
+              height="100%"
+              onSettled={settlePreviewToggle}
+            />
           )
         ) : (
           <SourceView
@@ -914,9 +990,13 @@ function defaultPreviewPath(slot: ContentSlot, entries: readonly FileEntry[]): s
  *
  * `trace` 是这次加载第一次调用（getProject）的链路标识捕获——这一次打开伴随
  * 多次 RPC，规则见 load 里的注释与 ../../api/call-trace。
+ *
+ * `timer` 量的是"进入这一页到数据齐了"的一整段（工程、能力、草稿、版本、资产、
+ * 校验、预览地址各一次请求都在其中）。它比任何一条 RPC 的耗时都更接近用户等的那
+ * 段时间——而请求留痕只答得了其中每一次。
  */
-function trackEditorOpen(result: Result, trace: TraceCapture, error?: unknown): void {
-  track({
+function trackEditorOpen(result: Result, trace: TraceCapture, timer: ActionTimer, error?: unknown): void {
+  timer.end({
     surface: Surface.WEB_EDITOR,
     action: Action.EDITOR_OPEN,
     result,
@@ -929,14 +1009,12 @@ function trackEditorOpen(result: Result, trace: TraceCapture, error?: unknown): 
  *
  * 只这一档上报：发布、存版本这类动作**成功与失败都由服务端请求留痕覆盖**（带上
  * client 之后可按端归因），客户端再报一遍只会把同一件事数两遍。
+ *
+ * **不带耗时**：这些动作根本没有执行，没有起止可言（被拦下、确认框被取消都是
+ * 同一个时刻）。页面上显示「—」，那是正确结论而不是缺数据。
  */
 function trackBlocked(surface: Surface, action: Action): void {
   track({ surface, action, result: Result.BLOCKED })
-}
-
-/** 上报一次"打开弹层"（资产库 / 版本）。 */
-function trackPanelOpen(action: Action): void {
-  track({ surface: Surface.WEB_EDITOR, action, result: Result.OK })
 }
 
 /**

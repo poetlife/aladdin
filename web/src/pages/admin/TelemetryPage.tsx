@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card, Empty, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Avatar, Button, Card, Empty, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd'
 import type { TableProps } from 'antd'
 import { Activity, RefreshCw } from 'lucide-react'
 
 import * as telemetryAdminApi from '../../api/telemetry-admin'
 import { messageOf, traceIdOf } from '../../api/errors'
 import { useSession } from '../../auth'
-import type { EventStat, RecentEvent } from '../../gen/proto/aladdin/telemetry/v1/telemetry_admin_pb'
+import type {
+  EventStat,
+  RecentEvent,
+  SubjectProfile,
+} from '../../gen/proto/aladdin/telemetry/v1/telemetry_admin_pb'
 import { TimeWindow } from '../../gen/proto/aladdin/telemetry/v1/telemetry_admin_pb'
 import { Client, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
+import { avatarFallbackInitial } from '../../profile'
 
 // 枚举取值到界面文案的映射。
 //
@@ -89,98 +94,159 @@ const statColumns: NonNullable<TableProps<EventStat>['columns']> = [
   },
 ]
 
-const eventColumns: NonNullable<TableProps<RecentEvent>['columns']> = [
-  {
-    title: '时间',
-    dataIndex: 'occurredAt',
-    key: 'occurredAt',
-    render: (occurredAt: string) => new Date(occurredAt).toLocaleString(),
-  },
-  {
-    title: '上报端',
-    dataIndex: 'client',
-    key: 'client',
-    render: (client: Client) => labelOf(CLIENT_LABELS, client, `未知端 ${client}`),
-  },
-  {
-    title: '界面',
-    dataIndex: 'surface',
-    key: 'surface',
-    render: (surface: Surface) => labelOf(SURFACE_LABELS, surface, `未知界面 ${surface}`),
-  },
-  {
-    title: '动作',
-    dataIndex: 'action',
-    key: 'action',
-    render: (action: string) => <Typography.Text code>{action}</Typography.Text>,
-  },
-  {
-    title: '结局',
-    dataIndex: 'result',
-    key: 'result',
-    render: (result: Result) => (
-      <Tag color={resultColor(result)}>{labelOf(RESULT_LABELS, result, `未知结局 ${result}`)}</Tag>
-    ),
-  },
-  {
-    title: '耗时',
-    dataIndex: 'durationMs',
-    key: 'durationMs',
-    // 0 表示上报端未提供，而不是"耗时为零"——proto3 无法区分这两者，
-    // 约定是 0 一律按未提供（见 telemetry.proto）。
-    render: (durationMs: number) =>
-      durationMs > 0 ? `${durationMs} ms` : <Typography.Text type="secondary">—</Typography.Text>,
-  },
-  {
-    title: '主体',
-    dataIndex: 'subjectId',
-    key: 'subjectId',
-    render: (subjectId: string) =>
-      subjectId !== '' ? (
-        <Typography.Text code>{subjectId}</Typography.Text>
-      ) : (
-        <Typography.Text type="secondary">匿名</Typography.Text>
-      ),
-  },
-  {
-    title: '属性',
-    dataIndex: 'attrs',
-    key: 'attrs',
-    render: (attrs: Record<string, string>) => {
-      const entries = Object.entries(attrs)
-      if (entries.length === 0) return <Typography.Text type="secondary">—</Typography.Text>
-      return (
-        <Space wrap size={4}>
-          {entries.map(([key, value]) => (
-            <Tag key={key}>
-              {key}={value}
-            </Tag>
-          ))}
-        </Space>
-      )
+/**
+ * 明细表的列。`subjects` 由服务端随这一次读取给出（见 ListRecentEventsResponse），
+ * 因此列表要按它构造——它不是固定的一组列，主体那一列的解释要看这一页的数据。
+ */
+function eventColumns(
+  subjects: Record<string, SubjectProfile>,
+): NonNullable<TableProps<RecentEvent>['columns']> {
+  return [
+    {
+      title: '时间',
+      dataIndex: 'occurredAt',
+      key: 'occurredAt',
+      render: (occurredAt: string) => new Date(occurredAt).toLocaleString(),
     },
-  },
-  {
-    // 列头带一句解释：这一列会**成片为空**，而空的原因分两种，都不是"数据丢了"
-    // ——没有伴随 RPC 的动作（被前端拦下、确认框被取消、纯前端切换）本来就没有
-    // 可指的链路；请求没发出去时也不该编一个。不写清楚，看的人会以为链路标识没报上来。
-    title: (
-      <Tooltip title="这条动作伴随的那次 RPC 的链路标识。没有发出请求的动作（被拦下、取消、纯前端切换）没有它。">
-        <span>追踪 ID</span>
-      </Tooltip>
-    ),
-    dataIndex: 'clientTraceId',
-    key: 'clientTraceId',
-    render: (clientTraceId: string) =>
-      clientTraceId !== '' ? (
-        <Typography.Text code copyable>
-          {clientTraceId}
-        </Typography.Text>
-      ) : (
-        <Typography.Text type="secondary">—</Typography.Text>
+    {
+      title: '上报端',
+      dataIndex: 'client',
+      key: 'client',
+      render: (client: Client) => labelOf(CLIENT_LABELS, client, `未知端 ${client}`),
+    },
+    {
+      title: '界面',
+      dataIndex: 'surface',
+      key: 'surface',
+      render: (surface: Surface) => labelOf(SURFACE_LABELS, surface, `未知界面 ${surface}`),
+    },
+    {
+      title: '动作',
+      dataIndex: 'action',
+      key: 'action',
+      render: (action: string) => <Typography.Text code>{action}</Typography.Text>,
+    },
+    {
+      title: '结局',
+      dataIndex: 'result',
+      key: 'result',
+      render: (result: Result) => (
+        <Tag color={resultColor(result)}>{labelOf(RESULT_LABELS, result, `未知结局 ${result}`)}</Tag>
       ),
-  },
-]
+    },
+    {
+      // 列头带一句解释：这一列会**成片为空**，而空的原因是"这个动作没有起止"，
+      // 不是"数据丢了"。不写清楚，看的人会以为上报链路缺了一段。
+      title: (
+        <Tooltip title="只有带明确起止的动作才量得出耗时：打开列表 / 工作台 / 预览、打开资产与版本面板、登录、命令行的本地失败。被拦下、取消、纯前端切换这类瞬时动作没有起止，如实留空。">
+          <span>耗时</span>
+        </Tooltip>
+      ),
+      dataIndex: 'durationMs',
+      key: 'durationMs',
+      // 0 表示上报端未提供，而不是"耗时为零"——proto3 无法区分这两者，
+      // 约定是 0 一律按未提供（见 telemetry.proto）。
+      render: (durationMs: number) =>
+        durationMs > 0 ? `${durationMs} ms` : <Typography.Text type="secondary">—</Typography.Text>,
+    },
+    {
+      title: '主体',
+      dataIndex: 'subjectId',
+      key: 'subjectId',
+      render: (subjectId: string) => <SubjectCell subjectId={subjectId} subject={subjects[subjectId]} />,
+    },
+    {
+      title: '属性',
+      dataIndex: 'attrs',
+      key: 'attrs',
+      render: (attrs: Record<string, string>) => {
+        const entries = Object.entries(attrs)
+        if (entries.length === 0) return <Typography.Text type="secondary">—</Typography.Text>
+        return (
+          <Space wrap size={4}>
+            {entries.map(([key, value]) => (
+              <Tag key={key}>
+                {key}={value}
+              </Tag>
+            ))}
+          </Space>
+        )
+      },
+    },
+    {
+      // 列头带一句解释：这一列会**成片为空**，而空的原因分两种，都不是"数据丢了"
+      // ——没有伴随 RPC 的动作（被前端拦下、确认框被取消、纯前端切换）本来就没有
+      // 可指的链路；请求没发出去时也不该编一个。不写清楚，看的人会以为链路标识没报上来。
+      title: (
+        <Tooltip title="这条动作伴随的那次 RPC 的链路标识。没有发出请求的动作（被拦下、取消、纯前端切换）没有它。">
+          <span>追踪 ID</span>
+        </Tooltip>
+      ),
+      dataIndex: 'clientTraceId',
+      key: 'clientTraceId',
+      render: (clientTraceId: string) =>
+        clientTraceId !== '' ? (
+          <Typography.Text code copyable>
+            {clientTraceId}
+          </Typography.Text>
+        ) : (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ),
+    },
+  ]
+}
+
+/**
+ * 主体列：头像 + 展示名，标识以小字附在下面。
+ *
+ * 展示名与头像都由服务端**在读侧**算好（事件本身只存标识，见
+ * docs/observability.md）：前端只渲染，不拼名字、不猜回退。
+ *
+ * 三条回退，逐条都对应一个真实会发生的情形：
+ *
+ *   - 标识为空 → 匿名（只有允许匿名的动作会是这个形状）；
+ *   - 这一页没能解析出展示信息（档案存储抖动、或服务端没装配档案面）→ 只显示标识；
+ *   - 展示了但名字就是标识本身（这个人没设昵称、渠道也没有可读标识）→ 也只显示
+ *     标识，不把同一个字符串显示两遍。
+ */
+function SubjectCell({
+  subjectId,
+  subject,
+}: {
+  subjectId: string
+  subject: SubjectProfile | undefined
+}): React.ReactNode {
+  if (subjectId === '') {
+    return <Typography.Text type="secondary">匿名</Typography.Text>
+  }
+
+  const displayName = subject?.displayName ?? ''
+  if (displayName === '' || displayName === subjectId) {
+    return (
+      <Typography.Text code copyable>
+        {subjectId}
+      </Typography.Text>
+    )
+  }
+
+  // 头像地址为空表示"当前没有可显示的头像"（真的没设，或这个部署没配对象存储），
+  // 此时用展示名的首字符占位——与侧边栏、档案页同一份实现（见 web/src/profile）。
+  const avatarUrl = subject?.avatarUrl ?? ''
+  return (
+    <Space size={8} align="center">
+      <Avatar size="small" src={avatarUrl === '' ? undefined : avatarUrl}>
+        {avatarFallbackInitial(displayName)}
+      </Avatar>
+      <Space direction="vertical" size={0}>
+        <Typography.Text>{displayName}</Typography.Text>
+        {/* 标识仍然看得见、抄得走：排查时拿它去搜日志是这一步的下一步。 */}
+        <Typography.Text type="secondary" code copyable style={{ fontSize: 12 }}>
+          {subjectId}
+        </Typography.Text>
+      </Space>
+    </Space>
+  )
+}
 
 // failure 是一次失败的展示信息：给用户的文案，以及可拿去找日志的追踪 ID。
 interface failure {
@@ -199,6 +265,10 @@ interface failure {
  * 它是**只读**的：没有任何写入口，也没有任意过滤条件——时间窗是一个有界枚举，
  * 条数由服务端收敛。需要更强检索能力时请去日志系统，这一页刻意不做第二套观测平台。
  *
+ * 主体那一列显示的是**头像与展示名**，由服务端在读取的这一刻算好：事件本身只存
+ * 主体标识，昵称与头像不进事件、不进日志、不落库（见 docs/observability.md 的
+ * 「读侧 / 管理视图」）。本页只渲染，不拼名字——回退规则只有服务端那一处实现。
+ *
  * 页面上不解释"为什么这个数字是这些"以外的任何东西；字段语义以
  * docs/observability.md 为准。
  */
@@ -207,6 +277,10 @@ export function TelemetryPage(): React.ReactNode {
   const [window, setWindow] = useState<TimeWindow>(TimeWindow.LAST_7_DAYS)
   const [stats, setStats] = useState<EventStat[]>([])
   const [events, setEvents] = useState<RecentEvent[]>([])
+  // 本页事件里那些主体的展示信息，键是主体标识。由服务端随明细一起给（见
+  // ListRecentEventsResponse 的 subjects），前端不另行查询——多一条读取路径就多
+  // 一处会与"谁有权限看遥测"漂移的准入口。
+  const [subjects, setSubjects] = useState<Record<string, SubjectProfile>>({})
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<failure | null>(null)
 
@@ -222,10 +296,12 @@ export function TelemetryPage(): React.ReactNode {
       ])
       setStats(statsResponse.stats)
       setEvents(eventsResponse.events)
+      setSubjects(eventsResponse.subjects)
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
       setStats([])
       setEvents([])
+      setSubjects({})
     } finally {
       setLoading(false)
     }
@@ -312,7 +388,7 @@ export function TelemetryPage(): React.ReactNode {
         // 事件之间**可能完全相同**（同一批里同端同动作同结局、都没有 trace_id），
         // 按字段拼 key 会撞；序号在这里是唯一可靠的区分。
         rowKey={(_, index) => index ?? 0}
-        columns={eventColumns}
+        columns={eventColumns(subjects)}
         dataSource={events}
         loading={loading}
         pagination={false}

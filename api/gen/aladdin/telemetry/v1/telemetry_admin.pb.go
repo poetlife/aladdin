@@ -339,7 +339,23 @@ func (x *ListRecentEventsRequest) GetLimit() uint32 {
 type ListRecentEventsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 按发生时间**从新到旧**排列。
-	Events        []*RecentEvent `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	Events []*RecentEvent `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	// 本页事件里出现过的主体 → 它的展示信息，键是主体标识。
+	//
+	// **它是读侧的附加投影，不是事件的一部分。** 事件本身仍然只存主体标识：昵称与
+	// 头像既不写进事件、也不进日志、也不落库，它们是在这次读取时按档案模块那唯一
+	// 一套回退规则算出来的（见 docs/observability.md 的「读侧 / 管理视图」）。
+	//
+	// 本页出现过的每一个**非空** subject_id 都在里面，包括"没有更好的名字、展示名
+	// 就是标识"的那些——少一个键与"这个人就叫这个"在界面上是同一种呈现，因此不必
+	// 再分。匿名事件（subject_id 为空）不占键。
+	//
+	// 取不到档案时整个字段为空，客户端据此回退到只显示标识。**展示信息的缺失不该
+	// 让这一页读不出来**——排障要看的第一件事是事件本身。
+	//
+	// 能拿到它的人与能读事件的人是同一批：整个方法就要求 `telemetry.read`，这里
+	// 不另设一道门槛。
+	Subjects      map[string]*SubjectProfile `protobuf:"bytes,2,rep,name=subjects,proto3" json:"subjects,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -381,6 +397,78 @@ func (x *ListRecentEventsResponse) GetEvents() []*RecentEvent {
 	return nil
 }
 
+func (x *ListRecentEventsResponse) GetSubjects() map[string]*SubjectProfile {
+	if x != nil {
+		return x.Subjects
+	}
+	return nil
+}
+
+// SubjectProfile 是一个主体在**这里**要显示的样子。
+//
+// 刻意比 aladdin.profile.v1.Profile 小：只有"显示成什么"这件事需要的两个字段。
+// 昵称、简介、邮箱都不进这里——读侧换的是展示信息，不是把档案面整个搬过来。
+type SubjectProfile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 界面应当显示的名字，由服务端按档案模块的回退规则算好，客户端**不得**自行
+	// 拼接（规则只有那一处实现，见 docs/ssot-registry.md）。
+	//
+	// 回退的最后一步是主体标识本身，因此它只会为空字符串之外的展示名——但客户端
+	// 仍不得假设两者不同：相同表示"没有更好的名字"，此时只渲染标识即可。
+	DisplayName string `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// 头像的**短时有效**预签名读取地址，可直接放进 <img src>。空表示当前没有可
+	// 显示的头像（真的没设、或这个部署没有配置对象存储）。
+	//
+	// 与档案面的 avatar_url 同性质：它是一份短期凭证，地址里头不得承载任何秘密。
+	AvatarUrl     string `protobuf:"bytes,2,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubjectProfile) Reset() {
+	*x = SubjectProfile{}
+	mi := &file_aladdin_telemetry_v1_telemetry_admin_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubjectProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubjectProfile) ProtoMessage() {}
+
+func (x *SubjectProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_telemetry_v1_telemetry_admin_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubjectProfile.ProtoReflect.Descriptor instead.
+func (*SubjectProfile) Descriptor() ([]byte, []int) {
+	return file_aladdin_telemetry_v1_telemetry_admin_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SubjectProfile) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *SubjectProfile) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
+}
+
 // RecentEvent 是一条事件的明细，字段与写侧落盘的日志字段一一对应。
 type RecentEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -395,6 +483,10 @@ type RecentEvent struct {
 	// 结局。
 	Result Result `protobuf:"varint,5,opt,name=result,proto3,enum=aladdin.telemetry.v1.Result" json:"result,omitempty"`
 	// 耗时（毫秒）。0 表示上报端未提供。
+	//
+	// **0 是常见且正确的取值**：只有带明确起止的动作才量得出耗时（打开列表/工作台/
+	// 预览、打开面板、登录、命令行本地失败）。被拦下、确认框被取消、纯前端切换这类
+	// 瞬时动作没有起止，如实报 0，而不是编一个 0 毫秒的"测量结果"出来。
 	DurationMs uint32 `protobuf:"varint,6,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
 	// 上报端当时所在链路的 trace_id；空表示未提供。
 	ClientTraceId string `protobuf:"bytes,7,opt,name=client_trace_id,json=clientTraceId,proto3" json:"client_trace_id,omitempty"`
@@ -408,7 +500,7 @@ type RecentEvent struct {
 
 func (x *RecentEvent) Reset() {
 	*x = RecentEvent{}
-	mi := &file_aladdin_telemetry_v1_telemetry_admin_proto_msgTypes[5]
+	mi := &file_aladdin_telemetry_v1_telemetry_admin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -420,7 +512,7 @@ func (x *RecentEvent) String() string {
 func (*RecentEvent) ProtoMessage() {}
 
 func (x *RecentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_telemetry_v1_telemetry_admin_proto_msgTypes[5]
+	mi := &file_aladdin_telemetry_v1_telemetry_admin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -433,7 +525,7 @@ func (x *RecentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecentEvent.ProtoReflect.Descriptor instead.
 func (*RecentEvent) Descriptor() ([]byte, []int) {
-	return file_aladdin_telemetry_v1_telemetry_admin_proto_rawDescGZIP(), []int{5}
+	return file_aladdin_telemetry_v1_telemetry_admin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RecentEvent) GetOccurredAt() string {
@@ -517,9 +609,17 @@ const file_aladdin_telemetry_v1_telemetry_admin_proto_rawDesc = "" +
 	"\x17ListRecentEventsRequest\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x128\n" +
 	"\x06window\x18\x02 \x01(\x0e2 .aladdin.telemetry.v1.TimeWindowR\x06window\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\rR\x05limit\"U\n" +
+	"\x05limit\x18\x03 \x01(\rR\x05limit\"\x92\x02\n" +
 	"\x18ListRecentEventsResponse\x129\n" +
-	"\x06events\x18\x01 \x03(\v2!.aladdin.telemetry.v1.RecentEventR\x06events\"\xd1\x03\n" +
+	"\x06events\x18\x01 \x03(\v2!.aladdin.telemetry.v1.RecentEventR\x06events\x12X\n" +
+	"\bsubjects\x18\x02 \x03(\v2<.aladdin.telemetry.v1.ListRecentEventsResponse.SubjectsEntryR\bsubjects\x1aa\n" +
+	"\rSubjectsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12:\n" +
+	"\x05value\x18\x02 \x01(\v2$.aladdin.telemetry.v1.SubjectProfileR\x05value:\x028\x01\"R\n" +
+	"\x0eSubjectProfile\x12!\n" +
+	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x1d\n" +
+	"\n" +
+	"avatar_url\x18\x02 \x01(\tR\tavatarUrl\"\xd1\x03\n" +
 	"\vRecentEvent\x12\x1f\n" +
 	"\voccurred_at\x18\x01 \x01(\tR\n" +
 	"occurredAt\x124\n" +
@@ -560,7 +660,7 @@ func file_aladdin_telemetry_v1_telemetry_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_aladdin_telemetry_v1_telemetry_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_aladdin_telemetry_v1_telemetry_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_aladdin_telemetry_v1_telemetry_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_aladdin_telemetry_v1_telemetry_admin_proto_goTypes = []any{
 	(TimeWindow)(0),                  // 0: aladdin.telemetry.v1.TimeWindow
 	(*ListEventStatsRequest)(nil),    // 1: aladdin.telemetry.v1.ListEventStatsRequest
@@ -568,32 +668,36 @@ var file_aladdin_telemetry_v1_telemetry_admin_proto_goTypes = []any{
 	(*EventStat)(nil),                // 3: aladdin.telemetry.v1.EventStat
 	(*ListRecentEventsRequest)(nil),  // 4: aladdin.telemetry.v1.ListRecentEventsRequest
 	(*ListRecentEventsResponse)(nil), // 5: aladdin.telemetry.v1.ListRecentEventsResponse
-	(*RecentEvent)(nil),              // 6: aladdin.telemetry.v1.RecentEvent
-	nil,                              // 7: aladdin.telemetry.v1.RecentEvent.AttrsEntry
-	(Client)(0),                      // 8: aladdin.telemetry.v1.Client
-	(Result)(0),                      // 9: aladdin.telemetry.v1.Result
-	(Surface)(0),                     // 10: aladdin.telemetry.v1.Surface
+	(*SubjectProfile)(nil),           // 6: aladdin.telemetry.v1.SubjectProfile
+	(*RecentEvent)(nil),              // 7: aladdin.telemetry.v1.RecentEvent
+	nil,                              // 8: aladdin.telemetry.v1.ListRecentEventsResponse.SubjectsEntry
+	nil,                              // 9: aladdin.telemetry.v1.RecentEvent.AttrsEntry
+	(Client)(0),                      // 10: aladdin.telemetry.v1.Client
+	(Result)(0),                      // 11: aladdin.telemetry.v1.Result
+	(Surface)(0),                     // 12: aladdin.telemetry.v1.Surface
 }
 var file_aladdin_telemetry_v1_telemetry_admin_proto_depIdxs = []int32{
 	0,  // 0: aladdin.telemetry.v1.ListEventStatsRequest.window:type_name -> aladdin.telemetry.v1.TimeWindow
 	3,  // 1: aladdin.telemetry.v1.ListEventStatsResponse.stats:type_name -> aladdin.telemetry.v1.EventStat
-	8,  // 2: aladdin.telemetry.v1.EventStat.client:type_name -> aladdin.telemetry.v1.Client
-	9,  // 3: aladdin.telemetry.v1.EventStat.result:type_name -> aladdin.telemetry.v1.Result
+	10, // 2: aladdin.telemetry.v1.EventStat.client:type_name -> aladdin.telemetry.v1.Client
+	11, // 3: aladdin.telemetry.v1.EventStat.result:type_name -> aladdin.telemetry.v1.Result
 	0,  // 4: aladdin.telemetry.v1.ListRecentEventsRequest.window:type_name -> aladdin.telemetry.v1.TimeWindow
-	6,  // 5: aladdin.telemetry.v1.ListRecentEventsResponse.events:type_name -> aladdin.telemetry.v1.RecentEvent
-	8,  // 6: aladdin.telemetry.v1.RecentEvent.client:type_name -> aladdin.telemetry.v1.Client
-	10, // 7: aladdin.telemetry.v1.RecentEvent.surface:type_name -> aladdin.telemetry.v1.Surface
-	9,  // 8: aladdin.telemetry.v1.RecentEvent.result:type_name -> aladdin.telemetry.v1.Result
-	7,  // 9: aladdin.telemetry.v1.RecentEvent.attrs:type_name -> aladdin.telemetry.v1.RecentEvent.AttrsEntry
-	1,  // 10: aladdin.telemetry.v1.TelemetryAdminService.ListEventStats:input_type -> aladdin.telemetry.v1.ListEventStatsRequest
-	4,  // 11: aladdin.telemetry.v1.TelemetryAdminService.ListRecentEvents:input_type -> aladdin.telemetry.v1.ListRecentEventsRequest
-	2,  // 12: aladdin.telemetry.v1.TelemetryAdminService.ListEventStats:output_type -> aladdin.telemetry.v1.ListEventStatsResponse
-	5,  // 13: aladdin.telemetry.v1.TelemetryAdminService.ListRecentEvents:output_type -> aladdin.telemetry.v1.ListRecentEventsResponse
-	12, // [12:14] is the sub-list for method output_type
-	10, // [10:12] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	7,  // 5: aladdin.telemetry.v1.ListRecentEventsResponse.events:type_name -> aladdin.telemetry.v1.RecentEvent
+	8,  // 6: aladdin.telemetry.v1.ListRecentEventsResponse.subjects:type_name -> aladdin.telemetry.v1.ListRecentEventsResponse.SubjectsEntry
+	10, // 7: aladdin.telemetry.v1.RecentEvent.client:type_name -> aladdin.telemetry.v1.Client
+	12, // 8: aladdin.telemetry.v1.RecentEvent.surface:type_name -> aladdin.telemetry.v1.Surface
+	11, // 9: aladdin.telemetry.v1.RecentEvent.result:type_name -> aladdin.telemetry.v1.Result
+	9,  // 10: aladdin.telemetry.v1.RecentEvent.attrs:type_name -> aladdin.telemetry.v1.RecentEvent.AttrsEntry
+	6,  // 11: aladdin.telemetry.v1.ListRecentEventsResponse.SubjectsEntry.value:type_name -> aladdin.telemetry.v1.SubjectProfile
+	1,  // 12: aladdin.telemetry.v1.TelemetryAdminService.ListEventStats:input_type -> aladdin.telemetry.v1.ListEventStatsRequest
+	4,  // 13: aladdin.telemetry.v1.TelemetryAdminService.ListRecentEvents:input_type -> aladdin.telemetry.v1.ListRecentEventsRequest
+	2,  // 14: aladdin.telemetry.v1.TelemetryAdminService.ListEventStats:output_type -> aladdin.telemetry.v1.ListEventStatsResponse
+	5,  // 15: aladdin.telemetry.v1.TelemetryAdminService.ListRecentEvents:output_type -> aladdin.telemetry.v1.ListRecentEventsResponse
+	14, // [14:16] is the sub-list for method output_type
+	12, // [12:14] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_aladdin_telemetry_v1_telemetry_admin_proto_init() }
@@ -608,7 +712,7 @@ func file_aladdin_telemetry_v1_telemetry_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aladdin_telemetry_v1_telemetry_admin_proto_rawDesc), len(file_aladdin_telemetry_v1_telemetry_admin_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

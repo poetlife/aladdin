@@ -105,6 +105,55 @@ function eventsResponse() {
         attrs: { command: 'galaxy' },
       },
     ],
+    subjects: {},
+  }
+}
+
+/** 一条带主体的明细：展示名与头像由服务端解析好随响应给出。 */
+function resolvedEventsResponse() {
+  return {
+    $typeName: 'aladdin.telemetry.v1.ListRecentEventsResponse' as const,
+    events: [
+      {
+        $typeName: 'aladdin.telemetry.v1.RecentEvent' as const,
+        occurredAt: '2026-09-30T04:30:00Z',
+        client: Client.WEB,
+        surface: Surface.WEB_EDITOR,
+        action: 'editor.open',
+        result: Result.OK,
+        durationMs: 128,
+        clientTraceId: '',
+        subjectId: 'usr_UHecUHysZH17mlYkEV2CYA',
+        attrs: {},
+      },
+      {
+        // 另一个人：没设昵称、渠道也没有可读标识，**展示名就是标识本身**——
+        // 这一列不该把同一个字符串显示两遍。
+        $typeName: 'aladdin.telemetry.v1.RecentEvent' as const,
+        occurredAt: '2026-09-30T04:29:00Z',
+        client: Client.WEB,
+        surface: Surface.WEB_PREVIEW,
+        action: 'preview.toggle',
+        result: Result.OK,
+        durationMs: 0,
+        clientTraceId: '',
+        subjectId: 'usr_noName',
+        attrs: {},
+      },
+    ],
+    subjects: {
+      usr_UHecUHysZH17mlYkEV2CYA: {
+        $typeName: 'aladdin.telemetry.v1.SubjectProfile' as const,
+        displayName: '阿拉丁',
+        avatarUrl: '',
+      },
+      // 这个人没设昵称、渠道也没有可读标识：展示名就是标识本身。
+      usr_noName: {
+        $typeName: 'aladdin.telemetry.v1.SubjectProfile' as const,
+        displayName: 'usr_noName',
+        avatarUrl: '',
+      },
+    },
   }
 }
 
@@ -176,5 +225,59 @@ describe('客户端遥测页', () => {
 
     expect(container.textContent).toContain('遥测存储暂时不可用')
     expect(container.textContent).toContain('4bf92f3577b34da6a3ce929d0e0e4736')
+  })
+
+  // 主体列显示的是**服务端解析好的**展示名与头像，标识仍以小字可见可复制。
+  //
+  // 页面不自己拼名字：它只渲染服务端给的值，回退规则只有服务端那一处实现。
+  it('主体列显示头像与展示名，标识仍可复制', async () => {
+    vi.mocked(telemetryAdminApi.listRecentEvents).mockResolvedValue(resolvedEventsResponse())
+
+    const container = await renderPage()
+
+    expect(container.textContent).toContain('阿拉丁')
+    expect(container.textContent).toContain('usr_UHecUHysZH17mlYkEV2CYA')
+    // 没有头像时用展示名的首字符占位（与侧边栏、档案页同一份实现）。
+    const avatar = container.querySelector('.ant-avatar')
+    expect(avatar?.textContent).toContain('阿')
+    // 复制入口在标识那一行上，而不是在展示名上——排查时要抄走的是标识。
+    expect(container.querySelectorAll('.ant-typography-copy').length).toBeGreaterThan(0)
+  })
+
+  // 展示名就是标识时只渲染标识：把同一个字符串显示两遍是纯噪声。
+  it('展示名与标识相同时只显示标识', async () => {
+    vi.mocked(telemetryAdminApi.listRecentEvents).mockResolvedValue(resolvedEventsResponse())
+
+    const container = await renderPage()
+
+    const text = container.textContent ?? ''
+    expect(text.split('usr_noName').length - 1).toBe(1)
+  })
+
+  // 服务端没解析出展示信息时（档案存储抖动、或没装配档案面）回退到只显示标识，
+  // 而不是让这一列变成空白。
+  it('拿不到展示信息时回退到只显示标识', async () => {
+    vi.mocked(telemetryAdminApi.listRecentEvents).mockResolvedValue({
+      ...resolvedEventsResponse(),
+      subjects: {},
+    })
+
+    const container = await renderPage()
+
+    expect(container.textContent).toContain('usr_UHecUHysZH17mlYkEV2CYA')
+    expect(container.textContent).not.toContain('阿拉丁')
+    expect(container.querySelector('.ant-avatar')).toBeNull()
+  })
+
+  // 耗时列：有值显示毫秒数，0 显示「—」，且列头解释为什么会有空的。
+  it('耗时列区分有值与无起止', async () => {
+    vi.mocked(telemetryAdminApi.listRecentEvents).mockResolvedValue(resolvedEventsResponse())
+
+    const container = await renderPage()
+
+    expect(container.textContent).toContain('128 ms')
+    // 同一页里那条没有起止的动作（preview.toggle 切成源码那种形状）显示「—」。
+    expect(container.textContent).toContain('—')
+    expect(container.textContent).toContain('耗时')
   })
 })

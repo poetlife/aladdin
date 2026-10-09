@@ -25,7 +25,7 @@ import { PermissionCodes } from '../../gen/permission-codes'
 import { ContentSlot, type Project, type ProjectSlot } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { AppModal } from '../../ui/AppModal'
 import { Action, Result, Surface } from '../../gen/proto/aladdin/telemetry/v1/telemetry_pb'
-import { track } from '../../telemetry/track'
+import { startTimer, track, type ActionTimer } from '../../telemetry/track'
 import { allSlots, slotDescription, slotLabel } from './content-slot'
 import { formatTime } from './format-time'
 
@@ -78,20 +78,24 @@ export function ProjectListPage(): React.ReactNode {
   const load = useCallback(async (trackOpen = false): Promise<void> => {
     setLoading(true)
     setFailure(null)
+    // 计时器只跟着"打开列表"那一次走：刷新不产生事件，量出来也没人读。
+    // 起点在请求之前，终点就是下面报事件的那一刻——这一段的含义是"这份列表
+    // 从开始取到能渲染用了多久"，而不是"这条 RPC 用了多久"（后者由请求留痕答）。
+    const timer = trackOpen ? startTimer() : null
     // 捕获这次调用的链路标识。**每次 load 一份**：刷新那次不产生事件，因此它的
     // 捕获自然没人读，不会与"打开"那一次混起来（见 ../../api/call-trace）。
     const trace = captureTrace()
     try {
       const response = await galaxyApi.listProjects(trace)
       setProjects(response.projects)
-      if (trackOpen) {
-        trackListOpen(Result.OK, trace)
+      if (timer !== null) {
+        trackListOpen(Result.OK, trace, timer)
       }
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
       setProjects([])
-      if (trackOpen) {
-        trackListOpen(Result.FAIL, trace, err)
+      if (timer !== null) {
+        trackListOpen(Result.FAIL, trace, timer, err)
       }
     } finally {
       setLoading(false)
@@ -387,9 +391,12 @@ export function ProjectListPage(): React.ReactNode {
  *
  * `trace` 是这次加载那一次 listProjects 的链路标识捕获：成功时事件要与服务端
  * 留痕关联只能靠它（失败的响应头在错误对象上，取值规则见 ../../api/call-trace）。
+ *
+ * `timer` 量的是"进入这一页到列表能渲染"的那一段——它是这一页唯一一个只有客户端
+ * 知道起止的动作（见 docs/observability.md 的「客户端事件」）。
  */
-function trackListOpen(result: Result, trace: TraceCapture, error?: unknown): void {
-  track({
+function trackListOpen(result: Result, trace: TraceCapture, timer: ActionTimer, error?: unknown): void {
+  timer.end({
     surface: Surface.WEB_PROJECT_LIST,
     action: Action.PROJECT_LIST_OPEN,
     result,

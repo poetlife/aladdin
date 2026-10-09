@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { LOADING_TEXT } from '../../ui/LoadingHint'
 import { FRAME_CHANNEL, FRAME_CHANNEL_VERSION } from './frame-channel'
-import { SandboxFrame } from './SandboxFrame'
+import { SandboxFrame, type FrameSettled } from './SandboxFrame'
 
 // React 19 要求显式声明这是 act 环境，否则每次 render 都会打印警告。
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -167,6 +167,108 @@ describe('加载态', () => {
     await rerenderFrame('https://pub.example.com/g/p/tok2/prj_x/')
 
     expect(container.textContent).toContain(LOADING_TEXT)
+  })
+})
+
+/**
+ * `onSettled`：这一帧**这一次尝试**有了结论。
+ *
+ * 宿主用它量"打开这一步用了多久"——那一刻只有本组件知道（`load` 是帧自己的事件，
+ * 而宿主侧"什么时候把地址交出去"与它不是同一件事，见 docs/observability.md）。
+ */
+describe('帧有结论时的回调', () => {
+  async function renderWithSettled(
+    url: string,
+    onSettled: (outcome: FrameSettled) => void,
+  ): Promise<HTMLElement> {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<SandboxFrame url={url} title="发布页" onSettled={onSettled} />)
+    })
+    return container
+  }
+
+  it('到齐时报 loaded', async () => {
+    const settled = vi.fn()
+    const container = await renderWithSettled('https://pub.example.com/g/prj_x', settled)
+    expect(settled, '还没到齐就报了结论').not.toHaveBeenCalled()
+
+    await fireLoad(container)
+
+    expect(settled).toHaveBeenCalledTimes(1)
+    expect(settled).toHaveBeenCalledWith('loaded')
+  })
+
+  // **到点未到齐也要报。** 只报到齐的话，最慢的那一次加载反而永远等不到回调，
+  // 而它正是唯一值得看的那一条——那一列会因此系统性地偏乐观。
+  it('到点仍未到齐时报 overdue', async () => {
+    vi.useFakeTimers()
+    try {
+      const settled = vi.fn()
+      await renderWithSettled('https://pub.example.com/g/prj_x', settled)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SPEC_COVER_TIMEOUT_MS)
+      })
+
+      expect(settled).toHaveBeenCalledTimes(1)
+      expect(settled).toHaveBeenCalledWith('overdue')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // 一次尝试只报一次：`overdue` 之后内容才到齐时不再报第二条。宿主拿它量的是
+  // "等了多久"，报两遍会让一条动作变成两条事件——而那正是它要回答的问题的反面。
+  it('一次尝试只报一次，先到的结论为准', async () => {
+    vi.useFakeTimers()
+    try {
+      const settled = vi.fn()
+      const container = await renderWithSettled('https://pub.example.com/g/prj_x', settled)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SPEC_COVER_TIMEOUT_MS)
+      })
+      await fireLoad(container)
+
+      expect(settled).toHaveBeenCalledTimes(1)
+      expect(settled).toHaveBeenCalledWith('overdue')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // 换地址是**新的一次尝试**，结论也该是新的：工作台上换一页预览就是这条路径。
+  it('换地址后重新计一次', async () => {
+    const settled = vi.fn()
+    const container = await renderWithSettled('https://pub.example.com/g/p/tok1/prj_x/', settled)
+    await fireLoad(container)
+    expect(settled).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      root?.render(
+        <SandboxFrame
+          url="https://pub.example.com/g/p/tok2/prj_x/"
+          title="发布页"
+          onSettled={settled}
+        />,
+      )
+    })
+    await fireLoad(container)
+
+    expect(settled).toHaveBeenCalledTimes(2)
+    expect(settled).toHaveBeenLastCalledWith('loaded')
+  })
+
+  // 不传回调时什么也不发生：它是可选的，发布壳那几处不需要它。
+  it('没有回调时照常工作', async () => {
+    const container = await renderFrame('https://pub.example.com/g/prj_x')
+
+    await fireLoad(container)
+
+    expect(container.textContent).not.toContain(LOADING_TEXT)
   })
 })
 

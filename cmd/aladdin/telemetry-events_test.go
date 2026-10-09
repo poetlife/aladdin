@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -68,6 +69,30 @@ func TestRecordLocalFailureShape(t *testing.T) {
 	}
 	if got := ev.GetAttrs()["command"]; got != "galaxy" {
 		t.Errorf("命令 = %q，期望 galaxy", got)
+	}
+}
+
+// 本地失败带上"从进程启动到失败"的耗时。
+//
+// 没走过 Execute（未开始计时）时一律报 0，而 0 的语义是"未提供"：算不出来时宁可
+// 交白卷，也不截断或补一个看似合理的数字。
+func TestRecordLocalFailureDuration(t *testing.T) {
+	t.Cleanup(func() {
+		pendingLocalFailure = nil
+		commandStartedAt = time.Time{}
+	})
+
+	commandStartedAt = time.Now().Add(-150 * time.Millisecond)
+	recordLocalFailure(auth.ErrNoCredential)
+	if got := pendingLocalFailure.GetDurationMs(); got < 100 || got > 1000 {
+		t.Errorf("耗时 = %d ms，期望量级在 150ms 上下", got)
+	}
+
+	pendingLocalFailure = nil
+	commandStartedAt = time.Time{}
+	recordLocalFailure(auth.ErrNoCredential)
+	if got := pendingLocalFailure.GetDurationMs(); got != 0 {
+		t.Errorf("未开始计时时耗时 = %d，期望 0", got)
 	}
 }
 
