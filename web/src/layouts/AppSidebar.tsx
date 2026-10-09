@@ -62,8 +62,9 @@ interface NavEntry {
 const NAV: NavEntry[] = [
   { path: '/', label: '概览', icon: <LayoutDashboard size={ICON_SIZE} /> },
   { path: '/galaxy', label: '创作', icon: <Sparkles size={ICON_SIZE} />, permission: PermissionCodes.GalaxyProjectRead },
-  // 个人资料不需要权限码：它只作用于自己（见 docs/design/profile/README.md）。
-  { path: '/profile', label: '个人资料', icon: <CircleUserRound size={ICON_SIZE} /> },
+  // 「个人资料」**不在这里**：它是"要去哪一页"里唯一一项只关于我自己的，
+  // 由底部账号区承载（见下方 SidebarAccount），主导航这一排留给功能区。
+  // 路由本身照旧（见 router.tsx 与 docs/design/web/README.md 的「外壳」）。
   // 平台技能目录。它与创作面并列而不是收在它里面：技能由平台维护、对所有创作者
   // 可用，而工程是"我自己的东西"（见 docs/design/skill/README.md）。
   { path: '/skills', label: '技能', icon: <Wand2 size={ICON_SIZE} />, permission: PermissionCodes.SkillCatalogRead },
@@ -242,6 +243,11 @@ function Brand({
 
 /**
  * 侧边栏底部的账号区：头像、展示名，点开是个人资料与退出登录。
+ *
+ * **个人资料只从这里进。** 主导航那一排留给功能区（创作、技能、权限、运维、文档），
+ * 而这一项只关于我自己——与账号区回答的是同一个问题。因此它在导航里是一处重复
+ * 入口，删掉之后账号区就是走到 `/profile` 的常规入口：收起成导轨时只剩头像，
+ * 下拉里那一项仍在，入口不会丢。
  *
  * 它放在这里而不是页头：账号与导航回答的是同一类问题——"我是谁、要去哪一页"，
  * 因此同处一侧；页头留给与当前视图相关的控件（折叠、作用域、主题）。

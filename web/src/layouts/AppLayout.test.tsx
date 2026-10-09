@@ -145,20 +145,40 @@ async function clickDrawerNav(label: string): Promise<void> {
   })
 }
 
-/** 打开抽屉底部的账号区菜单，再点其中的一项。 */
-async function clickAccountMenu(label: string): Promise<void> {
-  const accountButton = document.querySelector('.ant-drawer button[title]')
-  expect(accountButton, '抽屉里没有账号区').not.toBeNull()
+/**
+ * 打开底部账号区的菜单，返回各菜单项的文字。
+ *
+ * `scope` 决定账号区在哪：窄屏在抽屉里，宽屏在侧边栏里。两处渲染的是同一个
+ * `SidebarAccount`，因此这里只是换个查找范围，不另写一套。
+ */
+async function openAccountMenu(scope: string): Promise<string[]> {
+  const accountButton = document.querySelector(`${scope} button[title]`)
+  expect(accountButton, `${scope} 里没有账号区`).not.toBeNull()
   await act(async () => {
     accountButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   })
+  return Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).map(
+    (item) => item.textContent ?? '',
+  )
+}
+
+/** 打开账号区菜单，再点其中的一项。 */
+async function clickAccountMenu(label: string, scope = '.ant-drawer'): Promise<void> {
+  const labels = await openAccountMenu(scope)
+  expect(labels.some((text) => text.includes(label)), `账号区菜单里没有「${label}」`).toBe(true)
 
   const items = Array.from(document.querySelectorAll('.ant-dropdown-menu-item'))
   const target = items.find((item) => item.textContent?.includes(label))
-  expect(target, `账号区菜单里没有「${label}」`).not.toBeUndefined()
   await act(async () => {
     target?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   })
+}
+
+/** 侧边栏（宽屏那一份）里渲染出来的导航项文字。 */
+function siderNavLabels(): string[] {
+  return Array.from(document.querySelectorAll(`${SIDER} .ant-menu-item`)).map(
+    (item) => item.textContent ?? '',
+  )
 }
 
 beforeEach(() => {
@@ -214,9 +234,9 @@ describe('外壳的宽窄两态', () => {
     const container = await renderShell()
     await clickByLabel(container, '打开导航')
 
-    await clickDrawerNav('个人资料')
+    await clickDrawerNav('文档')
 
-    expect(container.textContent).toContain('档案内容')
+    expect(container.textContent).toContain('文档内容')
     expect(document.querySelector(DRAWER_OPEN)).toBeNull()
   })
 
@@ -232,6 +252,31 @@ describe('外壳的宽窄两态', () => {
 
     expect(container.textContent).toContain('档案内容')
     expect(document.querySelector(DRAWER_OPEN)).toBeNull()
+  })
+
+  // 「个人资料」一度同时挂在主导航与账号区两处：既重复，又占掉主导航里一个
+  // 本该留给功能区的位置。它只关于我自己，因此只从账号区进。
+  it('主导航里没有「个人资料」：它只在账号区', async () => {
+    installMatchMedia(false)
+
+    await renderShell()
+
+    expect(siderNavLabels().some((text) => text.includes('个人资料'))).toBe(false)
+    // 入口没丢，只是搬到了账号区。
+    expect(await openAccountMenu(SIDER)).toContain('个人资料')
+  })
+
+  // 收起成导轨时账号区只剩头像，因此"账号区里那一项"是唯一能确认它还在的地方。
+  it('收起成导轨后，仍能从账号区进入个人资料', async () => {
+    installMatchMedia(false)
+
+    const container = await renderShell()
+    await clickByLabel(container, '收起侧边栏')
+    expect(container.querySelector(`${SIDER}-collapsed`)).not.toBeNull()
+
+    await clickAccountMenu('个人资料', SIDER)
+
+    expect(container.textContent).toContain('档案内容')
   })
 
   // 文档区不要权限码：零权限的主体最需要它，否则"先装命令行才能登录、
