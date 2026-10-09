@@ -182,6 +182,7 @@
 | 发布产物清单与校验和（自更新的唯一来源） | `upgrade` 的发布源读取入口 | [internal/upgrade/release.go](../internal/upgrade/release.go) |
 | 发行版产物的命名与平台清单（**自更新与界面上的下载命令两处都消费**） | [docs/release.md](release.md) 记录的对外契约；平台取自 Makefile 的 `PLATFORMS` | [Makefile](../Makefile) |
 | 界面里的等宽字体栈（代码块、可编辑正文） | `MONOSPACE` | [web/src/theme/monospace.ts](../web/src/theme/monospace.ts) |
+| 品牌标识的形状与颜色（页签图标、主屏图标、侧边栏品牌区用的都是它的产物；**组件里不内联路径**） | 标识源文件，各尺寸产物由同一处脚本派生 | [docs/design/web/brand/aladdin-mark.svg](../docs/design/web/brand/aladdin-mark.svg) / [generate-icons.sh](../docs/design/web/brand/generate-icons.sh) |
 | 弹窗的高度约束、滚动行为与滚动条落在哪一侧（内容比窗口高时滚的是内容区，不是整屏遮罩；头尾与内容三块的横向边界重合） | `AppModal`（**不再从 antd 直接引 `Modal`**） | [web/src/ui/AppModal.tsx](../web/src/ui/AppModal.tsx) |
 | 技能、版本、标签、展示图集、收藏与使用日次的持久化数据 | `skill.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/skill/store.go](../internal/skill/store.go) / [internal/skill/gormstore/](../internal/skill/gormstore/store.go) |
 | 远端技能内容的拉取出口（解析引用、取回一棵树；**测试注入假实现**） | `skill.Remote` 接口 | [internal/skill/remote.go](../internal/skill/remote.go) |

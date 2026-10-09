@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿拉丁神灯</title>
+
+    <!--
+      品牌标识。图形源文件与生成方式见 docs/design/web/brand/。
+
+      两套 favicon 按系统明暗切换：深色那一版是近黑底加一层发光，浅色版是白底实心
+      渐变。**在深色标签栏上放白底的浅色版**是这类图标最常见的翻车方式——一块白的
+      浮在暗背景上，形状反而看不清了。
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)" />
+    <!--
+      ICO 留给不支持 SVG 图标的浏览器（以及直接请求 /favicon.ico 的各种工具）。
+      放在两条 SVG 之后是刻意的：支持 SVG 的浏览器按声明顺序取第一个命中的，
+      于是它们会拿到矢量版而不是这张栅格版。
+    -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <!-- 移动浏览器地址栏的着色，与标识渐变里那一端的紫同源（见 site.webmanifest）。 -->
+    <meta name="theme-color" content="#8B5CF6" />
   </head>
   <body>
     <div id="root"></div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Divider, Form, Input, Space, Typography, theme } from 'antd'
-import { KeyRound, Lamp } from 'lucide-react'
+import { Alert, Button, Card, Divider, Form, Input, Space, Typography } from 'antd'
+import { KeyRound } from 'lucide-react'
 
 import * as identityApi from '../api/identity'
 import { captureTrace, traceIdForAction, type TraceCapture } from '../api/call-trace'
@@ -9,6 +9,7 @@ import { messageOf } from '../api/errors'
 import { GithubMark, GoogleMark, useSession } from '../auth'
 import { Action, Result, Surface } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { startTimer, type ActionTimer } from '../telemetry/track'
+import { BrandMark } from '../ui/BrandMark'
 
 interface LoginFormValues {
   token: string
@@ -34,7 +35,6 @@ export function LoginPage(): React.ReactNode {
   const { signIn, status } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
-  const { token } = theme.useToken()
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -95,7 +95,7 @@ export function LoginPage(): React.ReactNode {
     <div style={{ display: 'flex', justifyContent: 'center', padding: 'clamp(32px, 12vh, 96px) 16px 24px' }}>
       <Card style={{ width: '100%', maxWidth: 420, minWidth: 0 }}>
         <Space size={8} align="center" style={{ marginBottom: 12 }}>
-          <Lamp size={22} color={token.colorPrimary} />
+          <BrandMark size={24} />
           <Typography.Title level={4} style={{ margin: 0 }}>
             阿拉丁神灯
           </Typography.Title>

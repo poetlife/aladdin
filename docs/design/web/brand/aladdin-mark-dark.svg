@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="阿拉丁神灯">
+  <title>阿拉丁神灯</title>
+  <!--
+    图标本体的暗色版。
+
+    **几何与浅色版逐字相同**——两版共用同一串路径数据，差别只有两层：一层跟着形状
+    的柔和发光，一层更亮的渐变。因此不存在"暗色那版画歪了"这种事，改形状时两处一起
+    改（见 README.md 的再生成步骤）。
+
+    发光用高斯模糊而不是外描边：模糊在深底上表现得像光晕，描边会变成一圈假边框。
+    渲染器不支持滤镜时它**整个消失**，剩下的是与浅色版一样的实心形状——降级方向是对的
+    （少一层光，不是少一个形状）。
+  -->
+  <defs>
+    <linearGradient id="brand-gradient" x1="6" y1="58" x2="56" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3FF"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <filter id="brand-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <!-- 模糊半径按 64 的坐标系给：导出到别的尺寸时它跟着等比缩放。 -->
+      <feGaussianBlur stdDeviation="3.2"/>
+    </filter>
+  </defs>
+  <path filter="url(#brand-glow)" fill="url(#brand-gradient)" opacity="0.55"
+        d="M40 2 Q45.2 16.5 58.5 20.5 Q47.8 24 46 29.5 C 48.5 38 46.5 47.5 33 54 C 23 58.5 13 59 3.5 59 C 11.5 54.5 24 49 31.5 41 C 35.2 35.5 35.2 30.5 35.8 29.5 Q 32.2 24 21.5 20.5 Q 34.8 16.5 40 2 Z"/>
+  <path fill="url(#brand-gradient)"
+        d="M40 2 Q45.2 16.5 58.5 20.5 Q47.8 24 46 29.5 C 48.5 38 46.5 47.5 33 54 C 23 58.5 13 59 3.5 59 C 11.5 54.5 24 49 31.5 41 C 35.2 35.5 35.2 30.5 35.8 29.5 Q 32.2 24 21.5 20.5 Q 34.8 16.5 40 2 Z"/>
+</svg>
