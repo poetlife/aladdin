@@ -93,11 +93,14 @@ nginx 在这里只做三件事：终止 TLS、服务静态文件、把两类前�
 
 ### 文档区不靠这条回落
 
-公开文档区那几页在**构建时被预渲染**成 `/opt/aladdin/web/docs/<章>/index.html`，因此 `try_files $uri $uri/` 的中间那一段就把它们找到了——不执行 JS 的抓取方也能读到正文（见 [design/web/agent-readable.md](design/web/agent-readable.md)）。
+公开文档区那几页在**构建时被预渲染**成 `/opt/aladdin/web/docs/<章>/index.html`，因此 `try_files` 中间那一段就把它们找到了——不执行 JS 的抓取方也能读到正文（见 [design/web/agent-readable.md](design/web/agent-readable.md)）。
+
+那一段是 **`$uri/index.html`，且排在 `$uri` 前面**。顺序不能反：这些地址不带斜杠，而 nginx 看到请求路径是个目录时默认 301 到带斜杠的那一份——`curl /docs/galaxy` 会拿回一个 301、正文在第二跳里，而页面 head 里那条 canonical 指着的正是这个地址，于是 canonical 自己也成了个重定向。
 
 随它一起的两条规则也在站点配置里，**必须排在 `location /` 之前**（模板里用的是正则 location，nginx 天然先看它）：
 
 - `.md` / `.txt` 找不到时给 **404**，不再兜底成 200 首页。少了它，`/docs/does-not-exist.md` 会返回一份 200 的 `index.html`——一个软 404，抓取方会以为地址存在。
+- `.md` 那条还要给 `default_type text/markdown`：nginx 自带的 mime.types 里没有 `md`，不指定就退成 `application/octet-stream`。
 - 请求头带 `Accept: text/markdown` 时，`/docs/<章>` 直接给 `/docs/<章>.md`。
 
 两条规则在开发服务器里有**一一对应**的实现（[web/vite.config.ts](../web/vite.config.ts)），判据一致：两处各写一份就会漂，而漂的表现是"线上取到的是文档、本地取到的是首页"，只在一边复现。
