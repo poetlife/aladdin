@@ -34,7 +34,7 @@
 | 平台 Skill 目录 | [docs/design/skill/](docs/design/skill/README.md) | 平台治理的技能目录：管理员从 GitHub 纳管（快照、同步、回滚、标签）、创作者与 agent 检索并**取用而不落盘** |
 | 服务端推送（事件通道） | [docs/design/events/](docs/design/events/README.md) | 一个资源的状态变化怎么通知到别的客户端：订阅粒度、至多一次与重连补洞、吊销窗口、心跳与反向代理要求 |
 | 部署信息 | [docs/design/deployment/](docs/design/deployment/README.md) | 部署实例的自述：版本、提交号、构建时间、运行时长、实例标识；前后端同源与一致性判定 |
-| Web 界面 | [docs/design/web/](docs/design/web/README.md) | 呈现机制：主题（亮/暗/跟随系统）、图标与动效的来源、外壳结构、站内文档区，窄屏见 [responsive.md](docs/design/web/responsive.md) |
+| Web 界面 | [docs/design/web/](docs/design/web/README.md) | 呈现机制：主题（亮/暗/跟随系统）、图标与动效的来源、外壳结构、站内文档区，窄屏见 [responsive.md](docs/design/web/responsive.md)，对 agent 可读见 [agent-readable.md](docs/design/web/agent-readable.md) |
 | UI/UX 设计指导 | [docs/design/uiux/](docs/design/uiux/README.md) | 前端界面取舍：信息层级、间距节奏、空态与失败、文案、破坏性操作 |
 | 人读示意图约定 | [docs/design/diagram-conventions.md](docs/design/diagram-conventions.md) | design 文档里的人读图怎么画：默认 ASCII/Unicode 框图与表格，复杂沟通才上 Archify 件；图是说明视图，不是第二份事实来源 |
 | 命令行 | [docs/design/cli/](docs/design/cli/README.md) | 安装与升级形态：自更新的支持范围、校验与原子替换 |

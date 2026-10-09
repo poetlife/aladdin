@@ -114,6 +114,10 @@
 | 一棵仓库目录树折成"取哪些字节、跳过哪些"的计划（子路径、链接与子模块的拒绝、超单文件上限的跳过） | `planRepoTree` | [internal/skill/repo_tree.go](../internal/skill/repo_tree.go) |
 | `SKILL.md` 的 frontmatter 解析（name / description） | `skill.ParseManifest` | [internal/skill/package.go](../internal/skill/package.go) |
 | 使用统计里"哪一天"的折算（两个存储实现共用） | `skill.UsageDay` | [internal/skill/skill.go](../internal/skill/skill.go) |
+| 公开文档页的形状（哪些路径是公开的、每页的 head 三项、渲染结果写到哪个文件） | `publicPaths` / `pageMeta` / `htmlFileFor` / `fillTemplate` | [web/prerender/public-pages.ts](../web/prerender/public-pages.ts) |
+| 送给 agent 的那几份产物（每章 `.md` 与两份索引） | `docsArtifacts`（构建写盘与开发服务器现场回应读的是同一份清单） | [web/src/pages/docs/chapters/artifacts.ts](../web/src/pages/docs/chapters/artifacts.ts) |
+| 章节源里 `{{…}}` 占位符怎么填（填不上即抛错，不停在正文里） | `fillTokens` | [web/src/pages/docs/chapters/frame-tokens.ts](../web/src/pages/docs/chapters/frame-tokens.ts) |
+| 一章的 Markdown 怎么切成"引言 + 各小节"（跳过围栏代码块） | `parseChapter` | [web/src/pages/docs/chapters/sections.ts](../web/src/pages/docs/chapters/sections.ts) |
 
 > **链路标识只用 OTel 的传播实现**。仓库里不保留任何自研的 trace_id 生成、注入或继承逻辑：那会与 `traceparent` 形成两套并存的标识，而它们迟早会不一致（见 [docs/observability.md](observability.md)）。
 
@@ -182,6 +186,9 @@
 | CLI 凭证（令牌、绑定作用域、过期时间） | 用户配置目录下的 `credentials.json`，经 `auth.Resolve` 读取 | [internal/auth/credentials.go](../internal/auth/credentials.go) |
 | 环境变量名（`ALADDIN_` 前缀） | 各模块内集中定义：配置项在 config、凭证在 auth、开发旁路在 server；调用方不得手写字符串字面量 | [internal/config/config.go](../internal/config/config.go) |
 | 发布产物清单与校验和（自更新的唯一来源） | `upgrade` 的发布源读取入口 | [internal/upgrade/release.go](../internal/upgrade/release.go) |
+| 站内文档区的章节清单（索引页、路由表、预渲染的路径列表、`llms.txt` 全部由它派生） | `CHAPTERS` / `chapterBySlug` | [web/src/pages/docs/chapters/manifest.tsx](../web/src/pages/docs/chapters/manifest.tsx) |
+| 站内文档的正文（页面渲染的就是它；`/docs/<章>.md` 与 `llms.txt` 由它派生，**不为 agent 手写第二份**） | 章节 Markdown 源，经 `fillTokens` 填上协议取值 | [web/src/pages/docs/chapters/](../web/src/pages/docs/chapters/) |
+| 公开文档产物的取用规则（`.md` / `.txt` 找不到即 404、`Accept: text/markdown` 时 `/docs/<章>` 直接给 Markdown） | 规则写在 [docs/design/web/agent-readable.md](design/web/agent-readable.md)，两处实现是部署（nginx）与开发服务器（vite 中间件）；**共享的是规则，配置各一份，不得出现第三种** | [deploy/nginx-aladdin-site.conf](../deploy/nginx-aladdin-site.conf) / [web/vite.config.ts](../web/vite.config.ts) |
 | 构建期注入的版本信息（版本、提交号、构建时间、发布标记） | 唯一的注入目标；服务端与命令行都从它读，**不再有第二个版本变量**。前端那三项由 Makefile 的 `WEB_BUILD_ENV` 从同一处取值传给 Vite | [internal/buildinfo/buildinfo.go](../internal/buildinfo/buildinfo.go) / [Makefile](../Makefile) |
 | 发行版产物的命名与平台清单（**自更新与界面上的下载命令两处都消费**） | [docs/release.md](release.md) 记录的对外契约；平台取自 Makefile 的 `PLATFORMS` | [Makefile](../Makefile) |
 | 界面里的等宽字体栈（代码块、可编辑正文） | `MONOSPACE` | [web/src/theme/monospace.ts](../web/src/theme/monospace.ts) |

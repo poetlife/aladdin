@@ -103,7 +103,7 @@
 | 权限码集合与成员判断 | [web/src/auth/permission-set.ts](../../../web/src/auth/permission-set.ts) |
 | 管理范围控件（顶栏） | [web/src/layouts/AppHeader.tsx](../../../web/src/layouts/AppHeader.tsx) |
 | 管理范围的候选项与显示 | [web/src/rbac/](../../../web/src/rbac/) |
-| 路由表（基础权限的唯一声明处） | [web/src/router.tsx](../../../web/src/router.tsx) |
+| 路由表（基础权限的唯一声明处） | [web/src/routes.tsx](../../../web/src/routes.tsx) |
 | 权限码常量（由权限目录生成） | [web/src/gen/permission-codes.ts](../../../web/src/gen/permission-codes.ts) |
 
 ---
