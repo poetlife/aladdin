@@ -306,6 +306,43 @@ type GalaxyDraftRecord struct {
 // TableName 实现 gorm 的表名解析。
 func (GalaxyDraftRecord) TableName() string { return "galaxy_drafts" }
 
+// GalaxyDraftSnapshotRecord 是**被替换掉的**那一份草稿清单在库里的一行。
+//
+// 它不是版本：没有序号、不能发布、按保留策略过期（见
+// docs/design/galaxy/project-versioning.md）。它存在的理由是"只推草稿不存版本"
+// 这条最常见的误用——那种用法下，中间过程在改动发生的那一刻就没有任何记录。
+//
+// **清单里没有字节**：与草稿、版本一样，条目指向的是按内容摘要寻址的对象。
+type GalaxyDraftSnapshotRecord struct {
+	// ID 是快照标识，主键。由 aladdin 分配。**前缀与版本不同**（`snp_` 对 `ver_`）：
+	// 拿一条快照的标识去发布必须失败，而标识一眼看得出拿错了哪一种。
+	ID string `gorm:"primaryKey;size:191"`
+	// ProjectID 与 Slot 是它所属的（工程，槽）。一个槽一行。
+	//
+	// 建复合索引是因为读取路径只有一条：按（工程，槽）取最近的那几条。
+	ProjectID string `gorm:"size:191;index:idx_galaxy_draft_snapshots_slot,priority:1"`
+	Slot      string `gorm:"size:16;index:idx_galaxy_draft_snapshots_slot,priority:2"`
+	// Seq 是在**槽内**递增的序号，**仅用于排序，不是标识**。
+	//
+	// 不靠时间排序：两次替换可能落在同一个时间刻上（库的时间列精度有限，而一次
+	// 密集的构建循环本来就可能在同几秒里推好几次），那时"哪一条是最近的"就成了
+	// 一个由标识的随机性决定的答案。序号在写入它的那个事务里分配，因此"最新的
+	// 那一条"永远是一个确定的答案。删除与清理会让序号出现空洞，这是可接受的
+	// （与版本表同一条）。
+	Seq int64 `gorm:"index:idx_galaxy_draft_snapshots_slot,priority:3"`
+	// Manifest 是被替换掉的那份清单的序列化形式。**写入后不再修改。**
+	Manifest string
+	// Source 是替换它的那一端（`web` / `cli`）。没带上报端标识时为空。
+	Source string `gorm:"size:16"`
+	// ReplacedBySubjectID 是执行那次替换的主体。留痕用。
+	ReplacedBySubjectID string `gorm:"size:191"`
+	// CreatedAt 是它被替换掉的时刻。**保留策略按它判定**，因此它参与排序。
+	CreatedAt time.Time
+}
+
+// TableName 实现 gorm 的表名解析。
+func (GalaxyDraftSnapshotRecord) TableName() string { return "galaxy_draft_snapshots" }
+
 // GalaxyVersionRecord 是文件清单的一次不可变快照在库里的一行。
 type GalaxyVersionRecord struct {
 	// ID 是版本标识，主键。由 aladdin 分配。
@@ -326,6 +363,13 @@ type GalaxyVersionRecord struct {
 	// **版本引用了哪些资产由这一列直接读出**：清单的每一条写明它是文本条目
 	// 还是资产条目，因此这件事不必解析任何文本，也没有第二处集合。
 	Manifest string
+	// Description 是可选的一句说明（"这一版加了什么"）。空表示没有。
+	//
+	// **它是元数据层，与"版本不可变"不冲突**：不可变说的是 Manifest 与
+	// RenderRulesVersion，而说明不进产物、不参与任何判定，因此**可以事后改**。
+	// 它不设列长：上限按**字符数**在领域层卡（见 galaxy.VersionDescriptionMaxRunes），
+	// 而一个字符占几个字节取决于内容，在这里写死一个字节数会与那一条对不上。
+	Description string
 	// RenderRulesVersion 是保存时所处的渲染规则版本。只有 `docs` 槽使用它，
 	// 重新发布时按它渲染而不是按当前最新的（见 doc_render.go）。
 	RenderRulesVersion int

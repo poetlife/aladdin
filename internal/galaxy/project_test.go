@@ -191,7 +191,7 @@ func TestPushDraftRequiresEntryFile(t *testing.T) {
 
 	_, err := f.service.PushDraft(ctx, testOwner, project.ID, SlotSite, []Entry{
 		f.textEntry(t, project.ID, "about.html", "<p>关于</p>"),
-	})
+	}, testDraftSource)
 	if !errors.Is(err, ErrEntrySetInvalid) {
 		t.Fatalf("err = %v，期望 ErrEntrySetInvalid", err)
 	}
@@ -392,7 +392,7 @@ func TestOwnershipCannotBeBypassed(t *testing.T) {
 			return err
 		}},
 		{"推送草稿", func() error {
-			_, err := f.service.PushDraft(ctx, testOther, project.ID, SlotSite, nil)
+			_, err := f.service.PushDraft(ctx, testOther, project.ID, SlotSite, nil, testDraftSource)
 			return err
 		}},
 		{"读版本", func() error {

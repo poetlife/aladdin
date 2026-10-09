@@ -22,6 +22,10 @@ import {
   GetDraftResponseSchema,
   GetProjectResponseSchema,
   ListAssetsResponseSchema,
+  ListDraftSnapshotsResponseSchema,
+  DraftSnapshotSchema,
+  UpdateVersionResponseSchema,
+  RestoreDraftSnapshotResponseSchema,
   ListVersionsResponseSchema,
   PreviewDraftResponseSchema,
   ContentSlot,
@@ -64,7 +68,10 @@ vi.mock('../../api/galaxy', () => ({
   saveVersion: vi.fn(),
   listVersions: vi.fn(),
   getVersion: vi.fn(),
+  updateVersion: vi.fn(),
   deleteVersion: vi.fn(),
+  listDraftSnapshots: vi.fn(),
+  restoreDraftSnapshot: vi.fn(),
   validateDraft: vi.fn(),
   previewDraft: vi.fn(),
   listAssets: vi.fn(),
@@ -253,6 +260,10 @@ beforeEach(() => {
     }),
   )
   vi.mocked(galaxyApi.listVersions).mockResolvedValue(create(ListVersionsResponseSchema, {}))
+  // 版本与草稿历史一次拉齐（它们是同一个弹层的两个页签），因此各自的默认值都要有。
+  vi.mocked(galaxyApi.listDraftSnapshots).mockResolvedValue(
+    create(ListDraftSnapshotsResponseSchema, {}),
+  )
   vi.mocked(galaxyApi.previewDraft).mockResolvedValue(
     create(PreviewDraftResponseSchema, { url: previewURL }),
   )
@@ -785,16 +796,142 @@ describe('订阅推送：别处的改动不用等回到前台', () => {
   })
 })
 
-// spec 的核查项：**接口面上不存在从网页端写内容的调用**。
+// spec 的核查项：**网页端没有内容的编辑器**。
 //
-// 这条断言看的是**真实的模块**（绕开本文件的 mock）：写入只有命令行一条路，
-// 因此前端这一侧连可调用的入口都不该有。
+// 这条断言看的是**真实的模块**（绕开本文件的 mock）：内容的编辑只有命令行一条路，
+// 因此前端这一侧不存在"把手上这一份写回去"的入口。
+//
+// **恢复草稿历史是唯一的例外，而它不违反这条**：它的入参只有一个快照标识，不带
+// 内容——写下去的是**服务端存着的那份旧清单**，而不是页面上这一份。因此它盖不掉
+// "网页上刚改的一句"（这里本来也改不了），而且它照样给被换掉的那份留一条历史。
 describe('网页端不改内容', () => {
-  it('前端 API 里没有写内容的入口', async () => {
+  it('前端 API 里没有编辑内容的入口', async () => {
     const real = await vi.importActual<Record<string, unknown>>('../../api/galaxy')
     for (const name of ['saveDraft', 'pushDraft', 'beginContentUpload', 'commitContentUpload']) {
       expect(real[name], `前端不该有 ${name} 这个写入口`).toBeUndefined()
     }
+  })
+
+  it('唯一的整组替换入口是恢复草稿历史，且它不带内容', async () => {
+    const real = await vi.importActual<Record<string, unknown>>('../../api/galaxy')
+    const restore = real['restoreDraftSnapshot'] as (...args: unknown[]) => unknown
+    expect(typeof restore).toBe('function')
+    // 它只接受（工程，槽，快照标识）——**没有** entries 之类的载荷。
+    expect(restore.length).toBe(3)
+    expect(typeof real['updateVersion']).toBe('function')
+  })
+})
+
+describe('版本说明与草稿历史', () => {
+  /** 两条版本：一条带说明，一条没有。 */
+  function versionsResponse() {
+    return create(ListVersionsResponseSchema, {
+      versions: [
+        create(VersionSchema, {
+          id: 'ver_1',
+          seq: 1n,
+          savedAt: '2026-03-01T12:00:00Z',
+          description: '第一版',
+          entries: [create(FileEntrySchema, { path: 'index.html', source: { case: 'digest', value: 'aa' } })],
+        }),
+        create(VersionSchema, {
+          id: 'ver_2',
+          seq: 2n,
+          savedAt: '2026-03-02T12:00:00Z',
+          entries: [create(FileEntrySchema, { path: 'index.html', source: { case: 'digest', value: 'bb' } })],
+        }),
+      ],
+    })
+  }
+
+  /** 打开版本弹层（它有两个页签）。 */
+  async function openVersions(): Promise<HTMLElement> {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    vi.mocked(galaxyApi.listVersions).mockResolvedValue(versionsResponse())
+    const container = await renderEditor()
+    await settle()
+    await clickButton(findButtonExact(container, '版本'), '版本')
+    return container
+  }
+
+  /** 点一个页签。antd 的页签是 `role="tab"`。 */
+  async function openTab(label: string): Promise<void> {
+    const tab = Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find(
+      (candidate) => candidate.textContent?.trim() === label,
+    )
+    expect(tab, `没有找到「${label}」页签`).not.toBeUndefined()
+    await act(async () => {
+      tab?.click()
+    })
+  }
+
+  it('版本列表里显示说明，没有说明时可以补写', async () => {
+    vi.mocked(galaxyApi.updateVersion).mockResolvedValue(
+      create(UpdateVersionResponseSchema, {
+        version: create(VersionSchema, { id: 'ver_2', seq: 2n, description: '补上的说明' }),
+      }),
+    )
+
+    await openVersions()
+
+    expect(document.body.textContent).toContain('第一版')
+    // 没有说明的那一条给的是"补写说明"，不是一片空白。
+    const pencil = findButton(document.body, '补写说明')
+    await clickButton(pencil, '补写说明')
+
+    const textarea = document.querySelector('textarea')
+    expect(textarea, '没有说明输入框').not.toBeNull()
+    await act(async () => {
+      // antd 的输入框是受控的：要经过原生 setter 再派发 input，React 才看得到。
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )?.set
+      setter?.call(textarea, '补上的说明')
+      textarea?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveButton = Array.from(document.body.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.replace(/\s/g, '') === '保存',
+    )
+    await clickButton(saveButton, '保存')
+
+    // 只发说明这一个字段：这一版的内容不在这条路径上。
+    expect(galaxyApi.updateVersion).toHaveBeenCalledWith('p1', ContentSlot.SITE, 'ver_2', '补上的说明')
+  })
+
+  it('草稿历史页签列出被替换掉的清单，并能恢复', async () => {
+    vi.mocked(galaxyApi.listDraftSnapshots).mockResolvedValue(
+      create(ListDraftSnapshotsResponseSchema, {
+        snapshots: [
+          create(DraftSnapshotSchema, {
+            id: 'snp_1',
+            slot: ContentSlot.SITE,
+            createdAt: '2026-03-03T12:00:00Z',
+            source: 'cli',
+            entries: [create(FileEntrySchema, { path: 'index.html', source: { case: 'digest', value: 'cc' } })],
+          }),
+        ],
+      }),
+    )
+    vi.mocked(galaxyApi.restoreDraftSnapshot).mockResolvedValue(
+      create(RestoreDraftSnapshotResponseSchema, {}),
+    )
+
+    await openVersions()
+    await openTab('草稿历史')
+
+    expect(document.body.textContent).toContain('命令行')
+    // 它**不能发布**这件事写在页签里的说明上——那是它与版本的分界线。
+    expect(document.body.textContent).toContain('不是版本')
+
+    await clickButton(findButton(document.body, '恢复'), '恢复')
+    // Popconfirm 的确认按钮在它自己的浮层里（`.ant-popover`），与行内那颗同名。
+    const confirm = document.querySelector<HTMLElement>('.ant-popover .ant-btn-primary')
+    expect(confirm, '没有找到确认框里的确认按钮').not.toBeNull()
+    await act(async () => {
+      confirm?.click()
+    })
+    expect(galaxyApi.restoreDraftSnapshot).toHaveBeenCalledWith('p1', ContentSlot.SITE, 'snp_1')
   })
 })
 

@@ -183,6 +183,13 @@ type Version struct {
 	//
 	// **字节不随清单走**：它们是按内容摘要寻址的不可变对象，由多个版本共享。
 	Manifest Manifest
+	// Description 是可选的一句说明（"这一版加了什么"）。空表示没有。
+	//
+	// **它是元数据层，与"版本不可变"不冲突**：不可变说的是 Manifest 与
+	// RenderRulesVersion，而说明不进产物、不参与任何判定，因此**可以事后改**
+	// （见 UpdateVersionDescription）。写错一句话与"把这一版的内容改掉"是两件事，
+	// 而前者若只能靠再存一版来修，人会宁可不写。
+	Description string
 	// RenderRulesVersion 是保存时所处的渲染规则版本。只有 `docs` 槽使用它，
 	// 重新发布时按它渲染而不是按当前最新的（见 doc_render.go）。
 	RenderRulesVersion int
@@ -263,6 +270,15 @@ type Store interface {
 	// 把候选集缩小。
 	ListProjectTags(ctx context.Context, projectID string) ([]string, error)
 
+	// ListDraftSnapshots 返回该工程**该槽**的草稿历史，最近的在前。
+	//
+	// 清单随行返回：它只有路径与摘要，而"这一份与上一份差在哪"要靠它答。
+	ListDraftSnapshots(ctx context.Context, projectID string, slot ContentSlot) ([]DraftSnapshot, error)
+
+	// GetDraftSnapshot 按标识读回一条草稿快照，不存在（或已过期被清掉）时返回
+	// ErrDraftSnapshotNotFound。
+	GetDraftSnapshot(ctx context.Context, projectID string, slot ContentSlot, snapshotID string) (DraftSnapshot, error)
+
 	// GetPublication 按发布标识读回发布记录（含产物清单）。
 	GetPublication(ctx context.Context, publicationID string) (Publication, error)
 
@@ -311,10 +327,19 @@ type MutableStore interface {
 	// 成为无从被引用的孤儿），公开的不回收（见 publish.go）。
 	DeleteProject(ctx context.Context, projectID string) error
 
-	// PutDraft 整组替换**某一个槽**的草稿，行不存在时创建。
+	// PutDraft 整组替换**某一个槽**的草稿，行不存在时创建，并**在同一步**把被
+	// 替换掉的那份清单记成一条草稿快照。
 	//
 	// **它整组读写**：保存草稿表达的是完整状态，不是增量。
-	PutDraft(ctx context.Context, projectID string, slot ContentSlot, manifest Manifest, at time.Time) error
+	//
+	// 两件事必须落在同一步：先读旧清单、再写新清单，中间隔着一次返回——中途失败
+	// 留下的是"新草稿已经生效、旧的那份没有任何记录"，而那正是快照要消掉的东西。
+	//
+	// snapshot 为**零值**（ID 为空）表示这次不留快照（这个槽还没有草稿行，或新旧
+	// 清单完全相同，见 Service.recordReplacedDraft）。retention 给出保留策略，
+	// 清理与写入在同一个事务里——表的大小因此只由"还有多少条活的快照"决定。
+	PutDraft(ctx context.Context, projectID string, slot ContentSlot, manifest Manifest, at time.Time,
+		snapshot DraftSnapshot, retention DraftSnapshotRetention) error
 
 	// CreateVersion 写入一个版本，并**在该槽内分配序号**后返回落库的版本。
 	//
@@ -322,6 +347,13 @@ type MutableStore interface {
 	// 相同的序号，而"查到了什么"与"写进去了什么"必须在同一处发生。**序号在
 	// 槽内递增**：两个槽各自的第一个版本序号都是 1。
 	CreateVersion(ctx context.Context, version Version) (Version, error)
+
+	// UpdateVersionDescription 覆盖一个版本的说明。
+	//
+	// **它只动说明那一列**：清单、序号、保存时间与渲染规则版本逐字不变，因此
+	// "版本不可变"（说的是内容）不受影响，已发布页面也不受影响。版本不存在时
+	// 返回 ErrVersionNotFound。
+	UpdateVersionDescription(ctx context.Context, projectID string, slot ContentSlot, versionID, description string) error
 
 	// DeleteVersion 删除**某一个槽**的一个版本。
 	DeleteVersion(ctx context.Context, projectID string, slot ContentSlot, versionID string) error
@@ -721,7 +753,11 @@ func (s *Service) GetDraft(ctx context.Context, subjectID, projectID string, slo
 // push 静默盖掉）连同它需要的基线校验一起不存在。
 //
 // **它只碰这一个槽**：另一个槽的草稿与版本不受影响。
-func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, slot ContentSlot, entries []Entry) (Draft, error) {
+//
+// **被换掉的那份清单会留成一条草稿快照**（见 docs/design/galaxy/project-versioning.md）：
+// "只推不存版本"这条最常见的用法因此不会让中间过程消失。source 是发起这一端的
+// 标识（`web` / `cli`），由服务端从上报端标识那一个入口读出。
+func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, slot ContentSlot, entries []Entry, source string) (Draft, error) {
 	if _, err := s.ownedProjectSlot(ctx, subjectID, projectID, slot); err != nil {
 		return Draft{}, err
 	}
@@ -732,8 +768,8 @@ func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, sl
 	if err := ValidateManifestForSlot(slot, manifest); err != nil {
 		return Draft{}, err
 	}
-	now := s.now()
-	if err := s.store.PutDraft(ctx, projectID, slot, manifest, now); err != nil {
+	draft, err := s.replaceDraft(ctx, subjectID, projectID, slot, manifest, source)
+	if err != nil {
 		return Draft{}, err
 	}
 	s.publish(projectID)
@@ -744,7 +780,7 @@ func (s *Service) PushDraft(ctx context.Context, subjectID, projectID string, sl
 			zap.String("slot", string(slot)),
 			zap.Int("files", len(manifest)))
 	}
-	return Draft{ProjectID: projectID, Slot: slot, Manifest: manifest, UpdatedAt: now}, nil
+	return draft, nil
 }
 
 // attachURLs 给清单的每一项附上编辑态的短时读取地址。

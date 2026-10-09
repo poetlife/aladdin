@@ -9,6 +9,7 @@ import (
 
 	galaxyv1 "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
 	"github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1/galaxyv1connect"
+	"github.com/poetlife/aladdin/internal/galaxy"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -400,7 +401,11 @@ func newGalaxyDraftCommand() *cobra.Command {
 参与发布。
 
 草稿是工作区，不是历史。要留下一份不会被后续改动影响的清单，用
-"aladdin galaxy version save" 存一版。
+"aladdin galaxy version save" 存一版——**每完成一个可演示的里程碑就存一版**，
+这是推荐的做法，也是唯一能保证"随时退回去"的做法。
+
+**每次 push 会把被替换掉的那份旧清单留成一条草稿快照**（draft history 看得到，
+draft restore 能退回去）。那是兜底：它按保留策略过期，而版本不会。
 
 **push 表达的是整组的期望状态**：目录里没有的路径就是"删掉"。**它只碰指定的那个
 槽**：另一个槽的草稿与版本不受影响。
@@ -411,6 +416,8 @@ func newGalaxyDraftCommand() *cobra.Command {
 		newGalaxyDraftListCommand(),
 		newGalaxyDraftPullCommand(),
 		newGalaxyDraftPushCommand(),
+		newGalaxyDraftHistoryCommand(),
+		newGalaxyDraftRestoreCommand(),
 	)
 	return cmd
 }
@@ -509,7 +516,8 @@ func newGalaxyDraftPullCommand() *cobra.Command {
 // "整组送上去"的编排，而它仍然是一个原子动作——最后一次 PushDraft 要么整组
 // 成为草稿，要么什么都没变。
 func newGalaxyDraftPushCommand() *cobra.Command {
-	var slot string
+	var slot, description string
+	var save bool
 
 	cmd := &cobra.Command{
 		Use:   "push <工程标识> <目录>",
@@ -520,6 +528,17 @@ func newGalaxyDraftPushCommand() *cobra.Command {
 
 目录里每个文件都要成为一个条目：文本文件（按该槽的白名单）作为内容对象，其余
 作为资产上传。文本里出现 asset://<资产标识> 的地方会额外登记一条资产条目。
+
+**被换掉的那份清单会留成一条草稿快照**（同目录里没有的路径就是删掉，因此它记的
+正是"你刚刚覆盖掉的东西"）。用 draft history 看它，用 draft restore 退回去。
+相同清单不重复留。
+
+**推完记得存版本。** 每完成一个可演示的里程碑就存一版：
+
+  aladdin galaxy draft push <工程标识> ./dist --save -m "加了封面"
+
+--save 在推完之后立刻存一个版本，-m 给出这一版的说明（给出 -m 即隐含 --save）。
+不带这两个时，命令在末尾提示"尚未存为版本"。
 
 一条本地就拦住的规则：**docs 是文档槽占用的保留段**，因此推 site 槽时目录里出现
 docs/... 会直接报错并指出那个路径（服务端同样会拒，这里省一次往返）。`,
@@ -548,9 +567,142 @@ docs/... 会直接报错并指出那个路径（服务端同样会拒，这里�
 			if err != nil {
 				return err
 			}
-			resp, err := svc.PushDraft(ctx, connect.NewRequest(&galaxyv1.PushDraftRequest{
+			pushed, err := svc.PushDraft(ctx, connect.NewRequest(&galaxyv1.PushDraftRequest{
 				ProjectId: projectID,
 				Entries:   entries,
+				Slot:      resolved,
+			}))
+			if err != nil {
+				return err
+			}
+
+			// -m 隐含 --save：写下说明这个动作本身就表达了"我要把这一版记下来"，
+			// 而"给了说明却没存版本"只会让人以为说明被丢掉了。
+			if save || cmd.Flags().Changed("description") {
+				saved, err := svc.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{
+					ProjectId:   projectID,
+					Slot:        resolved,
+					Description: description,
+				}))
+				if err != nil {
+					return err
+				}
+				if flags.output != "json" {
+					printf(cmd.OutOrStdout(), "已保存版本 #%d（%s）\n",
+						saved.Msg.GetVersion().GetSeq(), saved.Msg.GetVersion().GetId())
+				}
+				if flags.output == "json" {
+					return printJSON(pushed.Msg)
+				}
+				return nil
+			}
+
+			if flags.output == "json" {
+				return printJSON(pushed.Msg)
+			}
+			printf(cmd.OutOrStdout(), "已推送 %d 个文件（%s），%s\n",
+				len(entries), pushed.Msg.GetDraft().GetUpdatedAt(), args[1])
+			printUnsavedHint(cmd, ctx, svc, projectID, resolved, converted, entries)
+			return nil
+		},
+	}
+	addSlotFlag(cmd, &slot, "要替换哪个内容槽的草稿：site 或 docs（单槽工程可省略）")
+	cmd.Flags().BoolVar(&save, "save", false, "推完之后立刻把草稿存成一个版本")
+	cmd.Flags().StringVarP(&description, "description", "m", "",
+		"这一版的说明（给出它即隐含 --save）")
+
+	requirePermission(cmd, rbac.PermissionGalaxyProjectWrite)
+	return cmd
+}
+
+// printUnsavedHint 在"推完但没有存版本"时给出那句引导（唯一入口）。
+//
+// 它存在的理由是 agent：用命令行创作时最常见的流程是反复 push、从不 save，而
+// 那条路上唯一的记录是草稿历史（会过期）。因此这条提示不是可选的装饰。
+//
+// **提示失败不影响这次 push 的结论**：引导靠一次额外的读取得出，读不到时给一句
+// 不细分的提示，而不是把一次已经成功的推送表现成失败。
+func printUnsavedHint(cmd *cobra.Command, ctx context.Context, svc galaxyv1connect.GalaxyServiceClient,
+	projectID string, slot galaxyv1.ContentSlot, converted galaxy.ContentSlot, entries []*galaxyv1.FileEntry) {
+	slotFlag := ""
+	if converted != "" {
+		// 双槽工程必须显式给槽；单槽工程给了也无害——提示里统一带上，照抄即可。
+		slotFlag = " --slot " + string(converted)
+	}
+	suggestion := fmt.Sprintf(
+		"aladdin galaxy version save <工程标识>%s -m \"说明\"", slotFlag)
+
+	versions, err := svc.ListVersions(ctx, connect.NewRequest(&galaxyv1.ListVersionsRequest{
+		ProjectId: projectID,
+		Slot:      slot,
+	}))
+	if err == nil {
+		if sameAsNewestVersion(versions.Msg.GetVersions(), entries) {
+			// 手里的这一份与最新的版本是同一份内容：这次推送没有产生未保存的改动，
+			// 提示只会变成噪声。
+			return
+		}
+		if len(versions.Msg.GetVersions()) == 0 {
+			// 最该醒目的一档：这个槽一份版本都没有，"退回去"目前只能靠会过期的
+			// 草稿历史。
+			printf(cmd.OutOrStdout(),
+				"\n提醒：这个槽还没有任何版本，草稿没有可回退的对照。\n"+
+					"      运行 %s 留下一个不会过期的快照。\n", suggestion)
+			return
+		}
+	}
+	printf(cmd.OutOrStdout(),
+		"\n提示：草稿已更新，尚未存为版本。\n"+
+			"      运行 %s 留下可回退的快照，或下次 push 加上 --save。\n"+
+			"      （被覆盖掉的那一份在 draft history 里，但它会过期。）\n", suggestion)
+}
+
+// sameAsNewestVersion 判定手里的这一份与最新的那个版本是不是同一份内容。
+//
+// 空清单的版本与空草稿也是同一份——两处都为空时它是"什么都没变"。
+func sameAsNewestVersion(versions []*galaxyv1.Version, entries []*galaxyv1.FileEntry) bool {
+	if len(versions) == 0 {
+		return false
+	}
+	newest := versions[0]
+	for _, candidate := range versions {
+		if candidate.GetSeq() > newest.GetSeq() {
+			newest = candidate
+		}
+	}
+	return entriesSignature(newest.GetEntries()) == entriesSignature(entries)
+}
+
+// newGalaxyDraftHistoryCommand 列出草稿历史。
+func newGalaxyDraftHistoryCommand() *cobra.Command {
+	var slot string
+
+	cmd := &cobra.Command{
+		Use:   "history <工程标识>",
+		Short: "列出草稿的过去状态",
+		Long: `列出这个槽**被替换掉的那些草稿清单**，最近的在前。
+
+它们**不是版本**：没有序号、不能发布，而且会过期（每个槽最近 50 条、且不超过
+14 天）。想留下不会过期的一份，把某一条存成版本：
+
+  aladdin galaxy version save <工程标识> --from-snapshot <快照标识> -m "说明"
+
+每一次 push 与每一次 draft restore 都会留下一条（相同清单不重复留），因此"刚刚
+被覆盖掉的那一份"总在这里。`,
+		Args: exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, svc, done, err := galaxyCall()
+			if err != nil {
+				return err
+			}
+			defer done()
+
+			_, resolved, err := projectForSlot(ctx, svc, cmd, args[0])
+			if err != nil {
+				return err
+			}
+			resp, err := svc.ListDraftSnapshots(ctx, connect.NewRequest(&galaxyv1.ListDraftSnapshotsRequest{
+				ProjectId: args[0],
 				Slot:      resolved,
 			}))
 			if err != nil {
@@ -559,12 +711,86 @@ docs/... 会直接报错并指出那个路径（服务端同样会拒，这里�
 			if flags.output == "json" {
 				return printJSON(resp.Msg)
 			}
-			printf(cmd.OutOrStdout(), "已推送 %d 个文件（%s），%s\n",
-				len(entries), resp.Msg.GetDraft().GetUpdatedAt(), args[1])
+			snapshots := resp.Msg.GetSnapshots()
+			if len(snapshots) == 0 {
+				println(cmd.OutOrStdout(),
+					"还没有草稿历史。每次 draft push 会留下一条——相同清单不重复留。")
+				return nil
+			}
+			for _, snapshot := range snapshots {
+				printf(cmd.OutOrStdout(), "%s  %s  %d 个文件  来自 %s\n",
+					snapshot.GetId(), snapshot.GetCreatedAt(),
+					len(snapshot.GetEntries()), describeSnapshotSource(snapshot.GetSource()))
+			}
 			return nil
 		},
 	}
-	addSlotFlag(cmd, &slot, "要替换哪个内容槽的草稿：site 或 docs（单槽工程可省略）")
+	addSlotFlag(cmd, &slot, "要看哪个内容槽的草稿历史：site 或 docs（单槽工程可省略）")
+	requirePermission(cmd, rbac.PermissionGalaxyProjectRead)
+	return cmd
+}
+
+// describeSnapshotSource 把快照的来源写成人读的一小段。
+//
+// 空值有明确含义：那一端没有带上报端标识（老版本的命令行、或第三方客户端），因此
+// 不能写成"未知"就算了——"这一条不是网页/命令行改的"是要说出来的事实。
+func describeSnapshotSource(source string) string {
+	switch source {
+	case "web":
+		return "网页端"
+	case "cli":
+		return "命令行"
+	default:
+		return "未知来源"
+	}
+}
+
+// newGalaxyDraftRestoreCommand 把草稿换回某一条历史。
+func newGalaxyDraftRestoreCommand() *cobra.Command {
+	var slot string
+
+	cmd := &cobra.Command{
+		Use:   "restore <工程标识> <快照标识>",
+		Short: "把草稿换回某一条历史",
+		Long: `把某个槽的草稿**整组换回**某一条草稿历史的清单。
+
+**恢复不会让你丢掉恢复前的内容**：它是一次草稿替换，因此当前那份也会被留成一条
+新的历史记录。找错了再恢复回来即可。
+
+**引用了已删除资产的快照不能恢复**：恢复出来会是一份校验必然失败的草稿，而那时
+"恢复成功"这句话看不出问题在哪。命令会如实拒绝并指出是哪一条路径引用了哪个资产。
+
+它只碰指定的那个槽。`,
+		Args: exactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, svc, done, err := galaxyCall()
+			if err != nil {
+				return err
+			}
+			defer done()
+
+			projectID := args[0]
+			_, resolved, err := projectForSlot(ctx, svc, cmd, projectID)
+			if err != nil {
+				return err
+			}
+			resp, err := svc.RestoreDraftSnapshot(ctx, connect.NewRequest(&galaxyv1.RestoreDraftSnapshotRequest{
+				ProjectId:  projectID,
+				Slot:       resolved,
+				SnapshotId: args[1],
+			}))
+			if err != nil {
+				return err
+			}
+			if flags.output == "json" {
+				return printJSON(resp.Msg)
+			}
+			printf(cmd.OutOrStdout(), "已恢复 %d 个文件的清单（恢复前的那份已留成新的历史记录）\n",
+				len(resp.Msg.GetDraft().GetEntries()))
+			return nil
+		},
+	}
+	addSlotFlag(cmd, &slot, "要恢复到哪个内容槽：site 或 docs（单槽工程可省略）")
 	requirePermission(cmd, rbac.PermissionGalaxyProjectWrite)
 	return cmd
 }

@@ -80,9 +80,58 @@ export async function getDraft(projectId: string, slot: ContentSlot) {
   return galaxyClient().getDraft({ projectId, slot })
 }
 
-/** 把**某一个槽**草稿的当前清单保存成一个不可变版本。 */
-export async function saveVersion(projectId: string, slot: ContentSlot) {
-  return galaxyClient().saveVersion({ projectId, slot })
+/**
+ * 把**某一个槽**草稿的当前清单保存成一个不可变版本。
+ *
+ * `description` 是这一版的一句说明（可留空，之后也能改）。`fromSnapshotId` 非空时
+ * 存的是**那条草稿历史**的清单，而不是当前草稿——它回答的是"我想把那次中间态正式
+ * 记下来"。
+ *
+ * 注意 **`-m` 隐含 `--save` 是命令行那边的规矩，不在这一层**：这里两个入参各管
+ * 各的，传了说明就是要有说明。
+ */
+export async function saveVersion(
+  projectId: string,
+  slot: ContentSlot,
+  description = '',
+  fromSnapshotId = '',
+) {
+  return galaxyClient().saveVersion({ projectId, slot, description, fromSnapshotId })
+}
+
+/**
+ * 改一个版本的**说明**。
+ *
+ * 它只动说明那一层：清单、序号、保存时间与渲染规则版本都不变，因此已经发出去的
+ * 页面不受影响（见 docs/design/galaxy/project-versioning.md）。空串清空说明。
+ */
+export async function updateVersion(
+  projectId: string,
+  slot: ContentSlot,
+  versionId: string,
+  description: string,
+) {
+  return galaxyClient().updateVersion({ projectId, slot, versionId, description })
+}
+
+/**
+ * 列出**某一个槽**的草稿历史：被替换掉的那些旧清单，最近的在前。
+ *
+ * 它们**不是版本**：没有序号、不能发布、按保留策略过期（每个槽最近 50 条、且不
+ * 超过 14 天）。它是"只推不存版本"这条用法的兜底。
+ */
+export async function listDraftSnapshots(projectId: string, slot: ContentSlot) {
+  return galaxyClient().listDraftSnapshots({ projectId, slot })
+}
+
+/**
+ * 把草稿**整组换回**某一条草稿历史的清单。
+ *
+ * **恢复本身也留一条历史**（它走的是同一处草稿替换），因此恢复不会丢掉恢复前的
+ * 内容。引用了已删除资产的那条历史不能恢复，服务端会拒绝并指出是哪一处。
+ */
+export async function restoreDraftSnapshot(projectId: string, slot: ContentSlot, snapshotId: string) {
+  return galaxyClient().restoreDraftSnapshot({ projectId, slot, snapshotId })
 }
 
 /** 列出**某一个槽**的版本，按序号排序。清单随行，但不带读取地址。 */

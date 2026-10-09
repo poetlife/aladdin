@@ -19,32 +19,35 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GalaxyService_GetCapabilities_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/GetCapabilities"
-	GalaxyService_ListProjects_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ListProjects"
-	GalaxyService_CreateProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/CreateProject"
-	GalaxyService_AddProjectSlot_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/AddProjectSlot"
-	GalaxyService_GetProject_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/GetProject"
-	GalaxyService_UpdateProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/UpdateProject"
-	GalaxyService_DeleteProject_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/DeleteProject"
-	GalaxyService_GetDraft_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/GetDraft"
-	GalaxyService_PushDraft_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/PushDraft"
-	GalaxyService_SaveVersion_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/SaveVersion"
-	GalaxyService_ListVersions_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ListVersions"
-	GalaxyService_GetVersion_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/GetVersion"
-	GalaxyService_DeleteVersion_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/DeleteVersion"
-	GalaxyService_ValidateDraft_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/ValidateDraft"
-	GalaxyService_PreviewDraft_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/PreviewDraft"
-	GalaxyService_BeginContentUpload_FullMethodName  = "/aladdin.galaxy.v1.GalaxyService/BeginContentUpload"
-	GalaxyService_CommitContentUpload_FullMethodName = "/aladdin.galaxy.v1.GalaxyService/CommitContentUpload"
-	GalaxyService_ListAssets_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/ListAssets"
-	GalaxyService_BeginAssetUpload_FullMethodName    = "/aladdin.galaxy.v1.GalaxyService/BeginAssetUpload"
-	GalaxyService_CommitAssetUpload_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/CommitAssetUpload"
-	GalaxyService_DeleteAsset_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/DeleteAsset"
-	GalaxyService_UpdateAsset_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
-	GalaxyService_Publish_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/Publish"
-	GalaxyService_Unpublish_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
-	GalaxyService_GetPublication_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/GetPublication"
-	GalaxyService_ResolveSharedPage_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
+	GalaxyService_GetCapabilities_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/GetCapabilities"
+	GalaxyService_ListProjects_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/ListProjects"
+	GalaxyService_CreateProject_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/CreateProject"
+	GalaxyService_AddProjectSlot_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/AddProjectSlot"
+	GalaxyService_GetProject_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/GetProject"
+	GalaxyService_UpdateProject_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/UpdateProject"
+	GalaxyService_DeleteProject_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/DeleteProject"
+	GalaxyService_GetDraft_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/GetDraft"
+	GalaxyService_PushDraft_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/PushDraft"
+	GalaxyService_ListDraftSnapshots_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/ListDraftSnapshots"
+	GalaxyService_RestoreDraftSnapshot_FullMethodName = "/aladdin.galaxy.v1.GalaxyService/RestoreDraftSnapshot"
+	GalaxyService_SaveVersion_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/SaveVersion"
+	GalaxyService_UpdateVersion_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/UpdateVersion"
+	GalaxyService_ListVersions_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/ListVersions"
+	GalaxyService_GetVersion_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/GetVersion"
+	GalaxyService_DeleteVersion_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/DeleteVersion"
+	GalaxyService_ValidateDraft_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ValidateDraft"
+	GalaxyService_PreviewDraft_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/PreviewDraft"
+	GalaxyService_BeginContentUpload_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/BeginContentUpload"
+	GalaxyService_CommitContentUpload_FullMethodName  = "/aladdin.galaxy.v1.GalaxyService/CommitContentUpload"
+	GalaxyService_ListAssets_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/ListAssets"
+	GalaxyService_BeginAssetUpload_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/BeginAssetUpload"
+	GalaxyService_CommitAssetUpload_FullMethodName    = "/aladdin.galaxy.v1.GalaxyService/CommitAssetUpload"
+	GalaxyService_DeleteAsset_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/DeleteAsset"
+	GalaxyService_UpdateAsset_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
+	GalaxyService_Publish_FullMethodName              = "/aladdin.galaxy.v1.GalaxyService/Publish"
+	GalaxyService_Unpublish_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
+	GalaxyService_GetPublication_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/GetPublication"
+	GalaxyService_ResolveSharedPage_FullMethodName    = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
 )
 
 // GalaxyServiceClient is the client API for GalaxyService service.
@@ -113,19 +116,51 @@ type GalaxyServiceClient interface {
 	// 它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
 	// 否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
 	//
-	// **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
-	// "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
-	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+	// **这是内容唯一的编辑路径**（命令行）。网页端不能编辑内容：两个编辑器并存会
+	// 引出"网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。**唯一的例外是恢复草稿
+	// 历史**（RestoreDraftSnapshot）——它不是编辑，而是一次**显式的整组替换**，并且
+	// 落在这同一条路径上、同样先给被换掉的那一份留一条快照，因此它不会静默盖掉什么。
+	//
+	// **被换掉的那份清单会留成一条草稿快照**（见 ListDraftSnapshots）："只推不存
+	// 版本"这条最常见的用法因此不会让中间过程消失。相同清单不重复留。
 	//
 	// 请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
 	// 资产标识），因此本方法不带字节，也不触发任何上传。
 	PushDraft(ctx context.Context, in *PushDraftRequest, opts ...grpc.CallOption) (*PushDraftResponse, error)
+	// 列出某个槽的**草稿历史**：被替换掉的那些旧清单，最近的在前。
+	//
+	// 草稿快照**不是版本**：没有序号、不能发布、按保留策略过期（见
+	// docs/design/galaxy/project-versioning.md）。它是"只推不存版本"这条用法的
+	// 兜底——那套用法下中间过程本来一点记录都没有。
+	ListDraftSnapshots(ctx context.Context, in *ListDraftSnapshotsRequest, opts ...grpc.CallOption) (*ListDraftSnapshotsResponse, error)
+	// 把草稿**整组换回**某一条快照的清单。
+	//
+	// **恢复本身也留一条快照**：它是同一处草稿替换，因此恢复不会让你丢掉恢复前的
+	// 内容。它不碰另一个槽。
+	//
+	// **引用了已删除资产的快照不能恢复**：恢复出来的会是一份必然在校验阶段失败的
+	// 草稿，而用户从"恢复成功"这句话里看不出问题在哪。服务端如实拒绝并指出那一处。
+	RestoreDraftSnapshot(ctx context.Context, in *RestoreDraftSnapshotRequest, opts ...grpc.CallOption) (*RestoreDraftSnapshotResponse, error)
 	// 把草稿的当前清单保存成一个**不可变**版本。
 	//
 	// 保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
 	// 连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
 	// 看起来一样的清单对用户是两次不同的保存动作。
+	//
+	// 两个可选入参：`description` 是这一版的一句说明（可事后改，见 UpdateVersion）；
+	// `from_snapshot_id` 非空时存的是**那条草稿快照**的清单，而不是当前草稿——它
+	// 回答的是"我想把那次中间态正式记下来"。
 	SaveVersion(ctx context.Context, in *SaveVersionRequest, opts ...grpc.CallOption) (*SaveVersionResponse, error)
+	// 改一个版本的**说明**。
+	//
+	// **它只改说明那一层。** 与资产同一条：不可变说的是**内容**（文件清单、渲染规则
+	// 版本），而说明回答的是"这一版是干什么的"，它不进产物、不参与任何判定。清单、
+	// 序号、保存时间在改动前后逐字不变，已发布的页面也不受影响。
+	//
+	// 请求表达**期望的完整状态**：空串清空说明。**两端都能改**——写错一句话与"把
+	// 这一版的内容改掉"是两件事，而前者若只能靠再存一版来修，人会宁可不写。
+	UpdateVersion(ctx context.Context, in *UpdateVersionRequest, opts ...grpc.CallOption) (*UpdateVersionResponse, error)
 	// 列出工程的版本，按序号排序。清单很小，因此**列表也带清单**（不带地址）。
 	ListVersions(ctx context.Context, in *ListVersionsRequest, opts ...grpc.CallOption) (*ListVersionsResponse, error)
 	// 读取一个版本，含清单与每一项的短时读取地址。保存时的内容此后逐字不变。
@@ -358,10 +393,40 @@ func (c *galaxyServiceClient) PushDraft(ctx context.Context, in *PushDraftReques
 	return out, nil
 }
 
+func (c *galaxyServiceClient) ListDraftSnapshots(ctx context.Context, in *ListDraftSnapshotsRequest, opts ...grpc.CallOption) (*ListDraftSnapshotsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDraftSnapshotsResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_ListDraftSnapshots_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) RestoreDraftSnapshot(ctx context.Context, in *RestoreDraftSnapshotRequest, opts ...grpc.CallOption) (*RestoreDraftSnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RestoreDraftSnapshotResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_RestoreDraftSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *galaxyServiceClient) SaveVersion(ctx context.Context, in *SaveVersionRequest, opts ...grpc.CallOption) (*SaveVersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SaveVersionResponse)
 	err := c.cc.Invoke(ctx, GalaxyService_SaveVersion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) UpdateVersion(ctx context.Context, in *UpdateVersionRequest, opts ...grpc.CallOption) (*UpdateVersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateVersionResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_UpdateVersion_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -594,19 +659,51 @@ type GalaxyServiceServer interface {
 	// 它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
 	// 否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
 	//
-	// **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
-	// "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
-	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+	// **这是内容唯一的编辑路径**（命令行）。网页端不能编辑内容：两个编辑器并存会
+	// 引出"网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。**唯一的例外是恢复草稿
+	// 历史**（RestoreDraftSnapshot）——它不是编辑，而是一次**显式的整组替换**，并且
+	// 落在这同一条路径上、同样先给被换掉的那一份留一条快照，因此它不会静默盖掉什么。
+	//
+	// **被换掉的那份清单会留成一条草稿快照**（见 ListDraftSnapshots）："只推不存
+	// 版本"这条最常见的用法因此不会让中间过程消失。相同清单不重复留。
 	//
 	// 请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
 	// 资产标识），因此本方法不带字节，也不触发任何上传。
 	PushDraft(context.Context, *PushDraftRequest) (*PushDraftResponse, error)
+	// 列出某个槽的**草稿历史**：被替换掉的那些旧清单，最近的在前。
+	//
+	// 草稿快照**不是版本**：没有序号、不能发布、按保留策略过期（见
+	// docs/design/galaxy/project-versioning.md）。它是"只推不存版本"这条用法的
+	// 兜底——那套用法下中间过程本来一点记录都没有。
+	ListDraftSnapshots(context.Context, *ListDraftSnapshotsRequest) (*ListDraftSnapshotsResponse, error)
+	// 把草稿**整组换回**某一条快照的清单。
+	//
+	// **恢复本身也留一条快照**：它是同一处草稿替换，因此恢复不会让你丢掉恢复前的
+	// 内容。它不碰另一个槽。
+	//
+	// **引用了已删除资产的快照不能恢复**：恢复出来的会是一份必然在校验阶段失败的
+	// 草稿，而用户从"恢复成功"这句话里看不出问题在哪。服务端如实拒绝并指出那一处。
+	RestoreDraftSnapshot(context.Context, *RestoreDraftSnapshotRequest) (*RestoreDraftSnapshotResponse, error)
 	// 把草稿的当前清单保存成一个**不可变**版本。
 	//
 	// 保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
 	// 连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
 	// 看起来一样的清单对用户是两次不同的保存动作。
+	//
+	// 两个可选入参：`description` 是这一版的一句说明（可事后改，见 UpdateVersion）；
+	// `from_snapshot_id` 非空时存的是**那条草稿快照**的清单，而不是当前草稿——它
+	// 回答的是"我想把那次中间态正式记下来"。
 	SaveVersion(context.Context, *SaveVersionRequest) (*SaveVersionResponse, error)
+	// 改一个版本的**说明**。
+	//
+	// **它只改说明那一层。** 与资产同一条：不可变说的是**内容**（文件清单、渲染规则
+	// 版本），而说明回答的是"这一版是干什么的"，它不进产物、不参与任何判定。清单、
+	// 序号、保存时间在改动前后逐字不变，已发布的页面也不受影响。
+	//
+	// 请求表达**期望的完整状态**：空串清空说明。**两端都能改**——写错一句话与"把
+	// 这一版的内容改掉"是两件事，而前者若只能靠再存一版来修，人会宁可不写。
+	UpdateVersion(context.Context, *UpdateVersionRequest) (*UpdateVersionResponse, error)
 	// 列出工程的版本，按序号排序。清单很小，因此**列表也带清单**（不带地址）。
 	ListVersions(context.Context, *ListVersionsRequest) (*ListVersionsResponse, error)
 	// 读取一个版本，含清单与每一项的短时读取地址。保存时的内容此后逐字不变。
@@ -776,8 +873,17 @@ func (UnimplementedGalaxyServiceServer) GetDraft(context.Context, *GetDraftReque
 func (UnimplementedGalaxyServiceServer) PushDraft(context.Context, *PushDraftRequest) (*PushDraftResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PushDraft not implemented")
 }
+func (UnimplementedGalaxyServiceServer) ListDraftSnapshots(context.Context, *ListDraftSnapshotsRequest) (*ListDraftSnapshotsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDraftSnapshots not implemented")
+}
+func (UnimplementedGalaxyServiceServer) RestoreDraftSnapshot(context.Context, *RestoreDraftSnapshotRequest) (*RestoreDraftSnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestoreDraftSnapshot not implemented")
+}
 func (UnimplementedGalaxyServiceServer) SaveVersion(context.Context, *SaveVersionRequest) (*SaveVersionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SaveVersion not implemented")
+}
+func (UnimplementedGalaxyServiceServer) UpdateVersion(context.Context, *UpdateVersionRequest) (*UpdateVersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateVersion not implemented")
 }
 func (UnimplementedGalaxyServiceServer) ListVersions(context.Context, *ListVersionsRequest) (*ListVersionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListVersions not implemented")
@@ -1010,6 +1116,42 @@ func _GalaxyService_PushDraft_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GalaxyService_ListDraftSnapshots_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDraftSnapshotsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).ListDraftSnapshots(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_ListDraftSnapshots_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).ListDraftSnapshots(ctx, req.(*ListDraftSnapshotsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_RestoreDraftSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestoreDraftSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).RestoreDraftSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_RestoreDraftSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).RestoreDraftSnapshot(ctx, req.(*RestoreDraftSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GalaxyService_SaveVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SaveVersionRequest)
 	if err := dec(in); err != nil {
@@ -1024,6 +1166,24 @@ func _GalaxyService_SaveVersion_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GalaxyServiceServer).SaveVersion(ctx, req.(*SaveVersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_UpdateVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateVersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).UpdateVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_UpdateVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).UpdateVersion(ctx, req.(*UpdateVersionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1360,8 +1520,20 @@ var GalaxyService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _GalaxyService_PushDraft_Handler,
 		},
 		{
+			MethodName: "ListDraftSnapshots",
+			Handler:    _GalaxyService_ListDraftSnapshots_Handler,
+		},
+		{
+			MethodName: "RestoreDraftSnapshot",
+			Handler:    _GalaxyService_RestoreDraftSnapshot_Handler,
+		},
+		{
 			MethodName: "SaveVersion",
 			Handler:    _GalaxyService_SaveVersion_Handler,
+		},
+		{
+			MethodName: "UpdateVersion",
+			Handler:    _GalaxyService_UpdateVersion_Handler,
 		},
 		{
 			MethodName: "ListVersions",

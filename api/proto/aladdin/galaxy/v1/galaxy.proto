@@ -105,13 +105,41 @@ service GalaxyService {
   // 它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
   // 否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
   //
-  // **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
-  // "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
-  // 收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+  // **这是内容唯一的编辑路径**（命令行）。网页端不能编辑内容：两个编辑器并存会
+  // 引出"网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+  // 收成一条路径，那份冲突连同它需要的基线校验一起不存在。**唯一的例外是恢复草稿
+  // 历史**（RestoreDraftSnapshot）——它不是编辑，而是一次**显式的整组替换**，并且
+  // 落在这同一条路径上、同样先给被换掉的那一份留一条快照，因此它不会静默盖掉什么。
+  //
+  // **被换掉的那份清单会留成一条草稿快照**（见 ListDraftSnapshots）："只推不存
+  // 版本"这条最常见的用法因此不会让中间过程消失。相同清单不重复留。
   //
   // 请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
   // 资产标识），因此本方法不带字节，也不触发任何上传。
   rpc PushDraft(PushDraftRequest) returns (PushDraftResponse) {
+    option (aladdin.rbac.v1.required_permission) = "galaxy.project.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 列出某个槽的**草稿历史**：被替换掉的那些旧清单，最近的在前。
+  //
+  // 草稿快照**不是版本**：没有序号、不能发布、按保留策略过期（见
+  // docs/design/galaxy/project-versioning.md）。它是"只推不存版本"这条用法的
+  // 兜底——那套用法下中间过程本来一点记录都没有。
+  rpc ListDraftSnapshots(ListDraftSnapshotsRequest) returns (ListDraftSnapshotsResponse) {
+    option (aladdin.rbac.v1.required_permission) = "galaxy.project.read";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // 把草稿**整组换回**某一条快照的清单。
+  //
+  // **恢复本身也留一条快照**：它是同一处草稿替换，因此恢复不会让你丢掉恢复前的
+  // 内容。它不碰另一个槽。
+  //
+  // **引用了已删除资产的快照不能恢复**：恢复出来的会是一份必然在校验阶段失败的
+  // 草稿，而用户从"恢复成功"这句话里看不出问题在哪。服务端如实拒绝并指出那一处。
+  rpc RestoreDraftSnapshot(RestoreDraftSnapshotRequest) returns (RestoreDraftSnapshotResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.write";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
@@ -121,7 +149,24 @@ service GalaxyService {
   // 保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
   // 连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
   // 看起来一样的清单对用户是两次不同的保存动作。
+  //
+  // 两个可选入参：`description` 是这一版的一句说明（可事后改，见 UpdateVersion）；
+  // `from_snapshot_id` 非空时存的是**那条草稿快照**的清单，而不是当前草稿——它
+  // 回答的是"我想把那次中间态正式记下来"。
   rpc SaveVersion(SaveVersionRequest) returns (SaveVersionResponse) {
+    option (aladdin.rbac.v1.required_permission) = "galaxy.project.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
+  }
+
+  // 改一个版本的**说明**。
+  //
+  // **它只改说明那一层。** 与资产同一条：不可变说的是**内容**（文件清单、渲染规则
+  // 版本），而说明回答的是"这一版是干什么的"，它不进产物、不参与任何判定。清单、
+  // 序号、保存时间在改动前后逐字不变，已发布的页面也不受影响。
+  //
+  // 请求表达**期望的完整状态**：空串清空说明。**两端都能改**——写错一句话与"把
+  // 这一版的内容改掉"是两件事，而前者若只能靠再存一版来修，人会宁可不写。
+  rpc UpdateVersion(UpdateVersionRequest) returns (UpdateVersionResponse) {
     option (aladdin.rbac.v1.required_permission) = "galaxy.project.write";
     option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_CREDENTIAL;
   }
@@ -507,6 +552,34 @@ message Version {
   int32 render_rules_version = 5;
   // 这个版本属于哪个槽。**版本按槽隔离**：它只在自己的槽里被列出与发布。
   ContentSlot slot = 6;
+  // 这一版的一句说明（"加了封面"）。空表示没有。
+  //
+  // **它是元数据层，与"版本不可变"不冲突**：不可变说的是清单与渲染规则版本，
+  // 而说明不进产物、不参与任何判定，因此**可以事后改**（见 UpdateVersion）。
+  string description = 7;
+}
+
+// DraftSnapshot 是**被替换掉的**那一份草稿清单。
+//
+// 它不是版本：没有序号、**不能发布**、按保留策略过期（每个槽最近 50 条且不超过
+// 14 天）。它存在的理由是"只推草稿不存版本"这条最常见的误用——那种用法下中间
+// 过程在改动发生的那一刻就没有任何记录（见 docs/design/galaxy/project-versioning.md）。
+//
+// **字节不随清单走**：条目指向的是按内容摘要寻址的不可变对象，与版本共享同一批。
+message DraftSnapshot {
+  // 快照标识。由服务端分配。
+  //
+  // **它与版本标识的段位不同**（`snp_` 对 `ver_`）：拿一条快照的标识去发布必须
+  // 失败，而标识一眼看得出拿错了哪一种。
+  string id = 1;
+  ContentSlot slot = 2;
+  // 被替换掉的那份清单。清单很小，因此随列表一起给出：界面上"这一份与现在差多少"
+  // 要靠它答。
+  repeated FileEntry entries = 3;
+  // 替换它的那一端：`web` 或 `cli`。没带上报端标识时为空。
+  string source = 4;
+  // 它被替换掉的时刻。
+  string created_at = 5;
 }
 
 // Asset 是工程资产库里的一个媒体文件。
@@ -665,10 +738,55 @@ message SaveVersionRequest {
   string project_id = 1;
   // 把哪个内容槽的草稿存成版本。
   ContentSlot slot = 2;
+  // 这一版的一句说明，可空（见 Version.description）。写出了错可以事后用
+  // UpdateVersion 改，不必为一句说明再存一版。
+  string description = 3;
+  // 非空时存的是**那条草稿快照**的清单，而不是当前草稿：它回答的是"我想把那次
+  // 中间态正式记下来"。
+  //
+  // 那条快照引用的资产必须都还在：存一个"发布不出去的版本"与"版本不可变"的含义
+  // （它此后永远可以发布）直接冲突，服务端因此如实拒绝。
+  string from_snapshot_id = 4;
 }
 
 message SaveVersionResponse {
   Version version = 1;
+}
+
+message UpdateVersionRequest {
+  string project_id = 1;
+  string version_id = 2;
+  // 该版本所属的内容槽。版本按槽隔离，因此要给。
+  ContentSlot slot = 3;
+  // 期望的说明。空串表示清空。
+  string description = 4;
+}
+
+message UpdateVersionResponse {
+  // 改完之后的版本（含说明）。清单、序号与保存时间逐字不变。
+  Version version = 1;
+}
+
+message ListDraftSnapshotsRequest {
+  string project_id = 1;
+  ContentSlot slot = 2;
+}
+
+message ListDraftSnapshotsResponse {
+  // 草稿历史，**最近的在前**。
+  repeated DraftSnapshot snapshots = 1;
+}
+
+message RestoreDraftSnapshotRequest {
+  string project_id = 1;
+  ContentSlot slot = 2;
+  string snapshot_id = 3;
+}
+
+message RestoreDraftSnapshotResponse {
+  // 恢复之后的草稿。**恢复前的那一份已经成了一条新快照**，因此这一步不会丢掉
+  // 任何内容。
+  Draft draft = 1;
 }
 
 message ListVersionsRequest {

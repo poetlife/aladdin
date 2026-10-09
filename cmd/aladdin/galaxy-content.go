@@ -177,6 +177,23 @@ func describeEntry(entry *galaxyv1.FileEntry) string {
 	return fmt.Sprintf("%s  文本 %s", entry.GetPath(), entry.GetDigest())
 }
 
+// entriesSignature 把一组条目压成一个可比较的签名（路径 + 字节从哪来）。
+//
+// 它回答的是"这两组是不是同一份内容"，用在 push 之后的引导上：手里的这一组是
+// "文件 + 记号登记"两步拼出来的，而服务端存下来的是排好序的清单——**顺序不参与**，
+// 因此这里统一按路径排序再比。两处各排一次序就会漂，而漂的表现是"明明没改，却被
+// 提示尚未存为版本"。
+func entriesSignature(entries []*galaxyv1.FileEntry) string {
+	parts := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		// 两块拼在一起就够区分文本条目与资产条目：同一个 oneof 的两个分支最多只有
+		// 一个非空。
+		parts = append(parts, entry.GetPath()+"\x00"+entry.GetDigest()+entry.GetAssetId())
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\n")
+}
+
 // uploadFileSet 把一组本地文件送成文件组的条目（唯一入口）。
 //
 // 两条路，与文件组的两类条目一一对应：

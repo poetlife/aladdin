@@ -110,8 +110,26 @@ func toVersion(rec database.GalaxyVersionRecord) (galaxy.Version, error) {
 		Slot:               galaxy.ContentSlot(rec.Slot),
 		Seq:                rec.Seq,
 		Manifest:           manifest,
+		Description:        rec.Description,
 		RenderRulesVersion: rec.RenderRulesVersion,
 		SavedAt:            rec.SavedAt,
+	}, nil
+}
+
+func toDraftSnapshot(rec database.GalaxyDraftSnapshotRecord) (galaxy.DraftSnapshot, error) {
+	manifest, err := decodeManifest(rec.Manifest)
+	if err != nil {
+		return galaxy.DraftSnapshot{}, err
+	}
+	return galaxy.DraftSnapshot{
+		ID:                  rec.ID,
+		ProjectID:           rec.ProjectID,
+		Slot:                galaxy.ContentSlot(rec.Slot),
+		Seq:                 rec.Seq,
+		Manifest:            manifest,
+		Source:              rec.Source,
+		ReplacedBySubjectID: rec.ReplacedBySubjectID,
+		CreatedAt:           rec.CreatedAt,
 	}, nil
 }
 

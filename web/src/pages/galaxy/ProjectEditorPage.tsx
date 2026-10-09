@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Empty, Flex, Segmented, Select, Skeleton, Space, Typography } from 'antd'
+import { Alert, Button, Empty, Flex, Segmented, Select, Skeleton, Space, Tabs, Typography } from 'antd'
 import { ExternalLink, Eye, FileCode, RefreshCw } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 
@@ -12,6 +12,7 @@ import {
   ContentSlot,
   type Asset,
   type Capabilities,
+  type DraftSnapshot,
   type FileEntry,
   type Project,
   type Version,
@@ -23,6 +24,7 @@ import { AppModal } from '../../ui/AppModal'
 import { useWatch } from '../../watch/use-watch'
 import { projectTopic } from '../../watch/topics'
 import { AssetLibrary } from './AssetLibrary'
+import { DraftHistory } from './DraftHistory'
 import { LifecycleStrip } from './LifecycleStrip'
 import { formatTime } from './format-time'
 import { SandboxFrame } from './SandboxFrame'
@@ -95,6 +97,9 @@ export function ProjectEditorPage(): React.ReactNode {
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [draftUpdatedAt, setDraftUpdatedAt] = useState('')
   const [versions, setVersions] = useState<Version[]>([])
+  // 草稿历史：被替换掉的那些清单。**不是版本**——没有序号、不能发布、会过期
+  // （见 docs/design/galaxy/project-versioning.md）。
+  const [snapshots, setSnapshots] = useState<DraftSnapshot[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   // 资产的标签候选：**整个工程**已有的标签，由服务端下发。它不随当前筛选收窄，
   // 否则筛一次之后候选就只剩下筛出来的那几个（见 ListAssets 的说明）。
@@ -276,12 +281,22 @@ export function ProjectEditorPage(): React.ReactNode {
     void loadAssets(tags)
   }
 
-  const reloadVersions = useCallback(async (target: ContentSlot): Promise<void> => {
+  /**
+   * 拉一次版本与草稿历史。
+   *
+   * 两者一次拉齐：它们是同一个弹层的两个页签，而"版本列表刚更新、历史还停在旧
+   * 数据"会让人以为某一次推送没留下记录。两次请求并发发出，与各自的类型无关。
+   */
+  const loadVersionHistory = useCallback(async (target: ContentSlot): Promise<void> => {
     if (projectId === undefined) {
       return
     }
-    const response = await galaxyApi.listVersions(projectId, target)
-    setVersions(response.versions)
+    const [versionResponse, snapshotResponse] = await Promise.all([
+      galaxyApi.listVersions(projectId, target),
+      galaxyApi.listDraftSnapshots(projectId, target),
+    ])
+    setVersions(versionResponse.versions)
+    setSnapshots(snapshotResponse.snapshots)
   }, [projectId])
 
   /**
@@ -335,14 +350,16 @@ export function ProjectEditorPage(): React.ReactNode {
       const loadedSlot = pickSlot(loadedProject, ContentSlot.UNSPECIFIED)
       setSlot(loadedSlot)
 
-      const [draftResponse, versionResponse] = await Promise.all([
+      const [draftResponse, versionResponse, snapshotResponse] = await Promise.all([
         galaxyApi.getDraft(projectId, loadedSlot),
         galaxyApi.listVersions(projectId, loadedSlot),
+        galaxyApi.listDraftSnapshots(projectId, loadedSlot),
       ])
       const loadedEntries = draftResponse.draft?.entries ?? []
       setEntries(loadedEntries)
       setDraftUpdatedAt(draftResponse.draft?.updatedAt ?? '')
       setVersions(versionResponse.versions)
+      setSnapshots(snapshotResponse.snapshots)
       // 默认落在入口文件与它的同目录首项上：那是"打开就看到内容"的位置。
       setPreviewPath(defaultPreviewPath(loadedSlot, loadedEntries))
       setSelectedPath(loadedEntries[0]?.path ?? '')
@@ -408,10 +425,11 @@ export function ProjectEditorPage(): React.ReactNode {
               (err: unknown) => ({ ok: false as const, err }),
             )
           : null
-      const [projectResponse, draftResponse, versionResponse] = await Promise.all([
+      const [projectResponse, draftResponse, versionResponse, snapshotResponse] = await Promise.all([
         galaxyApi.getProject(projectId),
         galaxyApi.getDraft(projectId, activeSlot),
         galaxyApi.listVersions(projectId, activeSlot),
+        galaxyApi.listDraftSnapshots(projectId, activeSlot),
       ])
       if (seq !== refreshSeq.current) {
         return
@@ -437,6 +455,7 @@ export function ProjectEditorPage(): React.ReactNode {
       setEntries(loadedEntries)
       setDraftUpdatedAt(draftResponse.draft?.updatedAt ?? '')
       setVersions(versionResponse.versions)
+      setSnapshots(snapshotResponse.snapshots)
       setPreviewPath(nextPreview)
       setSelectedPath(nextSelected)
       setFailure(null)
@@ -541,6 +560,7 @@ export function ProjectEditorPage(): React.ReactNode {
     setSlot(next)
     setEntries([])
     setVersions([])
+    setSnapshots([])
     setDraftUpdatedAt('')
     setSelectedPath('')
     setSourceText('')
@@ -549,15 +569,17 @@ export function ProjectEditorPage(): React.ReactNode {
     setValidation(VALIDATION_PENDING)
     setFailure(null)
     try {
-      const [draftResponse, versionResponse] = await Promise.all([
+      const [draftResponse, versionResponse, snapshotResponse] = await Promise.all([
         galaxyApi.getDraft(projectId, next),
         galaxyApi.listVersions(projectId, next),
+        galaxyApi.listDraftSnapshots(projectId, next),
       ])
       const loadedEntries = draftResponse.draft?.entries ?? []
       const nextPreview = defaultPreviewPath(next, loadedEntries)
       setEntries(loadedEntries)
       setDraftUpdatedAt(draftResponse.draft?.updatedAt ?? '')
       setVersions(versionResponse.versions)
+      setSnapshots(snapshotResponse.snapshots)
       setPreviewPath(nextPreview)
       setSelectedPath(loadedEntries[0]?.path ?? '')
       if (capabilities?.assetUploadEnabled === true) {
@@ -614,7 +636,7 @@ export function ProjectEditorPage(): React.ReactNode {
       // 保存版本冻结的是**服务端该槽的草稿清单**。网页端不改内容，因此这里不需要
       // 先保存草稿——草稿正是命令行刚 push 上来的那一份。
       await galaxyApi.saveVersion(projectId, activeSlot)
-      await reloadVersions(activeSlot)
+      await loadVersionHistory(activeSlot)
     } catch (err) {
       setFailure({ message: messageOf(err), traceId: traceIdOf(err) })
     } finally {
@@ -714,7 +736,7 @@ export function ProjectEditorPage(): React.ReactNode {
       }}
       onOpenVersions={() => {
         setPanel('versions')
-        void openPanel(Action.VERSIONS_OPEN, () => reloadVersions(activeSlot))
+        void openPanel(Action.VERSIONS_OPEN, () => loadVersionHistory(activeSlot))
       }}
       onSaveVersion={() => void handleSaveVersion()}
       onPublish={(versionId) => void handlePublish(versionId)}
@@ -784,15 +806,43 @@ export function ProjectEditorPage(): React.ReactNode {
         open={panel === 'versions'}
         onCancel={() => setPanel(null)}
         footer={null}
-        width={640}
+        width={720}
         destroyOnHidden
       >
-        <VersionList
-          projectId={project.id}
-          slot={activeSlot}
-          versions={versions}
-          canWrite={canWrite}
-          onChanged={() => reloadVersions(activeSlot)}
+        {/*
+          版本与草稿历史是**两件事**，因此分两个页签而不是合成一张表：前者可以发布、
+          不会过期，后者不能发布、会过期（见 docs/design/galaxy/project-versioning.md）。
+          合成一张表会让"这一条能不能发布"变成一个需要读别处才知道的问题。
+        */}
+        <Tabs
+          items={[
+            {
+              key: 'versions',
+              label: '版本',
+              children: (
+                <VersionList
+                  projectId={project.id}
+                  slot={activeSlot}
+                  versions={versions}
+                  canWrite={canWrite}
+                  onChanged={() => loadVersionHistory(activeSlot)}
+                />
+              ),
+            },
+            {
+              key: 'draft-history',
+              label: '草稿历史',
+              children: (
+                <DraftHistory
+                  projectId={project.id}
+                  slot={activeSlot}
+                  snapshots={snapshots}
+                  canWrite={canWrite}
+                  onRestored={() => refreshOpenDraft()}
+                />
+              ),
+            },
+          ]}
         />
       </AppModal>
     </>

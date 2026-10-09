@@ -79,6 +79,7 @@ components:
         - ACTION_VERSIONS_OPEN
         - ACTION_ASSET_META_SAVE
         - ACTION_ASSET_UPLOAD
+        - ACTION_DRAFT_RESTORE
         - ACTION_CLI_LOCAL_FAIL
       description: |-
         Action 是**动作允许清单**。清单之外的动作一律丢弃。

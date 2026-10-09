@@ -13,6 +13,7 @@ import (
 	galaxyv1 "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
 	"github.com/poetlife/aladdin/internal/galaxy"
 	"github.com/poetlife/aladdin/internal/objectstore"
+	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -180,6 +181,9 @@ func (s *GalaxyService) GetDraft(ctx context.Context, req *connect.Request[galax
 //
 // 请求里只有引用（内容摘要与资产标识），**不带字节**：字节由客户端在调用本方法
 // 之前直传进对象存储。因此本方法没有大请求体，也不做任何上传。
+//
+// **被换掉的那一份会留成一条草稿快照**，它的来源取自**上报端标识**那一个入口
+// （`web` / `cli`）——与请求留痕用的是同一处判定，不另解析一遍请求头。
 func (s *GalaxyService) PushDraft(ctx context.Context, req *connect.Request[galaxyv1.PushDraftRequest]) (*connect.Response[galaxyv1.PushDraftResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
@@ -189,7 +193,7 @@ func (s *GalaxyService) PushDraft(ctx context.Context, req *connect.Request[gala
 	if err != nil {
 		return nil, err
 	}
-	draft, err := s.galaxy.PushDraft(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()), entries)
+	draft, err := s.galaxy.PushDraft(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()), entries, draftSource(req))
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -204,17 +208,104 @@ func (s *GalaxyService) PushDraft(ctx context.Context, req *connect.Request[gala
 	return connect.NewResponse(&galaxyv1.PushDraftResponse{Draft: toProtoDraft(draft, nil)}), nil
 }
 
+// draftSource 读出替换草稿的是哪一端（唯一入口）。
+//
+// 取值来自**上报端标识**那一个已有入口（`observability.ClientFromHeader`），本处
+// 不另解析一遍请求头：两处各判一份的表现是"某一端在某条路上被记成空"，而快照的
+// 来源正是靠它。
+func draftSource(req *connect.Request[galaxyv1.PushDraftRequest]) string {
+	source, _ := observability.ClientFromHeader(req.Header())
+	return source
+}
+
+// ListDraftSnapshots 实现 GalaxyService：列出某个槽的草稿历史。
+//
+// 草稿快照**不是版本**（没有序号、不能发布），因此它在另一个方法上，也不进
+// ListVersions：合成一条列表会让"这一条能不能发布"变成一个需要读别处才知道的问题。
+func (s *GalaxyService) ListDraftSnapshots(ctx context.Context, req *connect.Request[galaxyv1.ListDraftSnapshotsRequest]) (*connect.Response[galaxyv1.ListDraftSnapshotsResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	snapshots, err := s.galaxy.DraftHistory(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()))
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	resp := &galaxyv1.ListDraftSnapshotsResponse{Snapshots: make([]*galaxyv1.DraftSnapshot, 0, len(snapshots))}
+	for _, snapshot := range snapshots {
+		resp.Snapshots = append(resp.Snapshots, toProtoDraftSnapshot(snapshot))
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// RestoreDraftSnapshot 实现 GalaxyService：把草稿整组换回某一条快照的清单。
+//
+// 它是**唯一一处网页端也能发起的内容替换**：它不是编辑，而是一次显式的整组替换，
+// 走的是与 push 同一条路径、也照样先给被换掉的那一份留一条快照——因此它不会静默
+// 盖掉什么（见 proto 里 PushDraft 的说明）。
+func (s *GalaxyService) RestoreDraftSnapshot(ctx context.Context, req *connect.Request[galaxyv1.RestoreDraftSnapshotRequest]) (*connect.Response[galaxyv1.RestoreDraftSnapshotResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	slot := fromProtoSlot(req.Msg.GetSlot())
+	source, _ := observability.ClientFromHeader(req.Header())
+	draft, err := s.galaxy.RestoreDraft(ctx, subject.ID, req.Msg.GetProjectId(), slot, req.Msg.GetSnapshotId(), source)
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	s.logger.Info("已从草稿历史恢复",
+		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("subject_id", subject.ID),
+		zap.String("slot", string(slot)),
+		zap.String("snapshot_id", req.Msg.GetSnapshotId()),
+		zap.Int("files", len(draft.Manifest)))
+	return connect.NewResponse(&galaxyv1.RestoreDraftSnapshotResponse{Draft: toProtoDraft(draft, nil)}), nil
+}
+
 // SaveVersion 实现 GalaxyService：把草稿的当前清单冻结成一个版本。
+//
+// 两个可选入参：`description` 是这一版的一句说明；`from_snapshot_id` 非空时存的
+// 是那条草稿快照的清单（"把那次中间态正式记下来"）。
 func (s *GalaxyService) SaveVersion(ctx context.Context, req *connect.Request[galaxyv1.SaveVersionRequest]) (*connect.Response[galaxyv1.SaveVersionResponse], error) {
 	subject, err := callerSubject(ctx)
 	if err != nil {
 		return nil, err
 	}
-	version, err := s.galaxy.SaveVersion(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()))
+	version, err := s.galaxy.SaveVersion(ctx, subject.ID, req.Msg.GetProjectId(), fromProtoSlot(req.Msg.GetSlot()),
+		req.Msg.GetDescription(), req.Msg.GetFromSnapshotId())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
+	// **说明不进日志原文**（见 docs/observability.md）：它是用户内容，与工程简介、
+	// 资产备注同级。
+	s.logger.Info("已保存版本",
+		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("version_id", version.ID),
+		zap.String("subject_id", subject.ID),
+		zap.Bool("from_snapshot", req.Msg.GetFromSnapshotId() != ""))
 	return connect.NewResponse(&galaxyv1.SaveVersionResponse{Version: toProtoVersion(version, nil)}), nil
+}
+
+// UpdateVersion 实现 GalaxyService：改一个版本的**说明**。
+//
+// 它只动说明那一层：清单、序号、保存时间与渲染规则版本逐字不变（见领域层）。日志
+// 只记标识，**不记说明原文**。
+func (s *GalaxyService) UpdateVersion(ctx context.Context, req *connect.Request[galaxyv1.UpdateVersionRequest]) (*connect.Response[galaxyv1.UpdateVersionResponse], error) {
+	subject, err := callerSubject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	version, err := s.galaxy.UpdateVersionDescription(ctx, subject.ID, req.Msg.GetProjectId(),
+		fromProtoSlot(req.Msg.GetSlot()), req.Msg.GetVersionId(), req.Msg.GetDescription())
+	if err != nil {
+		return nil, toGalaxyConnectError(err)
+	}
+	s.logger.Info("已更新版本说明",
+		zap.String("project_id", req.Msg.GetProjectId()),
+		zap.String("version_id", req.Msg.GetVersionId()),
+		zap.String("subject_id", subject.ID))
+	return connect.NewResponse(&galaxyv1.UpdateVersionResponse{Version: toProtoVersion(version, nil)}), nil
 }
 
 // ListVersions 实现 GalaxyService（清单随行，不带读取地址）。
@@ -729,6 +820,21 @@ func toProtoVersion(version galaxy.Version, entries []galaxy.EntryView) *galaxyv
 		Entries:            toProtoEntries(entries, version.Manifest),
 		RenderRulesVersion: fitInt32(version.RenderRulesVersion),
 		Slot:               toProtoSlotValue(version.Slot),
+		Description:        version.Description,
+	}
+}
+
+// toProtoDraftSnapshot 把一条草稿快照翻译成接口类型。
+//
+// 清单随行给出（不带地址）：它只有路径与摘要，而"这一份与现在差在哪"要靠它答。
+// 地址是一份会过期的凭证，列表不该下发一批。
+func toProtoDraftSnapshot(snapshot galaxy.DraftSnapshot) *galaxyv1.DraftSnapshot {
+	return &galaxyv1.DraftSnapshot{
+		Id:        snapshot.ID,
+		Slot:      toProtoSlotValue(snapshot.Slot),
+		Entries:   toProtoEntries(nil, snapshot.Manifest),
+		Source:    snapshot.Source,
+		CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -843,6 +949,13 @@ func toGalaxyConnectError(err error) error {
 		return connect.NewError(connect.CodeNotFound, errors.New("工程不存在"))
 	case errors.Is(err, galaxy.ErrVersionNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("版本不存在"))
+	case errors.Is(err, galaxy.ErrDraftSnapshotNotFound):
+		// 快照会按保留策略过期，因此"它已经不在了"与"它从来没有过"是同一个结论：
+		// 用户要做的是重新看一次历史。
+		return connect.NewError(connect.CodeNotFound, errors.New("这条草稿历史已经不在了（它可能已经过期）"))
+	case errors.Is(err, galaxy.ErrDraftSnapshotUnusable):
+		// 消息里带着是哪一条路径引用了哪个资产，因此原样透出。
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New(err.Error()))
 	case errors.Is(err, galaxy.ErrAssetNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("资产不存在"))
 	case errors.Is(err, galaxy.ErrProjectNameTooLong):
@@ -851,6 +964,9 @@ func toGalaxyConnectError(err error) error {
 	case errors.Is(err, galaxy.ErrProjectDescriptionTooLong):
 		return connect.NewError(connect.CodeInvalidArgument,
 			fmt.Errorf("工程简介不能超过 %d 个字", galaxy.ProjectDescriptionMaxRunes))
+	case errors.Is(err, galaxy.ErrVersionDescriptionTooLong):
+		return connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("版本说明不能超过 %d 个字", galaxy.VersionDescriptionMaxRunes))
 	case errors.Is(err, galaxy.ErrContentSlotInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("内容槽必须是 site 或 docs"))
 	case errors.Is(err, galaxy.ErrSlotEnabled):

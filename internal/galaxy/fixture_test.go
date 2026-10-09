@@ -16,6 +16,9 @@ const (
 	testOwner = "usr_owner"
 	testOther = "usr_other"
 
+	// testDraftSource 是测试里推草稿的那一端。取值与生产一致（上报端标识的那两个
+	// 之一），这样"快照记下了来源"才是真的被验过。
+
 	// 桶地址与发布域。前者同时是私有区与公开区的主机（两者共用一个桶，靠键
 	// 前缀与对象权限区分），后者是内容与构建产物在哪；断言分享地址、内容地址与
 	// 内容安全策略时都用得上。
@@ -25,6 +28,9 @@ const (
 	// 因此它与 testPageOrigin 必须不同源。
 	testAppOrigin = "https://aladdin.example.com"
 )
+
+// testDraftSource 与 observability.ClientCLI 逐字相同：它是"命令行推的草稿"。
+const testDraftSource = "cli"
 
 // fixture 是一套接在内存实现上的用例夹具。
 //
@@ -182,7 +188,7 @@ func (f *fixture) pushDraft(t *testing.T, projectID string, entries []Entry) Dra
 // pushDraftSlot 整组替换某一个槽的草稿。
 func (f *fixture) pushDraftSlot(t *testing.T, projectID string, slot ContentSlot, entries []Entry) Draft {
 	t.Helper()
-	draft, err := f.service.PushDraft(context.Background(), testOwner, projectID, slot, entries)
+	draft, err := f.service.PushDraft(context.Background(), testOwner, projectID, slot, entries, testDraftSource)
 	if err != nil {
 		t.Fatalf("推送草稿失败: %v", err)
 	}
@@ -218,7 +224,7 @@ func (f *fixture) saveVersion(t *testing.T, projectID string) Version {
 // saveVersionSlot 把某一个槽的草稿保存成一个版本。
 func (f *fixture) saveVersionSlot(t *testing.T, projectID string, slot ContentSlot) Version {
 	t.Helper()
-	version, err := f.service.SaveVersion(context.Background(), testOwner, projectID, slot)
+	version, err := f.service.SaveVersion(context.Background(), testOwner, projectID, slot, "", "")
 	if err != nil {
 		t.Fatalf("保存版本失败: %v", err)
 	}

@@ -47,6 +47,15 @@ table galaxy_assets
   size_bytes integer pk=false null=true
   title text pk=false null=true
   uploaded_at datetime pk=false null=true
+table galaxy_draft_snapshots
+  created_at datetime pk=false null=true
+  id text pk=true null=true
+  manifest text pk=false null=true
+  project_id text pk=false null=true
+  replaced_by_subject_id text pk=false null=true
+  seq integer pk=false null=true
+  slot text pk=false null=true
+  source text pk=false null=true
 table galaxy_drafts
   manifest text pk=false null=true
   project_id text pk=true null=true
@@ -79,6 +88,7 @@ table galaxy_publications
   slot text pk=false null=true
   version_id text pk=false null=true
 table galaxy_versions
+  description text pk=false null=true
   id text pk=true null=true
   manifest text pk=false null=true
   project_id text pk=false null=true

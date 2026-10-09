@@ -188,6 +188,11 @@ const (
 	// 选择并开始上传资产。result=ok/fail/blocked；blocked 表示按声明的上限在本地
 	// 早退（文件过大），请求没发出去。
 	Action_ACTION_ASSET_UPLOAD Action = 13
+	// 把草稿恢复到某一条历史。result=ok/fail/cancel；cancel 表示确认框被取消。
+	//
+	// 它是网页端唯一一处会改变内容状态的动作，因此单独一个动作值：从"谁在什么时候
+	// 把草稿退回去了"这个角度看，它比其它动作都更值得能在遥测里一眼找出来。
+	Action_ACTION_DRAFT_RESTORE Action = 18
 	// 命令行本地失败：配置无效、未登录、参数校验不过——都在出站之前结束，服务端
 	// 请求留痕里没有它们。result=fail；attrs 带 command 与 reason。
 	Action_ACTION_CLI_LOCAL_FAIL Action = 14
@@ -210,6 +215,7 @@ var (
 		11: "ACTION_VERSIONS_OPEN",
 		12: "ACTION_ASSET_META_SAVE",
 		13: "ACTION_ASSET_UPLOAD",
+		18: "ACTION_DRAFT_RESTORE",
 		14: "ACTION_CLI_LOCAL_FAIL",
 	}
 	Action_value = map[string]int32{
@@ -227,6 +233,7 @@ var (
 		"ACTION_VERSIONS_OPEN":     11,
 		"ACTION_ASSET_META_SAVE":   12,
 		"ACTION_ASSET_UPLOAD":      13,
+		"ACTION_DRAFT_RESTORE":     18,
 		"ACTION_CLI_LOCAL_FAIL":    14,
 	}
 )
@@ -552,7 +559,7 @@ const file_aladdin_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18SURFACE_WEB_PROJECT_LIST\x10\x02\x12\x16\n" +
 	"\x12SURFACE_WEB_EDITOR\x10\x03\x12\x17\n" +
 	"\x13SURFACE_WEB_PREVIEW\x10\x04\x12\x0f\n" +
-	"\vSURFACE_CLI\x10\x05*\xff\x02\n" +
+	"\vSURFACE_CLI\x10\x05*\x99\x03\n" +
 	"\x06Action\x12\x16\n" +
 	"\x12ACTION_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11ACTION_AUTH_LOGIN\x10\x01\x12\x1c\n" +
@@ -568,7 +575,8 @@ const file_aladdin_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x12\x18\n" +
 	"\x14ACTION_VERSIONS_OPEN\x10\v\x12\x1a\n" +
 	"\x16ACTION_ASSET_META_SAVE\x10\f\x12\x17\n" +
-	"\x13ACTION_ASSET_UPLOAD\x10\r\x12\x19\n" +
+	"\x13ACTION_ASSET_UPLOAD\x10\r\x12\x18\n" +
+	"\x14ACTION_DRAFT_RESTORE\x10\x12\x12\x19\n" +
 	"\x15ACTION_CLI_LOCAL_FAIL\x10\x0e*g\n" +
 	"\x06Result\x12\x16\n" +
 	"\x12RESULT_UNSPECIFIED\x10\x00\x12\r\n" +

@@ -29,9 +29,12 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | `galaxy project get` | 读取工程元数据 | `galaxy.project.read` |
 | `galaxy project base` | 输出某个槽的**发布根**，供构建命令使用 | `galaxy.project.read` |
 | `galaxy draft list` | 列出某个槽的草稿里的路径与条目类别（文本 / 资产） | `galaxy.project.read` |
-| `galaxy draft pull` / `push` | 把某个槽的草稿整组写到本地目录 / 以本地目录替换整组草稿 | `galaxy.project.read` / `write` |
-| `galaxy version save` / `delete` | 把某个槽的草稿存成不可变版本、删除版本 | `galaxy.project.write` |
+| `galaxy draft pull` / `push` | 把某个槽的草稿整组写到本地目录 / 以本地目录替换整组草稿（`--save` 顺带存版本） | `galaxy.project.read` / `write` |
+| `galaxy draft history` | 列出这个槽**被替换掉的那些清单**（草稿历史，会过期） | `galaxy.project.read` |
+| `galaxy draft restore` | 把草稿整组换回某一条历史 | `galaxy.project.write` |
+| `galaxy version save` / `delete` | 把某个槽的草稿存成不可变版本（`-m` 给说明、`--from-snapshot` 存某一条历史）、删除版本 | `galaxy.project.write` |
 | `galaxy version list` / `get` / `pull` | 列出、读取某个槽的版本（单份文件用 `--path`）、把某个版本整组写到本地目录 | `galaxy.project.read` |
+| `galaxy version describe` | 给一个版本补写或修改那一句说明 | `galaxy.project.write` |
 | `galaxy validate` | 校验某个槽的当前草稿能不能发布 | `galaxy.project.read` |
 | `galaxy asset list` | 列出工程资产库（含短时读取地址、标题、标签与备注摘要），可按标签筛选 | `galaxy.asset.read` |
 | `galaxy asset upload` / `delete` | 上传、删除资产 | `galaxy.asset.write` |
@@ -60,13 +63,15 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 
 原子命令加 shell 的 `&&` 已经足够表达"一路走到底"，且每一步的失败都能被单独处理。
 
+**`draft push --save` 是这条边界内的一个例外，而它不越过边界。** 它串起来的是"推送草稿"与"保存版本"——两步都是**本地的内容状态**，都在私有边界内，且它会把新的版本标识打印出来（"我这次存的是哪一版"仍然只有一处答案）。不串的那条边界说的是**发布**：发布是唯一一个让内容离开私有边界的动作，"我发出去的是哪一版"不该变成一个只有读某条命令的实现才能回答的问题。因此 `publish` 永远单独一步，`--save` 也不再往下走。
+
 ### 文件组的输入与输出
 
 **目录是整组的输入与输出单位。** 草稿与版本都是一组具名文件（见 [site-model.md](site-model.md)），因此命令行上与它们对应的也是目录，而不是一段文本。
 
 **`push` 表达的是整组的期望状态，不是增量。** 目录里没有的路径就是"删掉"——与工程元数据的更新同一条取向：请求表达完整状态，不表达差异。否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
 
-**这是内容唯一的写入路径。** 网页端只读（见 [authoring.md](authoring.md)），因此写入形状只有"整组"一种——两个入口并存会引出的那类覆盖冲突（网页上刚改的一句被一次 push 静默盖掉）连同它需要的基线校验一起不存在。
+**`push` 是内容唯一的编辑路径。** 网页端不能编辑内容（见 [authoring.md](authoring.md)），因此写入形状只有"整组"一种——两个入口并存会引出的那类覆盖冲突（网页上刚改的一句被一次 push 静默盖掉）连同它需要的基线校验一起不存在。**唯一的例外是 `draft restore`**：它不是编辑，而是一次显式的整组替换，走的是与 push 同一条服务端路径、也照样先给被换掉的那一份留一条历史。
 
 **`push` 内部包含若干次直传。** 目录里每个文件都要成为一个对象：非文本文件作为**资产条目**，文本文件作为**内容对象**（按内容摘要、仅当不存在时写入）。两者走的是同一条直传链路（签发 → 直传 → 提交），因此 `push` 是一次"整组送上去"的编排。它仍是一个原子命令：要么整组内容成为草稿，要么什么都没变。这与"不许把草稿 → 版本 → 发布串起来"不是一回事——后者串的是三个**用户可见的状态跃迁**，而这里只有一次。
 
@@ -85,6 +90,44 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 字节数一律输出**原始数值**，不做人类可读换算：文件大小文案的唯一入口在网页端（见 [../../ssot-registry.md](../../ssot-registry.md)），在命令行另写一份就是第二个实现。
 
 **`validate` 在内容有问题时以非零状态退出**（不新占一个退出码，落在未分类失败那一档）。理由是脚本：一个校验入口的意义就是让 `validate && publish` 这样的写法成立，"有问题"必须是一个能被 shell 看见的结论，而不是一段只给人读的文字。
+
+### 推完记得存版本：这是推荐流程，不是可选项
+
+**用命令行（尤其是 agent）创作时最常见的误用是反复 `draft push` 却从不 `version save`**：那样工程只剩最新的那份草稿，中间过程一份都留不下。因此命令行在三处引导这件事：
+
+- **`push --save`**：推完之后立刻存一个版本，等价于 push + save，只发一次命令。
+- **`-m "<说明>"` 隐含 `--save`**：写下说明这个动作本身就表达了"我要把这一版记下来"，而"给了说明却没存版本"只会让人以为说明被丢掉了。
+- **不带这两个时，`push` 在输出末尾提示"尚未存为版本"**：这个槽一份版本都没有时提示更醒目（那时"退回去"只能靠会过期的草稿历史）。手里的这份与最新的版本是同一份内容时不提示——那只会变成噪声。
+
+帮助里的示例默认写带 `-m` 的用法，照抄就有历史：
+
+```
+aladdin galaxy draft push <工程标识> ./dist --slot site --save -m "加了封面"
+```
+
+**提示靠一次额外的读取得出**（列一次版本），而它失败不改变这次 push 的结论：一次已经成功的推送不该因为一句引导读不到而表现成失败。
+
+### 草稿历史：被替换掉的那些清单
+
+每一次 push（与每一次 `draft restore`）都会把**被换掉的那份**留成一条**草稿快照**，`draft history` 列出它们（最近的在前，每条带时间、来源与文件数）。
+
+**它们不是版本**：没有序号、**不能发布**，而且会过期（每个槽最近 50 条、且不超过 14 天）。因此它是兜底而不是替代品——要留下不会过期的一份，把某一条存成版本：
+
+```
+aladdin galaxy version save <工程标识> --from-snapshot <快照标识> -m "把那次中间态记下来"
+```
+
+**`draft restore` 不会让你丢掉恢复前的内容**：它是一次草稿替换，因此当前那份也会被留成一条历史。找错了再恢复回来即可。
+
+**引用了已删除资产的快照既不能恢复、也不能存成版本**，命令如实拒绝并指出是哪一条路径引用了哪个资产。一条只被快照引用的资产**照常可以删**（快照会过期，不该拿去锁住一次删除）——代价就是上面这条：用它的时候会被挡住。
+
+### 版本说明：可改的是那一句，不是内容
+
+`version save -m "<说明>"` 给这一版一句说明，`version describe` 事后补写或修改。**它只动说明那一层**：清单、序号、保存时间与渲染规则版本在改动前后逐字不变，因此已经发出去的页面不受影响，产物里也没有说明这一项（见 [project-versioning.md](project-versioning.md)）。
+
+写错一句话不必再存一版——那正是说明可以事后改的理由。两端都能改（网页端的版本面板里也能补写），命令行不独占它。
+
+说明**不进日志原文**，与工程简介、资产备注同级。
 
 ### 回读发布态
 
@@ -154,7 +197,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 - **不提供枚举入口。** 只有 `project list`，且它的范围由凭证决定——与网页端同一个面，没有"列出所有工程"的形状。
 - **请求里没有作用域字段，也没有拥有者字段。** 作用域来自凭证，归属由凭证决定；命令行不为它们造参数。
 - **不缓存判定结果。** 本地的早退只有两处：凭证是否存在且未明显过期、参数形状是否合法。
-- **不提供一次走完全流程的命令**（理由见上）。
+- **不提供一次走完全流程的命令**（理由见上；`draft push --save` 是这条边界内的例外，它不越过它——发布永远单独一步）。
 - **不内含打包器。** 命令行不解析构建配置、不改写产物里的引用，只把发布根交给构建命令、把产物搬上去（见 [site-model.md](site-model.md)）。
 - **不做字节数的可读格式化**（理由见上）。
 - **回读那一组要求能访问发布域。** `publication get --path` / `pull` / `verify` 取的是访客走的那条地址，因此 CLI 所在的网络要能到发布域，而不只是 API 地址（理由见 [publication.md](publication.md) 的边界）。
@@ -182,6 +225,12 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 回读的是发布记录 | `publication get` 列出的清单与发布记录一致，地址落在发布域的槽根下（端到端测试 + `internal/galaxy` 测试） |
 | 复核逐条报问题 | 残留记号、字节与摘要不符、资产不可达各自被报出来并以非零状态退出；三者都自洽时退出码为零（`cmd/aladdin` 测试） |
 | 复核不另写一套扫描 | `publication verify` 调用的是发布前置校验那一处产物复核入口（代码审查 + `cmd/aladdin` 测试） |
+| 推完会引导存版本 | 不带 `--save` / `-m` 的 `push` 在输出末尾给出提示；这个槽没有版本时提示更醒目；手里的清单与最新版本一致时不提示（`cmd/aladdin` 测试） |
+| `-m` 隐含存版本 | `push -m "说明"` 之后存在一个新版本且说明写进了它（端到端测试） |
+| 从历史存版本 | `version save --from-snapshot` 存出的版本清单与那条历史逐字相同，且**不改当前草稿**（端到端测试 + `internal/galaxy` 测试） |
+| 恢复不丢内容 | `draft restore` 之后，恢复前的那一份成为一条新历史（`internal/galaxy` 测试 + 端到端测试） |
+| 坏历史被挡住 | 引用了已删除资产的历史：恢复被拒且草稿不变、存版本被拒且不留版本（`internal/galaxy` 测试） |
+| 版本说明只动说明 | `version describe` 之后清单、序号与保存时间逐字不变（`internal/galaxy` 与存储契约测试） |
 
 > **直传的 PUT 不在自动化覆盖内。** 测试装配里的对象存储是内存假实现，凭证指向真实的存储主机——没有真桶可写。"桶真的照做了策略"只能在部署后冒烟里验，这条边界与 [../objectstore/README.md](../objectstore/README.md) 写的是同一处。**不会为了测试给生产代码加一个"换地址"的开关**：那正是 [AGENTS.md](../../../AGENTS.md) 第 7 条禁止的那类开关。
 
@@ -204,6 +253,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | 工程与草稿 | [cmd/aladdin/command-galaxy-project.go](../../../cmd/aladdin/command-galaxy-project.go) |
 | 版本与校验 | [cmd/aladdin/command-galaxy-version.go](../../../cmd/aladdin/command-galaxy-version.go) |
 | 资产与上传编排 | [cmd/aladdin/command-galaxy-asset.go](../../../cmd/aladdin/command-galaxy-asset.go) |
+| 草稿历史与恢复、版本说明 | [cmd/aladdin/command-galaxy-project.go](../../../cmd/aladdin/command-galaxy-project.go)、[cmd/aladdin/command-galaxy-version.go](../../../cmd/aladdin/command-galaxy-version.go) |
 | 发布与撤回 | [cmd/aladdin/command-galaxy-publish.go](../../../cmd/aladdin/command-galaxy-publish.go) |
 | 回读发布态与逐条复核 | [cmd/aladdin/command-galaxy-publication.go](../../../cmd/aladdin/command-galaxy-publication.go) |
 | 文件组的读写与目录上送（唯一入口） | [cmd/aladdin/galaxy-content.go](../../../cmd/aladdin/galaxy-content.go) |

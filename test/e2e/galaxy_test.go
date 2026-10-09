@@ -19,6 +19,7 @@ import (
 	galaxyv1 "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
 	"github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1/galaxyv1connect"
 	"github.com/poetlife/aladdin/internal/galaxy"
+	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -38,9 +39,19 @@ var gifBytes = append([]byte("GIF89a"), make([]byte, 64)...)
 
 func connectGalaxy(t *testing.T, h harness, token string) galaxyv1connect.GalaxyServiceClient {
 	t.Helper()
+	return connectGalaxyAs(t, h, token, "")
+}
+
+// connectGalaxyAs 与 connectGalaxy 相同，但**带上上报端标识**（`web` / `cli`）。
+//
+// 生产里前端与命令行各注入一次（见 web/src/api/transport.ts 与 pkg/client），而
+// 服务端用它做两件事：请求留痕里记下是哪一端，以及草稿快照的来源。测后者只有真
+// 发一个带这个头的请求才算验过。
+func connectGalaxyAs(t *testing.T, h harness, token, client string) galaxyv1connect.GalaxyServiceClient {
+	t.Helper()
 	httpClient := &http.Client{
 		Timeout:   5 * time.Second,
-		Transport: &headerTransport{base: http.DefaultTransport, token: token},
+		Transport: &headerTransport{base: http.DefaultTransport, token: token, client: client},
 	}
 	return galaxyv1connect.NewGalaxyServiceClient(httpClient, "http://"+h.address)
 }
@@ -1058,6 +1069,131 @@ func TestGalaxyAssetMetadataIsEditableWithoutTouchingBytes(t *testing.T) {
 		Title:     "x",
 	})); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("改不存在的资产 = %v，期望 NotFound", err)
+	}
+}
+
+// **草稿历史**：只推不存版本的那条路上，中间过程仍然找得回来；恢复本身也留一条；
+// 版本说明可以事后改，而它不影响内容。
+//
+// 这些断言里只有走一遍真的 RPC 才能回答的部分是：快照的**来源**是不是记对了
+// （它取自上报端标识那一个请求头），以及恢复之后草稿与版本的清单是不是真的对上了。
+func TestGalaxyDraftHistoryAndVersionDescription(t *testing.T) {
+	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
+	// 带上上报端标识：草稿历史里的"来源"正是从它读出来的。
+	client := connectGalaxyAs(t, h, testToken, observability.ClientCLI)
+	ctx := context.Background()
+
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
+	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html", "<p>第一版</p>"))
+	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html", "<p>第二版</p>"))
+	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html", "<p>第三版</p>"))
+
+	// 三次推送留下前两次（第一次没有"被替换掉的东西"）。
+	history, err := client.ListDraftSnapshots(ctx, connect.NewRequest(&galaxyv1.ListDraftSnapshotsRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+	}))
+	if err != nil {
+		t.Fatalf("读草稿历史失败: %v", err)
+	}
+	if len(history.Msg.GetSnapshots()) != 2 {
+		t.Fatalf("历史 = %d 条，期望 2 条", len(history.Msg.GetSnapshots()))
+	}
+	newest, oldest := history.Msg.GetSnapshots()[0], history.Msg.GetSnapshots()[1]
+	if !strings.HasPrefix(newest.GetId(), "snp_") {
+		t.Errorf("快照标识 = %q，期望 snp_ 前缀", newest.GetId())
+	}
+	// **来源取自上报端标识**：命令行发出的请求带着 x-aladdin-client: cli
+	// （见 pkg/client），因此这一条必须是 cli。
+	if newest.GetSource() != "cli" {
+		t.Errorf("来源 = %q，期望 cli", newest.GetSource())
+	}
+
+	// 存一版并带说明，再改说明：**内容一字不动**。
+	saved, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+		Description: "第三版",
+	}))
+	if err != nil {
+		t.Fatalf("保存版本失败: %v", err)
+	}
+	versionID := saved.Msg.GetVersion().GetId()
+	if saved.Msg.GetVersion().GetDescription() != "第三版" {
+		t.Errorf("说明 = %q，期望随保存写入", saved.Msg.GetVersion().GetDescription())
+	}
+	updated, err := client.UpdateVersion(ctx, connect.NewRequest(&galaxyv1.UpdateVersionRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+		VersionId: versionID, Description: "改过的说明",
+	}))
+	if err != nil {
+		t.Fatalf("改说明失败: %v", err)
+	}
+	if updated.Msg.GetVersion().GetDescription() != "改过的说明" {
+		t.Errorf("说明 = %q", updated.Msg.GetVersion().GetDescription())
+	}
+	if len(updated.Msg.GetVersion().GetEntries()) != len(saved.Msg.GetVersion().GetEntries()) ||
+		updated.Msg.GetVersion().GetSeq() != saved.Msg.GetVersion().GetSeq() {
+		t.Error("改说明动了清单或序号")
+	}
+
+	// 恢复到**最早**的那一条：草稿变回第一版，而恢复前的那一份也留成历史。
+	restored, err := client.RestoreDraftSnapshot(ctx, connect.NewRequest(&galaxyv1.RestoreDraftSnapshotRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE, SnapshotId: oldest.GetId(),
+	}))
+	if err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+	if len(restored.Msg.GetDraft().GetEntries()) != 1 ||
+		restored.Msg.GetDraft().GetEntries()[0].GetDigest() != oldest.GetEntries()[0].GetDigest() {
+		t.Errorf("恢复后的草稿 = %+v，期望与那条快照逐字相同", restored.Msg.GetDraft().GetEntries())
+	}
+	history, err = client.ListDraftSnapshots(ctx, connect.NewRequest(&galaxyv1.ListDraftSnapshotsRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+	}))
+	if err != nil {
+		t.Fatalf("读草稿历史失败: %v", err)
+	}
+	if len(history.Msg.GetSnapshots()) != 3 {
+		t.Fatalf("历史 = %d 条，期望 3 条（恢复本身也留了一条）", len(history.Msg.GetSnapshots()))
+	}
+
+	// 把那条历史升级成版本：清单与它逐字相同，而**当前草稿不受影响**。
+	fromSnapshot, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+		FromSnapshotId: newest.GetId(), Description: "从历史存的一版",
+	}))
+	if err != nil {
+		t.Fatalf("从历史存版本失败: %v", err)
+	}
+	entries := fromSnapshot.Msg.GetVersion().GetEntries()
+	if len(entries) != 1 || entries[0].GetDigest() != newest.GetEntries()[0].GetDigest() {
+		t.Errorf("版本清单 = %+v，期望与那条历史逐字相同", entries)
+	}
+	draft, err := client.GetDraft(ctx, connect.NewRequest(&galaxyv1.GetDraftRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+	}))
+	if err != nil {
+		t.Fatalf("读草稿失败: %v", err)
+	}
+	if draft.Msg.GetDraft().GetEntries()[0].GetDigest() == newest.GetEntries()[0].GetDigest() {
+		t.Error("从历史存版本不该改掉当前草稿")
+	}
+
+	// **快照不是版本**：它不出现在版本列表里，也不能被发布。
+	versions, err := client.ListVersions(ctx, connect.NewRequest(&galaxyv1.ListVersionsRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+	}))
+	if err != nil {
+		t.Fatalf("列版本失败: %v", err)
+	}
+	for _, version := range versions.Msg.GetVersions() {
+		if version.GetId() == newest.GetId() {
+			t.Error("版本列表里出现了草稿快照")
+		}
+	}
+	if _, err := client.Publish(ctx, connect.NewRequest(&galaxyv1.PublishRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE, VersionId: newest.GetId(),
+	})); err == nil {
+		t.Error("用一条草稿快照的标识发布成功了")
 	}
 }
 
