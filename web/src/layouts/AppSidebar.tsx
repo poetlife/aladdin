@@ -10,6 +10,7 @@ import {
   Lamp,
   LayoutDashboard,
   LogOut,
+  ServerCog,
   ShieldCheck,
   Sparkles,
   UserCog,
@@ -75,8 +76,10 @@ const NAV: NavEntry[] = [
   { path: '/access/scopes', label: '范围', icon: <FolderTree size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacScopeRead },
   // 权限码目录是只读对照（码 + 说明 + 直接声明它的角色），与角色定义同一道权限门。
   { path: '/access/codes', label: '权限码', icon: <KeyRound size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacRoleRead },
-  // 运维这一组：客户端遥测。它是只读的观测面，与"谁能做什么"无关，因此独立成组。
+  // 运维这一组：客户端遥测与部署信息。两页都是只读的观测面，与"谁能做什么"无关，
+  // 因此独立成组。各自的权限码分开——看遥测与看版本号是两道门。
   { path: '/admin/telemetry', label: '遥测', icon: <Activity size={ICON_SIZE} />, group: GROUP_ADMIN, permission: PermissionCodes.TelemetryRead },
+  { path: '/admin/deployment', label: '部署信息', icon: <ServerCog size={ICON_SIZE} />, group: GROUP_ADMIN, permission: PermissionCodes.OpsDeploymentRead },
   // 文档区也不需要权限码：它讲的是"怎么把命令行装上并登录"，
   // 而零权限的主体恰恰最需要它（见 docs/design/web/docs-area.md）。
   // 导航**只有这一项**：章节加页只往区域里加，这里不再变。

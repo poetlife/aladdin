@@ -37,6 +37,9 @@ const (
 	// PermissionTelemetryRead 读取客户端遥测的计数与明细（Web/CLI 本地动作）。只读
 	PermissionTelemetryRead PermissionCode = "telemetry.read"
 
+	// PermissionOpsDeploymentRead 读取部署信息：这个进程是哪次构建、在什么平台上跑、什么时候起来的。只读
+	PermissionOpsDeploymentRead PermissionCode = "ops.deployment.read"
+
 	// PermissionGalaxyProjectRead 读取自己创建的工程、草稿与版本
 	PermissionGalaxyProjectRead PermissionCode = "galaxy.project.read"
 
@@ -74,6 +77,7 @@ var AllPermissionCodes = []PermissionCode{
 	PermissionAuditLogRead,
 	PermissionAuditLogExport,
 	PermissionTelemetryRead,
+	PermissionOpsDeploymentRead,
 	PermissionGalaxyProjectRead,
 	PermissionGalaxyProjectWrite,
 	PermissionGalaxyProjectPublish,
@@ -141,6 +145,7 @@ var BuiltinRoles = []RoleDefinition{
 			PermissionAuditLogRead,
 			PermissionAuditLogExport,
 			PermissionTelemetryRead,
+			PermissionOpsDeploymentRead,
 			PermissionRbacRoleRead,
 			PermissionRbacSubjectRead,
 			PermissionRbacScopeRead,

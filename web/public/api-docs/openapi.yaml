@@ -1951,6 +1951,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.identity.v1.DenyDeviceLoginResponse'
+  /aladdin.ops.v1.OpsService/GetDeploymentInfo:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: ops.deployment.read
+        scope-source: SCOPE_SOURCE_REQUEST_FIELD
+      tags:
+        - aladdin.ops.v1.OpsService
+      summary: GetDeploymentInfo
+      description: |-
+        **鉴权**：需要权限 `ops.deployment.read`；作用域取自请求字段。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
+        返回本进程所在部署实例的构建与运行信息。
+
+         标了 NO_SIDE_EFFECTS：只读、请求体小到能放进查询串，因此同一条路径同时接受
+         GET 与 POST（见 AGENTS.md 的"传输方式的既定选择"）。请求里唯一的字段是用于
+         鉴权的 scope，它不是秘密——范围名是部署内的目录，隔离靠绑定而不靠隐藏名字
+         （见 docs/design/rbac/scopes.md），因此进访问日志无害。
+      operationId: aladdin.ops.v1.OpsService.GetDeploymentInfo
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.ops.v1.GetDeploymentInfoRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.ops.v1.GetDeploymentInfoResponse'
   /aladdin.profile.v1.ProfileService/GetProfile:
     post:
       x-aladdin-auth:
@@ -5169,6 +5219,93 @@ components:
           description: 凭证自身绑定的默认作用域。
       title: WhoAmIResponse
       additionalProperties: false
+    aladdin.ops.v1.GetDeploymentInfoRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          title: scope
+          description: |-
+            **只用于鉴权**：判断调用方有没有在这个范围上读部署信息的权限。
+
+             部署信息没有归属范围（它描述的是这台机器上这个进程，不是某个人或某个范围的
+             资源），因此这个字段**不过滤结果**——与 ListEventStats 的 scope 同理
+             （见 telemetry_admin.proto）。同一主体在任意有读权限的范围上调用，拿到的都是
+             同一份自述；变化的是"还能不能读"。
+      title: GetDeploymentInfoRequest
+      additionalProperties: false
+      description: GetDeploymentInfoRequest 是一次部署信息查询。
+    aladdin.ops.v1.GetDeploymentInfoResponse:
+      type: object
+      properties:
+        version:
+          type: string
+          title: version
+          description: |-
+            版本号：发布构建为 tag（vX.Y.Z），本机构建为 git describe 的结果，
+             不经 Makefile 的构建为 dev。
+
+             与命令行 `aladdin version` 报的是**同一个构建期注入值**（internal/buildinfo），
+             因此两者对不上就说明命令行的副本比服务端旧（或反过来）。
+        commit:
+          type: string
+          title: commit
+          description: |-
+            构建时的提交号；空表示构建期没有注入。
+
+             界面拿它与**前端自己那个提交号**对照，回答"这次页面是不是同一次构建"——
+             前端缓存了旧 bundle、或前后端分开部署，都表现为这两项不一致。
+        builtAt:
+          type: string
+          title: built_at
+          description: |-
+            构建时刻，RFC3339（UTC）；空表示构建期没有注入。不注入时给空串而不给当前
+             时间：这一栏答的是"这份二进制什么时候造的"，不知道就该说不知道。
+        released:
+          type: boolean
+          title: released
+          description: |-
+            这份二进制是否来自发布产物。（本机构建为 false。）
+
+             它同时是自更新的准入判据（见 internal/upgrade），因此线上看到 false 意味着
+             这台机器上跑的是某人的工作副本——那正是发版核对时要先发现的事。
+        goVersion:
+          type: string
+          title: go_version
+          description: 构建这份二进制用的 Go 版本，如 go1.27.1。
+        os:
+          type: string
+          title: os
+          description: |-
+            运行时的操作系统与架构，如 linux / amd64。
+
+             两者分开而不是合成 GOOS/GOARCH 一句话：界面要能单独看其中一项，而合成串
+             又得在客户端拆开——那个"斜杠两侧是什么"的约定会多一份实现。
+        arch:
+          type: string
+          title: arch
+        instance:
+          type: string
+          title: instance
+          description: |-
+            本进程所在主机的名字。多副本部署时，这一项就是"我看的是哪一个副本"。
+             空表示取不到主机名。
+        startedAt:
+          type: string
+          title: started_at
+          description: |-
+            本进程启动的时刻，RFC3339（UTC）。
+
+             **uptime 由客户端按它算，服务端不给"已经跑了多久"**：那是一个每问一次就变
+             一次的数，而这里的每一项都应当是"这一次读取之下不变的事实"。界面据它本地
+             连续刷新，不必为此轮询接口。
+      title: GetDeploymentInfoResponse
+      additionalProperties: false
+      description: |-
+        GetDeploymentInfoResponse 是一个部署实例的自述。
+
+         没有取值的字段一律是**空字符串**，不是"未知"以外的任何编造值：构建期没注入
+         提交号就给空串，界面据此显示"未注入"，而不是显示一个看起来像提交号的占位符。
     aladdin.profile.v1.BeginAvatarUploadRequest:
       type: object
       properties:
@@ -6846,6 +6983,29 @@ tags:
 
        边界：本服务只做认证（你是谁）。判定（你能做什么）由 RBAC 负责。
        认证失败与鉴权失败必须返回不同的状态码，见 grpc-interceptor.md 的拒绝语义。
+  - name: aladdin.ops.v1.OpsService
+    description: |-
+      OpsService 是**部署实例的自述**：这个进程是哪一次构建产出的、跑在什么平台上、
+       什么时候起来的。
+
+       它回答的是运维与发版核对时最先被问的那几个问题，而这些问题原先只能 ssh 上去问：
+         - 线上跑的是哪个版本？
+         - 前后端是不是同一次构建（前端缓存了旧 bundle？前后端分开部署了？）？
+         - 这个进程起来多久了、是哪一个副本？
+
+       三条边界写死在这里：
+
+         - **它只讲构建与进程，不讲配置**。库地址、桶地址、密钥一律不在这里——版本信息
+           是"哪次构建"，配置是"这份部署怎么配的"，后者有自己的排障路径，而且它可能含
+           密钥（见 docs/design/config/README.md）。要暴露配置得先过一遍"这个键能让谁
+           获得什么"，不是顺手多返回几个字段的事。
+         - **它不是第二个监控平台**。CPU、内存、磁盘、依赖连通性都不在这里，那些交给
+           外部监控系统；这里连一个数字指标都不返回，返回的全是自描述字符串。
+         - **uptime 不由服务端给**。服务端只给进程启动时刻，界面按它自己算——一次拉取
+           换一段连续变化的展示，而不是让页面为此轮询接口（见 docs/design/deployment）。
+
+       权限是独立的 `ops.deployment.read`，不与遥测共用：两者都是"看得见但不改得动"，
+       但它们回答的不是同一个问题，合成一码会让"给审计员看遥测"必然连带"给他看版本号"。
   - name: aladdin.profile.v1.ProfileService
     description: |-
       ProfileService 是个人档案面：主体自己的展示信息（昵称、简介、头像）。

@@ -29,6 +29,7 @@ import (
 	eventsv1connect "github.com/poetlife/aladdin/api/gen/aladdin/events/v1/eventsv1connect"
 	galaxyv1connect "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1/galaxyv1connect"
 	identityv1connect "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1/identityv1connect"
+	opsv1connect "github.com/poetlife/aladdin/api/gen/aladdin/ops/v1/opsv1connect"
 	profilev1connect "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1/profilev1connect"
 	rbacv1connect "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
 	skillv1connect "github.com/poetlife/aladdin/api/gen/aladdin/skill/v1/skillv1connect"
@@ -338,6 +339,12 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		NewTelemetryAdminService(tel.Events, profiles, logger), opts...)
 	register(telemetryAdminPath, telemetryAdminHandler)
 
+	// 部署实例自述。它与遥测管理面同属运维分组，但**没有共同状态**：那个查的是
+	// 落库的事件，这个读的是构建期注入 + 运行期常量，因此不共用服务、也不共用
+	// 存储。两者都是只读，准入条件各写在各自的 proto 注解里。
+	opsPath, opsHandler := opsv1connect.NewOpsServiceHandler(NewOpsService(), opts...)
+	register(opsPath, opsHandler)
+
 	// 技能目录。**它的字节与 galaxy 的资产在同一个桶里**，靠 `skills/` 那一段
 	// 前缀并排；远端拉取是本模块唯一一条出站请求路径，目标由来源的形状白名单
 	// 决定（见 skill/source.go）。
@@ -375,6 +382,7 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		telemetryv1connect.TelemetryAdminServiceName,
 		skillv1connect.SkillServiceName,
 		skillv1connect.SkillAdminServiceName,
+		opsv1connect.OpsServiceName,
 	}
 	healthPath, healthHandler := grpchealth.NewHandler(grpchealth.NewStaticChecker(serviceNames...))
 	register(healthPath, healthHandler)

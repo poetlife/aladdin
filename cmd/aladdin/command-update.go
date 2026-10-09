@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/poetlife/aladdin/internal/buildinfo"
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/upgrade"
 )
@@ -35,8 +36,8 @@ func newUpdateCommand() *cobra.Command {
 
 func runUpdate(cmd *cobra.Command, checkOnly bool) error {
 	updater, err := upgrade.New(upgrade.Options{
-		Current:  version,
-		Released: released != "",
+		Current:  buildinfo.Version,
+		Released: buildinfo.Released != "",
 		// 兜底镜像挂在官方站点上，与"这次连哪个服务端"无关：用隧道连本机的人
 		// 也应当从官方站点取升级材料。源码构建恒为空（没有官方地址可推导）。
 		MirrorOrigin: config.OfficialSiteOrigin(),
@@ -46,7 +47,7 @@ func runUpdate(cmd *cobra.Command, checkOnly bool) error {
 			// 拒绝的理由要说清楚：当前是什么版本、为什么不能自更新、该怎么做。
 			return fmt.Errorf(
 				"当前版本 %q 不是发布产物，自更新只支持从发布页安装的二进制。\n"+
-					"本机构建的请重新构建，从发布页下载的请重新下载", version)
+					"本机构建的请重新构建，从发布页下载的请重新下载", buildinfo.Version)
 		}
 		return err
 	}

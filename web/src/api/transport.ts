@@ -5,6 +5,7 @@ import { createConnectTransport } from '@connectrpc/connect-web'
 import { EventsService } from '../gen/proto/aladdin/events/v1/events_pb'
 import { GalaxyService } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { IdentityService } from '../gen/proto/aladdin/identity/v1/identity_pb'
+import { OpsService } from '../gen/proto/aladdin/ops/v1/ops_pb'
 import { ProfileService } from '../gen/proto/aladdin/profile/v1/profile_pb'
 import { RBACService } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
 import { SkillAdminService, SkillService } from '../gen/proto/aladdin/skill/v1/skill_pb'
@@ -216,4 +217,15 @@ export function skillAdminClient() {
  */
 export function telemetryAdminClient() {
   return createClient(TelemetryAdminService, getTransport())
+}
+
+/**
+ * 部署实例自述的客户端。
+ *
+ * 它与遥测管理面同属运维分组，但两者没有共同状态：那个查的是落库的事件，这个读的
+ * 是构建期注入加运行期常量。因此是另一个服务描述符、另一道权限门
+ * （ops.deployment.read），不合并。
+ */
+export function opsClient() {
+  return createClient(OpsService, getTransport())
 }

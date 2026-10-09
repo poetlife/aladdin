@@ -13,6 +13,7 @@ import (
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/objectstore/v1"
+	_ "github.com/poetlife/aladdin/api/gen/aladdin/ops/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/profile/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	_ "github.com/poetlife/aladdin/api/gen/aladdin/skill/v1"

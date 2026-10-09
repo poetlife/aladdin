@@ -12,6 +12,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/poetlife/aladdin/internal/buildinfo"
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/database"
 	"github.com/poetlife/aladdin/internal/galaxy"
@@ -28,9 +29,6 @@ import (
 	skillgormstore "github.com/poetlife/aladdin/internal/skill/gormstore"
 	telemetrygormstore "github.com/poetlife/aladdin/internal/telemetry/gormstore"
 )
-
-// version 由构建期经 -ldflags 注入，作为上报时的 service.version。
-var version = "dev"
 
 // telemetryFlushTimeout 是退出时冲刷遥测数据的时间上限。
 //
@@ -70,7 +68,10 @@ func run() error {
 
 	// 遥测必须早于服务端构建：otel.Meter 取的是调用当时注册的实现，
 	// 晚一步取到的 meter 什么都不做，而且不会报错——只是指标永远为空。
-	telemetryOpts := cfg.TelemetryOptions(observability.ServiceServer, version)
+	//
+	// 版本号取自 internal/buildinfo——它是构建期注入的唯一落点，页面上的
+	// "后端版本"与这里上报的 service.version 是同一个变量。
+	telemetryOpts := cfg.TelemetryOptions(observability.ServiceServer, buildinfo.Version)
 	telemetryOpts.Logger = logger
 	provider, err := observability.NewProvider(context.Background(), telemetryOpts)
 	if err != nil {

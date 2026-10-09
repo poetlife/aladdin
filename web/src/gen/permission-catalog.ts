@@ -22,6 +22,7 @@ export const PermissionCatalog: readonly PermissionCatalogEntry[] = [
   { code: 'audit.log.read', description: '查阅审计日志' },
   { code: 'audit.log.export', description: '导出审计日志。属批量操作' },
   { code: 'telemetry.read', description: '读取客户端遥测的计数与明细（Web/CLI 本地动作）。只读' },
+  { code: 'ops.deployment.read', description: '读取部署信息：这个进程是哪次构建、在什么平台上跑、什么时候起来的。只读' },
   { code: 'galaxy.project.read', description: '读取自己创建的工程、草稿与版本' },
   { code: 'galaxy.project.write', description: '创建、修改、删除工程，保存版本。删除属不可逆操作' },
   { code: 'galaxy.project.publish', description: '发布与撤回发布。唯一一个让内容离开私有边界的动作' },

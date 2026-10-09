@@ -9,6 +9,7 @@ import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { PermissionCatalogPage } from './pages/PermissionCatalogPage'
+import { DeploymentPage } from './pages/admin/DeploymentPage'
 import { TelemetryPage } from './pages/admin/TelemetryPage'
 import { RolesPage } from './pages/RolesPage'
 import { ScopesPage } from './pages/ScopesPage'
@@ -109,12 +110,20 @@ export const router = createBrowserRouter([
           // 权限管理原先挂在 /roles 下。旧地址留一次跳转：部署文档里
           // 的 SPA 回落冒烟步骤正是拿它当例子（见 docs/deploy.md）。
           { path: '/roles', element: <Navigate to="/access/roles" replace /> },
-          // 运维面。眼下只有遥测一页，独立成一个顶层入口而不是塞进 /access：
-          // 那一组是**权限管理**（角色、授权、范围），遥测是运行观测，两件事。
+          // 运维面。眼下是遥测与部署信息两页，独立成一个顶层入口而不是塞进 /access：
+          // 那一组是**权限管理**（角色、授权、范围），这里放的是运行观测——"它在干什么"
+          // 与"它跑的是哪一版"，两件事都不改任何东西。
           // 将来 #36 的访客统计并入同一页时，沿用这个入口。
+          //
+          // 两页各挂自己的权限码，不合成一层：看遥测与看版本号是两道门
+          // （见 api/permissions/catalog.yaml 里两条码各自的说明）。
           {
             element: <RequirePermission require={[PermissionCodes.TelemetryRead]} />,
             children: [{ path: '/admin/telemetry', element: <TelemetryPage /> }],
+          },
+          {
+            element: <RequirePermission require={[PermissionCodes.OpsDeploymentRead]} />,
+            children: [{ path: '/admin/deployment', element: <DeploymentPage /> }],
           },
           // 平台技能目录。基础权限是 `skill.catalog.read`——目录与详情同属一块
           // 能力；纳管、同步、回滚与删除在页面内部按 `skill.catalog.write` 裁剪
