@@ -17,6 +17,15 @@ interface ProjectInfoPopoverProps {
   canWrite: boolean
   /** 保存成功之后的新工程状态。 */
   onProjectChange: (project: Project) => void
+  /**
+   * 是否窄屏（见 docs/design/web/responsive.md 的「工作台窄屏」）。
+   *
+   * 窄屏顶栏那一行里能压的只有这个标题——返回、主操作与「更多」都只剩图标。
+   * 因此窄屏下它必须**能被压窄并截断**，否则长标题会按原宽度溢出、压到右边的
+   * 按钮底下。完整名称点开弹层就在，截断不丢信息。宽屏不截断：那里没有东西
+   * 跟它抢宽度，多一条省略号只会让短标题也显得可疑。
+   */
+  narrow: boolean
 }
 
 interface failure {
@@ -35,6 +44,7 @@ export function ProjectInfoPopover({
   project,
   canWrite,
   onProjectChange,
+  narrow,
 }: ProjectInfoPopoverProps): React.ReactNode {
   const [form] = Form.useForm<ProjectFormValues>()
   const [open, setOpen] = useState(false)
@@ -62,6 +72,20 @@ export function ProjectInfoPopover({
   }
 
   const title = project.name === '' ? '(未命名)' : project.name
+
+  // 窄屏下这一颗是顶栏那一行里唯一可以被压窄的控件。两处都要写 `minWidth: 0`：
+  // 按钮与它里面那段文字各是一个 flex 项，而 flex 项的自动最小尺寸默认不小于
+  // 内容宽度——少写一处，文字就按原宽度溢出，省略号根本不会出现。
+  // 截断的只是它在那一行里的显示，完整名称点开弹层第一行就是。
+  const titleStyle: React.CSSProperties = narrow
+    ? {
+        fontSize: 16,
+        minWidth: 0,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }
+    : { fontSize: 16 }
 
   const content = (
     <div style={{ width: 280 }}>
@@ -154,8 +178,13 @@ export function ProjectInfoPopover({
         form.setFieldsValue({ name: project.name, description: project.description })
       }}
     >
-      <Button type="text" size="small" aria-label="工程信息">
-        <Typography.Text strong style={{ fontSize: 16 }}>
+      <Button
+        type="text"
+        size="small"
+        aria-label="工程信息"
+        style={narrow ? { minWidth: 0 } : undefined}
+      >
+        <Typography.Text strong style={titleStyle}>
           {title}
         </Typography.Text>
       </Button>
