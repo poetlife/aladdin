@@ -127,6 +127,10 @@ export function WorkbenchTopBar({
   const publishableCount = versions.filter((version) => !versionBlocked(version)).length
   const publishAvailable = publishEnabled && canPublish && publishableCount > 0
 
+  // 发布与更新发布是同一个动作在两个状态下的名字，因此只在这里拼一次：窄屏那颗
+  // 按钮只剩图标，名字只能走 aria-label，与可见文字得是同一条字符串。
+  const publishLabel = slot?.published === true ? '更新发布' : '发布'
+
   // 新的排在前面：要发布的多半是刚存的那一版。
   const publishItems: NonNullable<MenuProps['items']> = [...versions].reverse().map((version) => ({
     key: version.id,
@@ -153,7 +157,12 @@ export function WorkbenchTopBar({
   // 工程标题就是工程信息弹层的入口，因此**常驻**：把它收进菜单既不省纵向空间
   // （标题照样在），又要把它改成受控开合——多一份机制换不到一个像素。
   const projectTitle = (
-    <ProjectInfoPopover project={project} canWrite={canWrite} onProjectChange={onProjectChange} />
+    <ProjectInfoPopover
+      project={project}
+      canWrite={canWrite}
+      narrow={narrow}
+      onProjectChange={onProjectChange}
+    />
   )
 
   const slotSwitcher = slots.length > 1 && (
@@ -197,9 +206,11 @@ export function WorkbenchTopBar({
       type={publishAvailable ? 'default' : 'primary'}
       icon={<Layers size={16} />}
       loading={versionBusy}
+      // 窄屏只剩图标，名字靠 aria-label 保住（与返回、撤回同一做法）。
+      aria-label={narrow ? '存为版本' : undefined}
       onClick={onSaveVersion}
     >
-      存为版本
+      {narrow ? null : '存为版本'}
     </Button>
   )
 
@@ -231,8 +242,11 @@ export function WorkbenchTopBar({
         icon={<Rocket size={16} />}
         loading={publishBusy}
         disabled={publishableCount === 0}
+        // 窄屏只剩图标，名字靠 aria-label 保住（与返回、撤回同一做法）。
+        // 下拉箭头不跟着收：它说明这一下开的是菜单，不是直接发布。
+        aria-label={narrow ? publishLabel : undefined}
       >
-        {slot?.published === true ? '更新发布' : '发布'}
+        {narrow ? null : publishLabel}
         <ChevronDown size={14} />
       </Button>
     </Dropdown>
@@ -280,7 +294,7 @@ export function WorkbenchTopBar({
         {
           key: 'publish',
           icon: <Rocket size={16} />,
-          label: slot?.published === true ? '更新发布' : '发布',
+          label: publishLabel,
           disabled: true,
         },
       )
@@ -295,11 +309,16 @@ export function WorkbenchTopBar({
 
     return (
       <Flex align="center" justify="space-between" gap={8} wrap={false}>
-        <Flex align="center" gap={4} style={{ minWidth: 0 }}>
+        {/* 宽度不够时让出来的是标题：左边这一格吃掉剩下的宽度、标题在里面截断
+            （`minWidth: 0` 是让它**能**被压到内容宽度以下的那一条），右边那一组
+            不收缩——主操作与「更多」是这一排的下手处，压它们等于把点击区域叠起来。
+            两态是同一批控件，`narrow` 只决定排布与要不要写字（见
+            docs/design/web/responsive.md 的「工作台窄屏」）。 */}
+        <Flex align="center" gap={4} style={{ minWidth: 0, flex: 1 }}>
           {backButton}
           {projectTitle}
         </Flex>
-        <Space size={8} wrap={false}>
+        <Space size={8} wrap={false} style={{ flexShrink: 0 }}>
           {primaryAction}
           {moreItems.length > 0 && (
             <Dropdown

@@ -366,8 +366,10 @@ describe('窄屏下的形态', () => {
 
     expect(findButtonByLabel(container, '返回'), '没有返回入口').not.toBeUndefined()
     expect(findButtonByLabel(container, '工程信息'), '标题不在常驻行上').not.toBeUndefined()
-    // 主操作常驻：有版本可发布时是「发布」。
-    expect(findButton(container, '发布'), '主操作不在常驻行上').not.toBeUndefined()
+    // 主操作常驻：有版本可发布时是「发布」。窄屏它只剩图标，名字在 aria-label 上
+    // ——那一行的宽度要让给标题（见 docs/design/web/responsive.md 的「工作台窄屏」）。
+    expect(findButtonByLabel(container, '发布'), '主操作不在常驻行上').not.toBeUndefined()
+    expect(findButton(container, '发布'), '窄屏主操作不该再占一段文字').toBeUndefined()
     // 集合入口不在顶栏的直接可见处。
     expect(findButtonExact(container, '资产'), '资产还在常驻行上').toBeUndefined()
     expect(findButtonExact(container, '版本'), '版本还在常驻行上').toBeUndefined()
