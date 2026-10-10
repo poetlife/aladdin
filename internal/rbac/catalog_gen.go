@@ -28,6 +28,12 @@ const (
 	// PermissionRbacPolicyPublish 使一次角色变更正式生效（缓存失效与生效确认）
 	PermissionRbacPolicyPublish PermissionCode = "rbac.policy.publish"
 
+	// PermissionIdentityRegistrationRead 读取注册策略与邀请码列表。只读
+	PermissionIdentityRegistrationRead PermissionCode = "identity.registration.read"
+
+	// PermissionIdentityRegistrationWrite 改注册策略、签发与撤销邀请码。它会改变新主体的权限边界
+	PermissionIdentityRegistrationWrite PermissionCode = "identity.registration.write"
+
 	// PermissionAuditLogRead 查阅审计日志
 	PermissionAuditLogRead PermissionCode = "audit.log.read"
 
@@ -80,6 +86,8 @@ var AllPermissionCodes = []PermissionCode{
 	PermissionRbacScopeRead,
 	PermissionRbacScopeWrite,
 	PermissionRbacPolicyPublish,
+	PermissionIdentityRegistrationRead,
+	PermissionIdentityRegistrationWrite,
 	PermissionAuditLogRead,
 	PermissionAuditLogExport,
 	PermissionTelemetryRead,
@@ -141,6 +149,8 @@ var BuiltinRoles = []RoleDefinition{
 			PermissionRbacScopeRead,
 			PermissionRbacScopeWrite,
 			PermissionRbacPolicyPublish,
+			PermissionIdentityRegistrationRead,
+			PermissionIdentityRegistrationWrite,
 		},
 		Inherits:              nil,
 		MutuallyExclusiveWith: nil,
@@ -157,6 +167,7 @@ var BuiltinRoles = []RoleDefinition{
 			PermissionRbacRoleRead,
 			PermissionRbacSubjectRead,
 			PermissionRbacScopeRead,
+			PermissionIdentityRegistrationRead,
 		},
 		Inherits:              nil,
 		MutuallyExclusiveWith: nil,

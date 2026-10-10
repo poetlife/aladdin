@@ -7,6 +7,7 @@ import * as identityApi from '../api/identity'
 import { captureTrace, traceIdForAction, type TraceCapture } from '../api/call-trace'
 import { messageOf } from '../api/errors'
 import { GithubMark, GoogleMark, useSession } from '../auth'
+import { RegistrationMode } from '../gen/proto/aladdin/identity/v1/registration_pb'
 import { Action, Result, Surface } from '../gen/proto/aladdin/telemetry/v1/telemetry_pb'
 import { startTimer, type ActionTimer } from '../telemetry/track'
 import { BrandMark } from '../ui/BrandMark'
@@ -40,24 +41,25 @@ export function LoginPage(): React.ReactNode {
 
   // null 表示"还没问到"，空数组表示"问到了，没有任何渠道入口"。两者不能混：
   // 前者不该渲染入口，后者同样不该，但只有后者能说明"这是配置结果"。
-  const [methods, setMethods] = useState<identityApi.AuthMethod[] | null>(null)
+  const [options, setOptions] = useState<identityApi.GetAuthMethodsResponse | null>(null)
+  const methods = options?.methods ?? null
 
   const from = (location.state as { from?: string } | null)?.from ?? '/'
 
   useEffect(() => {
     let cancelled = false
     void identityApi
-      .getAuthMethods()
-      .then((list) => {
+      .getAuthOptions()
+      .then((resp) => {
         if (!cancelled) {
-          setMethods(list)
+          setOptions(resp)
         }
       })
       .catch(() => {
         // 问不到就不渲染任何渠道入口，页面仍可用令牌登录。
         // 登录方式查询失败不该让整个登录页不可用。
         if (!cancelled) {
-          setMethods([])
+          setOptions(null)
         }
       })
     return () => {
@@ -138,10 +140,10 @@ export function LoginPage(): React.ReactNode {
             <Divider plain>
               <Typography.Text type="secondary">或</Typography.Text>
             </Divider>
+            <RegistrationNote mode={options?.registrationMode} />
             <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-              第一次用某个渠道登录会得到一个<Typography.Text strong>没有权限</Typography.Text>
-              的新账号。把多个渠道归到同一个账号是「绑定」：先登录已有账号，在个人资料里绑定新渠道；
-              即使已经先单独登录过，也可以在那里把它并入已有账号。
+              第一次用某个渠道登录会登记一个<Typography.Text strong>新账号</Typography.Text>
+              ——不是「我原来那个账号」。它默认没有任何权限（除非管理员给新账号设了默认角色）。把多个渠道归到同一个账号是「绑定」：先登录已有账号，在个人资料里绑定新渠道；即使已经先单独登录过，也可以在那里把它并入已有账号。
             </Typography.Paragraph>
           </>
         )}
@@ -165,6 +167,34 @@ export function LoginPage(): React.ReactNode {
       </Card>
     </div>
   )
+}
+
+/**
+ * 站点的准入姿态说明。
+ *
+ * **只在服务端明确说了姿态时才写那句话。** 读不到策略（UNSPECIFIED）时什么都不说
+ * ——把一次读取失败说成"这里开放注册"或"这里需要邀请码"，是在替服务端做一个它
+ * 当时答不上来的断言。任何一种姿态下的真正放行都由服务端在登记那一刻决定，
+ * 因此这里说不说都不改变结果，只改变使用者有没有被提前告知。
+ */
+function RegistrationNote({ mode }: { mode: RegistrationMode | undefined }): React.ReactNode {
+  if (mode === RegistrationMode.INVITE) {
+    return (
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+        本站需要<Typography.Text strong>邀请码</Typography.Text>
+        ：第一次用某个渠道登录时，需要填入管理员发给你的邀请码。已经在册的账号不受影响。
+      </Typography.Paragraph>
+    )
+  }
+  if (mode === RegistrationMode.CLOSED) {
+    return (
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+        本站<Typography.Text strong>不接受新账号</Typography.Text>
+        ，只有已经在册的账号可以登录。需要账号请联系管理员。
+      </Typography.Paragraph>
+    )
+  }
+  return null
 }
 
 /**

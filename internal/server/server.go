@@ -41,6 +41,7 @@ import (
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/profile"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/registration"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 	"github.com/poetlife/aladdin/internal/skill"
 	"github.com/poetlife/aladdin/internal/telemetry"
@@ -88,6 +89,10 @@ type IdentityStores struct {
 	// 的部署不需要任何人类登录方式，此时这些路径整体缺席，而不是退化成一个
 	// "什么都通过"的校验。
 	Channels *identity.Registry
+	// Registrations 是注册策略与邀请码的持久化存储（见
+	// internal/registration）。**它不是可选的**：注册闸门在每一条渠道登录路径
+	// 上，缺了它就没有"谁能进来"这个结论。
+	Registrations registration.Store
 }
 
 // ProfileStores 是个人档案模块的存储，由入口进程构造后传入。
@@ -171,6 +176,10 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	machine := interceptor.NewTokenAuthenticator()
 	authorizer := &interceptor.Authorizer{Engine: engine, Logger: logger}
 
+	// 注册面的领域入口。它由这里构造而不是入口进程传进来：它不含配置、也没有
+	// 生命周期，只是一层套在存储上的领域语义（见 internal/registration）。
+	registrations := registration.New(ident.Registrations)
+
 	// 生命周期锁同时交给"空主体认领"与"角色授予"：两件事必须对同一个
 	// 主体串行，否则会出现身份已移走、角色还留在原主体的搁浅（见
 	// subject_lifecycle_gate.go）。
@@ -189,16 +198,22 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 	}
 
 	identitySrv := NewIdentityService(store, engine, IdentityDeps{
-		Machine:           machine,
-		Identities:        ident.Identities,
-		Sessions:          ident.Sessions,
-		Channels:          ident.Channels,
-		Logger:            logger,
-		PendingBindings:   newPendingBindings(time.Now, cfg.PublicScheme() == "https"),
-		DeviceLogins:      newDeviceLogins(time.Now),
-		DeviceApprovalURL: deviceApprovalURL,
-		LifecycleGate:     lifecycleGate,
+		Machine:              machine,
+		Identities:           ident.Identities,
+		Sessions:             ident.Sessions,
+		Channels:             ident.Channels,
+		Logger:               logger,
+		Registrations:        registrations,
+		PendingBindings:      newPendingBindings(time.Now, cfg.PublicScheme() == "https"),
+		PendingRegistrations: newPendingRegistrations(time.Now, cfg.PublicScheme() == "https"),
+		DeviceLogins:         newDeviceLogins(time.Now),
+		DeviceApprovalURL:    deviceApprovalURL,
+		LifecycleGate:        lifecycleGate,
 	})
+
+	// 注册面与认证面共用同一个 IdentityService：那一段"登记一个新主体"的实现是
+	// 开放注册的回调与"完成注册"两条路共用的那一份（见 registration_service.go）。
+	registrationSrv := NewRegistrationService(identitySrv, registrations, store, logger)
 
 	// 档案对身份模块的依赖是**只读**的：展示名回退的第二步要取该主体的渠道
 	// 列表。身份模块不感知档案，依赖方向单向。
@@ -243,6 +258,9 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 
 	identityPath, identityHandler := identityv1connect.NewIdentityServiceHandler(identitySrv, opts...)
 	register(identityPath, identityHandler)
+
+	registrationPath, registrationHandler := identityv1connect.NewRegistrationServiceHandler(registrationSrv, opts...)
+	register(registrationPath, registrationHandler)
 
 	// 重定向型登录渠道的浏览器直连端点。它们不是 RPC（浏览器导航带不了请求头），
 	// 因此不走 Connect handler，但要经同一个 register 注册——这样遥测的路径

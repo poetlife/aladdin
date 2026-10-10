@@ -571,6 +571,19 @@ components:
 
          它是一个**状态**而不是一组错误码：调用方据此决定继续等、停下、还是重新
          发起。四种取值互斥且穷尽——分不出类别的取值会让调用方只能猜。
+    aladdin.identity.v1.RegistrationMode:
+      type: string
+      title: RegistrationMode
+      enum:
+        - REGISTRATION_MODE_UNSPECIFIED
+        - REGISTRATION_MODE_OPEN
+        - REGISTRATION_MODE_INVITE
+        - REGISTRATION_MODE_CLOSED
+      description: |-
+        RegistrationMode 是站点的准入姿态。**三选一，互斥且穷尽。**
+
+         拆成"允许注册"与"需要邀请码"两个布尔量会造出四种状态，其中两种没有意义，
+         而实现必须为它们各写一个分支。
     aladdin.identity.v1.ApproveDeviceLoginRequest:
       type: object
       properties:
@@ -665,6 +678,18 @@ components:
              它**不是一个渠道**，因此不在 methods 里：它不引入任何渠道身份，只是把
              一个已有主体的会话交给终端。不可用时命令行据此不去发起，而不是发起了
              再收到一次"未实现"。
+        registrationMode:
+          allOf:
+            - title: registration_mode
+              description: |-
+                当前站点的准入姿态（开放注册 / 需要邀请码 / 不接受新账号）。
+
+                 登录页要能说明白"这里需要邀请码"或"这里不接受新账号"，因此它随同一份
+                 清单下发。它同属公开取值——本来就会展示给任何一个打开登录页的人；藏起来
+                 不保护任何东西，只会让前端去硬编码一份会漂移的副本。
+
+                 **它只说准入，不说进来拿什么**：默认角色是权限信息，公开清单里不放。
+            - $ref: '#/components/schemas/aladdin.identity.v1.RegistrationMode'
       title: GetAuthMethodsResponse
       additionalProperties: false
       description: |-

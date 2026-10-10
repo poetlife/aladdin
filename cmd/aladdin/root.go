@@ -124,6 +124,8 @@ func newRootCommand() *cobra.Command {
 		newPermissionsCommand(),
 		newRoleCommand(),
 		newScopeCommand(),
+		newRegistrationCommand(),
+		newInviteCommand(),
 		newGalaxyCommand(),
 		newSkillCommand(),
 	)

@@ -26,6 +26,10 @@ permissions:
     description: "登记范围、改显示名、删除范围。删除属不可逆操作"
   - code: "rbac.policy.publish"
     description: "使一次角色变更正式生效（缓存失效与生效确认）"
+  - code: "identity.registration.read"
+    description: "读取注册策略与邀请码列表。只读"
+  - code: "identity.registration.write"
+    description: "改注册策略、签发与撤销邀请码。它会改变新主体的权限边界"
   - code: "audit.log.read"
     description: "查阅审计日志"
   - code: "audit.log.export"
@@ -74,6 +78,10 @@ roles:
       - "rbac.scope.read"
       - "rbac.scope.write"
       - "rbac.policy.publish"
+      # 注册策略决定"新来的人拿到什么"，与授予角色同属一件事：它写下的是一条
+      # 真实的角色绑定。因此它归权限管理员，而不是归"能碰服务端配置文件的人"。
+      - "identity.registration.read"
+      - "identity.registration.write"
   - id: "auditor"
     display_name: "审计员"
     builtin: true
@@ -91,6 +99,9 @@ roles:
       # 审计要能看见"哪些范围存在"：范围名是部署内的目录，不是秘密
       # （隔离靠绑定，不靠隐藏名字，见 docs/design/rbac/scopes.md）。
       - "rbac.scope.read"
+      # 准入姿态同属"看得见但不改得动"：审计要回答"这个人当时是怎么进来的"，
+      # 而注册模式与邀请码的状态正是那条路径的上下文。**明文读不回来**。
+      - "identity.registration.read"
   - id: "viewer"
     display_name: "只读用户"
     builtin: true

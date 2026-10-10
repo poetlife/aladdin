@@ -12,6 +12,7 @@ import (
 	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/registration"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
@@ -32,12 +33,18 @@ type IdentityService struct {
 	channels *identity.Registry
 	// identities 是"一个渠道身份属于哪个主体"的唯一入口。
 	identities *identity.Identities
+	// registrations 是注册面的唯一入口：准入姿态与邀请码（见
+	// internal/registration）。**已登记的身份一个字段都不读它。**
+	registrations *registration.Registrations
 	// sessions 是会话凭证的签发与失效入口。
 	sessions *identity.Sessions
 	// machine 是机器凭证的查表认证器：token 形式的登录仍走它。
 	machine *interceptor.TokenAuthenticator
 	// pendingBindings 是重定向型绑定的待绑定凭据表（见 pending_bindings.go）。
 	pendingBindings *pendingBindings
+	// pendingRegistrations 是"等邀请码"的待注册凭据表（见
+	// registration_credentials.go）。
+	pendingRegistrations *pendingRegistrations
 	// deviceLogins 是命令行设备码登录的记录表（见 device_logins.go）。
 	deviceLogins *deviceLogins
 	// deviceApprovalURL 是批准页的对外地址。**为空表示这条路径整体缺席**：
@@ -55,8 +62,12 @@ type IdentityDeps struct {
 	Sessions   *identity.Sessions
 	Channels   *identity.Registry
 	Logger     *zap.Logger
+	// Registrations 是注册面的唯一入口：准入姿态与邀请码。
+	Registrations *registration.Registrations
 	// PendingBindings 是重定向型绑定的待绑定凭据表。
 	PendingBindings *pendingBindings
+	// PendingRegistrations 是"等邀请码"的待注册凭据表。
+	PendingRegistrations *pendingRegistrations
 	// DeviceLogins 是命令行设备码登录的记录表。
 	DeviceLogins *deviceLogins
 	// DeviceApprovalURL 是批准页的对外地址；为空表示未配置对外地址，
@@ -69,17 +80,19 @@ type IdentityDeps struct {
 // NewIdentityService 构造认证面服务。
 func NewIdentityService(store rbac.MutableStore, engine *rbac.Engine, deps IdentityDeps) *IdentityService {
 	return &IdentityService{
-		store:             store,
-		engine:            engine,
-		logger:            deps.Logger,
-		channels:          deps.Channels,
-		identities:        deps.Identities,
-		sessions:          deps.Sessions,
-		machine:           deps.Machine,
-		pendingBindings:   deps.PendingBindings,
-		deviceLogins:      deps.DeviceLogins,
-		deviceApprovalURL: deps.DeviceApprovalURL,
-		gate:              deps.LifecycleGate,
+		store:                store,
+		engine:               engine,
+		logger:               deps.Logger,
+		channels:             deps.Channels,
+		identities:           deps.Identities,
+		registrations:        deps.Registrations,
+		sessions:             deps.Sessions,
+		machine:              deps.Machine,
+		pendingBindings:      deps.PendingBindings,
+		pendingRegistrations: deps.PendingRegistrations,
+		deviceLogins:         deps.DeviceLogins,
+		deviceApprovalURL:    deps.DeviceApprovalURL,
+		gate:                 deps.LifecycleGate,
 	}
 }
 
@@ -113,27 +126,143 @@ func (s *IdentityService) Login(ctx context.Context, req *connect.Request[identi
 	}
 }
 
-// resolveAndIssue 是登录与绑定兑换**共用**的那段核心：解析主体、签发会话、留痕。
+// admissionKind 是一次登录的去向。
 //
-// 它接受一份**已校验**的身份，自己不做任何校验。调用方必须在校验通过之后
-// 才走到这里——解析会登记新主体，因此绝不能在校验之前发生，否则任何字符串
-// 都能在库里造出一个主体。
+// 它是一个**状态**而不是一组错误码：三种去向各自接一段完全不同的处理，把它们
+// 压成一串错误会让"这次登录没走完，去填个码"与"这条路根本不接受新账号"变成
+// 同一个结论，而它们对使用者的下一步是相反的。
+type admissionKind int
+
+const (
+	// admissionIssued：已经签发了会话。已登记身份，以及开放注册下的新主体。
+	admissionIssued admissionKind = iota
+	// admissionNeedsInvite：未登记身份，且站点要求邀请码。**没有登记任何东西**，
+	// 客户端要接着做的是让使用者填码。
+	admissionNeedsInvite
+	// admissionClosed：未登记身份，且站点不接受新账号，**没有登记任何东西**。
+	admissionClosed
+)
+
+// admission 是一次登录的分流结论。
+type admission struct {
+	kind   admissionKind
+	issued identity.Issued
+}
+
+// admit 是登录路径上"一份已校验的身份 → 一个结论"的**唯一一段实现**。
 //
-// 它刻意只接受"已校验的身份"而不是"一份凭证"：校验发生在渠道实现里
-// （见 internal/identity），而"校验通过之后要做什么"只有这一份——分开实现
-// 迟早会出现"登录生效、回调没生效"这类断裂。
-func (s *IdentityService) resolveAndIssue(ctx context.Context, source string, verified identity.VerifiedIdentity) (identity.Issued, error) {
-	subject, err := s.identities.ResolveOrRegister(ctx, source, verified.ExternalID, verified.Display)
+// 浏览器回调与用例都走它。分流只有三支，而第一支是全部的关键：
+//
+//	身份已登记 → 签发会话。**策略一个字都不参与**——不读模式、不读邀请码、
+//	不重算默认角色。因此把模式改成"不接受新账号"之后，既有用户照常登录。
+//
+// 后两支只对**未登记**的身份成立，判据只有"解析没命中"这一条。
+//
+// 它接受一份**已校验**的身份，自己不做任何校验：登记会把主体写进库里，因此
+// 绝不能在校验之前发生（见 internal/identity 的 Register）。
+func (s *IdentityService) admit(ctx context.Context, source string, verified identity.VerifiedIdentity) (admission, error) {
+	subject, found, err := s.identities.Resolve(ctx, source, verified.ExternalID)
+	if err != nil {
+		return admission{}, err
+	}
+	if found {
+		issued, err := s.issue(ctx, source, subject)
+		if err != nil {
+			return admission{}, err
+		}
+		return admission{kind: admissionIssued, issued: issued}, nil
+	}
+
+	policy, err := s.registrations.Policy(ctx)
+	if err != nil {
+		return admission{}, err
+	}
+	switch policy.Mode {
+	case registration.ModeClosed:
+		// 说不接受新账号，就**什么都不登记**：库里不该因此多出任何一行。
+		s.logger.Warn("拒绝了未登记身份的登录",
+			zap.String("source", source), zap.String("reason", "站点不接受新账号"))
+		return admission{kind: admissionClosed}, nil
+	case registration.ModeInvite:
+		// 这一刻什么都不登记：邀请码由人在浏览器里输入，通过之后才落库。
+		// 提前登记会让一个没有码的人先在库里占一个主体——那正是闸门要拦的事。
+		return admission{kind: admissionNeedsInvite}, nil
+	default:
+		issued, err := s.register(ctx, source, verified, policy)
+		if err != nil {
+			return admission{}, err
+		}
+		return admission{kind: admissionIssued, issued: issued}, nil
+	}
+}
+
+// register 登记一个新主体并签发会话。**开放注册与"完成注册"两条路都经过这里**，
+// 因此"登记一个新主体"只有这一段实现——各写一份迟早会出现"走邀请码进来的没授
+// 默认角色"这类断裂，而它的表现只是"这个账号权限不对"。
+func (s *IdentityService) register(ctx context.Context, source string, verified identity.VerifiedIdentity, policy registration.Policy) (identity.Issued, error) {
+	subject, err := s.identities.Register(ctx, source, verified.ExternalID, verified.Display, s.registrationOptions(policy))
 	if err != nil {
 		return identity.Issued{}, err
 	}
+	issued, err := s.issue(ctx, source, subject)
+	if err != nil {
+		return identity.Issued{}, err
+	}
+	s.logger.Info("已登记新主体并签发会话",
+		zap.String("source", source),
+		zap.String("subject_id", subject.ID),
+		zap.String("registration_mode", string(policy.Mode)),
+	)
+	return issued, nil
+}
+
+// registrationOptions 把注册策略翻成一次登记要用的取值。
+//
+// 默认角色走的是**授权面完全一样的那条写入口**（MutableStore.Bind），因此它落库
+// 的形状与管理员在人员授权页上点一次"授予"写下的逐字相同。判定路径看不见这份
+// 策略，只看见那条绑定。
+//
+// 授予与收回**成对给出**：并发下认输的那一支要靠收回才不留下一个"持有角色、
+// 却没有任何进入方式"的空壳（见 internal/identity 的 Register）。
+//
+// 这里**不做互斥校验**：`ValidateAssignment` 查的是候选绑定与既有绑定之间是否
+// 互斥，而这个主体是这一刻刚出生的，一条绑定都没有。策略写入时那条"默认角色不能
+// 自我放大"的校验也已经在管理面做过了，不在登记这条热路径上重算一遍。
+func (s *IdentityService) registrationOptions(policy registration.Policy) identity.RegisterOptions {
+	if !policy.GrantsDefaultRole() {
+		// 没有默认角色就没有绑定，也就没有默认作用域：新主体零权限、默认作用域
+		// 为空，与此前唯一的形态一致。
+		return identity.RegisterOptions{}
+	}
+	binding := func(subjectID string) rbac.RoleBinding {
+		return rbac.RoleBinding{
+			SubjectID: subjectID,
+			RoleID:    policy.DefaultRoleID,
+			Scope:     policy.DefaultScope,
+		}
+	}
+	return identity.RegisterOptions{
+		DefaultScope: policy.DefaultScope,
+		Grant: identity.RegistrationGrant{
+			Apply: func(ctx context.Context, subjectID string) error {
+				return s.store.Bind(ctx, binding(subjectID))
+			},
+			Undo: func(ctx context.Context, subjectID string) error {
+				return s.store.Unbind(ctx, binding(subjectID))
+			},
+		},
+	}
+}
+
+// issue 签发会话并留痕。
+//
+// 登录留痕含主体标识：它是"这个人现在叫什么"的唯一可检索来源，也是建立第一个
+// 管理员时人工搬运的那个值。**不含凭证，也不含邀请码**。
+func (s *IdentityService) issue(ctx context.Context, source string, subject rbac.Subject) (identity.Issued, error) {
 	issued, err := s.sessions.Issue(ctx, subject)
 	if err != nil {
 		return identity.Issued{}, err
 	}
-
-	// 登录留痕含主体标识：它是"这个人现在叫什么"的唯一可检索来源，
-	// 也是建立第一个管理员时人工搬运的那个值。**不含凭证**。
 	s.logger.Info("登录成功",
 		zap.String("source", source),
 		zap.String("subject_id", subject.ID),
@@ -208,15 +337,31 @@ func (s *IdentityService) Refresh(_ context.Context, req *connect.Request[identi
 // 命令行登录**不是一个渠道**：它不引入任何渠道身份，只是把一个已有主体的
 // 会话交给终端（见 docs/design/identity/device-login.md），因此它不在渠道
 // 清单里，而是单独一个字段。
-func (s *IdentityService) GetAuthMethods(_ context.Context, _ *connect.Request[identityv1.GetAuthMethodsRequest]) (*connect.Response[identityv1.GetAuthMethodsResponse], error) {
+//
+// **注册模式随同一份清单下发**：登录页要能说明白"这里需要邀请码"或"这里不接受
+// 新账号"。它同属公开取值——本来就会展示给任何一个打开登录页的人。它**只说准入**，
+// 不说进来拿什么：默认角色是权限信息，公开清单里不放。
+func (s *IdentityService) GetAuthMethods(ctx context.Context, _ *connect.Request[identityv1.GetAuthMethodsRequest]) (*connect.Response[identityv1.GetAuthMethodsResponse], error) {
 	channels := s.channels.Methods()
 	methods := make([]*identityv1.AuthMethod, 0, len(channels))
 	for _, ch := range channels {
 		methods = append(methods, &identityv1.AuthMethod{Source: ch.Source})
 	}
+	// 读不到策略时**不让整个登录页失效**，也**不替它猜一个姿态**：渠道清单本身
+	// 仍然有用（令牌登录那条路不依赖它），而把一次读取失败说成"这里开放注册"或
+	// "这里需要邀请码"都是在替服务端做一个它当时答不上来的断言。留空表示"不知道"，
+	// 前端据此不写那句话——任何一次真正的放行都由登记那一刻重读的策略决定，
+	// 因此这次留空不会让谁多进来或少进来一个人。
+	mode := identityv1.RegistrationMode_REGISTRATION_MODE_UNSPECIFIED
+	if policy, err := s.registrations.Policy(ctx); err != nil {
+		s.logger.Warn("读取注册策略失败，登录页不再声明准入姿态", zap.Error(err))
+	} else {
+		mode = toProtoRegistrationMode(policy.Mode)
+	}
 	return connect.NewResponse(&identityv1.GetAuthMethodsResponse{
 		Methods:            methods,
 		DeviceLoginEnabled: s.deviceLoginEnabled(),
+		RegistrationMode:   mode,
 	}), nil
 }
 

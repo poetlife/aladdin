@@ -233,3 +233,65 @@ func TestMemoryStoreBindIsIdempotent(t *testing.T) {
 		t.Errorf("绑定数 = %d, want 1", len(got))
 	}
 }
+
+// 默认注册角色的合资格判据：不得持有（或经继承、通配而覆盖）一个能授予角色或
+// 改写注册策略的权限码。
+//
+// 这条判据把一次输入失误放大成一次全站失效。默认角色取系统管理员 ⇒ 开放注册
+// 等于把管理员位子摆在门口；取权限管理员 ⇒ 任何一个新来的人都能给自己加任意
+// 角色，"发一个邀请码"与"发一份任意权限"变成同一件事。
+func TestValidateRegistrationDefaultRole(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+
+	// 加一个**只经继承**才拿到提权能力的角色：只看直接声明的那几条会把这缝留着。
+	if err := store.PutRole(ctx, RoleDefinition{
+		ID:       "inherits.admin",
+		Inherits: []string{"system.admin"},
+	}); err != nil {
+		t.Fatalf("写入角色失败: %v", err)
+	}
+	// 再一个用通配覆盖的：`rbac.*` 覆盖 rbac.subject.assign。
+	if err := store.PutRole(ctx, RoleDefinition{
+		ID:          "wildcard.rbac",
+		Permissions: []PermissionCode{"rbac.*"},
+	}); err != nil {
+		t.Fatalf("写入角色失败: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		roleID string
+		wantOK bool
+	}{
+		{"不给默认角色", "", true},
+		{"只读用户", "viewer", true},
+		{"创作者", "galaxy.author", true},
+		{"技能管理员", "skill.curator", true},
+		{"系统管理员（* 覆盖全部）", "system.admin", false},
+		{"权限管理员（直接持有 rbac.subject.assign）", "rbac.admin", false},
+		{"审计员（只读，合格）", "auditor", true},
+		{"经继承拿到提权能力", "inherits.admin", false},
+		{"用通配覆盖提权能力", "wildcard.rbac", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateRegistrationDefaultRole(ctx, store, tc.roleID)
+			if tc.wantOK && err != nil {
+				t.Fatalf("应当合格，实际 %v", err)
+			}
+			if !tc.wantOK && !errors.Is(err, ErrRegistrationRoleUnfit) {
+				t.Fatalf("应当被拒绝，实际 %v", err)
+			}
+		})
+	}
+}
+
+// 角色不存在时原样上报 ErrRoleNotFound：调用方据此说"角色不存在"，而不是
+// "这个角色不能当默认角色"——后者会让人去查它的权限，而问题在标识写错了。
+func TestValidateRegistrationDefaultRoleMissingRole(t *testing.T) {
+	err := ValidateRegistrationDefaultRole(context.Background(), NewMemoryStore(), "nope")
+	if !errors.Is(err, ErrRoleNotFound) {
+		t.Fatalf("应当报角色不存在，实际 %v", err)
+	}
+}

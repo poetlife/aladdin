@@ -39,6 +39,7 @@ import (
 	profilegormstore "github.com/poetlife/aladdin/internal/profile/gormstore"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
+	registrationgormstore "github.com/poetlife/aladdin/internal/registration/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 	skillgormstore "github.com/poetlife/aladdin/internal/skill/gormstore"
@@ -176,6 +177,9 @@ func startServerWith(t *testing.T, roleID string, scope rbac.Scope, opts ...harn
 	ident := server.IdentityStores{
 		Identities: identity.NewIdentities(identityStore, store),
 		Sessions:   identity.NewSessions(identitygormstore.New(store.DB())),
+		// 注册策略与邀请码同样落在真实连接上：注册闸门在这条链路上，用内存实现
+		// 会把"表没建、扣减没落盘"挡在测试之外。
+		Registrations: registrationgormstore.New(store.DB()),
 	}
 	for _, opt := range opts {
 		opt(&cfg, &ident)

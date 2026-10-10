@@ -48,8 +48,8 @@ const (
 	// 碰不到它；碰到它时表现为某一次进行中的流程要重来。
 	stateMaxPending = 4096
 
-	// frontendErrorFragment / frontendTokenFragment / frontendBindingFragment
-	// 是回跳地址里三个 fragment 的键。
+	// 成功回跳与绑定回跳的标记。它们与服务端构造回跳地址时用的取值一一对应，
+	// 由前端按**后缀**识别（见 web/src/pages/AuthCallbackPage.tsx）。
 	frontendErrorFragment   = "error"
 	frontendTokenFragment   = "token"
 	frontendBindingFragment = "binding"
@@ -108,6 +108,14 @@ func (c redirectChannel) loginFailed() string { return c.source + "_login_failed
 // bindFailed 是绑定失败回跳前端时的固定标记。与登录失败分开，前端才知道
 // 该说"登录未完成"还是"绑定未完成"。
 func (c redirectChannel) bindFailed() string { return c.source + "_bind_failed" }
+
+// registrationClosed 是"本站不接受新账号"回跳前端时的固定标记。
+//
+// 它**与登录失败分开**是有意的：这句话不是失败细节，而是一条本该公开的站点事实
+// ——登录页已经从渠道清单里拿到了同一个取值（见 registration.md）。混进
+// "登录未完成"会让使用者以为是自己的操作出了问题，去反复重试一件无论试几次都
+// 不会成功的事。
+func (c redirectChannel) registrationClosed() string { return c.source + "_registration_closed" }
 
 // newGithubRedirectChannel 是 GitHub 渠道的差异取值。
 func newGithubRedirectChannel() redirectChannel {
@@ -255,13 +263,30 @@ func (f *RedirectLoginFlow) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	issued, err := f.service.resolveAndIssue(r.Context(), flowState.source, verified)
+	// 登录这一支要过**注册闸门**：身份已登记时策略一个字都不参与，未登记时由
+	// 策略决定去处分流（见 docs/design/identity/registration.md）。
+	result, err := f.service.admit(r.Context(), flowState.source, verified)
 	if err != nil {
 		f.fail(w, r, flowState.purpose, "解析主体或签发会话失败: "+err.Error())
 		return
 	}
-
-	http.Redirect(w, r, f.frontendURL(issued.Token), http.StatusFound)
+	switch result.kind {
+	case admissionNeedsInvite:
+		token, err := f.service.pendingRegistrations.issue(flowState.source, verified)
+		if err != nil {
+			// 取不到随机数意味着系统熵源出了问题，这不是调用方能修的。
+			f.fail(w, r, flowState.purpose, "生成注册凭据失败: "+err.Error())
+			return
+		}
+		setRegistrationCookie(w, token, f.secureCookie())
+		// 直接落到填码页，不经回调页：这一步地址里**没有任何凭据**（凭据在
+		// HttpOnly cookie 里），因此没有"回跳页要把 fragment 抹掉"这回事。
+		http.Redirect(w, r, f.cfg.PublicURL(RegistrationPath), http.StatusFound)
+	case admissionClosed:
+		f.failRegistrationClosed(w, r)
+	default:
+		http.Redirect(w, r, f.frontendURL(result.issued.Token), http.StatusFound)
+	}
 }
 
 // redirectURI 是交给渠道的回调地址。
@@ -305,6 +330,17 @@ func (f *RedirectLoginFlow) fail(w http.ResponseWriter, r *http.Request, purpose
 	f.clearPendingBindingCookie(w)
 	http.Redirect(w, r, f.cfg.PublicURL(FrontendCallbackPath)+"#"+
 		frontendErrorFragment+"="+marker, http.StatusFound)
+}
+
+// failRegistrationClosed 把"本站不接受新账号"送回前端。
+//
+// 地址里仍然只带一个固定标记，不透露被拒的身份是谁——站点不接受新账号这件事
+// 本来就会展示给任何一个打开登录页的人，但"这个具体的人被拒了"不是。
+func (f *RedirectLoginFlow) failRegistrationClosed(w http.ResponseWriter, r *http.Request) {
+	f.logger.Warn(f.channel.noun+" 登录未完成",
+		zap.String("channel", f.channel.source), zap.String("reason", "站点不接受新账号"))
+	http.Redirect(w, r, f.cfg.PublicURL(FrontendCallbackPath)+"#"+
+		frontendErrorFragment+"="+f.channel.registrationClosed(), http.StatusFound)
 }
 
 // purposeOf 尽力判断一次导航的用途，只用于选失败标记与日志用语。

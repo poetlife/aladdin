@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserCog,
+  UserPlus,
   Wand2,
   X,
 } from 'lucide-react'
@@ -75,6 +76,9 @@ const NAV: NavEntry[] = [
   { path: '/access/subjects', label: '人员授权', icon: <UserCog size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacSubjectRead },
   // 范围目录：绑定只能指向已登记的范围，因此它在给人授权之前（见 scopes.md）。
   { path: '/access/scopes', label: '范围', icon: <FolderTree size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacScopeRead },
+  // 注册：谁能成为新账号、以及新账号拿到什么。它决定的是**尚未存在的主体**，
+  // 因此排在"人员授权"（管已经存在的主体）之前，与范围同属"授权之前要先定的事"。
+  { path: '/access/registration', label: '注册', icon: <UserPlus size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.IdentityRegistrationRead },
   // 权限码目录是只读对照（码 + 说明 + 直接声明它的角色），与角色定义同一道权限门。
   { path: '/access/codes', label: '权限码', icon: <KeyRound size={ICON_SIZE} />, group: GROUP_ACCESS, permission: PermissionCodes.RbacRoleRead },
   // 运维这一组：客户端遥测与部署信息。两页都是只读的观测面，与"谁能做什么"无关，

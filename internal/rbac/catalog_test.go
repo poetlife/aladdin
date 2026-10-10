@@ -146,15 +146,22 @@ func TestEveryMethodIsClassified(t *testing.T) {
 // 下一跳：它与发布域那条匿名 HTTP 入口回答同一件事，只凭工程标识作答、只返回
 // 公开内容、否定结论也与发布态完全一致。要求先认证才能问，等于让"分享给没登录
 // 的人"这条唯一用途办不成。
+//
+// 第八个（完成一次因邀请码而暂停的注册）的调用方正是那个**还没登录、也还没有
+// 账号**的人，与 StartDeviceLogin 同一处境：要求先认证才让他把账号建出来，是
+// 一条谁也走不通的循环依赖。它因此也是这里唯一一个会**写出数据**的公开方法
+// （登记一个新主体），代价由注册策略兜住——准入姿态由管理员掌控，而这份凭据
+// 只经回调校验过的那一份一次性 cookie 交回（见 docs/design/identity/registration.md）。
 func TestPublicMethodsAreAllowlisted(t *testing.T) {
 	want := map[string]bool{
-		"/aladdin.identity.v1.IdentityService/Login":            true,
-		"/aladdin.identity.v1.IdentityService/Refresh":          true,
-		"/aladdin.identity.v1.IdentityService/GetAuthMethods":   true,
-		"/aladdin.identity.v1.IdentityService/StartDeviceLogin": true,
-		"/aladdin.identity.v1.IdentityService/PollDeviceLogin":  true,
-		"/aladdin.telemetry.v1.TelemetryService/ReportEvents":   true,
-		"/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage":    true,
+		"/aladdin.identity.v1.IdentityService/Login":                    true,
+		"/aladdin.identity.v1.IdentityService/Refresh":                  true,
+		"/aladdin.identity.v1.IdentityService/GetAuthMethods":           true,
+		"/aladdin.identity.v1.IdentityService/StartDeviceLogin":         true,
+		"/aladdin.identity.v1.IdentityService/PollDeviceLogin":          true,
+		"/aladdin.identity.v1.RegistrationService/CompleteRegistration": true,
+		"/aladdin.telemetry.v1.TelemetryService/ReportEvents":           true,
+		"/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage":            true,
 	}
 	got := map[string]bool{}
 	eachMethod(t, func(fullMethod string, _ *descriptorpb.MethodOptions) {
