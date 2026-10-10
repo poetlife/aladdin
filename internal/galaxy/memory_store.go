@@ -24,6 +24,7 @@ type MemoryStore struct {
 	drafts        map[string]Draft
 	versions      map[string]Version
 	assets        map[string]Asset
+	attachments   map[string]Attachment
 	publications  map[string]Publication
 	previewGrants map[string]PreviewGrant
 }
@@ -35,6 +36,7 @@ func NewMemoryStore() *MemoryStore {
 		drafts:        map[string]Draft{},
 		versions:      map[string]Version{},
 		assets:        map[string]Asset{},
+		attachments:   map[string]Attachment{},
 		publications:  map[string]Publication{},
 		previewGrants: map[string]PreviewGrant{},
 	}
@@ -170,6 +172,19 @@ func (s *MemoryStore) GetVersion(_ context.Context, projectID string, slot Conte
 	return version, nil
 }
 
+// GetVersionByID 实现 Store：不限槽。
+func (s *MemoryStore) GetVersionByID(_ context.Context, projectID, versionID string) (Version, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	version, ok := s.versions[versionID]
+	if !ok || version.ProjectID != projectID {
+		return Version{}, ErrVersionNotFound
+	}
+	version.Manifest = cloneManifest(version.Manifest)
+	return version, nil
+}
+
 // ListVersions 实现 Store。清单随行返回（它只有路径与摘要，几 KB 量级）。
 func (s *MemoryStore) ListVersions(_ context.Context, projectID string, slot ContentSlot) ([]Version, error) {
 	s.mu.RLock()
@@ -251,6 +266,55 @@ func (s *MemoryStore) ListProjectTags(_ context.Context, projectID string) ([]st
 	}
 	sort.Strings(tags)
 	return tags, nil
+}
+
+// GetAttachment 实现 Store。
+func (s *MemoryStore) GetAttachment(_ context.Context, projectID, attachmentID string) (Attachment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	attachment, ok := s.attachments[attachmentID]
+	if !ok || attachment.ProjectID != projectID {
+		return Attachment{}, ErrAttachmentNotFound
+	}
+	return attachment, nil
+}
+
+// ListAttachments 实现 Store：按上传时间倒序。
+func (s *MemoryStore) ListAttachments(_ context.Context, projectID string) ([]Attachment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var attachments []Attachment
+	for _, attachment := range s.attachments {
+		if attachment.ProjectID == projectID {
+			attachments = append(attachments, attachment)
+		}
+	}
+	sort.Slice(attachments, func(i, j int) bool {
+		if attachments[i].UploadedAt.Equal(attachments[j].UploadedAt) {
+			return attachments[i].ID < attachments[j].ID
+		}
+		return attachments[i].UploadedAt.After(attachments[j].UploadedAt)
+	})
+	return attachments, nil
+}
+
+// SumAttachmentBytes 实现 Store。
+//
+// 它算的是**库里的行**，与 SQL 实现那条 `SUM(size_bytes)` 同一个口径：桶上可能
+// 留下无从被引用的孤儿对象，而那是回收的事，不是配额的事。
+func (s *MemoryStore) SumAttachmentBytes(_ context.Context, projectID string) (int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var total int64
+	for _, attachment := range s.attachments {
+		if attachment.ProjectID == projectID {
+			total += attachment.SizeBytes
+		}
+	}
+	return total, nil
 }
 
 // GetPublication 实现 Store。
@@ -339,7 +403,7 @@ func (s *MemoryStore) SetCurrentPublication(_ context.Context, projectID string,
 	return ErrProjectNotFound
 }
 
-// DeleteProject 实现 MutableStore：连同内容槽、版本、资产与发布记录一并删除。
+// DeleteProject 实现 MutableStore：连同内容槽、版本、资产、附件与发布记录一并删除。
 func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -363,6 +427,11 @@ func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 	for id, asset := range s.assets {
 		if asset.ProjectID == projectID {
 			delete(s.assets, id)
+		}
+	}
+	for id, attachment := range s.attachments {
+		if attachment.ProjectID == projectID {
+			delete(s.attachments, id)
 		}
 	}
 	for id, publication := range s.publications {
@@ -413,7 +482,10 @@ func (s *MemoryStore) CreateVersion(_ context.Context, version Version) (Version
 	return version, nil
 }
 
-// DeleteVersion 实现 MutableStore。
+// DeleteVersion 实现 MutableStore：删版本，并清空指向它的附件标注。
+//
+// 清空与删除在**同一个临界区**里完成（SQL 那边是同一个事务）：清到一半的表现是
+// 一条指向不存在版本的悬空标注。
 func (s *MemoryStore) DeleteVersion(_ context.Context, projectID string, slot ContentSlot, versionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -423,6 +495,50 @@ func (s *MemoryStore) DeleteVersion(_ context.Context, projectID string, slot Co
 		return ErrVersionNotFound
 	}
 	delete(s.versions, versionID)
+	for id, attachment := range s.attachments {
+		if attachment.ProjectID == projectID && attachment.VersionID == versionID {
+			attachment.VersionID = ""
+			s.attachments[id] = attachment
+		}
+	}
+	return nil
+}
+
+// CreateAttachment 实现 MutableStore。
+func (s *MemoryStore) CreateAttachment(_ context.Context, attachment Attachment) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.attachments[attachment.ID] = attachment
+	return nil
+}
+
+// UpdateAttachmentDescription 实现 MutableStore。
+//
+// **只改说明**：文件名、字节数、摘要、标注的版本与对象键逐字不变。
+func (s *MemoryStore) UpdateAttachmentDescription(_ context.Context, projectID, attachmentID, description string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attachment, ok := s.attachments[attachmentID]
+	if !ok || attachment.ProjectID != projectID {
+		return ErrAttachmentNotFound
+	}
+	attachment.Description = description
+	s.attachments[attachmentID] = attachment
+	return nil
+}
+
+// DeleteAttachment 实现 MutableStore。
+func (s *MemoryStore) DeleteAttachment(_ context.Context, projectID, attachmentID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attachment, ok := s.attachments[attachmentID]
+	if !ok || attachment.ProjectID != projectID {
+		return ErrAttachmentNotFound
+	}
+	delete(s.attachments, attachmentID)
 	return nil
 }
 

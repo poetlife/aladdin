@@ -639,7 +639,8 @@ func (s *Service) DeleteAsset(ctx context.Context, subjectID, projectID, assetID
 		return err
 	}
 	// 对象删除失败不影响"资产已删除"这一结论（库内是权威），与头像同源。
-	s.deleteAssetObjects(ctx, projectID, []Asset{asset}, "删除资产")
+	s.deletePrivateObjects(ctx, projectID,
+		[]string{AssetObjectKey(projectID, asset.MediaKind, asset.ID)}, "删除资产")
 	s.publish(projectID)
 	if s.logger != nil {
 		s.logger.Info("已删除资产",

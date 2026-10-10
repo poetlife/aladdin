@@ -33,5 +33,6 @@ func migrations() []*gormigrate.Migration {
 		migration0013SkillCatalog,
 		migration0014SkillCover,
 		migration0015SkillImages,
+		migration0016GalaxyAttachments,
 	}
 }

@@ -190,8 +190,8 @@ func (s *Store) SetCurrentPublication(ctx context.Context, projectID string, slo
 	return nil
 }
 
-// DeleteProject 实现 galaxy.MutableStore：连同内容槽、版本、草稿、资产与发布
-// 记录一并删除。
+// DeleteProject 实现 galaxy.MutableStore：连同内容槽、版本、草稿、资产、附件与
+// 发布记录一并删除。
 //
 // 放在一个事务里：删到一半的工程是一个"工程还在、站点已经打不开"的中间状态，
 // 而它没有任何可解释的对外含义。
@@ -201,6 +201,8 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			&database.GalaxyVersionRecord{},
 			&database.GalaxyAssetTagRecord{},
 			&database.GalaxyAssetRecord{},
+			// 附件随工程一起清掉：工程都不存在了，它的构建产物也没有留下的理由。
+			&database.GalaxyAttachmentRecord{},
 			&database.GalaxyPublicationRecord{},
 			&database.GalaxyDraftRecord{},
 			// 预览凭证也是工程的东西：工程没了，它的凭证一条都不该留下。
@@ -279,6 +281,23 @@ func (s *Store) GetVersion(ctx context.Context, projectID string, slot galaxy.Co
 	return toVersion(rec)
 }
 
+// GetVersionByID 实现 galaxy.Store：按标识读回工程下的一个版本，**不限槽**。
+//
+// 它存在的理由是附件上的版本标注：标注只记一个版本标识，不带槽（槽是版本的属性，
+// 不是标注的）。查询仍然约束工程标识，因此"别的工程的版本"与"不存在"同一个结果。
+func (s *Store) GetVersionByID(ctx context.Context, projectID, versionID string) (galaxy.Version, error) {
+	var rec database.GalaxyVersionRecord
+	err := s.db.WithContext(ctx).
+		First(&rec, "id = ? AND project_id = ?", versionID, projectID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return galaxy.Version{}, galaxy.ErrVersionNotFound
+		}
+		return galaxy.Version{}, unavailable("读取版本", err)
+	}
+	return toVersion(rec)
+}
+
 // ListVersions 实现 galaxy.Store。**清单随行返回**：它只有路径与摘要，几 KB
 // 量级，而"哪些版本引用了这个资产"正是靠它回答的。
 func (s *Store) ListVersions(ctx context.Context, projectID string, slot galaxy.ContentSlot) ([]galaxy.Version, error) {
@@ -345,16 +364,27 @@ func (s *Store) CreateVersion(ctx context.Context, version galaxy.Version) (gala
 	return created, nil
 }
 
-// DeleteVersion 实现 galaxy.MutableStore。
+// DeleteVersion 实现 galaxy.MutableStore：删版本，并**清空指向它的附件标注**。
+//
+// 两件事在同一个事务里：清到一半的表现是一条指向不存在版本的悬空标注，而它在
+// 界面上是一个打不开的版本号（见 docs/design/galaxy/attachments.md）。
 func (s *Store) DeleteVersion(ctx context.Context, projectID string, slot galaxy.ContentSlot, versionID string) error {
-	result := s.db.WithContext(ctx).
-		Where("id = ? AND project_id = ? AND slot = ?", versionID, projectID, string(slot)).
-		Delete(&database.GalaxyVersionRecord{})
-	if result.Error != nil {
-		return unavailable("删除版本", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return galaxy.ErrVersionNotFound
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("id = ? AND project_id = ? AND slot = ?", versionID, projectID, string(slot)).
+			Delete(&database.GalaxyVersionRecord{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return galaxy.ErrVersionNotFound
+		}
+		return clearAttachmentVersions(tx, projectID, versionID)
+	})
+	if err != nil {
+		if errors.Is(err, galaxy.ErrVersionNotFound) {
+			return err
+		}
+		return unavailable("删除版本", err)
 	}
 	return nil
 }

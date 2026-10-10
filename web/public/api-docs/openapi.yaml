@@ -1192,6 +1192,307 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateAssetResponse'
+  /aladdin.galaxy.v1.GalaxyService/ListAttachments:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.attachment.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: ListAttachments
+      description: |-
+        **鉴权**：需要权限 `galaxy.attachment.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
+        列出工程的**附件**（二进制、zip、导出文件），含**短时有效**的下载地址。
+
+         附件与资产并列而不混用（见 docs/design/galaxy/attachments.md）：资产会被网页
+         引用、由浏览器渲染；附件只给工程成员下载。**类型不限**，因此这条路径上没有
+         白名单，也没有标签与筛选——它们是构建产物，一个工程几十份就到头了。
+
+         它**不按任何东西筛选**：筛选是资产那边的问题（那里有几百张图与标签）。
+      operationId: aladdin.galaxy.v1.GalaxyService.ListAttachments
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.ListAttachmentsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.ListAttachmentsResponse'
+  /aladdin.galaxy.v1.GalaxyService/BeginAttachmentUpload:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.attachment.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: BeginAttachmentUpload
+      description: |-
+        **鉴权**：需要权限 `galaxy.attachment.write`；作用域取自凭证的默认作用域。
+
+        开始一次附件上传：分配附件标识并签发一份直传凭证。
+
+         与 BeginAssetUpload 同构，差别有三处，都由"附件收任意类型"推出：
+
+           - **请求里没有内容类型**：附件的下发类型恒为中性那一档（见 Attachment），
+             因此上传时那一次声明不产生任何对外可见的后果。存储侧的策略里仍带一条
+             类型规则——**上限绑在它上面**；
+           - **上限是一档**（如 500 MiB），不按类别分档；
+           - **另有一道工程总量配额**：声明的大小加上已占用的量超过上限时被拒。
+
+         两者都是**按声明值早退**，不是安全边界：真正的判定在 CommitAttachmentUpload，
+         用的是核对出来的真实字节数。
+      operationId: aladdin.galaxy.v1.GalaxyService.BeginAttachmentUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.BeginAttachmentUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.BeginAttachmentUploadResponse'
+  /aladdin.galaxy.v1.GalaxyService/CommitAttachmentUpload:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.attachment.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: CommitAttachmentUpload
+      description: |-
+        **鉴权**：需要权限 `galaxy.attachment.write`；作用域取自凭证的默认作用域。
+
+        提交一次附件上传：核对字节确实到了、内容与声明的摘要相符，写入附件元数据。
+
+         核对顺序与 CommitAssetUpload 相同（存在性 → 真实字节数 → 单文件上限 →
+         工程配额 → 摘要），任一不过即删掉那个对象并拒绝。**配额在这里是用真实字节数
+         复核的**：声明一个小值、传一个大值上来，走到这一步就被挡住。
+
+         标注的版本在这里**重新校验**：两次调用之间服务端不保留任何状态，那正是
+         "未提交的上传不留痕迹"的实现方式。
+      operationId: aladdin.galaxy.v1.GalaxyService.CommitAttachmentUpload
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.CommitAttachmentUploadRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.CommitAttachmentUploadResponse'
+  /aladdin.galaxy.v1.GalaxyService/UpdateAttachment:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.attachment.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: UpdateAttachment
+      description: |-
+        **鉴权**：需要权限 `galaxy.attachment.write`；作用域取自凭证的默认作用域。
+
+        改一份附件的说明。
+
+         **它只改说明**：文件名、字节数、内容摘要、标注的版本与对象键在改动前后逐字
+         不变，因此已经发出去的下载地址指向的还是同一份字节（与 UpdateAsset 同源）。
+         请求表达**期望的完整状态**：空串清空说明。
+      operationId: aladdin.galaxy.v1.GalaxyService.UpdateAttachment
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateAttachmentRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateAttachmentResponse'
+  /aladdin.galaxy.v1.GalaxyService/DeleteAttachment:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.attachment.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: DeleteAttachment
+      description: |-
+        **鉴权**：需要权限 `galaxy.attachment.write`；作用域取自凭证的默认作用域。
+
+        删除一份附件：删私有区的对象与元数据行。
+
+         **它不被任何引用拦阻。** 附件不被文件组引用；版本标注也不构成引用——标注在
+         版本删除时被清空，而不是反过来拦住删除（见 docs/design/galaxy/attachments.md）。
+         这与"被引用的资产不可删"是两件事：那条的理由是版本不可变意味着"它此后永远
+         可以发布"，而附件不参与发布。
+      operationId: aladdin.galaxy.v1.GalaxyService.DeleteAttachment
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteAttachmentRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.DeleteAttachmentResponse'
+  /aladdin.galaxy.v1.GalaxyService/GetAttachmentDownloadURL:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.attachment.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: GetAttachmentDownloadURL
+      description: |-
+        **鉴权**：需要权限 `galaxy.attachment.read`；作用域取自凭证的默认作用域。
+
+        签发一份附件的**下载地址**（短时有效）。
+
+         它刻意**不标 idempotency_level**：签名本身是无副作用的，但这条响应里带的是
+         一份**短时凭证**——把它标成"可安全用 GET"会让那条地址进浏览器的缓存与各级
+         访问日志。与 PollDeviceLogin 不标是同一条理由（见 AGENTS.md 的传输方式一节）。
+
+         下载的响应头由签发策略固定（中性的内容类型 + `attachment`），因此不管这份
+         字节是什么、文件名以什么结尾，浏览器都只会把它存下来。调用方拿到的是**整条
+         地址**，不要自己拼来源头。
+      operationId: aladdin.galaxy.v1.GalaxyService.GetAttachmentDownloadURL
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.GetAttachmentDownloadURLRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.GetAttachmentDownloadURLResponse'
   /aladdin.galaxy.v1.GalaxyService/Publish:
     post:
       x-aladdin-auth:
@@ -3824,6 +4125,70 @@ components:
          它随能力下发，让客户端在选文件时就早退，免得把一个几十 MB 的文件整个传
          上来只为了被拒。**服务端仍然是权威**：客户端这一判断只是省一次往返，
          不是一条安全边界。
+    aladdin.galaxy.v1.Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+          description: 附件标识。由服务端分配，不可猜、不复用。
+        projectId:
+          type: string
+          title: project_id
+        versionId:
+          type: string
+          title: version_id
+          description: |-
+            **标注**的版本，可空。它说明"这一份是那一版的构建产物"。
+
+             **标注不是引用**：它不参与发布，也不拦阻版本删除——删除一个版本时指向它的
+             标注被清空。因此这个字段可能从有值变成空，而附件本身不受影响。
+        filename:
+          type: string
+          title: filename
+          description: |-
+            原始文件名。**仅供展示与排障**：它不进对象键，也不参与任何判断。
+
+             它另外会进下载响应头——那是唯一一处它对外可见的地方，而那一处会先滤掉会
+             破坏响应头的字符（引号、反斜杠、控制字符与换行）。
+        sizeBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: size_bytes
+          description: 字节数。它取自提交时对对象的核对，不是声明值。
+        digest:
+          type: string
+          title: digest
+          description: 字节的 SHA-256。**不是寻址键**（附件按标识寻址），只用于核对与展示。
+        description:
+          type: string
+          title: description
+          description: 说明。可改，空表示没有。
+        uploadedAt:
+          type: string
+          title: uploaded_at
+        downloadUrl:
+          type: string
+          title: download_url
+          description: |-
+            **短时有效**的下载地址。响应头被固定成强制下载，因此点它只会把文件存下来。
+
+             未配置私有桶时为空。
+      title: Attachment
+      additionalProperties: false
+      description: |-
+        Attachment 是工程里的一份**发布物**：二进制、zip 包、导出文件。
+
+         它与资产**并列而不混用**（见 docs/design/galaxy/attachments.md）：资产会被网页
+         引用、由浏览器渲染；附件只给工程成员下载。因此它的类型**不限**——它靠另一条
+         性质立住：下发时的响应头由签发策略固定（中性的内容类型 + `attachment`），
+         浏览器永远只把它存下来，不渲染、也不执行。
+
+         **字节不可变**：没有"替换这一份的字节"这个动作，要换就重新上传一个。可变的只有
+         description 那一层。**永不进公开区**，因此也不出现在发布产物里。
     aladdin.galaxy.v1.BeginAssetUploadRequest:
       type: object
       properties:
@@ -3859,6 +4224,48 @@ components:
               description: 直传凭证。**只允许写、只对这一个键有效、短时有效。**
             - $ref: '#/components/schemas/aladdin.objectstore.v1.DirectUploadCredential'
       title: BeginAssetUploadResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.BeginAttachmentUploadRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        versionId:
+          type: string
+          title: version_id
+          description: |-
+            要**标注**的版本，可空（默认不标注）。非空时服务端会校验它确实属于这个工程：
+             标注指向一个不存在的版本时拒绝，而不是记下一条悬空标注。
+        sizeBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: size_bytes
+          description: |-
+            **声明的**字节数。服务端据此在签发前早退（单文件上限与工程总量配额各一次），
+             避免让用户白传一遍；真正的判定在提交那一步，用的是核对出来的真实字节数。
+      title: BeginAttachmentUploadRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.BeginAttachmentUploadResponse:
+      type: object
+      properties:
+        attachmentId:
+          type: string
+          title: attachment_id
+          description: 本次上传的附件标识。提交时要把它带回来。
+        upload:
+          allOf:
+            - title: upload
+              description: |-
+                直传凭证。**只允许写、只对这一个键有效、短时有效。**
+
+                 上传时声明的内容类型固定为**中性那一档**：附件的下发类型与它无关
+                 （见 Attachment），因此那一次声明不产生任何对外可见的后果。
+            - $ref: '#/components/schemas/aladdin.objectstore.v1.DirectUploadCredential'
+      title: BeginAttachmentUploadResponse
       additionalProperties: false
     aladdin.galaxy.v1.BeginContentUploadRequest:
       type: object
@@ -3939,6 +4346,38 @@ components:
             $ref: '#/components/schemas/aladdin.galaxy.v1.AssetKindLimit'
           title: asset_limits
           description: 各类资产的字节上限。
+        attachmentEnabled:
+          type: boolean
+          title: attachment_enabled
+          description: |-
+            是否可用附件。为假时不渲染附件入口。
+
+             它与 asset_upload_enabled 同源（都取决于"有没有桶"）但**分开表达**：客户端要
+             能分别裁剪——一个部署可以只授其中一码。
+        maxAttachmentBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: max_attachment_bytes
+          description: |-
+            单份附件的字节上限。
+
+             它比资产最高那一档大得多：附件是构建产物，一个带依赖的发布包几百 MB 是常态。
+        projectAttachmentQuotaBytes:
+          oneOf:
+            - type: integer
+              title: integer
+            - type: string
+              title: string
+          title: project_attachment_quota_bytes
+          description: |-
+            一个工程的**附件总量**上限。
+
+             它与单文件上限是两件事：前者回答"一次能传多大"，后者回答"这个工程一共能放
+             多少"。只有一个的话，一份 500 MiB 的包重复传二十遍就把一个工程的存储吃完了，
+             而每一次都合规。
       title: Capabilities
       additionalProperties: false
       description: |-
@@ -4002,6 +4441,48 @@ components:
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Asset'
       title: CommitAssetUploadResponse
       additionalProperties: false
+    aladdin.galaxy.v1.CommitAttachmentUploadRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        attachmentId:
+          type: string
+          title: attachment_id
+        versionId:
+          type: string
+          title: version_id
+          description: |-
+            与服务端核对的那个声明。**两次调用之间服务端不保留任何状态**（那正是"未提交
+             的上传不留痕迹"的实现方式），因此标注的版本在这里被再次声明并重新校验。
+        digest:
+          type: string
+          title: digest
+          description: |-
+            **声明的**内容摘要（SHA-256 的十六进制）。它在提交时被核对（让存储侧算，
+             给不出时读回自己算），不一致即删除对象并拒绝。
+        filename:
+          type: string
+          title: filename
+          description: |-
+            展示用的原始文件名。**不进对象键，不参与任何判断**；它只进下载响应头，而那里
+             会先滤掉会破坏响应头的字符。
+        description:
+          type: string
+          title: description
+          description: 初始说明，可空。与"提交之后再调 UpdateAttachment"结果相同。
+      title: CommitAttachmentUploadRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.CommitAttachmentUploadResponse:
+      type: object
+      properties:
+        attachment:
+          allOf:
+            - title: attachment
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Attachment'
+      title: CommitAttachmentUploadResponse
+      additionalProperties: false
     aladdin.galaxy.v1.CommitContentUploadRequest:
       type: object
       properties:
@@ -4060,6 +4541,21 @@ components:
     aladdin.galaxy.v1.DeleteAssetResponse:
       type: object
       title: DeleteAssetResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.DeleteAttachmentRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        attachmentId:
+          type: string
+          title: attachment_id
+      title: DeleteAttachmentRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.DeleteAttachmentResponse:
+      type: object
+      title: DeleteAttachmentResponse
       additionalProperties: false
     aladdin.galaxy.v1.DeleteProjectRequest:
       type: object
@@ -4179,6 +4675,28 @@ components:
          文本条目的字节是按**内容摘要**寻址的内容对象；资产条目的字节是资产库里的
          一个媒体文件。**清单里没有字节本身**，因此同一个工程内、同一份未改动文件在
          多个版本、多次发布之间共享同一个对象。不跨工程共享。
+    aladdin.galaxy.v1.GetAttachmentDownloadURLRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        attachmentId:
+          type: string
+          title: attachment_id
+      title: GetAttachmentDownloadURLRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.GetAttachmentDownloadURLResponse:
+      type: object
+      properties:
+        url:
+          type: string
+          title: url
+          description: |-
+            短时下载地址。**调用方不拼**：响应头是签发策略定下来的，自己拼一条就少了那
+             一层保证（见 GetAttachmentDownloadURL 的说明）。
+      title: GetAttachmentDownloadURLResponse
+      additionalProperties: false
     aladdin.galaxy.v1.GetCapabilitiesRequest:
       type: object
       title: GetCapabilitiesRequest
@@ -4320,6 +4838,24 @@ components:
           title: project_tags
           description: '**整个工程**已有的标签，升序。用于筛选界面的候选，**不随本次筛选收窄**。'
       title: ListAssetsResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.ListAttachmentsRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+      title: ListAttachmentsRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.ListAttachmentsResponse:
+      type: object
+      properties:
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.Attachment'
+          title: attachments
+      title: ListAttachmentsResponse
       additionalProperties: false
     aladdin.galaxy.v1.ListProjectsRequest:
       type: object
@@ -4682,6 +5218,32 @@ components:
               description: 改完之后的资产（含短时读取地址）。
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Asset'
       title: UpdateAssetResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.UpdateAttachmentRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        attachmentId:
+          type: string
+          title: attachment_id
+        description:
+          type: string
+          title: description
+          description: 期望的说明。空串表示清空。
+      title: UpdateAttachmentRequest
+      additionalProperties: false
+      description: UpdateAttachmentRequest 表达的是说明的**期望完整状态**，不是增量。
+    aladdin.galaxy.v1.UpdateAttachmentResponse:
+      type: object
+      properties:
+        attachment:
+          allOf:
+            - title: attachment
+              description: 改完之后的附件（含短时下载地址）。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Attachment'
+      title: UpdateAttachmentResponse
       additionalProperties: false
     aladdin.galaxy.v1.UpdateProjectRequest:
       type: object
@@ -6542,6 +7104,9 @@ components:
         - ACTION_ASSET_META_SAVE
         - ACTION_ASSET_UPLOAD
         - ACTION_CLI_LOCAL_FAIL
+        - ACTION_ATTACHMENTS_OPEN
+        - ACTION_ATTACHMENT_UPLOAD
+        - ACTION_ATTACHMENT_META_SAVE
       description: |-
         Action 是**动作允许清单**。清单之外的动作一律丢弃。
 

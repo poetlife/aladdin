@@ -3,6 +3,7 @@ package gormstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -81,6 +82,12 @@ func TestStoreContract(t *testing.T) {
 				}
 				if _, err := store.GetAsset(ctx, "prj_没有", "ast_没有"); !errors.Is(err, galaxy.ErrAssetNotFound) {
 					t.Errorf("err = %v，期望 ErrAssetNotFound", err)
+				}
+				if _, err := store.GetAttachment(ctx, "prj_没有", "atc_没有"); !errors.Is(err, galaxy.ErrAttachmentNotFound) {
+					t.Errorf("err = %v，期望 ErrAttachmentNotFound", err)
+				}
+				if _, err := store.GetVersionByID(ctx, "prj_没有", "ver_没有"); !errors.Is(err, galaxy.ErrVersionNotFound) {
+					t.Errorf("err = %v，期望 ErrVersionNotFound", err)
 				}
 				if _, err := store.GetPublication(ctx, "pub_没有"); !errors.Is(err, galaxy.ErrPublicationNotFound) {
 					t.Errorf("err = %v，期望 ErrPublicationNotFound", err)
@@ -374,6 +381,106 @@ func TestStoreContract(t *testing.T) {
 				}
 			})
 
+			t.Run("附件往返、按行求和、删版本清空标注", func(t *testing.T) {
+				if err := store.CreateProject(ctx, galaxy.Project{
+					ID: "prj_atc", OwnerSubjectID: "usr_1", Name: "附件",
+					Slots:     []galaxy.ProjectSlot{{Slot: galaxy.SlotSite}},
+					CreatedAt: now, UpdatedAt: now,
+				}); err != nil {
+					t.Fatalf("写入工程失败: %v", err)
+				}
+				version, err := store.CreateVersion(ctx, galaxy.Version{
+					ID: "ver_atc", ProjectID: "prj_atc", Slot: galaxy.SlotSite,
+					Manifest: testManifest("index.html", "aa"), SavedAt: now,
+				})
+				if err != nil {
+					t.Fatalf("写入版本失败: %v", err)
+				}
+				// 按标识读回，且**不限槽**：标注只记版本标识，不带槽。
+				if _, err := store.GetVersionByID(ctx, "prj_atc", version.ID); err != nil {
+					t.Fatalf("按标识读版本失败: %v", err)
+				}
+
+				for i, size := range []int64{100, 200} {
+					if err := store.CreateAttachment(ctx, galaxy.Attachment{
+						ID:         fmt.Sprintf("atc_%d", i),
+						ProjectID:  "prj_atc",
+						VersionID:  version.ID,
+						Filename:   "build.zip",
+						SizeBytes:  size,
+						Digest:     "aa",
+						UploadedAt: now.Add(time.Duration(i) * time.Minute),
+					}); err != nil {
+						t.Fatalf("写入附件失败: %v", err)
+					}
+				}
+				attachments, err := store.ListAttachments(ctx, "prj_atc")
+				if err != nil {
+					t.Fatalf("列出附件失败: %v", err)
+				}
+				if len(attachments) != 2 {
+					t.Fatalf("附件数 = %d，期望 2", len(attachments))
+				}
+				// 按上传时间**倒序**：最近传的排在前面。
+				if attachments[0].ID != "atc_1" {
+					t.Errorf("首个附件 = %q，期望最近上传的那一个", attachments[0].ID)
+				}
+				// 配额读的是那些**行**里的字节数之和。
+				used, err := store.SumAttachmentBytes(ctx, "prj_atc")
+				if err != nil {
+					t.Fatalf("统计占用失败: %v", err)
+				}
+				if used != 300 {
+					t.Errorf("占用 = %d，期望 300", used)
+				}
+				// 别的工程算自己的。
+				if other, err := store.SumAttachmentBytes(ctx, "prj_没有"); err != nil || other != 0 {
+					t.Errorf("空工程的占用 = %d / %v，期望 0", other, err)
+				}
+
+				// 改说明只动那一列。
+				if err := store.UpdateAttachmentDescription(ctx, "prj_atc", "atc_0", "第一版产物"); err != nil {
+					t.Fatalf("改说明失败: %v", err)
+				}
+				updated, err := store.GetAttachment(ctx, "prj_atc", "atc_0")
+				if err != nil {
+					t.Fatalf("读取附件失败: %v", err)
+				}
+				if updated.Description != "第一版产物" || updated.SizeBytes != 100 ||
+					updated.VersionID != version.ID || updated.UploadedAt.IsZero() {
+					t.Errorf("附件 = %+v，期望只改了说明", updated)
+				}
+				// 别的工程下没有这份附件——与"不存在"同一个结论。
+				if _, err := store.GetAttachment(ctx, "prj_other", "atc_0"); !errors.Is(err, galaxy.ErrAttachmentNotFound) {
+					t.Errorf("err = %v，期望 ErrAttachmentNotFound", err)
+				}
+				if err := store.UpdateAttachmentDescription(ctx, "prj_atc", "atc_没有", "x"); !errors.Is(err, galaxy.ErrAttachmentNotFound) {
+					t.Errorf("err = %v，期望 ErrAttachmentNotFound", err)
+				}
+
+				// **删除版本把指向它的标注清空**：标注指向的东西已经不存在。
+				if err := store.DeleteVersion(ctx, "prj_atc", galaxy.SlotSite, version.ID); err != nil {
+					t.Fatalf("删版本失败: %v", err)
+				}
+				cleared, err := store.GetAttachment(ctx, "prj_atc", "atc_0")
+				if err != nil {
+					t.Fatalf("读取附件失败: %v", err)
+				}
+				if cleared.VersionID != "" {
+					t.Errorf("标注 = %q，期望被清空", cleared.VersionID)
+				}
+				if cleared.SizeBytes != 100 || cleared.Digest != "aa" {
+					t.Errorf("清空标注不该动附件的其它字段: %+v", cleared)
+				}
+
+				if err := store.DeleteAttachment(ctx, "prj_atc", "atc_0"); err != nil {
+					t.Fatalf("删除附件失败: %v", err)
+				}
+				if err := store.DeleteAttachment(ctx, "prj_atc", "atc_0"); !errors.Is(err, galaxy.ErrAttachmentNotFound) {
+					t.Errorf("重复删除 err = %v，期望 ErrAttachmentNotFound", err)
+				}
+			})
+
 			t.Run("产物清单按键读回且幂等", func(t *testing.T) {
 				publication := galaxy.Publication{
 					ID: "pub_1", ProjectID: "prj_a", VersionID: "ver_1",
@@ -489,6 +596,9 @@ func TestStoreContract(t *testing.T) {
 				}
 				if tags, err := store.ListProjectTags(ctx, "prj_a"); err != nil || len(tags) != 0 {
 					t.Errorf("资产标签仍在: %v / %v", err, tags)
+				}
+				if attachments, err := store.ListAttachments(ctx, "prj_a"); err != nil || len(attachments) != 0 {
+					t.Errorf("附件仍在: %v / %d 条", err, len(attachments))
 				}
 				if _, err := store.GetPublication(ctx, "pub_1"); !errors.Is(err, galaxy.ErrPublicationNotFound) {
 					t.Errorf("发布记录仍在: %v", err)

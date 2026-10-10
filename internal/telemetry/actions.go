@@ -60,6 +60,11 @@ var actionPolicies = map[telemetryv1.Action]actionPolicy{
 	telemetryv1.Action_ACTION_VERSIONS_OPEN:     {name: "versions.open"},
 	telemetryv1.Action_ACTION_ASSET_META_SAVE:   {name: "asset_meta.save"},
 	telemetryv1.Action_ACTION_ASSET_UPLOAD:      {name: "asset.upload"},
+	telemetryv1.Action_ACTION_ATTACHMENTS_OPEN:  {name: "attachments.open"},
+	telemetryv1.Action_ACTION_ATTACHMENT_UPLOAD: {name: "attachment.upload"},
+	telemetryv1.Action_ACTION_ATTACHMENT_META_SAVE: {
+		name: "attachment_meta.save",
+	},
 	telemetryv1.Action_ACTION_CLI_LOCAL_FAIL: {
 		name:      "cli.local_fail",
 		anonymous: true,

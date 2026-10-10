@@ -55,6 +55,12 @@ const (
 	// PermissionGalaxyAssetWrite 上传与删除工程资产
 	PermissionGalaxyAssetWrite PermissionCode = "galaxy.asset.write"
 
+	// PermissionGalaxyAttachmentRead 读取自己工程下的附件列表与下载地址
+	PermissionGalaxyAttachmentRead PermissionCode = "galaxy.attachment.read"
+
+	// PermissionGalaxyAttachmentWrite 上传与删除工程附件，以及改它的说明。上传的是任意类型的构建产物
+	PermissionGalaxyAttachmentWrite PermissionCode = "galaxy.attachment.write"
+
 	// PermissionSkillCatalogRead 检索平台技能目录、读取技能正文、收藏技能。只读
 	PermissionSkillCatalogRead PermissionCode = "skill.catalog.read"
 
@@ -83,6 +89,8 @@ var AllPermissionCodes = []PermissionCode{
 	PermissionGalaxyProjectPublish,
 	PermissionGalaxyAssetRead,
 	PermissionGalaxyAssetWrite,
+	PermissionGalaxyAttachmentRead,
+	PermissionGalaxyAttachmentWrite,
 	PermissionSkillCatalogRead,
 	PermissionSkillCatalogWrite,
 	PermissionAll,
@@ -175,6 +183,8 @@ var BuiltinRoles = []RoleDefinition{
 			PermissionGalaxyProjectPublish,
 			PermissionGalaxyAssetRead,
 			PermissionGalaxyAssetWrite,
+			PermissionGalaxyAttachmentRead,
+			PermissionGalaxyAttachmentWrite,
 			PermissionSkillCatalogRead,
 		},
 		Inherits:              nil,

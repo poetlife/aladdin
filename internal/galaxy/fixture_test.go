@@ -173,6 +173,23 @@ func (f *fixture) uploadAssetWithMeta(t *testing.T, projectID, declaredType, fil
 	return asset
 }
 
+// uploadAttachment 走一遍附件直传，并返回提交后的附件。
+func (f *fixture) uploadAttachment(t *testing.T, projectID, versionID, filename, description string, data []byte) Attachment {
+	t.Helper()
+	ctx := context.Background()
+	attachmentID, credential, err := f.service.BeginAttachmentUpload(ctx, testOwner, projectID, versionID, int64(len(data)))
+	if err != nil {
+		t.Fatalf("签发附件失败: %v", err)
+	}
+	f.objects.SimulateUpload(credential.Key, data)
+	attachment, err := f.service.CommitAttachmentUpload(ctx, testOwner, projectID, attachmentID,
+		versionID, ContentDigest(data), filename, description)
+	if err != nil {
+		t.Fatalf("上传附件失败: %v", err)
+	}
+	return attachment
+}
+
 // pushDraft 整组替换**站点槽**的草稿，断言失败即终止用例。
 func (f *fixture) pushDraft(t *testing.T, projectID string, entries []Entry) Draft {
 	t.Helper()

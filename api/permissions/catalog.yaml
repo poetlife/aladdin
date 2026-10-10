@@ -44,6 +44,10 @@ permissions:
     description: "读取自己工程下的资产列表与读取地址"
   - code: "galaxy.asset.write"
     description: "上传与删除工程资产"
+  - code: "galaxy.attachment.read"
+    description: "读取自己工程下的附件列表与下载地址"
+  - code: "galaxy.attachment.write"
+    description: "上传与删除工程附件，以及改它的说明。上传的是任意类型的构建产物"
   - code: "skill.catalog.read"
     description: "检索平台技能目录、读取技能正文、收藏技能。只读"
   - code: "skill.catalog.write"
@@ -105,6 +109,10 @@ roles:
       - "galaxy.project.publish"
       - "galaxy.asset.read"
       - "galaxy.asset.write"
+      # 附件与资产是两类资源、两条边界：资产会被发布到公开区，附件永远只给成员
+      # 下载。合成一码意味着"能传图片"必然连带"能传一个 500 MiB 的二进制"。
+      - "galaxy.attachment.read"
+      - "galaxy.attachment.write"
       # 创作者要能选用平台技能，否则这个目录对他不存在。**只有读**：往目录里
       # 放东西是 skill.curator 的事（见 docs/design/skill/README.md）。
       - "skill.catalog.read"

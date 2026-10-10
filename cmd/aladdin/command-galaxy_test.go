@@ -22,10 +22,11 @@ func executeRoot(t *testing.T, args ...string) error {
 // 一个都意味着有人无意中改动了脚本要面对的确认行为。
 func TestGalaxyDangerousCommandSet(t *testing.T) {
 	want := map[string]bool{
-		"aladdin galaxy project delete": true,
-		"aladdin galaxy version delete": true,
-		"aladdin galaxy asset delete":   true,
-		"aladdin galaxy publish":        true,
+		"aladdin galaxy project delete":    true,
+		"aladdin galaxy version delete":    true,
+		"aladdin galaxy asset delete":      true,
+		"aladdin galaxy attachment delete": true,
+		"aladdin galaxy publish":           true,
 	}
 	got := map[string]bool{}
 	var walk func(cmd *cobra.Command)
@@ -63,6 +64,7 @@ func TestGalaxyDangerousCommandsRequireYesWhenNotInteractive(t *testing.T) {
 		{"galaxy", "project", "delete", "prj_1"},
 		{"galaxy", "version", "delete", "prj_1", "ver_1"},
 		{"galaxy", "asset", "delete", "prj_1", "ast_1"},
+		{"galaxy", "attachment", "delete", "prj_1", "atc_1"},
 		{"galaxy", "publish", "prj_1", "ver_1"},
 	}
 	for _, args := range cases {
@@ -140,14 +142,14 @@ func TestGalaxyCommandTreeShape(t *testing.T) {
 		got[child.Name()] = true
 	}
 	for _, name := range []string{
-		"capabilities", "project", "draft", "version", "validate", "asset",
+		"capabilities", "project", "draft", "version", "validate", "asset", "attachment",
 		"publish", "unpublish", "publication",
 	} {
 		if !got[name] {
 			t.Errorf("galaxy 下缺少子命令 %q", name)
 		}
 	}
-	if len(got) != 9 {
-		t.Errorf("galaxy 下子命令数量变了：期望 9，实际 %d", len(got))
+	if len(got) != 10 {
+		t.Errorf("galaxy 下子命令数量变了：期望 10，实际 %d", len(got))
 	}
 }

@@ -5,8 +5,8 @@
 // 一个已经准备好表的 *gorm.DB。
 //
 // 五张表由四个文件分担：本文件是存储的入口、**清单的序列化**与记录到领域类型的
-// 转换，project.go 管工程、草稿与版本，asset.go 管资产，publication.go 管发布
-// 记录。
+// 转换，project.go 管工程、草稿与版本，asset.go 管资产，attachment.go 管附件
+// （工程附件与资产并列，是两类资源），publication.go 管发布记录。
 package gormstore
 
 import (
@@ -129,6 +129,20 @@ func toAsset(rec database.GalaxyAssetRecord) galaxy.Asset {
 		Notes:      rec.Notes,
 		// Tags 不在这里取：它们在另一张表上，由调用方合并（见 asset.go 的
 		// assetTags）。
+	}
+}
+
+func toAttachment(rec database.GalaxyAttachmentRecord) galaxy.Attachment {
+	return galaxy.Attachment{
+		ID:                  rec.ID,
+		ProjectID:           rec.ProjectID,
+		VersionID:           rec.VersionID,
+		Filename:            rec.Filename,
+		SizeBytes:           rec.SizeBytes,
+		Digest:              rec.Digest,
+		Description:         rec.Description,
+		UploadedBySubjectID: rec.UploadedBySubjectID,
+		UploadedAt:          rec.UploadedAt,
 	}
 }
 

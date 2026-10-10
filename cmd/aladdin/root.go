@@ -262,6 +262,20 @@ func exactArgs(n int) cobra.PositionalArgs {
 	}
 }
 
+// rangeArgs 与 cobra.RangeArgs 等价，但把错误标记为用法错误。
+//
+// 它服务的是"最后一个位置参数可省"这类命令（如 attachment download 的目标路径）：
+// 给三个用它、给两个走缺省，两者都是正常用法。
+func rangeArgs(minimum, maximum int) cobra.PositionalArgs {
+	validate := cobra.RangeArgs(minimum, maximum)
+	return func(cmd *cobra.Command, args []string) error {
+		if err := validate(cmd, args); err != nil {
+			return usageErrorf("%s", err)
+		}
+		return nil
+	}
+}
+
 // effectiveScope 返回本次调用应当声明的作用域。
 //
 // 显式 --scope 优先，否则使用凭证自身绑定的作用域。

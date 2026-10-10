@@ -340,6 +340,27 @@ func (s *Store) PresignGet(ctx context.Context, key string, ttl time.Duration) (
 	return signed.String(), nil
 }
 
+// PresignDownload 实现 objectstore.Store：签发一条**强制下载**的短时地址。
+//
+// 固定的两个响应头通过**覆盖响应头**那两个查询参数交给对象存储（COS 的
+// `response-content-type` / `response-content-disposition`），它们在请求被真正
+// 取用时才生效，因此对象自己的元数据不参与——不管上传时声明过什么、也不管文件
+// 名以什么结尾，浏览器都只会把它存下来。
+//
+// 它们**参与签名**：预签名是对整条请求（含查询串）算出来的，因此地址一旦签发，
+// 那两个参数就改不动——改一个字节都会让签名对不上。这正是"响应头由签发策略
+// 固定"这句话的落点，而不是一句约定。
+func (s *Store) PresignDownload(ctx context.Context, key, filename string, ttl time.Duration) (string, error) {
+	signed, err := s.client.Object.GetPresignedURL2(ctx, http.MethodGet, key, ttl, &cos.ObjectGetOptions{
+		ResponseContentType:        objectstore.NeutralContentType,
+		ResponseContentDisposition: objectstore.DownloadDisposition(filename),
+	})
+	if err != nil {
+		return "", fmt.Errorf("签发下载地址失败: %w", err)
+	}
+	return signed.String(), nil
+}
+
 // PublicWriter 是**公开区**的写入口：把发布物引用的字节写进桶，并把那些对象设成
 // 公开读。
 //
