@@ -196,6 +196,14 @@ const (
 	// 命令行本地失败：配置无效、未登录、参数校验不过——都在出站之前结束，服务端
 	// 请求留痕里没有它们。result=fail；attrs 带 command 与 reason。
 	Action_ACTION_CLI_LOCAL_FAIL Action = 14
+	// 打开附件弹层。result=ok。
+	Action_ACTION_ATTACHMENTS_OPEN Action = 15
+	// 选择并开始上传附件。result=ok/fail/blocked；blocked 表示按声明的上限在本地
+	// 早退（超过单文件上限），请求没发出去。
+	Action_ACTION_ATTACHMENT_UPLOAD Action = 16
+	// 保存附件说明。result=ok/fail/blocked；blocked 表示表单校验没过就返回，
+	// 请求没发出去。
+	Action_ACTION_ATTACHMENT_META_SAVE Action = 17
 )
 
 // Enum value maps for Action.
@@ -217,24 +225,30 @@ var (
 		13: "ACTION_ASSET_UPLOAD",
 		18: "ACTION_DRAFT_RESTORE",
 		14: "ACTION_CLI_LOCAL_FAIL",
+		15: "ACTION_ATTACHMENTS_OPEN",
+		16: "ACTION_ATTACHMENT_UPLOAD",
+		17: "ACTION_ATTACHMENT_META_SAVE",
 	}
 	Action_value = map[string]int32{
-		"ACTION_UNSPECIFIED":       0,
-		"ACTION_AUTH_LOGIN":        1,
-		"ACTION_PROJECT_LIST_OPEN": 2,
-		"ACTION_EDITOR_OPEN":       3,
-		"ACTION_DRAFT_SAVE":        4,
-		"ACTION_PUBLISH":           5,
-		"ACTION_UNPUBLISH":         6,
-		"ACTION_PROJECT_DELETE":    7,
-		"ACTION_PREVIEW_TOGGLE":    8,
-		"ACTION_PREVIEW_OPEN":      9,
-		"ACTION_ASSETS_OPEN":       10,
-		"ACTION_VERSIONS_OPEN":     11,
-		"ACTION_ASSET_META_SAVE":   12,
-		"ACTION_ASSET_UPLOAD":      13,
-		"ACTION_DRAFT_RESTORE":     18,
-		"ACTION_CLI_LOCAL_FAIL":    14,
+		"ACTION_UNSPECIFIED":          0,
+		"ACTION_AUTH_LOGIN":           1,
+		"ACTION_PROJECT_LIST_OPEN":    2,
+		"ACTION_EDITOR_OPEN":          3,
+		"ACTION_DRAFT_SAVE":           4,
+		"ACTION_PUBLISH":              5,
+		"ACTION_UNPUBLISH":            6,
+		"ACTION_PROJECT_DELETE":       7,
+		"ACTION_PREVIEW_TOGGLE":       8,
+		"ACTION_PREVIEW_OPEN":         9,
+		"ACTION_ASSETS_OPEN":          10,
+		"ACTION_VERSIONS_OPEN":        11,
+		"ACTION_ASSET_META_SAVE":      12,
+		"ACTION_ASSET_UPLOAD":         13,
+		"ACTION_DRAFT_RESTORE":        18,
+		"ACTION_CLI_LOCAL_FAIL":       14,
+		"ACTION_ATTACHMENTS_OPEN":     15,
+		"ACTION_ATTACHMENT_UPLOAD":    16,
+		"ACTION_ATTACHMENT_META_SAVE": 17,
 	}
 )
 
@@ -559,7 +573,7 @@ const file_aladdin_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18SURFACE_WEB_PROJECT_LIST\x10\x02\x12\x16\n" +
 	"\x12SURFACE_WEB_EDITOR\x10\x03\x12\x17\n" +
 	"\x13SURFACE_WEB_PREVIEW\x10\x04\x12\x0f\n" +
-	"\vSURFACE_CLI\x10\x05*\x99\x03\n" +
+	"\vSURFACE_CLI\x10\x05*\xf5\x03\n" +
 	"\x06Action\x12\x16\n" +
 	"\x12ACTION_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11ACTION_AUTH_LOGIN\x10\x01\x12\x1c\n" +
@@ -577,7 +591,10 @@ const file_aladdin_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x16ACTION_ASSET_META_SAVE\x10\f\x12\x17\n" +
 	"\x13ACTION_ASSET_UPLOAD\x10\r\x12\x18\n" +
 	"\x14ACTION_DRAFT_RESTORE\x10\x12\x12\x19\n" +
-	"\x15ACTION_CLI_LOCAL_FAIL\x10\x0e*g\n" +
+	"\x15ACTION_CLI_LOCAL_FAIL\x10\x0e\x12\x1b\n" +
+	"\x17ACTION_ATTACHMENTS_OPEN\x10\x0f\x12\x1c\n" +
+	"\x18ACTION_ATTACHMENT_UPLOAD\x10\x10\x12\x1f\n" +
+	"\x1bACTION_ATTACHMENT_META_SAVE\x10\x11*g\n" +
 	"\x06Result\x12\x16\n" +
 	"\x12RESULT_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tRESULT_OK\x10\x01\x12\x0f\n" +

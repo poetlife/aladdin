@@ -15,6 +15,7 @@ import {
 import {
   type Asset,
   AssetSchema,
+  AttachmentSchema,
   CapabilitiesSchema,
   DraftSchema,
   FileEntrySchema,
@@ -22,6 +23,7 @@ import {
   GetDraftResponseSchema,
   GetProjectResponseSchema,
   ListAssetsResponseSchema,
+  ListAttachmentsResponseSchema,
   ListDraftSnapshotsResponseSchema,
   DraftSnapshotSchema,
   UpdateVersionResponseSchema,
@@ -79,6 +81,12 @@ vi.mock('../../api/galaxy', () => ({
   commitAssetUpload: vi.fn(),
   updateAsset: vi.fn(),
   deleteAsset: vi.fn(),
+  listAttachments: vi.fn(),
+  beginAttachmentUpload: vi.fn(),
+  commitAttachmentUpload: vi.fn(),
+  updateAttachment: vi.fn(),
+  deleteAttachment: vi.fn(),
+  getAttachmentDownloadURL: vi.fn(),
   publish: vi.fn(),
   unpublish: vi.fn(),
 }))
@@ -99,6 +107,9 @@ function caps(
   return create(GetCapabilitiesResponseSchema, {
     capabilities: create(CapabilitiesSchema, {
       assetUploadEnabled,
+      // 附件与资产同源（都取决于"有没有桶"），因此跟着它走。
+      attachmentEnabled: assetUploadEnabled,
+      maxAttachmentBytes: 500n * 1024n * 1024n,
       // 预览还要求发布域；没有桶就没有内容，也就没有预览（与服务端的判据一致）。
       previewEnabled: assetUploadEnabled,
       ...overrides,
@@ -228,6 +239,8 @@ beforeEach(() => {
         PermissionCodes.GalaxyProjectPublish,
         PermissionCodes.GalaxyAssetRead,
         PermissionCodes.GalaxyAssetWrite,
+        PermissionCodes.GalaxyAttachmentRead,
+        PermissionCodes.GalaxyAttachmentWrite,
       ],
     }),
   )
@@ -270,6 +283,9 @@ beforeEach(() => {
   // 打开页面就会自动校验一次，因此每个用例都要有一个默认结论；
   // 不补的话 `vi.fn()` 返回 undefined，读 `response.problems` 直接抛。
   vi.mocked(galaxyApi.validateDraft).mockResolvedValue(create(ValidateDraftResponseSchema, {}))
+  // 打开页面也会拉一次附件清单（与资产同源：能力启用且持有读权限）。它排在
+  // 校验与预览之前，因此不补一个默认值会让那一串顺序 await 在这里断掉。
+  vi.mocked(galaxyApi.listAttachments).mockResolvedValue(create(ListAttachmentsResponseSchema, {}))
   // 同理，页面挂载即订阅：默认给一条安静的流（见 quietStream）。
   vi.mocked(eventsApi.watchTopics).mockImplementation((_topics, signal) =>
     quietStream(signal),
@@ -355,6 +371,52 @@ describe('工作台的形态', () => {
     await clickButton(findButtonExact(container, '资产'), '资产')
     expect(document.body.textContent).toContain('上传资产')
   })
+
+  // 附件与资产是两个入口：资产是"页面要用的素材"，附件是"给成员下载的构建产物"。
+  it('附件从顶栏以弹层打开，列出文件名、大小与摘要', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+    vi.mocked(galaxyApi.listAttachments).mockResolvedValue(
+      create(ListAttachmentsResponseSchema, {
+        attachments: [
+          create(AttachmentSchema, {
+            id: 'atc_1',
+            filename: 'build.zip',
+            sizeBytes: 2048n,
+            digest: 'aa'.repeat(32),
+            description: '第一版产物',
+            versionId: 'ver_1',
+            uploadedAt: '2026-03-01T12:00:00Z',
+            downloadUrl: 'memory://galaxy/prj_x/attachments/atc_1',
+          }),
+        ],
+      }),
+    )
+
+    const container = await renderEditor()
+    await clickButton(findButtonExact(container, '附件'), '附件')
+
+    const panel = document.body.textContent ?? ''
+    expect(panel).toContain('build.zip')
+    expect(panel).toContain('2 KB')
+    expect(panel).toContain('第一版产物')
+    expect(panel).toContain('复制 sha256')
+    // **类型不限**：面板上没有任何"只收图片/视频"的提示，代之以"强制下载"的说明。
+    expect(panel).toContain('强制下载')
+    expect(galaxyApi.listAttachments).toHaveBeenCalledWith('p1')
+  })
+
+  // 没配对象存储时附件整体缺席：不渲染一个点了报错的入口（与资产同一条）。
+  it('未配置对象存储时不渲染附件入口', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(
+      caps({ assetUploadEnabled: false, previewEnabled: false, publishEnabled: false }),
+    )
+
+    const container = await renderEditor()
+
+    expect(findButtonExact(container, '附件'), '附件入口不该被渲染').toBeUndefined()
+    expect(findButtonExact(container, '资产'), '资产入口不该被渲染').toBeUndefined()
+    expect(container.textContent).toContain('这个部署没有配置对象存储')
+  })
 })
 
 // 窄屏（手机竖屏）：chrome 折叠，预览/源码成为首屏主体。宽屏形态见上一组——
@@ -414,6 +476,20 @@ describe('窄屏下的形态', () => {
     })
 
     expect(document.body.textContent).toContain('上传资产')
+  })
+
+  it('「更多」里能打开附件面板', async () => {
+    vi.mocked(galaxyApi.getCapabilities).mockResolvedValue(caps())
+
+    const container = await renderEditor()
+    await settle()
+
+    await openMore(container)
+    await act(async () => {
+      menuItem('附件')?.click()
+    })
+
+    expect(document.body.textContent).toContain('上传附件')
   })
 
   it('已发布时状态条一行：短标签可复制、长地址不常驻、撤回仍在', async () => {

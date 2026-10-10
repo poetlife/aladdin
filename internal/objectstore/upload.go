@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -217,6 +218,19 @@ type Store interface {
 	// **它不与存储交互**：预签名是对"地址 + 密钥 + 有效期"做一次签名，对象
 	// 存不存在要到真正取的时候才知道。
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
+
+	// PresignDownload 签发一个短时有效的**下载**地址：响应头被固定下来，因此
+	// 不管那个对象是什么，浏览器都只会把它**存下来**，不会渲染、也不会执行。
+	//
+	// 固定下来的两项由本包给出（见 DownloadDisposition 与 NeutralContentType），
+	// 调用方只给文件名——**对象自己的内容类型不参与**。这是"收任意类型"能成立的
+	// 前提：galaxy 的附件靠它把 zip、二进制与 `.html` 一视同仁地送出去
+	// （见 docs/design/galaxy/attachments.md）。
+	//
+	// filename 是**客户端给的自由文本**，本包负责滤掉会破坏响应头的字符（见
+	// DownloadDisposition）。调用方不得自己拼一段 disposition：响应头注入的
+	// 入口只有这一处。
+	PresignDownload(ctx context.Context, key, filename string, ttl time.Duration) (string, error)
 }
 
 // NormalizeContentType 把上传方声明的类型归一成 `type/subtype` 的小写形式。
@@ -233,6 +247,103 @@ func NormalizeContentType(declared string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
+// downloadFilenameMaxRunes 是下载响应头里那个文件名的长度上限。
+//
+// 它比各模块存下来的文件名上限小得多：响应头里的名字只影响"存到本地叫什么"，
+// 而一个由客户端决定长度的取值直接进响应头，是**每一行响应都要付**的开销。
+const downloadFilenameMaxRunes = 120
+
+// DownloadDisposition 构造"强制下载"要用的 Content-Disposition 取值（唯一入口）。
+//
+// 它做两件事，顺序不能换：
+//
+//  1. **滤掉会破坏响应头的字符**。文件名是客户端给的自由文本，可能含引号、
+//     反斜杠、控制字符与换行——直接拼进去就是一处响应头注入（换行尤其：它可以
+//     凭空多出一个响应头）。滤过之后的名字**只用于展示**，丢掉的字符不改变
+//     任何判定。
+//  2. **同时给两种写法**：一段 ASCII 回退名给不认 `filename*` 的老客户端，加上
+//     RFC 5987 的 `filename*=UTF-8”…` 带上完整名字。只给后者会让一部分客户端
+//     存成一个乱码名字，只给前者则中文名丢了。
+//
+// 名字为空（或滤完为空）时只给 `attachment`：**"要下载"这件事不依赖有名**。
+func DownloadDisposition(filename string) string {
+	name := sanitizeFilename(filename)
+	if name == "" {
+		return "attachment"
+	}
+	return fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s",
+		asciiFilename(name), encodeRFC5987(name))
+}
+
+// sanitizeFilename 把一段自由文本变成可以进响应头的文件名（唯一入口）。
+//
+// 先去掉首尾空白再替换：一个只由换行组成的名字因此落进"没有名字"那一档，而不是
+// 变成一句 `filename="_"`——后者看着像用户真给了一个下划线开头的文件。
+//
+// 替换而不是删除：删掉会让 `my\file.zip` 变成 `myfile.zip`，用户看到的与他给的
+// 差一截却说不出差在哪；换成 `_` 则一眼看得出这里有东西被改过。
+func sanitizeFilename(filename string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case r == '"' || r == '\\':
+			// 引号会提前闭合 `filename="…"`，反斜杠是它的转义字符。
+			return '_'
+		case r < 0x20 || r == 0x7f:
+			// 控制字符**包括换行**：它可以凭空多出一个响应头。它们落在中间时同样
+			// 要换掉（首尾的那些由 TrimSpace 处理）。
+			return '_'
+		default:
+			return r
+		}
+	}, strings.TrimSpace(filename))
+	cleaned = strings.TrimSpace(cleaned)
+	runes := []rune(cleaned)
+	if len(runes) > downloadFilenameMaxRunes {
+		cleaned = string(runes[:downloadFilenameMaxRunes])
+	}
+	return cleaned
+}
+
+// asciiFilename 把文件名压成一段纯 ASCII 的回退名。
+func asciiFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r >= 0x20 && r < 0x7f {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	return b.String()
+}
+
+// encodeRFC5987 按 RFC 5987 的 attr-char 集合做百分号编码。
+//
+// 刻意不用 `url.PathEscape` / `url.QueryEscape`：前者会把 `;` 与 `,` 原样留下
+// （它们是分段符，留着就把一个参数拆成两个），后者把空格编成 `+`（那是表单
+// 编码的规矩，不是这里的）。
+func encodeRFC5987(value string) string {
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if isRFC5987AttrChar(c) {
+			b.WriteByte(c)
+			continue
+		}
+		fmt.Fprintf(&b, "%%%02X", c)
+	}
+	return b.String()
+}
+
+// isRFC5987AttrChar 判定一个字节是否属于 attr-char（RFC 5987 第 3.2.1 节）。
+func isRFC5987AttrChar(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	}
+	return strings.IndexByte("!#$&+-.^_`|~", c) >= 0
+}
+
 // IssuedUpload 记录一次签发，供测试断言"我们发出的策略是什么"。
 //
 // **它只存在于内存实现上。** 生产实现不保留签发明细：凭证本身是短时的一次性
@@ -240,6 +351,15 @@ func NormalizeContentType(declared string) string {
 type IssuedUpload struct {
 	Key   string
 	Rules []TypeRule
+}
+
+// IssuedDownload 记录一次下载地址的签发，供测试断言"我们固定下了什么响应头"。
+//
+// 与 IssuedUpload 同一条理由只存在于内存实现上：生产实现不保留签发明细。
+type IssuedDownload struct {
+	Key         string
+	ContentType string
+	Disposition string
 }
 
 // MemoryStore 是 Store 的内存实现。
@@ -261,6 +381,9 @@ type MemoryStore struct {
 	// ——批量正是这次改动的全部意义（见 DeleteMany），而它在生产实现上表现为
 	// "一次请求"，离线看不见。
 	deleteBatchSizes []int
+
+	// downloads 记录每一次下载地址签发时固定下来的响应头，理由见 IssuedDownload。
+	downloads []IssuedDownload
 
 	// IssueErr 允许测试注入签发失败。
 	IssueErr error
@@ -438,6 +561,37 @@ func (s *MemoryStore) Put(_ context.Context, key, _ string, data []byte) error {
 // 如此，而"下发的是地址而不是字节"这一点在两种实现上是同一个结论。
 func (s *MemoryStore) PresignGet(_ context.Context, key string, ttl time.Duration) (string, error) {
 	return "memory://" + key + "?ttl=" + ttl.String(), nil
+}
+
+// PresignDownload 实现 Store：记下这次固定下来的响应头，并给出一个带上它的地址。
+//
+// 内存实现不产生真的签名，因此它把"固定了什么"记在 Issued() 旁边（见
+// Downloads），好让上层能离线断言"下载这一档确实固定了响应头"——真正被存储侧
+// 执行的那一条只能在部署后冒烟里验（与"桶真的照做了策略"同一处边界）。
+func (s *MemoryStore) PresignDownload(_ context.Context, key, filename string, ttl time.Duration) (string, error) {
+	disposition := DownloadDisposition(filename)
+	s.mu.Lock()
+	s.downloads = append(s.downloads, IssuedDownload{
+		Key:         key,
+		ContentType: NeutralContentType,
+		Disposition: disposition,
+	})
+	s.mu.Unlock()
+
+	return "memory://" + key +
+		"?response-content-type=" + url.QueryEscape(NeutralContentType) +
+		"&response-content-disposition=" + url.QueryEscape(disposition) +
+		"&ttl=" + ttl.String(), nil
+}
+
+// Downloads 返回历次下载地址签发时固定下来的响应头（只存在于内存实现上）。
+func (s *MemoryStore) Downloads() []IssuedDownload {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]IssuedDownload, len(s.downloads))
+	copy(out, s.downloads)
+	return out
 }
 
 var _ Store = (*MemoryStore)(nil)

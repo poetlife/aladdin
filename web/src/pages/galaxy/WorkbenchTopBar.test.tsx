@@ -74,11 +74,13 @@ async function renderTopBar({
           publishEnabled
           contentEnabled
           assetPanelEnabled
+          attachmentPanelEnabled
           versionBusy={false}
           publishBusy={false}
           draftHasProblems={false}
           draftEntries={[]}
           onOpenAssets={() => {}}
+          onOpenAttachments={() => {}}
           onOpenVersions={() => {}}
           onSaveVersion={() => {}}
           onPublish={() => {}}

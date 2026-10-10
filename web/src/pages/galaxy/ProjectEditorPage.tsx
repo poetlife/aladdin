@@ -11,6 +11,7 @@ import { PermissionCodes } from '../../gen/permission-codes'
 import {
   ContentSlot,
   type Asset,
+  type Attachment,
   type Capabilities,
   type DraftSnapshot,
   type FileEntry,
@@ -24,6 +25,7 @@ import { AppModal } from '../../ui/AppModal'
 import { useWatch } from '../../watch/use-watch'
 import { projectTopic } from '../../watch/topics'
 import { AssetLibrary } from './AssetLibrary'
+import { AttachmentList } from './AttachmentList'
 import { DraftHistory } from './DraftHistory'
 import { LifecycleStrip } from './LifecycleStrip'
 import { formatTime } from './format-time'
@@ -46,8 +48,8 @@ const NARROW_STAGE_MIN_HEIGHT = 360
 /** 预览与源码是两个模式，共用这一块面积（见 authoring.md 的"这一页的形态"）。 */
 type StageMode = 'preview' | 'source'
 
-/** 顶栏能打开的两个集合。它们是弹层，不是页面上的常驻分区。 */
-type Panel = 'assets' | 'versions'
+/** 顶栏能打开的集合。它们是弹层，不是页面上的常驻分区。 */
+type Panel = 'assets' | 'attachments' | 'versions'
 
 interface failure {
   message: string
@@ -86,6 +88,8 @@ export function ProjectEditorPage(): React.ReactNode {
   const canWrite = usePermission(PermissionCodes.GalaxyProjectWrite)
   const canReadAssets = usePermission(PermissionCodes.GalaxyAssetRead)
   const canWriteAssets = usePermission(PermissionCodes.GalaxyAssetWrite)
+  const canReadAttachments = usePermission(PermissionCodes.GalaxyAttachmentRead)
+  const canWriteAttachments = usePermission(PermissionCodes.GalaxyAttachmentWrite)
   const canPublish = usePermission(PermissionCodes.GalaxyProjectPublish)
 
   const [project, setProject] = useState<Project | null>(null)
@@ -101,6 +105,9 @@ export function ProjectEditorPage(): React.ReactNode {
   // （见 docs/design/galaxy/project-versioning.md）。
   const [snapshots, setSnapshots] = useState<DraftSnapshot[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
+  // 附件与资产是两类东西（见 docs/design/galaxy/attachments.md），因此各有一份
+  // 清单、各走各的调用。它们都挂在工程上，**不按槽分**。
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   // 资产的标签候选：**整个工程**已有的标签，由服务端下发。它不随当前筛选收窄，
   // 否则筛一次之后候选就只剩下筛出来的那几个（见 ListAssets 的说明）。
   const [assetTags, setAssetTags] = useState<string[]>([])
@@ -282,6 +289,19 @@ export function ProjectEditorPage(): React.ReactNode {
   }
 
   /**
+   * 拉一次附件清单。
+   *
+   * 它**不随内容槽变化**：附件挂在工程上（见 proto），切槽不该重拉它。
+   */
+  const loadAttachments = useCallback(async (): Promise<void> => {
+    if (projectId === undefined || !canReadAttachments) {
+      return
+    }
+    const response = await galaxyApi.listAttachments(projectId)
+    setAttachments(response.attachments)
+  }, [projectId, canReadAttachments])
+
+  /**
    * 拉一次版本与草稿历史。
    *
    * 两者一次拉齐：它们是同一个弹层的两个页签，而"版本列表刚更新、历史还停在旧
@@ -377,6 +397,14 @@ export function ProjectEditorPage(): React.ReactNode {
         setAssetTags([])
       }
 
+      // 附件与资产各有各的读权限码，因此各判各的：一个部署可以只授其中一码。
+      if (capabilityResponse.capabilities?.attachmentEnabled === true && canReadAttachments) {
+        const attachmentResponse = await galaxyApi.listAttachments(projectId)
+        setAttachments(attachmentResponse.attachments)
+      } else {
+        setAttachments([])
+      }
+
       // 打开页面就把"这份草稿能不能发布"问出来：用户到这一页本来就是来问这件事的。
       // **桶是内容的前提**：没配置桶时字节没有地方放，也就不存在草稿与版本——
       // 那时不去问校验与预览，改由下面渲染一句说明（见 spec 的"未配置时降级正确"）。
@@ -395,7 +423,7 @@ export function ProjectEditorPage(): React.ReactNode {
     } finally {
       setLoading(false)
     }
-  }, [projectId, canReadAssets, validate, renderPreview])
+  }, [projectId, canReadAssets, canReadAttachments, validate, renderPreview])
 
   useEffect(() => {
     void load()
@@ -421,6 +449,14 @@ export function ProjectEditorPage(): React.ReactNode {
       const assetsPromise =
         contentEnabled && canReadAssets
           ? galaxyApi.listAssets(projectId).then(
+              (value) => ({ ok: true as const, value }),
+              (err: unknown) => ({ ok: false as const, err }),
+            )
+          : null
+      // 附件与资产各判各的权限，重拉也一样。
+      const attachmentsPromise =
+        contentEnabled && canReadAttachments
+          ? galaxyApi.listAttachments(projectId).then(
               (value) => ({ ok: true as const, value }),
               (err: unknown) => ({ ok: false as const, err }),
             )
@@ -494,6 +530,21 @@ export function ProjectEditorPage(): React.ReactNode {
           setFailure({ message: messageOf(assetResult.err), traceId: traceIdOf(assetResult.err) })
         }
       }
+
+      if (attachmentsPromise !== null) {
+        const attachmentResult = await attachmentsPromise
+        if (seq !== refreshSeq.current) {
+          return
+        }
+        if (attachmentResult.ok) {
+          setAttachments(attachmentResult.value.attachments)
+        } else {
+          setFailure({
+            message: messageOf(attachmentResult.err),
+            traceId: traceIdOf(attachmentResult.err),
+          })
+        }
+      }
     } catch (err) {
       if (seq !== refreshSeq.current) {
         return
@@ -505,6 +556,7 @@ export function ProjectEditorPage(): React.ReactNode {
     projectId,
     capabilities,
     canReadAssets,
+    canReadAttachments,
     activeSlot,
     previewPath,
     selectedPath,
@@ -726,6 +778,7 @@ export function ProjectEditorPage(): React.ReactNode {
       publishEnabled={capabilities?.publishEnabled === true}
       contentEnabled={contentEnabled}
       assetPanelEnabled={capabilities?.assetUploadEnabled === true && canReadAssets}
+      attachmentPanelEnabled={capabilities?.attachmentEnabled === true && canReadAttachments}
       versionBusy={contentBusy}
       publishBusy={publishBusy}
       draftHasProblems={validation.status === 'problems'}
@@ -733,6 +786,10 @@ export function ProjectEditorPage(): React.ReactNode {
       onOpenAssets={() => {
         setPanel('assets')
         void openPanel(Action.ASSETS_OPEN, () => loadAssets(assetFilter))
+      }}
+      onOpenAttachments={() => {
+        setPanel('attachments')
+        void openPanel(Action.ATTACHMENTS_OPEN, () => loadAttachments())
       }}
       onOpenVersions={() => {
         setPanel('versions')
@@ -798,6 +855,23 @@ export function ProjectEditorPage(): React.ReactNode {
           onFilterChange={handleAssetFilterChange}
           canWrite={canWriteAssets}
           onChanged={() => loadAssets(assetFilter)}
+        />
+      </AppModal>
+
+      <AppModal
+        title="附件"
+        open={panel === 'attachments'}
+        onCancel={() => setPanel(null)}
+        footer={null}
+        width={860}
+        destroyOnHidden
+      >
+        <AttachmentList
+          projectId={project.id}
+          maxBytes={capabilities?.maxAttachmentBytes ?? 0n}
+          attachments={attachments}
+          canWrite={canWriteAttachments}
+          onChanged={loadAttachments}
         />
       </AppModal>
 

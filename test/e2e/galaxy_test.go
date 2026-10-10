@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 	galaxyv1 "github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1"
 	"github.com/poetlife/aladdin/api/gen/aladdin/galaxy/v1/galaxyv1connect"
 	"github.com/poetlife/aladdin/internal/galaxy"
+	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
@@ -59,6 +61,37 @@ func connectGalaxyAs(t *testing.T, h harness, token, client string) galaxyv1conn
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// otherSubjectToken 与 otherSubjectID 是注入进来的第二个主体。
+//
+// 它在每个用例里都指向**这一台**被测服务端：夹具每次 startServer 都是新的一份，
+// 因此两个用例各注入一次不会互相看见。
+const (
+	otherSubjectToken = "e2e-other-token"
+	otherSubjectID    = "e2e-other-user"
+)
+
+// injectOtherSubject 往装配里加第二个主体，并给它与第一个相同的创作者角色。
+//
+// 它走的是与生产完全相同的入口（Authenticator 与 Store）："另一个主体的凭证能做
+// 什么"这件事，只有真发一次带那个令牌的请求才算验过。
+func injectOtherSubject(t *testing.T, h harness) {
+	t.Helper()
+	ctx := context.Background()
+	h.srv.Authenticator().Add(otherSubjectToken, rbac.Subject{
+		ID: otherSubjectID, Type: rbac.SubjectTypeUser, DefaultScope: testScope,
+	})
+	if err := h.srv.Store().PutSubject(ctx, rbac.Subject{
+		ID: otherSubjectID, Type: rbac.SubjectTypeUser, DefaultScope: testScope,
+	}); err != nil {
+		t.Fatalf("注入第二个主体失败: %v", err)
+	}
+	if err := h.srv.Store().Bind(ctx, rbac.RoleBinding{
+		SubjectID: otherSubjectID, RoleID: rbac.RoleGalaxyAuthor, Scope: testScope,
+	}); err != nil {
+		t.Fatalf("注入第二个绑定失败: %v", err)
+	}
 }
 
 // pushContentOverRPC 走一遍内容对象的直传：签发 → 把字节写进假存储（这一步扮演
@@ -678,22 +711,8 @@ func TestGalaxyOwnershipCannotBeBypassed(t *testing.T) {
 	projectID := createProject(t, owner, "别人的工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
 
 	// 注入第二个主体，并给它同一个角色：它能创作，但只能碰自己的东西。
-	const otherToken = "e2e-other-token"
-	const otherSubject = "e2e-other-user"
-	h.srv.Authenticator().Add(otherToken, rbac.Subject{
-		ID: otherSubject, Type: rbac.SubjectTypeUser, DefaultScope: testScope,
-	})
-	if err := h.srv.Store().PutSubject(ctx, rbac.Subject{
-		ID: otherSubject, Type: rbac.SubjectTypeUser, DefaultScope: testScope,
-	}); err != nil {
-		t.Fatalf("注入第二个主体失败: %v", err)
-	}
-	if err := h.srv.Store().Bind(ctx, rbac.RoleBinding{
-		SubjectID: otherSubject, RoleID: rbac.RoleGalaxyAuthor, Scope: testScope,
-	}); err != nil {
-		t.Fatalf("注入第二个绑定失败: %v", err)
-	}
-	intruder := connectGalaxy(t, h, otherToken)
+	injectOtherSubject(t, h)
+	intruder := connectGalaxy(t, h, otherSubjectToken)
 
 	cases := []struct {
 		name string
@@ -1194,6 +1213,155 @@ func TestGalaxyDraftHistoryAndVersionDescription(t *testing.T) {
 		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE, VersionId: newest.GetId(),
 	})); err == nil {
 		t.Error("用一条草稿快照的标识发布成功了")
+	}
+}
+
+// uploadAttachmentOverRPC 走一遍附件直传，并返回提交后的附件。
+//
+// 与资产那条流水线同构，差别只有一处：**上传声明的是中性类型**，因为附件的下发
+// 类型与它无关（见 docs/design/galaxy/attachments.md）。
+func uploadAttachmentOverRPC(t *testing.T, h harness, client galaxyv1connect.GalaxyServiceClient,
+	projectID, versionID, filename, description string, data []byte) *galaxyv1.Attachment {
+	t.Helper()
+	ctx := context.Background()
+	begin, err := client.BeginAttachmentUpload(ctx, connect.NewRequest(&galaxyv1.BeginAttachmentUploadRequest{
+		ProjectId: projectID,
+		VersionId: versionID,
+		SizeBytes: uint64(len(data)),
+	}))
+	if err != nil {
+		t.Fatalf("签发附件直传失败: %v", err)
+	}
+	h.objects.SimulateUpload(begin.Msg.GetUpload().GetKey(), data)
+
+	commit, err := client.CommitAttachmentUpload(ctx, connect.NewRequest(&galaxyv1.CommitAttachmentUploadRequest{
+		ProjectId:    projectID,
+		AttachmentId: begin.Msg.GetAttachmentId(),
+		VersionId:    versionID,
+		Digest:       sha256Hex(data),
+		Filename:     filename,
+		Description:  description,
+	}))
+	if err != nil {
+		t.Fatalf("提交附件失败: %v", err)
+	}
+	return commit.Msg.GetAttachment()
+}
+
+// **工程附件**：类型不限、下载地址固定成强制下载、**永不进公开区**、只有成员
+// 取得到。
+//
+// 这条链路只有走一遍真的 RPC 才能回答的部分是"签发出去的那条地址上到底带了什么"
+// 与"它有没有跟着发布一起漏进公开区"。
+func TestGalaxyAttachmentLifecycle(t *testing.T) {
+	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
+	client := connectGalaxy(t, h, testToken)
+	ctx := context.Background()
+
+	projectID := createProject(t, client, "工程", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
+	pushDraft(t, client, projectID,
+		pushContentOverRPC(t, h, client, projectID, "index.html", "<p>首页</p>"),
+	)
+	version, err := client.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{
+		ProjectId: projectID, Slot: galaxyv1.ContentSlot_CONTENT_SLOT_SITE,
+	}))
+	if err != nil {
+		t.Fatalf("保存版本失败: %v", err)
+	}
+	versionID := version.Msg.GetVersion().GetId()
+
+	// 一个 `.html` 结尾的发布包：它是最能说明问题的那一份——同一个文件名放在资产
+	// 那一条路上会被白名单拒掉（SVG 与 HTML 都不收），放在这里是安全的，因为下发时
+	// 它只会被存下来。
+	build := []byte("<script>alert(1)</script>")
+	attachment := uploadAttachmentOverRPC(t, h, client, projectID, versionID, "payload.html", "构建产物", build)
+	if attachment.GetFilename() != "payload.html" || attachment.GetSizeBytes() != uint64(len(build)) {
+		t.Fatalf("附件 = %+v", attachment)
+	}
+	if attachment.GetVersionId() != versionID {
+		t.Errorf("标注的版本 = %q，期望 %q", attachment.GetVersionId(), versionID)
+	}
+	if attachment.GetDigest() != sha256Hex(build) {
+		t.Errorf("摘要 = %q，期望 %q", attachment.GetDigest(), sha256Hex(build))
+	}
+
+	// 列表里带着下载地址，而那条地址固定了响应头（这里断言的是签发入口**记下来**
+	// 的那一份——地址本身是签给桶的）。
+	list, err := client.ListAttachments(ctx, connect.NewRequest(&galaxyv1.ListAttachmentsRequest{ProjectId: projectID}))
+	if err != nil {
+		t.Fatalf("列出附件失败: %v", err)
+	}
+	if len(list.Msg.GetAttachments()) != 1 || list.Msg.GetAttachments()[0].GetDownloadUrl() == "" {
+		t.Fatalf("附件清单 = %+v，期望一条带下载地址的记录", list.Msg.GetAttachments())
+	}
+	downloads := h.objects.Downloads()
+	if len(downloads) == 0 {
+		t.Fatal("没有下载地址的签发记录")
+	}
+	last := downloads[len(downloads)-1]
+	if last.Key != galaxy.AttachmentObjectKey(projectID, attachment.GetId()) {
+		t.Errorf("签发的键 = %q，期望附件键", last.Key)
+	}
+	if last.ContentType != objectstore.NeutralContentType {
+		t.Errorf("固定的内容类型 = %q，期望中性类型", last.ContentType)
+	}
+	if !strings.HasPrefix(last.Disposition, "attachment") {
+		t.Errorf("固定的 disposition = %q，期望强制下载", last.Disposition)
+	}
+
+	// **发布不把附件搬上公开区**：公开区里没有任何附件对象，发布地址上也取不到
+	// 它——附件不是文件组的条目，产物按清单分派。
+	address := publishDraft(t, client, projectID)
+	if keys := h.public.Keys(); len(keys) != 0 {
+		t.Errorf("公开区 = %v，期望空（这个工程没有引用任何资产）", keys)
+	}
+	if status, _, _ := fetchPublished(t, h, address, "payload.html", nil); status != http.StatusNotFound {
+		t.Errorf("附件在发布地址上取到 = %d，期望 404", status)
+	}
+	// 附件对象仍在私有区，且**只**在私有区。
+	if _, err := h.objects.Head(ctx, galaxy.AttachmentObjectKey(projectID, attachment.GetId())); err != nil {
+		t.Errorf("附件对象应仍在私有区: %v", err)
+	}
+
+	// 改说明只动说明。
+	updated, err := client.UpdateAttachment(ctx, connect.NewRequest(&galaxyv1.UpdateAttachmentRequest{
+		ProjectId: projectID, AttachmentId: attachment.GetId(), Description: "第二版",
+	}))
+	if err != nil {
+		t.Fatalf("改说明失败: %v", err)
+	}
+	if updated.Msg.GetAttachment().GetDescription() != "第二版" ||
+		updated.Msg.GetAttachment().GetDigest() != attachment.GetDigest() {
+		t.Errorf("附件 = %+v，期望只改了说明", updated.Msg.GetAttachment())
+	}
+
+	// 另一个主体的凭证取不到它——拒绝的结论与"这个工程不存在"一致。
+	injectOtherSubject(t, h)
+	other := connectGalaxy(t, h, otherSubjectToken)
+	if _, err := other.ListAttachments(ctx, connect.NewRequest(&galaxyv1.ListAttachmentsRequest{ProjectId: projectID})); err == nil {
+		t.Error("另一个主体读到了附件清单")
+	}
+	if _, err := other.GetAttachmentDownloadURL(ctx, connect.NewRequest(&galaxyv1.GetAttachmentDownloadURLRequest{
+		ProjectId: projectID, AttachmentId: attachment.GetId(),
+	})); err == nil {
+		t.Error("另一个主体取到了下载地址")
+	}
+
+	// 删除：行与对象都不在。
+	if _, err := client.DeleteAttachment(ctx, connect.NewRequest(&galaxyv1.DeleteAttachmentRequest{
+		ProjectId: projectID, AttachmentId: attachment.GetId(),
+	})); err != nil {
+		t.Fatalf("删除附件失败: %v", err)
+	}
+	after, err := client.ListAttachments(ctx, connect.NewRequest(&galaxyv1.ListAttachmentsRequest{ProjectId: projectID}))
+	if err != nil {
+		t.Fatalf("列出附件失败: %v", err)
+	}
+	if len(after.Msg.GetAttachments()) != 0 {
+		t.Errorf("删除之后仍有 %d 条附件", len(after.Msg.GetAttachments()))
+	}
+	if _, err := h.objects.Head(ctx, galaxy.AttachmentObjectKey(projectID, attachment.GetId())); !errors.Is(err, objectstore.ErrObjectNotFound) {
+		t.Errorf("附件对象没有被删掉: %v", err)
 	}
 }
 

@@ -339,9 +339,24 @@ type Capabilities struct {
 	// 整组的文件数上限。
 	MaxFiles uint32 `protobuf:"varint,5,opt,name=max_files,json=maxFiles,proto3" json:"max_files,omitempty"`
 	// 各类资产的字节上限。
-	AssetLimits   []*AssetKindLimit `protobuf:"bytes,6,rep,name=asset_limits,json=assetLimits,proto3" json:"asset_limits,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	AssetLimits []*AssetKindLimit `protobuf:"bytes,6,rep,name=asset_limits,json=assetLimits,proto3" json:"asset_limits,omitempty"`
+	// 是否可用附件。为假时不渲染附件入口。
+	//
+	// 它与 asset_upload_enabled 同源（都取决于"有没有桶"）但**分开表达**：客户端要
+	// 能分别裁剪——一个部署可以只授其中一码。
+	AttachmentEnabled bool `protobuf:"varint,8,opt,name=attachment_enabled,json=attachmentEnabled,proto3" json:"attachment_enabled,omitempty"`
+	// 单份附件的字节上限。
+	//
+	// 它比资产最高那一档大得多：附件是构建产物，一个带依赖的发布包几百 MB 是常态。
+	MaxAttachmentBytes uint64 `protobuf:"varint,9,opt,name=max_attachment_bytes,json=maxAttachmentBytes,proto3" json:"max_attachment_bytes,omitempty"`
+	// 一个工程的**附件总量**上限。
+	//
+	// 它与单文件上限是两件事：前者回答"一次能传多大"，后者回答"这个工程一共能放
+	// 多少"。只有一个的话，一份 500 MiB 的包重复传二十遍就把一个工程的存储吃完了，
+	// 而每一次都合规。
+	ProjectAttachmentQuotaBytes uint64 `protobuf:"varint,10,opt,name=project_attachment_quota_bytes,json=projectAttachmentQuotaBytes,proto3" json:"project_attachment_quota_bytes,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
 }
 
 func (x *Capabilities) Reset() {
@@ -421,6 +436,27 @@ func (x *Capabilities) GetAssetLimits() []*AssetKindLimit {
 		return x.AssetLimits
 	}
 	return nil
+}
+
+func (x *Capabilities) GetAttachmentEnabled() bool {
+	if x != nil {
+		return x.AttachmentEnabled
+	}
+	return false
+}
+
+func (x *Capabilities) GetMaxAttachmentBytes() uint64 {
+	if x != nil {
+		return x.MaxAttachmentBytes
+	}
+	return 0
+}
+
+func (x *Capabilities) GetProjectAttachmentQuotaBytes() uint64 {
+	if x != nil {
+		return x.ProjectAttachmentQuotaBytes
+	}
+	return 0
 }
 
 // Project 是一个创作单元的元数据。
@@ -1028,6 +1064,138 @@ func (x *Asset) GetNotes() string {
 	return ""
 }
 
+// Attachment 是工程里的一份**发布物**：二进制、zip 包、导出文件。
+//
+// 它与资产**并列而不混用**（见 docs/design/galaxy/attachments.md）：资产会被网页
+// 引用、由浏览器渲染；附件只给工程成员下载。因此它的类型**不限**——它靠另一条
+// 性质立住：下发时的响应头由签发策略固定（中性的内容类型 + `attachment`），
+// 浏览器永远只把它存下来，不渲染、也不执行。
+//
+// **字节不可变**：没有"替换这一份的字节"这个动作，要换就重新上传一个。可变的只有
+// description 那一层。**永不进公开区**，因此也不出现在发布产物里。
+type Attachment struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 附件标识。由服务端分配，不可猜、不复用。
+	Id        string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// **标注**的版本，可空。它说明"这一份是那一版的构建产物"。
+	//
+	// **标注不是引用**：它不参与发布，也不拦阻版本删除——删除一个版本时指向它的
+	// 标注被清空。因此这个字段可能从有值变成空，而附件本身不受影响。
+	VersionId string `protobuf:"bytes,3,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`
+	// 原始文件名。**仅供展示与排障**：它不进对象键，也不参与任何判断。
+	//
+	// 它另外会进下载响应头——那是唯一一处它对外可见的地方，而那一处会先滤掉会
+	// 破坏响应头的字符（引号、反斜杠、控制字符与换行）。
+	Filename string `protobuf:"bytes,4,opt,name=filename,proto3" json:"filename,omitempty"`
+	// 字节数。它取自提交时对对象的核对，不是声明值。
+	SizeBytes uint64 `protobuf:"varint,5,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// 字节的 SHA-256。**不是寻址键**（附件按标识寻址），只用于核对与展示。
+	Digest string `protobuf:"bytes,6,opt,name=digest,proto3" json:"digest,omitempty"`
+	// 说明。可改，空表示没有。
+	Description string `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	UploadedAt  string `protobuf:"bytes,8,opt,name=uploaded_at,json=uploadedAt,proto3" json:"uploaded_at,omitempty"`
+	// **短时有效**的下载地址。响应头被固定成强制下载，因此点它只会把文件存下来。
+	//
+	// 未配置私有桶时为空。
+	DownloadUrl   string `protobuf:"bytes,9,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Attachment) Reset() {
+	*x = Attachment{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Attachment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Attachment) ProtoMessage() {}
+
+func (x *Attachment) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Attachment.ProtoReflect.Descriptor instead.
+func (*Attachment) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Attachment) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Attachment) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Attachment) GetVersionId() string {
+	if x != nil {
+		return x.VersionId
+	}
+	return ""
+}
+
+func (x *Attachment) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *Attachment) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *Attachment) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *Attachment) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Attachment) GetUploadedAt() string {
+	if x != nil {
+		return x.UploadedAt
+	}
+	return ""
+}
+
+func (x *Attachment) GetDownloadUrl() string {
+	if x != nil {
+		return x.DownloadUrl
+	}
+	return ""
+}
+
 // ValidationProblem 是校验发现的一处问题。
 //
 // message 里**带上出问题的文件与位置**：只说"有引用不合法"会让用户在一组
@@ -1045,7 +1213,7 @@ type ValidationProblem struct {
 
 func (x *ValidationProblem) Reset() {
 	*x = ValidationProblem{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[9]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1057,7 +1225,7 @@ func (x *ValidationProblem) String() string {
 func (*ValidationProblem) ProtoMessage() {}
 
 func (x *ValidationProblem) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[9]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1070,7 +1238,7 @@ func (x *ValidationProblem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationProblem.ProtoReflect.Descriptor instead.
 func (*ValidationProblem) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{9}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ValidationProblem) GetMessage() string {
@@ -1114,7 +1282,7 @@ type Publication struct {
 
 func (x *Publication) Reset() {
 	*x = Publication{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[10]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1294,7 @@ func (x *Publication) String() string {
 func (*Publication) ProtoMessage() {}
 
 func (x *Publication) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[10]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1307,7 @@ func (x *Publication) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Publication.ProtoReflect.Descriptor instead.
 func (*Publication) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{10}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Publication) GetId() string {
@@ -1192,7 +1360,7 @@ type GetCapabilitiesRequest struct {
 
 func (x *GetCapabilitiesRequest) Reset() {
 	*x = GetCapabilitiesRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[11]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1372,7 @@ func (x *GetCapabilitiesRequest) String() string {
 func (*GetCapabilitiesRequest) ProtoMessage() {}
 
 func (x *GetCapabilitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[11]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1385,7 @@ func (x *GetCapabilitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilitiesRequest.ProtoReflect.Descriptor instead.
 func (*GetCapabilitiesRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{11}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{12}
 }
 
 type GetCapabilitiesResponse struct {
@@ -1229,7 +1397,7 @@ type GetCapabilitiesResponse struct {
 
 func (x *GetCapabilitiesResponse) Reset() {
 	*x = GetCapabilitiesResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[12]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1241,7 +1409,7 @@ func (x *GetCapabilitiesResponse) String() string {
 func (*GetCapabilitiesResponse) ProtoMessage() {}
 
 func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[12]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1254,7 +1422,7 @@ func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*GetCapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{12}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetCapabilitiesResponse) GetCapabilities() *Capabilities {
@@ -1272,7 +1440,7 @@ type ListProjectsRequest struct {
 
 func (x *ListProjectsRequest) Reset() {
 	*x = ListProjectsRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[13]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1284,7 +1452,7 @@ func (x *ListProjectsRequest) String() string {
 func (*ListProjectsRequest) ProtoMessage() {}
 
 func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[13]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1297,7 +1465,7 @@ func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectsRequest.ProtoReflect.Descriptor instead.
 func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{13}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{14}
 }
 
 type ListProjectsResponse struct {
@@ -1309,7 +1477,7 @@ type ListProjectsResponse struct {
 
 func (x *ListProjectsResponse) Reset() {
 	*x = ListProjectsResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[14]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1321,7 +1489,7 @@ func (x *ListProjectsResponse) String() string {
 func (*ListProjectsResponse) ProtoMessage() {}
 
 func (x *ListProjectsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[14]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1334,7 +1502,7 @@ func (x *ListProjectsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectsResponse.ProtoReflect.Descriptor instead.
 func (*ListProjectsResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{14}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListProjectsResponse) GetProjects() []*Project {
@@ -1356,7 +1524,7 @@ type CreateProjectRequest struct {
 
 func (x *CreateProjectRequest) Reset() {
 	*x = CreateProjectRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[15]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1368,7 +1536,7 @@ func (x *CreateProjectRequest) String() string {
 func (*CreateProjectRequest) ProtoMessage() {}
 
 func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[15]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1381,7 +1549,7 @@ func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectRequest.ProtoReflect.Descriptor instead.
 func (*CreateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{15}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CreateProjectRequest) GetName() string {
@@ -1414,7 +1582,7 @@ type CreateProjectResponse struct {
 
 func (x *CreateProjectResponse) Reset() {
 	*x = CreateProjectResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[16]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1426,7 +1594,7 @@ func (x *CreateProjectResponse) String() string {
 func (*CreateProjectResponse) ProtoMessage() {}
 
 func (x *CreateProjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[16]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1439,7 +1607,7 @@ func (x *CreateProjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectResponse.ProtoReflect.Descriptor instead.
 func (*CreateProjectResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{16}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateProjectResponse) GetProject() *Project {
@@ -1460,7 +1628,7 @@ type AddProjectSlotRequest struct {
 
 func (x *AddProjectSlotRequest) Reset() {
 	*x = AddProjectSlotRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[17]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1472,7 +1640,7 @@ func (x *AddProjectSlotRequest) String() string {
 func (*AddProjectSlotRequest) ProtoMessage() {}
 
 func (x *AddProjectSlotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[17]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1485,7 +1653,7 @@ func (x *AddProjectSlotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddProjectSlotRequest.ProtoReflect.Descriptor instead.
 func (*AddProjectSlotRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{17}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AddProjectSlotRequest) GetProjectId() string {
@@ -1512,7 +1680,7 @@ type AddProjectSlotResponse struct {
 
 func (x *AddProjectSlotResponse) Reset() {
 	*x = AddProjectSlotResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[18]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1524,7 +1692,7 @@ func (x *AddProjectSlotResponse) String() string {
 func (*AddProjectSlotResponse) ProtoMessage() {}
 
 func (x *AddProjectSlotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[18]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1537,7 +1705,7 @@ func (x *AddProjectSlotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddProjectSlotResponse.ProtoReflect.Descriptor instead.
 func (*AddProjectSlotResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{18}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *AddProjectSlotResponse) GetProject() *Project {
@@ -1556,7 +1724,7 @@ type GetProjectRequest struct {
 
 func (x *GetProjectRequest) Reset() {
 	*x = GetProjectRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[19]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1568,7 +1736,7 @@ func (x *GetProjectRequest) String() string {
 func (*GetProjectRequest) ProtoMessage() {}
 
 func (x *GetProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[19]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1581,7 +1749,7 @@ func (x *GetProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProjectRequest.ProtoReflect.Descriptor instead.
 func (*GetProjectRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{19}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetProjectRequest) GetProjectId() string {
@@ -1600,7 +1768,7 @@ type GetProjectResponse struct {
 
 func (x *GetProjectResponse) Reset() {
 	*x = GetProjectResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[20]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1612,7 +1780,7 @@ func (x *GetProjectResponse) String() string {
 func (*GetProjectResponse) ProtoMessage() {}
 
 func (x *GetProjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[20]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1625,7 +1793,7 @@ func (x *GetProjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProjectResponse.ProtoReflect.Descriptor instead.
 func (*GetProjectResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{20}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetProjectResponse) GetProject() *Project {
@@ -1647,7 +1815,7 @@ type UpdateProjectRequest struct {
 
 func (x *UpdateProjectRequest) Reset() {
 	*x = UpdateProjectRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[21]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1659,7 +1827,7 @@ func (x *UpdateProjectRequest) String() string {
 func (*UpdateProjectRequest) ProtoMessage() {}
 
 func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[21]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1672,7 +1840,7 @@ func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProjectRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{21}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UpdateProjectRequest) GetProjectId() string {
@@ -1705,7 +1873,7 @@ type UpdateProjectResponse struct {
 
 func (x *UpdateProjectResponse) Reset() {
 	*x = UpdateProjectResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[22]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1717,7 +1885,7 @@ func (x *UpdateProjectResponse) String() string {
 func (*UpdateProjectResponse) ProtoMessage() {}
 
 func (x *UpdateProjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[22]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1730,7 +1898,7 @@ func (x *UpdateProjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProjectResponse.ProtoReflect.Descriptor instead.
 func (*UpdateProjectResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{22}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *UpdateProjectResponse) GetProject() *Project {
@@ -1749,7 +1917,7 @@ type DeleteProjectRequest struct {
 
 func (x *DeleteProjectRequest) Reset() {
 	*x = DeleteProjectRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[23]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1761,7 +1929,7 @@ func (x *DeleteProjectRequest) String() string {
 func (*DeleteProjectRequest) ProtoMessage() {}
 
 func (x *DeleteProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[23]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1774,7 +1942,7 @@ func (x *DeleteProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProjectRequest.ProtoReflect.Descriptor instead.
 func (*DeleteProjectRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{23}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *DeleteProjectRequest) GetProjectId() string {
@@ -1792,7 +1960,7 @@ type DeleteProjectResponse struct {
 
 func (x *DeleteProjectResponse) Reset() {
 	*x = DeleteProjectResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[24]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1804,7 +1972,7 @@ func (x *DeleteProjectResponse) String() string {
 func (*DeleteProjectResponse) ProtoMessage() {}
 
 func (x *DeleteProjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[24]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1817,7 +1985,7 @@ func (x *DeleteProjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProjectResponse.ProtoReflect.Descriptor instead.
 func (*DeleteProjectResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{24}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{25}
 }
 
 type GetDraftRequest struct {
@@ -1831,7 +1999,7 @@ type GetDraftRequest struct {
 
 func (x *GetDraftRequest) Reset() {
 	*x = GetDraftRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[25]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1843,7 +2011,7 @@ func (x *GetDraftRequest) String() string {
 func (*GetDraftRequest) ProtoMessage() {}
 
 func (x *GetDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[25]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1856,7 +2024,7 @@ func (x *GetDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDraftRequest.ProtoReflect.Descriptor instead.
 func (*GetDraftRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{25}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetDraftRequest) GetProjectId() string {
@@ -1882,7 +2050,7 @@ type GetDraftResponse struct {
 
 func (x *GetDraftResponse) Reset() {
 	*x = GetDraftResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[26]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1894,7 +2062,7 @@ func (x *GetDraftResponse) String() string {
 func (*GetDraftResponse) ProtoMessage() {}
 
 func (x *GetDraftResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[26]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1907,7 +2075,7 @@ func (x *GetDraftResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDraftResponse.ProtoReflect.Descriptor instead.
 func (*GetDraftResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{26}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetDraftResponse) GetDraft() *Draft {
@@ -1931,7 +2099,7 @@ type PushDraftRequest struct {
 
 func (x *PushDraftRequest) Reset() {
 	*x = PushDraftRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[27]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1943,7 +2111,7 @@ func (x *PushDraftRequest) String() string {
 func (*PushDraftRequest) ProtoMessage() {}
 
 func (x *PushDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[27]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1956,7 +2124,7 @@ func (x *PushDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushDraftRequest.ProtoReflect.Descriptor instead.
 func (*PushDraftRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{27}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *PushDraftRequest) GetProjectId() string {
@@ -1991,7 +2159,7 @@ type PushDraftResponse struct {
 
 func (x *PushDraftResponse) Reset() {
 	*x = PushDraftResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[28]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2003,7 +2171,7 @@ func (x *PushDraftResponse) String() string {
 func (*PushDraftResponse) ProtoMessage() {}
 
 func (x *PushDraftResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[28]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2016,7 +2184,7 @@ func (x *PushDraftResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushDraftResponse.ProtoReflect.Descriptor instead.
 func (*PushDraftResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{28}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *PushDraftResponse) GetDraft() *Draft {
@@ -2046,7 +2214,7 @@ type SaveVersionRequest struct {
 
 func (x *SaveVersionRequest) Reset() {
 	*x = SaveVersionRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[29]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2058,7 +2226,7 @@ func (x *SaveVersionRequest) String() string {
 func (*SaveVersionRequest) ProtoMessage() {}
 
 func (x *SaveVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[29]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2071,7 +2239,7 @@ func (x *SaveVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveVersionRequest.ProtoReflect.Descriptor instead.
 func (*SaveVersionRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{29}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SaveVersionRequest) GetProjectId() string {
@@ -2111,7 +2279,7 @@ type SaveVersionResponse struct {
 
 func (x *SaveVersionResponse) Reset() {
 	*x = SaveVersionResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[30]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2123,7 +2291,7 @@ func (x *SaveVersionResponse) String() string {
 func (*SaveVersionResponse) ProtoMessage() {}
 
 func (x *SaveVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[30]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2136,7 +2304,7 @@ func (x *SaveVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveVersionResponse.ProtoReflect.Descriptor instead.
 func (*SaveVersionResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{30}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SaveVersionResponse) GetVersion() *Version {
@@ -2160,7 +2328,7 @@ type UpdateVersionRequest struct {
 
 func (x *UpdateVersionRequest) Reset() {
 	*x = UpdateVersionRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[31]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2172,7 +2340,7 @@ func (x *UpdateVersionRequest) String() string {
 func (*UpdateVersionRequest) ProtoMessage() {}
 
 func (x *UpdateVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[31]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2185,7 +2353,7 @@ func (x *UpdateVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateVersionRequest.ProtoReflect.Descriptor instead.
 func (*UpdateVersionRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{31}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *UpdateVersionRequest) GetProjectId() string {
@@ -2226,7 +2394,7 @@ type UpdateVersionResponse struct {
 
 func (x *UpdateVersionResponse) Reset() {
 	*x = UpdateVersionResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[32]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2238,7 +2406,7 @@ func (x *UpdateVersionResponse) String() string {
 func (*UpdateVersionResponse) ProtoMessage() {}
 
 func (x *UpdateVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[32]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2251,7 +2419,7 @@ func (x *UpdateVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateVersionResponse.ProtoReflect.Descriptor instead.
 func (*UpdateVersionResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{32}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *UpdateVersionResponse) GetVersion() *Version {
@@ -2271,7 +2439,7 @@ type ListDraftSnapshotsRequest struct {
 
 func (x *ListDraftSnapshotsRequest) Reset() {
 	*x = ListDraftSnapshotsRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[33]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2283,7 +2451,7 @@ func (x *ListDraftSnapshotsRequest) String() string {
 func (*ListDraftSnapshotsRequest) ProtoMessage() {}
 
 func (x *ListDraftSnapshotsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[33]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2296,7 +2464,7 @@ func (x *ListDraftSnapshotsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDraftSnapshotsRequest.ProtoReflect.Descriptor instead.
 func (*ListDraftSnapshotsRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{33}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListDraftSnapshotsRequest) GetProjectId() string {
@@ -2323,7 +2491,7 @@ type ListDraftSnapshotsResponse struct {
 
 func (x *ListDraftSnapshotsResponse) Reset() {
 	*x = ListDraftSnapshotsResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[34]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2335,7 +2503,7 @@ func (x *ListDraftSnapshotsResponse) String() string {
 func (*ListDraftSnapshotsResponse) ProtoMessage() {}
 
 func (x *ListDraftSnapshotsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[34]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2348,7 +2516,7 @@ func (x *ListDraftSnapshotsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDraftSnapshotsResponse.ProtoReflect.Descriptor instead.
 func (*ListDraftSnapshotsResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{34}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListDraftSnapshotsResponse) GetSnapshots() []*DraftSnapshot {
@@ -2369,7 +2537,7 @@ type RestoreDraftSnapshotRequest struct {
 
 func (x *RestoreDraftSnapshotRequest) Reset() {
 	*x = RestoreDraftSnapshotRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[35]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2381,7 +2549,7 @@ func (x *RestoreDraftSnapshotRequest) String() string {
 func (*RestoreDraftSnapshotRequest) ProtoMessage() {}
 
 func (x *RestoreDraftSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[35]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2394,7 +2562,7 @@ func (x *RestoreDraftSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreDraftSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*RestoreDraftSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{35}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *RestoreDraftSnapshotRequest) GetProjectId() string {
@@ -2429,7 +2597,7 @@ type RestoreDraftSnapshotResponse struct {
 
 func (x *RestoreDraftSnapshotResponse) Reset() {
 	*x = RestoreDraftSnapshotResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[36]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2441,7 +2609,7 @@ func (x *RestoreDraftSnapshotResponse) String() string {
 func (*RestoreDraftSnapshotResponse) ProtoMessage() {}
 
 func (x *RestoreDraftSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[36]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2454,7 +2622,7 @@ func (x *RestoreDraftSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreDraftSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*RestoreDraftSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{36}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *RestoreDraftSnapshotResponse) GetDraft() *Draft {
@@ -2475,7 +2643,7 @@ type ListVersionsRequest struct {
 
 func (x *ListVersionsRequest) Reset() {
 	*x = ListVersionsRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[37]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2487,7 +2655,7 @@ func (x *ListVersionsRequest) String() string {
 func (*ListVersionsRequest) ProtoMessage() {}
 
 func (x *ListVersionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[37]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2500,7 +2668,7 @@ func (x *ListVersionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVersionsRequest.ProtoReflect.Descriptor instead.
 func (*ListVersionsRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{37}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ListVersionsRequest) GetProjectId() string {
@@ -2526,7 +2694,7 @@ type ListVersionsResponse struct {
 
 func (x *ListVersionsResponse) Reset() {
 	*x = ListVersionsResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[38]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2538,7 +2706,7 @@ func (x *ListVersionsResponse) String() string {
 func (*ListVersionsResponse) ProtoMessage() {}
 
 func (x *ListVersionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[38]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2551,7 +2719,7 @@ func (x *ListVersionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVersionsResponse.ProtoReflect.Descriptor instead.
 func (*ListVersionsResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{38}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListVersionsResponse) GetVersions() []*Version {
@@ -2573,7 +2741,7 @@ type GetVersionRequest struct {
 
 func (x *GetVersionRequest) Reset() {
 	*x = GetVersionRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[39]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2585,7 +2753,7 @@ func (x *GetVersionRequest) String() string {
 func (*GetVersionRequest) ProtoMessage() {}
 
 func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[39]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2598,7 +2766,7 @@ func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionRequest.ProtoReflect.Descriptor instead.
 func (*GetVersionRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{39}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GetVersionRequest) GetProjectId() string {
@@ -2631,7 +2799,7 @@ type GetVersionResponse struct {
 
 func (x *GetVersionResponse) Reset() {
 	*x = GetVersionResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[40]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2643,7 +2811,7 @@ func (x *GetVersionResponse) String() string {
 func (*GetVersionResponse) ProtoMessage() {}
 
 func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[40]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2656,7 +2824,7 @@ func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetVersionResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{40}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *GetVersionResponse) GetVersion() *Version {
@@ -2678,7 +2846,7 @@ type DeleteVersionRequest struct {
 
 func (x *DeleteVersionRequest) Reset() {
 	*x = DeleteVersionRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[41]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2690,7 +2858,7 @@ func (x *DeleteVersionRequest) String() string {
 func (*DeleteVersionRequest) ProtoMessage() {}
 
 func (x *DeleteVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[41]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2703,7 +2871,7 @@ func (x *DeleteVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteVersionRequest.ProtoReflect.Descriptor instead.
 func (*DeleteVersionRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{41}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *DeleteVersionRequest) GetProjectId() string {
@@ -2735,7 +2903,7 @@ type DeleteVersionResponse struct {
 
 func (x *DeleteVersionResponse) Reset() {
 	*x = DeleteVersionResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[42]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2747,7 +2915,7 @@ func (x *DeleteVersionResponse) String() string {
 func (*DeleteVersionResponse) ProtoMessage() {}
 
 func (x *DeleteVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[42]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2760,7 +2928,7 @@ func (x *DeleteVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteVersionResponse.ProtoReflect.Descriptor instead.
 func (*DeleteVersionResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{42}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{43}
 }
 
 type ValidateDraftRequest struct {
@@ -2774,7 +2942,7 @@ type ValidateDraftRequest struct {
 
 func (x *ValidateDraftRequest) Reset() {
 	*x = ValidateDraftRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[43]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2786,7 +2954,7 @@ func (x *ValidateDraftRequest) String() string {
 func (*ValidateDraftRequest) ProtoMessage() {}
 
 func (x *ValidateDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[43]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2799,7 +2967,7 @@ func (x *ValidateDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateDraftRequest.ProtoReflect.Descriptor instead.
 func (*ValidateDraftRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{43}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ValidateDraftRequest) GetProjectId() string {
@@ -2827,7 +2995,7 @@ type ValidateDraftResponse struct {
 
 func (x *ValidateDraftResponse) Reset() {
 	*x = ValidateDraftResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[44]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2839,7 +3007,7 @@ func (x *ValidateDraftResponse) String() string {
 func (*ValidateDraftResponse) ProtoMessage() {}
 
 func (x *ValidateDraftResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[44]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2852,7 +3020,7 @@ func (x *ValidateDraftResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateDraftResponse.ProtoReflect.Descriptor instead.
 func (*ValidateDraftResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{44}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ValidateDraftResponse) GetProblems() []*ValidationProblem {
@@ -2876,7 +3044,7 @@ type PreviewDraftRequest struct {
 
 func (x *PreviewDraftRequest) Reset() {
 	*x = PreviewDraftRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[45]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2888,7 +3056,7 @@ func (x *PreviewDraftRequest) String() string {
 func (*PreviewDraftRequest) ProtoMessage() {}
 
 func (x *PreviewDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[45]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2901,7 +3069,7 @@ func (x *PreviewDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewDraftRequest.ProtoReflect.Descriptor instead.
 func (*PreviewDraftRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{45}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *PreviewDraftRequest) GetProjectId() string {
@@ -2938,7 +3106,7 @@ type PreviewDraftResponse struct {
 
 func (x *PreviewDraftResponse) Reset() {
 	*x = PreviewDraftResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[46]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2950,7 +3118,7 @@ func (x *PreviewDraftResponse) String() string {
 func (*PreviewDraftResponse) ProtoMessage() {}
 
 func (x *PreviewDraftResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[46]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2963,7 +3131,7 @@ func (x *PreviewDraftResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewDraftResponse.ProtoReflect.Descriptor instead.
 func (*PreviewDraftResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{46}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *PreviewDraftResponse) GetUrl() string {
@@ -2988,7 +3156,7 @@ type BeginContentUploadRequest struct {
 
 func (x *BeginContentUploadRequest) Reset() {
 	*x = BeginContentUploadRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[47]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3000,7 +3168,7 @@ func (x *BeginContentUploadRequest) String() string {
 func (*BeginContentUploadRequest) ProtoMessage() {}
 
 func (x *BeginContentUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[47]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3013,7 +3181,7 @@ func (x *BeginContentUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginContentUploadRequest.ProtoReflect.Descriptor instead.
 func (*BeginContentUploadRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{47}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *BeginContentUploadRequest) GetProjectId() string {
@@ -3053,7 +3221,7 @@ type BeginContentUploadResponse struct {
 
 func (x *BeginContentUploadResponse) Reset() {
 	*x = BeginContentUploadResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[48]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3065,7 +3233,7 @@ func (x *BeginContentUploadResponse) String() string {
 func (*BeginContentUploadResponse) ProtoMessage() {}
 
 func (x *BeginContentUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[48]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3078,7 +3246,7 @@ func (x *BeginContentUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginContentUploadResponse.ProtoReflect.Descriptor instead.
 func (*BeginContentUploadResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{48}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *BeginContentUploadResponse) GetAlreadyExists() bool {
@@ -3107,7 +3275,7 @@ type CommitContentUploadRequest struct {
 
 func (x *CommitContentUploadRequest) Reset() {
 	*x = CommitContentUploadRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[49]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3119,7 +3287,7 @@ func (x *CommitContentUploadRequest) String() string {
 func (*CommitContentUploadRequest) ProtoMessage() {}
 
 func (x *CommitContentUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[49]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3132,7 +3300,7 @@ func (x *CommitContentUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitContentUploadRequest.ProtoReflect.Descriptor instead.
 func (*CommitContentUploadRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{49}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *CommitContentUploadRequest) GetProjectId() string {
@@ -3157,7 +3325,7 @@ type CommitContentUploadResponse struct {
 
 func (x *CommitContentUploadResponse) Reset() {
 	*x = CommitContentUploadResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[50]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3169,7 +3337,7 @@ func (x *CommitContentUploadResponse) String() string {
 func (*CommitContentUploadResponse) ProtoMessage() {}
 
 func (x *CommitContentUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[50]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3182,7 +3350,7 @@ func (x *CommitContentUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitContentUploadResponse.ProtoReflect.Descriptor instead.
 func (*CommitContentUploadResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{50}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{51}
 }
 
 type ListAssetsRequest struct {
@@ -3199,7 +3367,7 @@ type ListAssetsRequest struct {
 
 func (x *ListAssetsRequest) Reset() {
 	*x = ListAssetsRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[51]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3211,7 +3379,7 @@ func (x *ListAssetsRequest) String() string {
 func (*ListAssetsRequest) ProtoMessage() {}
 
 func (x *ListAssetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[51]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3224,7 +3392,7 @@ func (x *ListAssetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAssetsRequest.ProtoReflect.Descriptor instead.
 func (*ListAssetsRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{51}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ListAssetsRequest) GetProjectId() string {
@@ -3252,7 +3420,7 @@ type ListAssetsResponse struct {
 
 func (x *ListAssetsResponse) Reset() {
 	*x = ListAssetsResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[52]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3264,7 +3432,7 @@ func (x *ListAssetsResponse) String() string {
 func (*ListAssetsResponse) ProtoMessage() {}
 
 func (x *ListAssetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[52]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3277,7 +3445,7 @@ func (x *ListAssetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAssetsResponse.ProtoReflect.Descriptor instead.
 func (*ListAssetsResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{52}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ListAssetsResponse) GetAssets() []*Asset {
@@ -3308,7 +3476,7 @@ type BeginAssetUploadRequest struct {
 
 func (x *BeginAssetUploadRequest) Reset() {
 	*x = BeginAssetUploadRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[53]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3320,7 +3488,7 @@ func (x *BeginAssetUploadRequest) String() string {
 func (*BeginAssetUploadRequest) ProtoMessage() {}
 
 func (x *BeginAssetUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[53]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3333,7 +3501,7 @@ func (x *BeginAssetUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginAssetUploadRequest.ProtoReflect.Descriptor instead.
 func (*BeginAssetUploadRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{53}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *BeginAssetUploadRequest) GetProjectId() string {
@@ -3369,7 +3537,7 @@ type BeginAssetUploadResponse struct {
 
 func (x *BeginAssetUploadResponse) Reset() {
 	*x = BeginAssetUploadResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[54]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3381,7 +3549,7 @@ func (x *BeginAssetUploadResponse) String() string {
 func (*BeginAssetUploadResponse) ProtoMessage() {}
 
 func (x *BeginAssetUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[54]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3394,7 +3562,7 @@ func (x *BeginAssetUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginAssetUploadResponse.ProtoReflect.Descriptor instead.
 func (*BeginAssetUploadResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{54}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *BeginAssetUploadResponse) GetAssetId() string {
@@ -3439,7 +3607,7 @@ type CommitAssetUploadRequest struct {
 
 func (x *CommitAssetUploadRequest) Reset() {
 	*x = CommitAssetUploadRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[55]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3451,7 +3619,7 @@ func (x *CommitAssetUploadRequest) String() string {
 func (*CommitAssetUploadRequest) ProtoMessage() {}
 
 func (x *CommitAssetUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[55]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3464,7 +3632,7 @@ func (x *CommitAssetUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitAssetUploadRequest.ProtoReflect.Descriptor instead.
 func (*CommitAssetUploadRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{55}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *CommitAssetUploadRequest) GetProjectId() string {
@@ -3532,7 +3700,7 @@ type CommitAssetUploadResponse struct {
 
 func (x *CommitAssetUploadResponse) Reset() {
 	*x = CommitAssetUploadResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[56]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3544,7 +3712,7 @@ func (x *CommitAssetUploadResponse) String() string {
 func (*CommitAssetUploadResponse) ProtoMessage() {}
 
 func (x *CommitAssetUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[56]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3557,7 +3725,7 @@ func (x *CommitAssetUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitAssetUploadResponse.ProtoReflect.Descriptor instead.
 func (*CommitAssetUploadResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{56}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *CommitAssetUploadResponse) GetAsset() *Asset {
@@ -3577,7 +3745,7 @@ type DeleteAssetRequest struct {
 
 func (x *DeleteAssetRequest) Reset() {
 	*x = DeleteAssetRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[57]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3589,7 +3757,7 @@ func (x *DeleteAssetRequest) String() string {
 func (*DeleteAssetRequest) ProtoMessage() {}
 
 func (x *DeleteAssetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[57]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3602,7 +3770,7 @@ func (x *DeleteAssetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAssetRequest.ProtoReflect.Descriptor instead.
 func (*DeleteAssetRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{57}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *DeleteAssetRequest) GetProjectId() string {
@@ -3627,7 +3795,7 @@ type DeleteAssetResponse struct {
 
 func (x *DeleteAssetResponse) Reset() {
 	*x = DeleteAssetResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[58]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3639,7 +3807,7 @@ func (x *DeleteAssetResponse) String() string {
 func (*DeleteAssetResponse) ProtoMessage() {}
 
 func (x *DeleteAssetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[58]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3652,7 +3820,7 @@ func (x *DeleteAssetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAssetResponse.ProtoReflect.Descriptor instead.
 func (*DeleteAssetResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{58}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{59}
 }
 
 // UpdateAssetRequest 表达的是说明层元数据的**期望完整状态**，不是增量。
@@ -3672,7 +3840,7 @@ type UpdateAssetRequest struct {
 
 func (x *UpdateAssetRequest) Reset() {
 	*x = UpdateAssetRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[59]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3684,7 +3852,7 @@ func (x *UpdateAssetRequest) String() string {
 func (*UpdateAssetRequest) ProtoMessage() {}
 
 func (x *UpdateAssetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[59]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3697,7 +3865,7 @@ func (x *UpdateAssetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAssetRequest.ProtoReflect.Descriptor instead.
 func (*UpdateAssetRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{59}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *UpdateAssetRequest) GetProjectId() string {
@@ -3745,7 +3913,7 @@ type UpdateAssetResponse struct {
 
 func (x *UpdateAssetResponse) Reset() {
 	*x = UpdateAssetResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[60]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3757,7 +3925,7 @@ func (x *UpdateAssetResponse) String() string {
 func (*UpdateAssetResponse) ProtoMessage() {}
 
 func (x *UpdateAssetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[60]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3770,7 +3938,7 @@ func (x *UpdateAssetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAssetResponse.ProtoReflect.Descriptor instead.
 func (*UpdateAssetResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{60}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *UpdateAssetResponse) GetAsset() *Asset {
@@ -3778,6 +3946,643 @@ func (x *UpdateAssetResponse) GetAsset() *Asset {
 		return x.Asset
 	}
 	return nil
+}
+
+type ListAttachmentsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAttachmentsRequest) Reset() {
+	*x = ListAttachmentsRequest{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAttachmentsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAttachmentsRequest) ProtoMessage() {}
+
+func (x *ListAttachmentsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAttachmentsRequest.ProtoReflect.Descriptor instead.
+func (*ListAttachmentsRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *ListAttachmentsRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+type ListAttachmentsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Attachments   []*Attachment          `protobuf:"bytes,1,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAttachmentsResponse) Reset() {
+	*x = ListAttachmentsResponse{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAttachmentsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAttachmentsResponse) ProtoMessage() {}
+
+func (x *ListAttachmentsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAttachmentsResponse.ProtoReflect.Descriptor instead.
+func (*ListAttachmentsResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *ListAttachmentsResponse) GetAttachments() []*Attachment {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
+type BeginAttachmentUploadRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// 要**标注**的版本，可空（默认不标注）。非空时服务端会校验它确实属于这个工程：
+	// 标注指向一个不存在的版本时拒绝，而不是记下一条悬空标注。
+	VersionId string `protobuf:"bytes,2,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`
+	// **声明的**字节数。服务端据此在签发前早退（单文件上限与工程总量配额各一次），
+	// 避免让用户白传一遍；真正的判定在提交那一步，用的是核对出来的真实字节数。
+	SizeBytes     uint64 `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginAttachmentUploadRequest) Reset() {
+	*x = BeginAttachmentUploadRequest{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginAttachmentUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginAttachmentUploadRequest) ProtoMessage() {}
+
+func (x *BeginAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginAttachmentUploadRequest.ProtoReflect.Descriptor instead.
+func (*BeginAttachmentUploadRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *BeginAttachmentUploadRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *BeginAttachmentUploadRequest) GetVersionId() string {
+	if x != nil {
+		return x.VersionId
+	}
+	return ""
+}
+
+func (x *BeginAttachmentUploadRequest) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+type BeginAttachmentUploadResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 本次上传的附件标识。提交时要把它带回来。
+	AttachmentId string `protobuf:"bytes,1,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	// 直传凭证。**只允许写、只对这一个键有效、短时有效。**
+	//
+	// 上传时声明的内容类型固定为**中性那一档**：附件的下发类型与它无关
+	// （见 Attachment），因此那一次声明不产生任何对外可见的后果。
+	Upload        *v1.DirectUploadCredential `protobuf:"bytes,2,opt,name=upload,proto3" json:"upload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginAttachmentUploadResponse) Reset() {
+	*x = BeginAttachmentUploadResponse{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginAttachmentUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginAttachmentUploadResponse) ProtoMessage() {}
+
+func (x *BeginAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginAttachmentUploadResponse.ProtoReflect.Descriptor instead.
+func (*BeginAttachmentUploadResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *BeginAttachmentUploadResponse) GetAttachmentId() string {
+	if x != nil {
+		return x.AttachmentId
+	}
+	return ""
+}
+
+func (x *BeginAttachmentUploadResponse) GetUpload() *v1.DirectUploadCredential {
+	if x != nil {
+		return x.Upload
+	}
+	return nil
+}
+
+type CommitAttachmentUploadRequest struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId    string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	AttachmentId string                 `protobuf:"bytes,2,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	// 与服务端核对的那个声明。**两次调用之间服务端不保留任何状态**（那正是"未提交
+	// 的上传不留痕迹"的实现方式），因此标注的版本在这里被再次声明并重新校验。
+	VersionId string `protobuf:"bytes,3,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`
+	// **声明的**内容摘要（SHA-256 的十六进制）。它在提交时被核对（让存储侧算，
+	// 给不出时读回自己算），不一致即删除对象并拒绝。
+	Digest string `protobuf:"bytes,4,opt,name=digest,proto3" json:"digest,omitempty"`
+	// 展示用的原始文件名。**不进对象键，不参与任何判断**；它只进下载响应头，而那里
+	// 会先滤掉会破坏响应头的字符。
+	Filename string `protobuf:"bytes,5,opt,name=filename,proto3" json:"filename,omitempty"`
+	// 初始说明，可空。与"提交之后再调 UpdateAttachment"结果相同。
+	Description   string `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommitAttachmentUploadRequest) Reset() {
+	*x = CommitAttachmentUploadRequest{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommitAttachmentUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommitAttachmentUploadRequest) ProtoMessage() {}
+
+func (x *CommitAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommitAttachmentUploadRequest.ProtoReflect.Descriptor instead.
+func (*CommitAttachmentUploadRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *CommitAttachmentUploadRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *CommitAttachmentUploadRequest) GetAttachmentId() string {
+	if x != nil {
+		return x.AttachmentId
+	}
+	return ""
+}
+
+func (x *CommitAttachmentUploadRequest) GetVersionId() string {
+	if x != nil {
+		return x.VersionId
+	}
+	return ""
+}
+
+func (x *CommitAttachmentUploadRequest) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *CommitAttachmentUploadRequest) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *CommitAttachmentUploadRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type CommitAttachmentUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Attachment    *Attachment            `protobuf:"bytes,1,opt,name=attachment,proto3" json:"attachment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommitAttachmentUploadResponse) Reset() {
+	*x = CommitAttachmentUploadResponse{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommitAttachmentUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommitAttachmentUploadResponse) ProtoMessage() {}
+
+func (x *CommitAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommitAttachmentUploadResponse.ProtoReflect.Descriptor instead.
+func (*CommitAttachmentUploadResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *CommitAttachmentUploadResponse) GetAttachment() *Attachment {
+	if x != nil {
+		return x.Attachment
+	}
+	return nil
+}
+
+// UpdateAttachmentRequest 表达的是说明的**期望完整状态**，不是增量。
+type UpdateAttachmentRequest struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId    string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	AttachmentId string                 `protobuf:"bytes,2,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	// 期望的说明。空串表示清空。
+	Description   string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateAttachmentRequest) Reset() {
+	*x = UpdateAttachmentRequest{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateAttachmentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateAttachmentRequest) ProtoMessage() {}
+
+func (x *UpdateAttachmentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateAttachmentRequest.ProtoReflect.Descriptor instead.
+func (*UpdateAttachmentRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *UpdateAttachmentRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *UpdateAttachmentRequest) GetAttachmentId() string {
+	if x != nil {
+		return x.AttachmentId
+	}
+	return ""
+}
+
+func (x *UpdateAttachmentRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type UpdateAttachmentResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 改完之后的附件（含短时下载地址）。
+	Attachment    *Attachment `protobuf:"bytes,1,opt,name=attachment,proto3" json:"attachment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateAttachmentResponse) Reset() {
+	*x = UpdateAttachmentResponse{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateAttachmentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateAttachmentResponse) ProtoMessage() {}
+
+func (x *UpdateAttachmentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateAttachmentResponse.ProtoReflect.Descriptor instead.
+func (*UpdateAttachmentResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *UpdateAttachmentResponse) GetAttachment() *Attachment {
+	if x != nil {
+		return x.Attachment
+	}
+	return nil
+}
+
+type DeleteAttachmentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	AttachmentId  string                 `protobuf:"bytes,2,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteAttachmentRequest) Reset() {
+	*x = DeleteAttachmentRequest{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAttachmentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAttachmentRequest) ProtoMessage() {}
+
+func (x *DeleteAttachmentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAttachmentRequest.ProtoReflect.Descriptor instead.
+func (*DeleteAttachmentRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *DeleteAttachmentRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *DeleteAttachmentRequest) GetAttachmentId() string {
+	if x != nil {
+		return x.AttachmentId
+	}
+	return ""
+}
+
+type DeleteAttachmentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteAttachmentResponse) Reset() {
+	*x = DeleteAttachmentResponse{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAttachmentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAttachmentResponse) ProtoMessage() {}
+
+func (x *DeleteAttachmentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAttachmentResponse.ProtoReflect.Descriptor instead.
+func (*DeleteAttachmentResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{71}
+}
+
+type GetAttachmentDownloadURLRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	AttachmentId  string                 `protobuf:"bytes,2,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAttachmentDownloadURLRequest) Reset() {
+	*x = GetAttachmentDownloadURLRequest{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAttachmentDownloadURLRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAttachmentDownloadURLRequest) ProtoMessage() {}
+
+func (x *GetAttachmentDownloadURLRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAttachmentDownloadURLRequest.ProtoReflect.Descriptor instead.
+func (*GetAttachmentDownloadURLRequest) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *GetAttachmentDownloadURLRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *GetAttachmentDownloadURLRequest) GetAttachmentId() string {
+	if x != nil {
+		return x.AttachmentId
+	}
+	return ""
+}
+
+type GetAttachmentDownloadURLResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 短时下载地址。**调用方不拼**：响应头是签发策略定下来的，自己拼一条就少了那
+	// 一层保证（见 GetAttachmentDownloadURL 的说明）。
+	Url           string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAttachmentDownloadURLResponse) Reset() {
+	*x = GetAttachmentDownloadURLResponse{}
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAttachmentDownloadURLResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAttachmentDownloadURLResponse) ProtoMessage() {}
+
+func (x *GetAttachmentDownloadURLResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAttachmentDownloadURLResponse.ProtoReflect.Descriptor instead.
+func (*GetAttachmentDownloadURLResponse) Descriptor() ([]byte, []int) {
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *GetAttachmentDownloadURLResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
 }
 
 type PublishRequest struct {
@@ -3793,7 +4598,7 @@ type PublishRequest struct {
 
 func (x *PublishRequest) Reset() {
 	*x = PublishRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[61]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3805,7 +4610,7 @@ func (x *PublishRequest) String() string {
 func (*PublishRequest) ProtoMessage() {}
 
 func (x *PublishRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[61]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3818,7 +4623,7 @@ func (x *PublishRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishRequest.ProtoReflect.Descriptor instead.
 func (*PublishRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{61}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *PublishRequest) GetProjectId() string {
@@ -3853,7 +4658,7 @@ type PublishResponse struct {
 
 func (x *PublishResponse) Reset() {
 	*x = PublishResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[62]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3865,7 +4670,7 @@ func (x *PublishResponse) String() string {
 func (*PublishResponse) ProtoMessage() {}
 
 func (x *PublishResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[62]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3878,7 +4683,7 @@ func (x *PublishResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishResponse.ProtoReflect.Descriptor instead.
 func (*PublishResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{62}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *PublishResponse) GetPublication() *Publication {
@@ -3906,7 +4711,7 @@ type UnpublishRequest struct {
 
 func (x *UnpublishRequest) Reset() {
 	*x = UnpublishRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[63]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3918,7 +4723,7 @@ func (x *UnpublishRequest) String() string {
 func (*UnpublishRequest) ProtoMessage() {}
 
 func (x *UnpublishRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[63]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3931,7 +4736,7 @@ func (x *UnpublishRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnpublishRequest.ProtoReflect.Descriptor instead.
 func (*UnpublishRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{63}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *UnpublishRequest) GetProjectId() string {
@@ -3957,7 +4762,7 @@ type UnpublishResponse struct {
 
 func (x *UnpublishResponse) Reset() {
 	*x = UnpublishResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[64]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3969,7 +4774,7 @@ func (x *UnpublishResponse) String() string {
 func (*UnpublishResponse) ProtoMessage() {}
 
 func (x *UnpublishResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[64]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3982,7 +4787,7 @@ func (x *UnpublishResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnpublishResponse.ProtoReflect.Descriptor instead.
 func (*UnpublishResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{64}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *UnpublishResponse) GetProject() *Project {
@@ -4003,7 +4808,7 @@ type GetPublicationRequest struct {
 
 func (x *GetPublicationRequest) Reset() {
 	*x = GetPublicationRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[65]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4015,7 +4820,7 @@ func (x *GetPublicationRequest) String() string {
 func (*GetPublicationRequest) ProtoMessage() {}
 
 func (x *GetPublicationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[65]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4028,7 +4833,7 @@ func (x *GetPublicationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPublicationRequest.ProtoReflect.Descriptor instead.
 func (*GetPublicationRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{65}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *GetPublicationRequest) GetProjectId() string {
@@ -4058,7 +4863,7 @@ type GetPublicationResponse struct {
 
 func (x *GetPublicationResponse) Reset() {
 	*x = GetPublicationResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[66]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4070,7 +4875,7 @@ func (x *GetPublicationResponse) String() string {
 func (*GetPublicationResponse) ProtoMessage() {}
 
 func (x *GetPublicationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[66]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4083,7 +4888,7 @@ func (x *GetPublicationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPublicationResponse.ProtoReflect.Descriptor instead.
 func (*GetPublicationResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{66}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *GetPublicationResponse) GetPublication() *Publication {
@@ -4114,7 +4919,7 @@ type ResolveSharedPageRequest struct {
 
 func (x *ResolveSharedPageRequest) Reset() {
 	*x = ResolveSharedPageRequest{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[67]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4126,7 +4931,7 @@ func (x *ResolveSharedPageRequest) String() string {
 func (*ResolveSharedPageRequest) ProtoMessage() {}
 
 func (x *ResolveSharedPageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[67]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4139,7 +4944,7 @@ func (x *ResolveSharedPageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveSharedPageRequest.ProtoReflect.Descriptor instead.
 func (*ResolveSharedPageRequest) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{67}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ResolveSharedPageRequest) GetPath() string {
@@ -4164,7 +4969,7 @@ type ResolveSharedPageResponse struct {
 
 func (x *ResolveSharedPageResponse) Reset() {
 	*x = ResolveSharedPageResponse{}
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[68]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4176,7 +4981,7 @@ func (x *ResolveSharedPageResponse) String() string {
 func (*ResolveSharedPageResponse) ProtoMessage() {}
 
 func (x *ResolveSharedPageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[68]
+	mi := &file_aladdin_galaxy_v1_galaxy_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4189,7 +4994,7 @@ func (x *ResolveSharedPageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveSharedPageResponse.ProtoReflect.Descriptor instead.
 func (*ResolveSharedPageResponse) Descriptor() ([]byte, []int) {
-	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{68}
+	return file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *ResolveSharedPageResponse) GetContentUrl() string {
@@ -4212,7 +5017,7 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x06source\"_\n" +
 	"\x0eAssetKindLimit\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.aladdin.galaxy.v1.MediaKindR\x04kind\x12\x1b\n" +
-	"\tmax_bytes\x18\x02 \x01(\rR\bmaxBytes\"\xc8\x02\n" +
+	"\tmax_bytes\x18\x02 \x01(\rR\bmaxBytes\"\xee\x03\n" +
 	"\fCapabilities\x120\n" +
 	"\x14asset_upload_enabled\x18\x01 \x01(\bR\x12assetUploadEnabled\x12'\n" +
 	"\x0fpublish_enabled\x18\x02 \x01(\bR\x0epublishEnabled\x12'\n" +
@@ -4220,7 +5025,11 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x0emax_text_bytes\x18\x03 \x01(\rR\fmaxTextBytes\x12+\n" +
 	"\x12max_file_set_bytes\x18\x04 \x01(\rR\x0fmaxFileSetBytes\x12\x1b\n" +
 	"\tmax_files\x18\x05 \x01(\rR\bmaxFiles\x12D\n" +
-	"\fasset_limits\x18\x06 \x03(\v2!.aladdin.galaxy.v1.AssetKindLimitR\vassetLimits\"\xe7\x01\n" +
+	"\fasset_limits\x18\x06 \x03(\v2!.aladdin.galaxy.v1.AssetKindLimitR\vassetLimits\x12-\n" +
+	"\x12attachment_enabled\x18\b \x01(\bR\x11attachmentEnabled\x120\n" +
+	"\x14max_attachment_bytes\x18\t \x01(\x04R\x12maxAttachmentBytes\x12C\n" +
+	"\x1eproject_attachment_quota_bytes\x18\n" +
+	" \x01(\x04R\x1bprojectAttachmentQuotaBytes\"\xe7\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -4273,7 +5082,22 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x05title\x18\b \x01(\tR\x05title\x12\x12\n" +
 	"\x04tags\x18\t \x03(\tR\x04tags\x12\x14\n" +
 	"\x05notes\x18\n" +
-	" \x01(\tR\x05notes\"U\n" +
+	" \x01(\tR\x05notes\"\x93\x02\n" +
+	"\n" +
+	"Attachment\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1d\n" +
+	"\n" +
+	"version_id\x18\x03 \x01(\tR\tversionId\x12\x1a\n" +
+	"\bfilename\x18\x04 \x01(\tR\bfilename\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x05 \x01(\x04R\tsizeBytes\x12\x16\n" +
+	"\x06digest\x18\x06 \x01(\tR\x06digest\x12 \n" +
+	"\vdescription\x18\a \x01(\tR\vdescription\x12\x1f\n" +
+	"\vuploaded_at\x18\b \x01(\tR\n" +
+	"uploadedAt\x12!\n" +
+	"\fdownload_url\x18\t \x01(\tR\vdownloadUrl\"U\n" +
 	"\x11ValidationProblem\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
@@ -4454,7 +5278,55 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x04tags\x18\x04 \x03(\tR\x04tags\x12\x14\n" +
 	"\x05notes\x18\x05 \x01(\tR\x05notes\"E\n" +
 	"\x13UpdateAssetResponse\x12.\n" +
-	"\x05asset\x18\x01 \x01(\v2\x18.aladdin.galaxy.v1.AssetR\x05asset\"\x82\x01\n" +
+	"\x05asset\x18\x01 \x01(\v2\x18.aladdin.galaxy.v1.AssetR\x05asset\"7\n" +
+	"\x16ListAttachmentsRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\"Z\n" +
+	"\x17ListAttachmentsResponse\x12?\n" +
+	"\vattachments\x18\x01 \x03(\v2\x1d.aladdin.galaxy.v1.AttachmentR\vattachments\"{\n" +
+	"\x1cBeginAttachmentUploadRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1d\n" +
+	"\n" +
+	"version_id\x18\x02 \x01(\tR\tversionId\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x04R\tsizeBytes\"\x8c\x01\n" +
+	"\x1dBeginAttachmentUploadResponse\x12#\n" +
+	"\rattachment_id\x18\x01 \x01(\tR\fattachmentId\x12F\n" +
+	"\x06upload\x18\x02 \x01(\v2..aladdin.objectstore.v1.DirectUploadCredentialR\x06upload\"\xd8\x01\n" +
+	"\x1dCommitAttachmentUploadRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12#\n" +
+	"\rattachment_id\x18\x02 \x01(\tR\fattachmentId\x12\x1d\n" +
+	"\n" +
+	"version_id\x18\x03 \x01(\tR\tversionId\x12\x16\n" +
+	"\x06digest\x18\x04 \x01(\tR\x06digest\x12\x1a\n" +
+	"\bfilename\x18\x05 \x01(\tR\bfilename\x12 \n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\"_\n" +
+	"\x1eCommitAttachmentUploadResponse\x12=\n" +
+	"\n" +
+	"attachment\x18\x01 \x01(\v2\x1d.aladdin.galaxy.v1.AttachmentR\n" +
+	"attachment\"\x7f\n" +
+	"\x17UpdateAttachmentRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12#\n" +
+	"\rattachment_id\x18\x02 \x01(\tR\fattachmentId\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"Y\n" +
+	"\x18UpdateAttachmentResponse\x12=\n" +
+	"\n" +
+	"attachment\x18\x01 \x01(\v2\x1d.aladdin.galaxy.v1.AttachmentR\n" +
+	"attachment\"]\n" +
+	"\x17DeleteAttachmentRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12#\n" +
+	"\rattachment_id\x18\x02 \x01(\tR\fattachmentId\"\x1a\n" +
+	"\x18DeleteAttachmentResponse\"e\n" +
+	"\x1fGetAttachmentDownloadURLRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12#\n" +
+	"\rattachment_id\x18\x02 \x01(\tR\fattachmentId\"4\n" +
+	" GetAttachmentDownloadURLResponse\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\"\x82\x01\n" +
 	"\x0ePublishRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1d\n" +
@@ -4491,7 +5363,7 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x10MEDIA_KIND_IMAGE\x10\x01\x12\x14\n" +
 	"\x10MEDIA_KIND_VIDEO\x10\x02\x12\x14\n" +
 	"\x10MEDIA_KIND_AUDIO\x10\x03\x12\x13\n" +
-	"\x0fMEDIA_KIND_FONT\x10\x042\xb8\x1d\n" +
+	"\x0fMEDIA_KIND_FONT\x10\x042\xc9$\n" +
 	"\rGalaxyService\x12u\n" +
 	"\x0fGetCapabilities\x12).aladdin.galaxy.v1.GetCapabilitiesRequest\x1a*.aladdin.galaxy.v1.GetCapabilitiesResponse\"\v\x90\x88'\x03\xa0\x88'\x01\x90\x02\x01\x12\x7f\n" +
 	"\fListProjects\x12&.aladdin.galaxy.v1.ListProjectsRequest\x1a'.aladdin.galaxy.v1.ListProjectsResponse\"\x1e\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x90\x02\x01\x12\x80\x01\n" +
@@ -4520,7 +5392,13 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x10BeginAssetUpload\x12*.aladdin.galaxy.v1.BeginAssetUploadRequest\x1a+.aladdin.galaxy.v1.BeginAssetUploadResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12\x8a\x01\n" +
 	"\x11CommitAssetUpload\x12+.aladdin.galaxy.v1.CommitAssetUploadRequest\x1a,.aladdin.galaxy.v1.CommitAssetUploadResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12x\n" +
 	"\vDeleteAsset\x12%.aladdin.galaxy.v1.DeleteAssetRequest\x1a&.aladdin.galaxy.v1.DeleteAssetResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12x\n" +
-	"\vUpdateAsset\x12%.aladdin.galaxy.v1.UpdateAssetRequest\x1a&.aladdin.galaxy.v1.UpdateAssetResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12p\n" +
+	"\vUpdateAsset\x12%.aladdin.galaxy.v1.UpdateAssetRequest\x1a&.aladdin.galaxy.v1.UpdateAssetResponse\"\x1a\x8a\x88'\x12galaxy.asset.write\x90\x88'\x03\x12\x8b\x01\n" +
+	"\x0fListAttachments\x12).aladdin.galaxy.v1.ListAttachmentsRequest\x1a*.aladdin.galaxy.v1.ListAttachmentsResponse\"!\x8a\x88'\x16galaxy.attachment.read\x90\x88'\x03\x90\x02\x01\x12\x9b\x01\n" +
+	"\x15BeginAttachmentUpload\x12/.aladdin.galaxy.v1.BeginAttachmentUploadRequest\x1a0.aladdin.galaxy.v1.BeginAttachmentUploadResponse\"\x1f\x8a\x88'\x17galaxy.attachment.write\x90\x88'\x03\x12\x9e\x01\n" +
+	"\x16CommitAttachmentUpload\x120.aladdin.galaxy.v1.CommitAttachmentUploadRequest\x1a1.aladdin.galaxy.v1.CommitAttachmentUploadResponse\"\x1f\x8a\x88'\x17galaxy.attachment.write\x90\x88'\x03\x12\x8c\x01\n" +
+	"\x10UpdateAttachment\x12*.aladdin.galaxy.v1.UpdateAttachmentRequest\x1a+.aladdin.galaxy.v1.UpdateAttachmentResponse\"\x1f\x8a\x88'\x17galaxy.attachment.write\x90\x88'\x03\x12\x8c\x01\n" +
+	"\x10DeleteAttachment\x12*.aladdin.galaxy.v1.DeleteAttachmentRequest\x1a+.aladdin.galaxy.v1.DeleteAttachmentResponse\"\x1f\x8a\x88'\x17galaxy.attachment.write\x90\x88'\x03\x12\xa3\x01\n" +
+	"\x18GetAttachmentDownloadURL\x122.aladdin.galaxy.v1.GetAttachmentDownloadURLRequest\x1a3.aladdin.galaxy.v1.GetAttachmentDownloadURLResponse\"\x1e\x8a\x88'\x16galaxy.attachment.read\x90\x88'\x03\x12p\n" +
 	"\aPublish\x12!.aladdin.galaxy.v1.PublishRequest\x1a\".aladdin.galaxy.v1.PublishResponse\"\x1e\x8a\x88'\x16galaxy.project.publish\x90\x88'\x03\x12v\n" +
 	"\tUnpublish\x12#.aladdin.galaxy.v1.UnpublishRequest\x1a$.aladdin.galaxy.v1.UnpublishResponse\"\x1e\x8a\x88'\x16galaxy.project.publish\x90\x88'\x03\x12\x85\x01\n" +
 	"\x0eGetPublication\x12(.aladdin.galaxy.v1.GetPublicationRequest\x1a).aladdin.galaxy.v1.GetPublicationResponse\"\x1e\x8a\x88'\x13galaxy.project.read\x90\x88'\x03\x90\x02\x01\x12t\n" +
@@ -4539,80 +5417,93 @@ func file_aladdin_galaxy_v1_galaxy_proto_rawDescGZIP() []byte {
 }
 
 var file_aladdin_galaxy_v1_galaxy_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_aladdin_galaxy_v1_galaxy_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
+var file_aladdin_galaxy_v1_galaxy_proto_msgTypes = make([]protoimpl.MessageInfo, 82)
 var file_aladdin_galaxy_v1_galaxy_proto_goTypes = []any{
-	(ContentSlot)(0),                     // 0: aladdin.galaxy.v1.ContentSlot
-	(MediaKind)(0),                       // 1: aladdin.galaxy.v1.MediaKind
-	(*FileEntry)(nil),                    // 2: aladdin.galaxy.v1.FileEntry
-	(*AssetKindLimit)(nil),               // 3: aladdin.galaxy.v1.AssetKindLimit
-	(*Capabilities)(nil),                 // 4: aladdin.galaxy.v1.Capabilities
-	(*Project)(nil),                      // 5: aladdin.galaxy.v1.Project
-	(*ProjectSlot)(nil),                  // 6: aladdin.galaxy.v1.ProjectSlot
-	(*Draft)(nil),                        // 7: aladdin.galaxy.v1.Draft
-	(*Version)(nil),                      // 8: aladdin.galaxy.v1.Version
-	(*DraftSnapshot)(nil),                // 9: aladdin.galaxy.v1.DraftSnapshot
-	(*Asset)(nil),                        // 10: aladdin.galaxy.v1.Asset
-	(*ValidationProblem)(nil),            // 11: aladdin.galaxy.v1.ValidationProblem
-	(*Publication)(nil),                  // 12: aladdin.galaxy.v1.Publication
-	(*GetCapabilitiesRequest)(nil),       // 13: aladdin.galaxy.v1.GetCapabilitiesRequest
-	(*GetCapabilitiesResponse)(nil),      // 14: aladdin.galaxy.v1.GetCapabilitiesResponse
-	(*ListProjectsRequest)(nil),          // 15: aladdin.galaxy.v1.ListProjectsRequest
-	(*ListProjectsResponse)(nil),         // 16: aladdin.galaxy.v1.ListProjectsResponse
-	(*CreateProjectRequest)(nil),         // 17: aladdin.galaxy.v1.CreateProjectRequest
-	(*CreateProjectResponse)(nil),        // 18: aladdin.galaxy.v1.CreateProjectResponse
-	(*AddProjectSlotRequest)(nil),        // 19: aladdin.galaxy.v1.AddProjectSlotRequest
-	(*AddProjectSlotResponse)(nil),       // 20: aladdin.galaxy.v1.AddProjectSlotResponse
-	(*GetProjectRequest)(nil),            // 21: aladdin.galaxy.v1.GetProjectRequest
-	(*GetProjectResponse)(nil),           // 22: aladdin.galaxy.v1.GetProjectResponse
-	(*UpdateProjectRequest)(nil),         // 23: aladdin.galaxy.v1.UpdateProjectRequest
-	(*UpdateProjectResponse)(nil),        // 24: aladdin.galaxy.v1.UpdateProjectResponse
-	(*DeleteProjectRequest)(nil),         // 25: aladdin.galaxy.v1.DeleteProjectRequest
-	(*DeleteProjectResponse)(nil),        // 26: aladdin.galaxy.v1.DeleteProjectResponse
-	(*GetDraftRequest)(nil),              // 27: aladdin.galaxy.v1.GetDraftRequest
-	(*GetDraftResponse)(nil),             // 28: aladdin.galaxy.v1.GetDraftResponse
-	(*PushDraftRequest)(nil),             // 29: aladdin.galaxy.v1.PushDraftRequest
-	(*PushDraftResponse)(nil),            // 30: aladdin.galaxy.v1.PushDraftResponse
-	(*SaveVersionRequest)(nil),           // 31: aladdin.galaxy.v1.SaveVersionRequest
-	(*SaveVersionResponse)(nil),          // 32: aladdin.galaxy.v1.SaveVersionResponse
-	(*UpdateVersionRequest)(nil),         // 33: aladdin.galaxy.v1.UpdateVersionRequest
-	(*UpdateVersionResponse)(nil),        // 34: aladdin.galaxy.v1.UpdateVersionResponse
-	(*ListDraftSnapshotsRequest)(nil),    // 35: aladdin.galaxy.v1.ListDraftSnapshotsRequest
-	(*ListDraftSnapshotsResponse)(nil),   // 36: aladdin.galaxy.v1.ListDraftSnapshotsResponse
-	(*RestoreDraftSnapshotRequest)(nil),  // 37: aladdin.galaxy.v1.RestoreDraftSnapshotRequest
-	(*RestoreDraftSnapshotResponse)(nil), // 38: aladdin.galaxy.v1.RestoreDraftSnapshotResponse
-	(*ListVersionsRequest)(nil),          // 39: aladdin.galaxy.v1.ListVersionsRequest
-	(*ListVersionsResponse)(nil),         // 40: aladdin.galaxy.v1.ListVersionsResponse
-	(*GetVersionRequest)(nil),            // 41: aladdin.galaxy.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),           // 42: aladdin.galaxy.v1.GetVersionResponse
-	(*DeleteVersionRequest)(nil),         // 43: aladdin.galaxy.v1.DeleteVersionRequest
-	(*DeleteVersionResponse)(nil),        // 44: aladdin.galaxy.v1.DeleteVersionResponse
-	(*ValidateDraftRequest)(nil),         // 45: aladdin.galaxy.v1.ValidateDraftRequest
-	(*ValidateDraftResponse)(nil),        // 46: aladdin.galaxy.v1.ValidateDraftResponse
-	(*PreviewDraftRequest)(nil),          // 47: aladdin.galaxy.v1.PreviewDraftRequest
-	(*PreviewDraftResponse)(nil),         // 48: aladdin.galaxy.v1.PreviewDraftResponse
-	(*BeginContentUploadRequest)(nil),    // 49: aladdin.galaxy.v1.BeginContentUploadRequest
-	(*BeginContentUploadResponse)(nil),   // 50: aladdin.galaxy.v1.BeginContentUploadResponse
-	(*CommitContentUploadRequest)(nil),   // 51: aladdin.galaxy.v1.CommitContentUploadRequest
-	(*CommitContentUploadResponse)(nil),  // 52: aladdin.galaxy.v1.CommitContentUploadResponse
-	(*ListAssetsRequest)(nil),            // 53: aladdin.galaxy.v1.ListAssetsRequest
-	(*ListAssetsResponse)(nil),           // 54: aladdin.galaxy.v1.ListAssetsResponse
-	(*BeginAssetUploadRequest)(nil),      // 55: aladdin.galaxy.v1.BeginAssetUploadRequest
-	(*BeginAssetUploadResponse)(nil),     // 56: aladdin.galaxy.v1.BeginAssetUploadResponse
-	(*CommitAssetUploadRequest)(nil),     // 57: aladdin.galaxy.v1.CommitAssetUploadRequest
-	(*CommitAssetUploadResponse)(nil),    // 58: aladdin.galaxy.v1.CommitAssetUploadResponse
-	(*DeleteAssetRequest)(nil),           // 59: aladdin.galaxy.v1.DeleteAssetRequest
-	(*DeleteAssetResponse)(nil),          // 60: aladdin.galaxy.v1.DeleteAssetResponse
-	(*UpdateAssetRequest)(nil),           // 61: aladdin.galaxy.v1.UpdateAssetRequest
-	(*UpdateAssetResponse)(nil),          // 62: aladdin.galaxy.v1.UpdateAssetResponse
-	(*PublishRequest)(nil),               // 63: aladdin.galaxy.v1.PublishRequest
-	(*PublishResponse)(nil),              // 64: aladdin.galaxy.v1.PublishResponse
-	(*UnpublishRequest)(nil),             // 65: aladdin.galaxy.v1.UnpublishRequest
-	(*UnpublishResponse)(nil),            // 66: aladdin.galaxy.v1.UnpublishResponse
-	(*GetPublicationRequest)(nil),        // 67: aladdin.galaxy.v1.GetPublicationRequest
-	(*GetPublicationResponse)(nil),       // 68: aladdin.galaxy.v1.GetPublicationResponse
-	(*ResolveSharedPageRequest)(nil),     // 69: aladdin.galaxy.v1.ResolveSharedPageRequest
-	(*ResolveSharedPageResponse)(nil),    // 70: aladdin.galaxy.v1.ResolveSharedPageResponse
-	(*v1.DirectUploadCredential)(nil),    // 71: aladdin.objectstore.v1.DirectUploadCredential
+	(ContentSlot)(0),                         // 0: aladdin.galaxy.v1.ContentSlot
+	(MediaKind)(0),                           // 1: aladdin.galaxy.v1.MediaKind
+	(*FileEntry)(nil),                        // 2: aladdin.galaxy.v1.FileEntry
+	(*AssetKindLimit)(nil),                   // 3: aladdin.galaxy.v1.AssetKindLimit
+	(*Capabilities)(nil),                     // 4: aladdin.galaxy.v1.Capabilities
+	(*Project)(nil),                          // 5: aladdin.galaxy.v1.Project
+	(*ProjectSlot)(nil),                      // 6: aladdin.galaxy.v1.ProjectSlot
+	(*Draft)(nil),                            // 7: aladdin.galaxy.v1.Draft
+	(*Version)(nil),                          // 8: aladdin.galaxy.v1.Version
+	(*DraftSnapshot)(nil),                    // 9: aladdin.galaxy.v1.DraftSnapshot
+	(*Asset)(nil),                            // 10: aladdin.galaxy.v1.Asset
+	(*Attachment)(nil),                       // 11: aladdin.galaxy.v1.Attachment
+	(*ValidationProblem)(nil),                // 12: aladdin.galaxy.v1.ValidationProblem
+	(*Publication)(nil),                      // 13: aladdin.galaxy.v1.Publication
+	(*GetCapabilitiesRequest)(nil),           // 14: aladdin.galaxy.v1.GetCapabilitiesRequest
+	(*GetCapabilitiesResponse)(nil),          // 15: aladdin.galaxy.v1.GetCapabilitiesResponse
+	(*ListProjectsRequest)(nil),              // 16: aladdin.galaxy.v1.ListProjectsRequest
+	(*ListProjectsResponse)(nil),             // 17: aladdin.galaxy.v1.ListProjectsResponse
+	(*CreateProjectRequest)(nil),             // 18: aladdin.galaxy.v1.CreateProjectRequest
+	(*CreateProjectResponse)(nil),            // 19: aladdin.galaxy.v1.CreateProjectResponse
+	(*AddProjectSlotRequest)(nil),            // 20: aladdin.galaxy.v1.AddProjectSlotRequest
+	(*AddProjectSlotResponse)(nil),           // 21: aladdin.galaxy.v1.AddProjectSlotResponse
+	(*GetProjectRequest)(nil),                // 22: aladdin.galaxy.v1.GetProjectRequest
+	(*GetProjectResponse)(nil),               // 23: aladdin.galaxy.v1.GetProjectResponse
+	(*UpdateProjectRequest)(nil),             // 24: aladdin.galaxy.v1.UpdateProjectRequest
+	(*UpdateProjectResponse)(nil),            // 25: aladdin.galaxy.v1.UpdateProjectResponse
+	(*DeleteProjectRequest)(nil),             // 26: aladdin.galaxy.v1.DeleteProjectRequest
+	(*DeleteProjectResponse)(nil),            // 27: aladdin.galaxy.v1.DeleteProjectResponse
+	(*GetDraftRequest)(nil),                  // 28: aladdin.galaxy.v1.GetDraftRequest
+	(*GetDraftResponse)(nil),                 // 29: aladdin.galaxy.v1.GetDraftResponse
+	(*PushDraftRequest)(nil),                 // 30: aladdin.galaxy.v1.PushDraftRequest
+	(*PushDraftResponse)(nil),                // 31: aladdin.galaxy.v1.PushDraftResponse
+	(*SaveVersionRequest)(nil),               // 32: aladdin.galaxy.v1.SaveVersionRequest
+	(*SaveVersionResponse)(nil),              // 33: aladdin.galaxy.v1.SaveVersionResponse
+	(*UpdateVersionRequest)(nil),             // 34: aladdin.galaxy.v1.UpdateVersionRequest
+	(*UpdateVersionResponse)(nil),            // 35: aladdin.galaxy.v1.UpdateVersionResponse
+	(*ListDraftSnapshotsRequest)(nil),        // 36: aladdin.galaxy.v1.ListDraftSnapshotsRequest
+	(*ListDraftSnapshotsResponse)(nil),       // 37: aladdin.galaxy.v1.ListDraftSnapshotsResponse
+	(*RestoreDraftSnapshotRequest)(nil),      // 38: aladdin.galaxy.v1.RestoreDraftSnapshotRequest
+	(*RestoreDraftSnapshotResponse)(nil),     // 39: aladdin.galaxy.v1.RestoreDraftSnapshotResponse
+	(*ListVersionsRequest)(nil),              // 40: aladdin.galaxy.v1.ListVersionsRequest
+	(*ListVersionsResponse)(nil),             // 41: aladdin.galaxy.v1.ListVersionsResponse
+	(*GetVersionRequest)(nil),                // 42: aladdin.galaxy.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),               // 43: aladdin.galaxy.v1.GetVersionResponse
+	(*DeleteVersionRequest)(nil),             // 44: aladdin.galaxy.v1.DeleteVersionRequest
+	(*DeleteVersionResponse)(nil),            // 45: aladdin.galaxy.v1.DeleteVersionResponse
+	(*ValidateDraftRequest)(nil),             // 46: aladdin.galaxy.v1.ValidateDraftRequest
+	(*ValidateDraftResponse)(nil),            // 47: aladdin.galaxy.v1.ValidateDraftResponse
+	(*PreviewDraftRequest)(nil),              // 48: aladdin.galaxy.v1.PreviewDraftRequest
+	(*PreviewDraftResponse)(nil),             // 49: aladdin.galaxy.v1.PreviewDraftResponse
+	(*BeginContentUploadRequest)(nil),        // 50: aladdin.galaxy.v1.BeginContentUploadRequest
+	(*BeginContentUploadResponse)(nil),       // 51: aladdin.galaxy.v1.BeginContentUploadResponse
+	(*CommitContentUploadRequest)(nil),       // 52: aladdin.galaxy.v1.CommitContentUploadRequest
+	(*CommitContentUploadResponse)(nil),      // 53: aladdin.galaxy.v1.CommitContentUploadResponse
+	(*ListAssetsRequest)(nil),                // 54: aladdin.galaxy.v1.ListAssetsRequest
+	(*ListAssetsResponse)(nil),               // 55: aladdin.galaxy.v1.ListAssetsResponse
+	(*BeginAssetUploadRequest)(nil),          // 56: aladdin.galaxy.v1.BeginAssetUploadRequest
+	(*BeginAssetUploadResponse)(nil),         // 57: aladdin.galaxy.v1.BeginAssetUploadResponse
+	(*CommitAssetUploadRequest)(nil),         // 58: aladdin.galaxy.v1.CommitAssetUploadRequest
+	(*CommitAssetUploadResponse)(nil),        // 59: aladdin.galaxy.v1.CommitAssetUploadResponse
+	(*DeleteAssetRequest)(nil),               // 60: aladdin.galaxy.v1.DeleteAssetRequest
+	(*DeleteAssetResponse)(nil),              // 61: aladdin.galaxy.v1.DeleteAssetResponse
+	(*UpdateAssetRequest)(nil),               // 62: aladdin.galaxy.v1.UpdateAssetRequest
+	(*UpdateAssetResponse)(nil),              // 63: aladdin.galaxy.v1.UpdateAssetResponse
+	(*ListAttachmentsRequest)(nil),           // 64: aladdin.galaxy.v1.ListAttachmentsRequest
+	(*ListAttachmentsResponse)(nil),          // 65: aladdin.galaxy.v1.ListAttachmentsResponse
+	(*BeginAttachmentUploadRequest)(nil),     // 66: aladdin.galaxy.v1.BeginAttachmentUploadRequest
+	(*BeginAttachmentUploadResponse)(nil),    // 67: aladdin.galaxy.v1.BeginAttachmentUploadResponse
+	(*CommitAttachmentUploadRequest)(nil),    // 68: aladdin.galaxy.v1.CommitAttachmentUploadRequest
+	(*CommitAttachmentUploadResponse)(nil),   // 69: aladdin.galaxy.v1.CommitAttachmentUploadResponse
+	(*UpdateAttachmentRequest)(nil),          // 70: aladdin.galaxy.v1.UpdateAttachmentRequest
+	(*UpdateAttachmentResponse)(nil),         // 71: aladdin.galaxy.v1.UpdateAttachmentResponse
+	(*DeleteAttachmentRequest)(nil),          // 72: aladdin.galaxy.v1.DeleteAttachmentRequest
+	(*DeleteAttachmentResponse)(nil),         // 73: aladdin.galaxy.v1.DeleteAttachmentResponse
+	(*GetAttachmentDownloadURLRequest)(nil),  // 74: aladdin.galaxy.v1.GetAttachmentDownloadURLRequest
+	(*GetAttachmentDownloadURLResponse)(nil), // 75: aladdin.galaxy.v1.GetAttachmentDownloadURLResponse
+	(*PublishRequest)(nil),                   // 76: aladdin.galaxy.v1.PublishRequest
+	(*PublishResponse)(nil),                  // 77: aladdin.galaxy.v1.PublishResponse
+	(*UnpublishRequest)(nil),                 // 78: aladdin.galaxy.v1.UnpublishRequest
+	(*UnpublishResponse)(nil),                // 79: aladdin.galaxy.v1.UnpublishResponse
+	(*GetPublicationRequest)(nil),            // 80: aladdin.galaxy.v1.GetPublicationRequest
+	(*GetPublicationResponse)(nil),           // 81: aladdin.galaxy.v1.GetPublicationResponse
+	(*ResolveSharedPageRequest)(nil),         // 82: aladdin.galaxy.v1.ResolveSharedPageRequest
+	(*ResolveSharedPageResponse)(nil),        // 83: aladdin.galaxy.v1.ResolveSharedPageResponse
+	(*v1.DirectUploadCredential)(nil),        // 84: aladdin.objectstore.v1.DirectUploadCredential
 }
 var file_aladdin_galaxy_v1_galaxy_proto_depIdxs = []int32{
 	1,  // 0: aladdin.galaxy.v1.AssetKindLimit.kind:type_name -> aladdin.galaxy.v1.MediaKind
@@ -4654,84 +5545,100 @@ var file_aladdin_galaxy_v1_galaxy_proto_depIdxs = []int32{
 	8,  // 36: aladdin.galaxy.v1.GetVersionResponse.version:type_name -> aladdin.galaxy.v1.Version
 	0,  // 37: aladdin.galaxy.v1.DeleteVersionRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
 	0,  // 38: aladdin.galaxy.v1.ValidateDraftRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
-	11, // 39: aladdin.galaxy.v1.ValidateDraftResponse.problems:type_name -> aladdin.galaxy.v1.ValidationProblem
+	12, // 39: aladdin.galaxy.v1.ValidateDraftResponse.problems:type_name -> aladdin.galaxy.v1.ValidationProblem
 	0,  // 40: aladdin.galaxy.v1.PreviewDraftRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
-	71, // 41: aladdin.galaxy.v1.BeginContentUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
+	84, // 41: aladdin.galaxy.v1.BeginContentUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
 	10, // 42: aladdin.galaxy.v1.ListAssetsResponse.assets:type_name -> aladdin.galaxy.v1.Asset
-	71, // 43: aladdin.galaxy.v1.BeginAssetUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
+	84, // 43: aladdin.galaxy.v1.BeginAssetUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
 	10, // 44: aladdin.galaxy.v1.CommitAssetUploadResponse.asset:type_name -> aladdin.galaxy.v1.Asset
 	10, // 45: aladdin.galaxy.v1.UpdateAssetResponse.asset:type_name -> aladdin.galaxy.v1.Asset
-	0,  // 46: aladdin.galaxy.v1.PublishRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
-	12, // 47: aladdin.galaxy.v1.PublishResponse.publication:type_name -> aladdin.galaxy.v1.Publication
-	5,  // 48: aladdin.galaxy.v1.PublishResponse.project:type_name -> aladdin.galaxy.v1.Project
-	0,  // 49: aladdin.galaxy.v1.UnpublishRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
-	5,  // 50: aladdin.galaxy.v1.UnpublishResponse.project:type_name -> aladdin.galaxy.v1.Project
-	0,  // 51: aladdin.galaxy.v1.GetPublicationRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
-	12, // 52: aladdin.galaxy.v1.GetPublicationResponse.publication:type_name -> aladdin.galaxy.v1.Publication
-	2,  // 53: aladdin.galaxy.v1.GetPublicationResponse.entries:type_name -> aladdin.galaxy.v1.FileEntry
-	13, // 54: aladdin.galaxy.v1.GalaxyService.GetCapabilities:input_type -> aladdin.galaxy.v1.GetCapabilitiesRequest
-	15, // 55: aladdin.galaxy.v1.GalaxyService.ListProjects:input_type -> aladdin.galaxy.v1.ListProjectsRequest
-	17, // 56: aladdin.galaxy.v1.GalaxyService.CreateProject:input_type -> aladdin.galaxy.v1.CreateProjectRequest
-	19, // 57: aladdin.galaxy.v1.GalaxyService.AddProjectSlot:input_type -> aladdin.galaxy.v1.AddProjectSlotRequest
-	21, // 58: aladdin.galaxy.v1.GalaxyService.GetProject:input_type -> aladdin.galaxy.v1.GetProjectRequest
-	23, // 59: aladdin.galaxy.v1.GalaxyService.UpdateProject:input_type -> aladdin.galaxy.v1.UpdateProjectRequest
-	25, // 60: aladdin.galaxy.v1.GalaxyService.DeleteProject:input_type -> aladdin.galaxy.v1.DeleteProjectRequest
-	27, // 61: aladdin.galaxy.v1.GalaxyService.GetDraft:input_type -> aladdin.galaxy.v1.GetDraftRequest
-	29, // 62: aladdin.galaxy.v1.GalaxyService.PushDraft:input_type -> aladdin.galaxy.v1.PushDraftRequest
-	35, // 63: aladdin.galaxy.v1.GalaxyService.ListDraftSnapshots:input_type -> aladdin.galaxy.v1.ListDraftSnapshotsRequest
-	37, // 64: aladdin.galaxy.v1.GalaxyService.RestoreDraftSnapshot:input_type -> aladdin.galaxy.v1.RestoreDraftSnapshotRequest
-	31, // 65: aladdin.galaxy.v1.GalaxyService.SaveVersion:input_type -> aladdin.galaxy.v1.SaveVersionRequest
-	33, // 66: aladdin.galaxy.v1.GalaxyService.UpdateVersion:input_type -> aladdin.galaxy.v1.UpdateVersionRequest
-	39, // 67: aladdin.galaxy.v1.GalaxyService.ListVersions:input_type -> aladdin.galaxy.v1.ListVersionsRequest
-	41, // 68: aladdin.galaxy.v1.GalaxyService.GetVersion:input_type -> aladdin.galaxy.v1.GetVersionRequest
-	43, // 69: aladdin.galaxy.v1.GalaxyService.DeleteVersion:input_type -> aladdin.galaxy.v1.DeleteVersionRequest
-	45, // 70: aladdin.galaxy.v1.GalaxyService.ValidateDraft:input_type -> aladdin.galaxy.v1.ValidateDraftRequest
-	47, // 71: aladdin.galaxy.v1.GalaxyService.PreviewDraft:input_type -> aladdin.galaxy.v1.PreviewDraftRequest
-	49, // 72: aladdin.galaxy.v1.GalaxyService.BeginContentUpload:input_type -> aladdin.galaxy.v1.BeginContentUploadRequest
-	51, // 73: aladdin.galaxy.v1.GalaxyService.CommitContentUpload:input_type -> aladdin.galaxy.v1.CommitContentUploadRequest
-	53, // 74: aladdin.galaxy.v1.GalaxyService.ListAssets:input_type -> aladdin.galaxy.v1.ListAssetsRequest
-	55, // 75: aladdin.galaxy.v1.GalaxyService.BeginAssetUpload:input_type -> aladdin.galaxy.v1.BeginAssetUploadRequest
-	57, // 76: aladdin.galaxy.v1.GalaxyService.CommitAssetUpload:input_type -> aladdin.galaxy.v1.CommitAssetUploadRequest
-	59, // 77: aladdin.galaxy.v1.GalaxyService.DeleteAsset:input_type -> aladdin.galaxy.v1.DeleteAssetRequest
-	61, // 78: aladdin.galaxy.v1.GalaxyService.UpdateAsset:input_type -> aladdin.galaxy.v1.UpdateAssetRequest
-	63, // 79: aladdin.galaxy.v1.GalaxyService.Publish:input_type -> aladdin.galaxy.v1.PublishRequest
-	65, // 80: aladdin.galaxy.v1.GalaxyService.Unpublish:input_type -> aladdin.galaxy.v1.UnpublishRequest
-	67, // 81: aladdin.galaxy.v1.GalaxyService.GetPublication:input_type -> aladdin.galaxy.v1.GetPublicationRequest
-	69, // 82: aladdin.galaxy.v1.GalaxyService.ResolveSharedPage:input_type -> aladdin.galaxy.v1.ResolveSharedPageRequest
-	14, // 83: aladdin.galaxy.v1.GalaxyService.GetCapabilities:output_type -> aladdin.galaxy.v1.GetCapabilitiesResponse
-	16, // 84: aladdin.galaxy.v1.GalaxyService.ListProjects:output_type -> aladdin.galaxy.v1.ListProjectsResponse
-	18, // 85: aladdin.galaxy.v1.GalaxyService.CreateProject:output_type -> aladdin.galaxy.v1.CreateProjectResponse
-	20, // 86: aladdin.galaxy.v1.GalaxyService.AddProjectSlot:output_type -> aladdin.galaxy.v1.AddProjectSlotResponse
-	22, // 87: aladdin.galaxy.v1.GalaxyService.GetProject:output_type -> aladdin.galaxy.v1.GetProjectResponse
-	24, // 88: aladdin.galaxy.v1.GalaxyService.UpdateProject:output_type -> aladdin.galaxy.v1.UpdateProjectResponse
-	26, // 89: aladdin.galaxy.v1.GalaxyService.DeleteProject:output_type -> aladdin.galaxy.v1.DeleteProjectResponse
-	28, // 90: aladdin.galaxy.v1.GalaxyService.GetDraft:output_type -> aladdin.galaxy.v1.GetDraftResponse
-	30, // 91: aladdin.galaxy.v1.GalaxyService.PushDraft:output_type -> aladdin.galaxy.v1.PushDraftResponse
-	36, // 92: aladdin.galaxy.v1.GalaxyService.ListDraftSnapshots:output_type -> aladdin.galaxy.v1.ListDraftSnapshotsResponse
-	38, // 93: aladdin.galaxy.v1.GalaxyService.RestoreDraftSnapshot:output_type -> aladdin.galaxy.v1.RestoreDraftSnapshotResponse
-	32, // 94: aladdin.galaxy.v1.GalaxyService.SaveVersion:output_type -> aladdin.galaxy.v1.SaveVersionResponse
-	34, // 95: aladdin.galaxy.v1.GalaxyService.UpdateVersion:output_type -> aladdin.galaxy.v1.UpdateVersionResponse
-	40, // 96: aladdin.galaxy.v1.GalaxyService.ListVersions:output_type -> aladdin.galaxy.v1.ListVersionsResponse
-	42, // 97: aladdin.galaxy.v1.GalaxyService.GetVersion:output_type -> aladdin.galaxy.v1.GetVersionResponse
-	44, // 98: aladdin.galaxy.v1.GalaxyService.DeleteVersion:output_type -> aladdin.galaxy.v1.DeleteVersionResponse
-	46, // 99: aladdin.galaxy.v1.GalaxyService.ValidateDraft:output_type -> aladdin.galaxy.v1.ValidateDraftResponse
-	48, // 100: aladdin.galaxy.v1.GalaxyService.PreviewDraft:output_type -> aladdin.galaxy.v1.PreviewDraftResponse
-	50, // 101: aladdin.galaxy.v1.GalaxyService.BeginContentUpload:output_type -> aladdin.galaxy.v1.BeginContentUploadResponse
-	52, // 102: aladdin.galaxy.v1.GalaxyService.CommitContentUpload:output_type -> aladdin.galaxy.v1.CommitContentUploadResponse
-	54, // 103: aladdin.galaxy.v1.GalaxyService.ListAssets:output_type -> aladdin.galaxy.v1.ListAssetsResponse
-	56, // 104: aladdin.galaxy.v1.GalaxyService.BeginAssetUpload:output_type -> aladdin.galaxy.v1.BeginAssetUploadResponse
-	58, // 105: aladdin.galaxy.v1.GalaxyService.CommitAssetUpload:output_type -> aladdin.galaxy.v1.CommitAssetUploadResponse
-	60, // 106: aladdin.galaxy.v1.GalaxyService.DeleteAsset:output_type -> aladdin.galaxy.v1.DeleteAssetResponse
-	62, // 107: aladdin.galaxy.v1.GalaxyService.UpdateAsset:output_type -> aladdin.galaxy.v1.UpdateAssetResponse
-	64, // 108: aladdin.galaxy.v1.GalaxyService.Publish:output_type -> aladdin.galaxy.v1.PublishResponse
-	66, // 109: aladdin.galaxy.v1.GalaxyService.Unpublish:output_type -> aladdin.galaxy.v1.UnpublishResponse
-	68, // 110: aladdin.galaxy.v1.GalaxyService.GetPublication:output_type -> aladdin.galaxy.v1.GetPublicationResponse
-	70, // 111: aladdin.galaxy.v1.GalaxyService.ResolveSharedPage:output_type -> aladdin.galaxy.v1.ResolveSharedPageResponse
-	83, // [83:112] is the sub-list for method output_type
-	54, // [54:83] is the sub-list for method input_type
-	54, // [54:54] is the sub-list for extension type_name
-	54, // [54:54] is the sub-list for extension extendee
-	0,  // [0:54] is the sub-list for field type_name
+	11, // 46: aladdin.galaxy.v1.ListAttachmentsResponse.attachments:type_name -> aladdin.galaxy.v1.Attachment
+	84, // 47: aladdin.galaxy.v1.BeginAttachmentUploadResponse.upload:type_name -> aladdin.objectstore.v1.DirectUploadCredential
+	11, // 48: aladdin.galaxy.v1.CommitAttachmentUploadResponse.attachment:type_name -> aladdin.galaxy.v1.Attachment
+	11, // 49: aladdin.galaxy.v1.UpdateAttachmentResponse.attachment:type_name -> aladdin.galaxy.v1.Attachment
+	0,  // 50: aladdin.galaxy.v1.PublishRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
+	13, // 51: aladdin.galaxy.v1.PublishResponse.publication:type_name -> aladdin.galaxy.v1.Publication
+	5,  // 52: aladdin.galaxy.v1.PublishResponse.project:type_name -> aladdin.galaxy.v1.Project
+	0,  // 53: aladdin.galaxy.v1.UnpublishRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
+	5,  // 54: aladdin.galaxy.v1.UnpublishResponse.project:type_name -> aladdin.galaxy.v1.Project
+	0,  // 55: aladdin.galaxy.v1.GetPublicationRequest.slot:type_name -> aladdin.galaxy.v1.ContentSlot
+	13, // 56: aladdin.galaxy.v1.GetPublicationResponse.publication:type_name -> aladdin.galaxy.v1.Publication
+	2,  // 57: aladdin.galaxy.v1.GetPublicationResponse.entries:type_name -> aladdin.galaxy.v1.FileEntry
+	14, // 58: aladdin.galaxy.v1.GalaxyService.GetCapabilities:input_type -> aladdin.galaxy.v1.GetCapabilitiesRequest
+	16, // 59: aladdin.galaxy.v1.GalaxyService.ListProjects:input_type -> aladdin.galaxy.v1.ListProjectsRequest
+	18, // 60: aladdin.galaxy.v1.GalaxyService.CreateProject:input_type -> aladdin.galaxy.v1.CreateProjectRequest
+	20, // 61: aladdin.galaxy.v1.GalaxyService.AddProjectSlot:input_type -> aladdin.galaxy.v1.AddProjectSlotRequest
+	22, // 62: aladdin.galaxy.v1.GalaxyService.GetProject:input_type -> aladdin.galaxy.v1.GetProjectRequest
+	24, // 63: aladdin.galaxy.v1.GalaxyService.UpdateProject:input_type -> aladdin.galaxy.v1.UpdateProjectRequest
+	26, // 64: aladdin.galaxy.v1.GalaxyService.DeleteProject:input_type -> aladdin.galaxy.v1.DeleteProjectRequest
+	28, // 65: aladdin.galaxy.v1.GalaxyService.GetDraft:input_type -> aladdin.galaxy.v1.GetDraftRequest
+	30, // 66: aladdin.galaxy.v1.GalaxyService.PushDraft:input_type -> aladdin.galaxy.v1.PushDraftRequest
+	36, // 67: aladdin.galaxy.v1.GalaxyService.ListDraftSnapshots:input_type -> aladdin.galaxy.v1.ListDraftSnapshotsRequest
+	38, // 68: aladdin.galaxy.v1.GalaxyService.RestoreDraftSnapshot:input_type -> aladdin.galaxy.v1.RestoreDraftSnapshotRequest
+	32, // 69: aladdin.galaxy.v1.GalaxyService.SaveVersion:input_type -> aladdin.galaxy.v1.SaveVersionRequest
+	34, // 70: aladdin.galaxy.v1.GalaxyService.UpdateVersion:input_type -> aladdin.galaxy.v1.UpdateVersionRequest
+	40, // 71: aladdin.galaxy.v1.GalaxyService.ListVersions:input_type -> aladdin.galaxy.v1.ListVersionsRequest
+	42, // 72: aladdin.galaxy.v1.GalaxyService.GetVersion:input_type -> aladdin.galaxy.v1.GetVersionRequest
+	44, // 73: aladdin.galaxy.v1.GalaxyService.DeleteVersion:input_type -> aladdin.galaxy.v1.DeleteVersionRequest
+	46, // 74: aladdin.galaxy.v1.GalaxyService.ValidateDraft:input_type -> aladdin.galaxy.v1.ValidateDraftRequest
+	48, // 75: aladdin.galaxy.v1.GalaxyService.PreviewDraft:input_type -> aladdin.galaxy.v1.PreviewDraftRequest
+	50, // 76: aladdin.galaxy.v1.GalaxyService.BeginContentUpload:input_type -> aladdin.galaxy.v1.BeginContentUploadRequest
+	52, // 77: aladdin.galaxy.v1.GalaxyService.CommitContentUpload:input_type -> aladdin.galaxy.v1.CommitContentUploadRequest
+	54, // 78: aladdin.galaxy.v1.GalaxyService.ListAssets:input_type -> aladdin.galaxy.v1.ListAssetsRequest
+	56, // 79: aladdin.galaxy.v1.GalaxyService.BeginAssetUpload:input_type -> aladdin.galaxy.v1.BeginAssetUploadRequest
+	58, // 80: aladdin.galaxy.v1.GalaxyService.CommitAssetUpload:input_type -> aladdin.galaxy.v1.CommitAssetUploadRequest
+	60, // 81: aladdin.galaxy.v1.GalaxyService.DeleteAsset:input_type -> aladdin.galaxy.v1.DeleteAssetRequest
+	62, // 82: aladdin.galaxy.v1.GalaxyService.UpdateAsset:input_type -> aladdin.galaxy.v1.UpdateAssetRequest
+	64, // 83: aladdin.galaxy.v1.GalaxyService.ListAttachments:input_type -> aladdin.galaxy.v1.ListAttachmentsRequest
+	66, // 84: aladdin.galaxy.v1.GalaxyService.BeginAttachmentUpload:input_type -> aladdin.galaxy.v1.BeginAttachmentUploadRequest
+	68, // 85: aladdin.galaxy.v1.GalaxyService.CommitAttachmentUpload:input_type -> aladdin.galaxy.v1.CommitAttachmentUploadRequest
+	70, // 86: aladdin.galaxy.v1.GalaxyService.UpdateAttachment:input_type -> aladdin.galaxy.v1.UpdateAttachmentRequest
+	72, // 87: aladdin.galaxy.v1.GalaxyService.DeleteAttachment:input_type -> aladdin.galaxy.v1.DeleteAttachmentRequest
+	74, // 88: aladdin.galaxy.v1.GalaxyService.GetAttachmentDownloadURL:input_type -> aladdin.galaxy.v1.GetAttachmentDownloadURLRequest
+	76, // 89: aladdin.galaxy.v1.GalaxyService.Publish:input_type -> aladdin.galaxy.v1.PublishRequest
+	78, // 90: aladdin.galaxy.v1.GalaxyService.Unpublish:input_type -> aladdin.galaxy.v1.UnpublishRequest
+	80, // 91: aladdin.galaxy.v1.GalaxyService.GetPublication:input_type -> aladdin.galaxy.v1.GetPublicationRequest
+	82, // 92: aladdin.galaxy.v1.GalaxyService.ResolveSharedPage:input_type -> aladdin.galaxy.v1.ResolveSharedPageRequest
+	15, // 93: aladdin.galaxy.v1.GalaxyService.GetCapabilities:output_type -> aladdin.galaxy.v1.GetCapabilitiesResponse
+	17, // 94: aladdin.galaxy.v1.GalaxyService.ListProjects:output_type -> aladdin.galaxy.v1.ListProjectsResponse
+	19, // 95: aladdin.galaxy.v1.GalaxyService.CreateProject:output_type -> aladdin.galaxy.v1.CreateProjectResponse
+	21, // 96: aladdin.galaxy.v1.GalaxyService.AddProjectSlot:output_type -> aladdin.galaxy.v1.AddProjectSlotResponse
+	23, // 97: aladdin.galaxy.v1.GalaxyService.GetProject:output_type -> aladdin.galaxy.v1.GetProjectResponse
+	25, // 98: aladdin.galaxy.v1.GalaxyService.UpdateProject:output_type -> aladdin.galaxy.v1.UpdateProjectResponse
+	27, // 99: aladdin.galaxy.v1.GalaxyService.DeleteProject:output_type -> aladdin.galaxy.v1.DeleteProjectResponse
+	29, // 100: aladdin.galaxy.v1.GalaxyService.GetDraft:output_type -> aladdin.galaxy.v1.GetDraftResponse
+	31, // 101: aladdin.galaxy.v1.GalaxyService.PushDraft:output_type -> aladdin.galaxy.v1.PushDraftResponse
+	37, // 102: aladdin.galaxy.v1.GalaxyService.ListDraftSnapshots:output_type -> aladdin.galaxy.v1.ListDraftSnapshotsResponse
+	39, // 103: aladdin.galaxy.v1.GalaxyService.RestoreDraftSnapshot:output_type -> aladdin.galaxy.v1.RestoreDraftSnapshotResponse
+	33, // 104: aladdin.galaxy.v1.GalaxyService.SaveVersion:output_type -> aladdin.galaxy.v1.SaveVersionResponse
+	35, // 105: aladdin.galaxy.v1.GalaxyService.UpdateVersion:output_type -> aladdin.galaxy.v1.UpdateVersionResponse
+	41, // 106: aladdin.galaxy.v1.GalaxyService.ListVersions:output_type -> aladdin.galaxy.v1.ListVersionsResponse
+	43, // 107: aladdin.galaxy.v1.GalaxyService.GetVersion:output_type -> aladdin.galaxy.v1.GetVersionResponse
+	45, // 108: aladdin.galaxy.v1.GalaxyService.DeleteVersion:output_type -> aladdin.galaxy.v1.DeleteVersionResponse
+	47, // 109: aladdin.galaxy.v1.GalaxyService.ValidateDraft:output_type -> aladdin.galaxy.v1.ValidateDraftResponse
+	49, // 110: aladdin.galaxy.v1.GalaxyService.PreviewDraft:output_type -> aladdin.galaxy.v1.PreviewDraftResponse
+	51, // 111: aladdin.galaxy.v1.GalaxyService.BeginContentUpload:output_type -> aladdin.galaxy.v1.BeginContentUploadResponse
+	53, // 112: aladdin.galaxy.v1.GalaxyService.CommitContentUpload:output_type -> aladdin.galaxy.v1.CommitContentUploadResponse
+	55, // 113: aladdin.galaxy.v1.GalaxyService.ListAssets:output_type -> aladdin.galaxy.v1.ListAssetsResponse
+	57, // 114: aladdin.galaxy.v1.GalaxyService.BeginAssetUpload:output_type -> aladdin.galaxy.v1.BeginAssetUploadResponse
+	59, // 115: aladdin.galaxy.v1.GalaxyService.CommitAssetUpload:output_type -> aladdin.galaxy.v1.CommitAssetUploadResponse
+	61, // 116: aladdin.galaxy.v1.GalaxyService.DeleteAsset:output_type -> aladdin.galaxy.v1.DeleteAssetResponse
+	63, // 117: aladdin.galaxy.v1.GalaxyService.UpdateAsset:output_type -> aladdin.galaxy.v1.UpdateAssetResponse
+	65, // 118: aladdin.galaxy.v1.GalaxyService.ListAttachments:output_type -> aladdin.galaxy.v1.ListAttachmentsResponse
+	67, // 119: aladdin.galaxy.v1.GalaxyService.BeginAttachmentUpload:output_type -> aladdin.galaxy.v1.BeginAttachmentUploadResponse
+	69, // 120: aladdin.galaxy.v1.GalaxyService.CommitAttachmentUpload:output_type -> aladdin.galaxy.v1.CommitAttachmentUploadResponse
+	71, // 121: aladdin.galaxy.v1.GalaxyService.UpdateAttachment:output_type -> aladdin.galaxy.v1.UpdateAttachmentResponse
+	73, // 122: aladdin.galaxy.v1.GalaxyService.DeleteAttachment:output_type -> aladdin.galaxy.v1.DeleteAttachmentResponse
+	75, // 123: aladdin.galaxy.v1.GalaxyService.GetAttachmentDownloadURL:output_type -> aladdin.galaxy.v1.GetAttachmentDownloadURLResponse
+	77, // 124: aladdin.galaxy.v1.GalaxyService.Publish:output_type -> aladdin.galaxy.v1.PublishResponse
+	79, // 125: aladdin.galaxy.v1.GalaxyService.Unpublish:output_type -> aladdin.galaxy.v1.UnpublishResponse
+	81, // 126: aladdin.galaxy.v1.GalaxyService.GetPublication:output_type -> aladdin.galaxy.v1.GetPublicationResponse
+	83, // 127: aladdin.galaxy.v1.GalaxyService.ResolveSharedPage:output_type -> aladdin.galaxy.v1.ResolveSharedPageResponse
+	93, // [93:128] is the sub-list for method output_type
+	58, // [58:93] is the sub-list for method input_type
+	58, // [58:58] is the sub-list for extension type_name
+	58, // [58:58] is the sub-list for extension extendee
+	0,  // [0:58] is the sub-list for field type_name
 }
 
 func init() { file_aladdin_galaxy_v1_galaxy_proto_init() }
@@ -4749,7 +5656,7 @@ func file_aladdin_galaxy_v1_galaxy_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aladdin_galaxy_v1_galaxy_proto_rawDesc), len(file_aladdin_galaxy_v1_galaxy_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   69,
+			NumMessages:   82,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -19,35 +19,41 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GalaxyService_GetCapabilities_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/GetCapabilities"
-	GalaxyService_ListProjects_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/ListProjects"
-	GalaxyService_CreateProject_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/CreateProject"
-	GalaxyService_AddProjectSlot_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/AddProjectSlot"
-	GalaxyService_GetProject_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/GetProject"
-	GalaxyService_UpdateProject_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/UpdateProject"
-	GalaxyService_DeleteProject_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/DeleteProject"
-	GalaxyService_GetDraft_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/GetDraft"
-	GalaxyService_PushDraft_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/PushDraft"
-	GalaxyService_ListDraftSnapshots_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/ListDraftSnapshots"
-	GalaxyService_RestoreDraftSnapshot_FullMethodName = "/aladdin.galaxy.v1.GalaxyService/RestoreDraftSnapshot"
-	GalaxyService_SaveVersion_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/SaveVersion"
-	GalaxyService_UpdateVersion_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/UpdateVersion"
-	GalaxyService_ListVersions_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/ListVersions"
-	GalaxyService_GetVersion_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/GetVersion"
-	GalaxyService_DeleteVersion_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/DeleteVersion"
-	GalaxyService_ValidateDraft_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ValidateDraft"
-	GalaxyService_PreviewDraft_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/PreviewDraft"
-	GalaxyService_BeginContentUpload_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/BeginContentUpload"
-	GalaxyService_CommitContentUpload_FullMethodName  = "/aladdin.galaxy.v1.GalaxyService/CommitContentUpload"
-	GalaxyService_ListAssets_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/ListAssets"
-	GalaxyService_BeginAssetUpload_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/BeginAssetUpload"
-	GalaxyService_CommitAssetUpload_FullMethodName    = "/aladdin.galaxy.v1.GalaxyService/CommitAssetUpload"
-	GalaxyService_DeleteAsset_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/DeleteAsset"
-	GalaxyService_UpdateAsset_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
-	GalaxyService_Publish_FullMethodName              = "/aladdin.galaxy.v1.GalaxyService/Publish"
-	GalaxyService_Unpublish_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
-	GalaxyService_GetPublication_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/GetPublication"
-	GalaxyService_ResolveSharedPage_FullMethodName    = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
+	GalaxyService_GetCapabilities_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/GetCapabilities"
+	GalaxyService_ListProjects_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/ListProjects"
+	GalaxyService_CreateProject_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/CreateProject"
+	GalaxyService_AddProjectSlot_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/AddProjectSlot"
+	GalaxyService_GetProject_FullMethodName               = "/aladdin.galaxy.v1.GalaxyService/GetProject"
+	GalaxyService_UpdateProject_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/UpdateProject"
+	GalaxyService_DeleteProject_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/DeleteProject"
+	GalaxyService_GetDraft_FullMethodName                 = "/aladdin.galaxy.v1.GalaxyService/GetDraft"
+	GalaxyService_PushDraft_FullMethodName                = "/aladdin.galaxy.v1.GalaxyService/PushDraft"
+	GalaxyService_ListDraftSnapshots_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/ListDraftSnapshots"
+	GalaxyService_RestoreDraftSnapshot_FullMethodName     = "/aladdin.galaxy.v1.GalaxyService/RestoreDraftSnapshot"
+	GalaxyService_SaveVersion_FullMethodName              = "/aladdin.galaxy.v1.GalaxyService/SaveVersion"
+	GalaxyService_UpdateVersion_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/UpdateVersion"
+	GalaxyService_ListVersions_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/ListVersions"
+	GalaxyService_GetVersion_FullMethodName               = "/aladdin.galaxy.v1.GalaxyService/GetVersion"
+	GalaxyService_DeleteVersion_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/DeleteVersion"
+	GalaxyService_ValidateDraft_FullMethodName            = "/aladdin.galaxy.v1.GalaxyService/ValidateDraft"
+	GalaxyService_PreviewDraft_FullMethodName             = "/aladdin.galaxy.v1.GalaxyService/PreviewDraft"
+	GalaxyService_BeginContentUpload_FullMethodName       = "/aladdin.galaxy.v1.GalaxyService/BeginContentUpload"
+	GalaxyService_CommitContentUpload_FullMethodName      = "/aladdin.galaxy.v1.GalaxyService/CommitContentUpload"
+	GalaxyService_ListAssets_FullMethodName               = "/aladdin.galaxy.v1.GalaxyService/ListAssets"
+	GalaxyService_BeginAssetUpload_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/BeginAssetUpload"
+	GalaxyService_CommitAssetUpload_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/CommitAssetUpload"
+	GalaxyService_DeleteAsset_FullMethodName              = "/aladdin.galaxy.v1.GalaxyService/DeleteAsset"
+	GalaxyService_UpdateAsset_FullMethodName              = "/aladdin.galaxy.v1.GalaxyService/UpdateAsset"
+	GalaxyService_ListAttachments_FullMethodName          = "/aladdin.galaxy.v1.GalaxyService/ListAttachments"
+	GalaxyService_BeginAttachmentUpload_FullMethodName    = "/aladdin.galaxy.v1.GalaxyService/BeginAttachmentUpload"
+	GalaxyService_CommitAttachmentUpload_FullMethodName   = "/aladdin.galaxy.v1.GalaxyService/CommitAttachmentUpload"
+	GalaxyService_UpdateAttachment_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/UpdateAttachment"
+	GalaxyService_DeleteAttachment_FullMethodName         = "/aladdin.galaxy.v1.GalaxyService/DeleteAttachment"
+	GalaxyService_GetAttachmentDownloadURL_FullMethodName = "/aladdin.galaxy.v1.GalaxyService/GetAttachmentDownloadURL"
+	GalaxyService_Publish_FullMethodName                  = "/aladdin.galaxy.v1.GalaxyService/Publish"
+	GalaxyService_Unpublish_FullMethodName                = "/aladdin.galaxy.v1.GalaxyService/Unpublish"
+	GalaxyService_GetPublication_FullMethodName           = "/aladdin.galaxy.v1.GalaxyService/GetPublication"
+	GalaxyService_ResolveSharedPage_FullMethodName        = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
 )
 
 // GalaxyServiceClient is the client API for GalaxyService service.
@@ -251,6 +257,59 @@ type GalaxyServiceClient interface {
 	// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
 	// 备注，标签以请求集合**整体替换**。
 	UpdateAsset(ctx context.Context, in *UpdateAssetRequest, opts ...grpc.CallOption) (*UpdateAssetResponse, error)
+	// 列出工程的**附件**（二进制、zip、导出文件），含**短时有效**的下载地址。
+	//
+	// 附件与资产并列而不混用（见 docs/design/galaxy/attachments.md）：资产会被网页
+	// 引用、由浏览器渲染；附件只给工程成员下载。**类型不限**，因此这条路径上没有
+	// 白名单，也没有标签与筛选——它们是构建产物，一个工程几十份就到头了。
+	//
+	// 它**不按任何东西筛选**：筛选是资产那边的问题（那里有几百张图与标签）。
+	ListAttachments(ctx context.Context, in *ListAttachmentsRequest, opts ...grpc.CallOption) (*ListAttachmentsResponse, error)
+	// 开始一次附件上传：分配附件标识并签发一份直传凭证。
+	//
+	// 与 BeginAssetUpload 同构，差别有三处，都由"附件收任意类型"推出：
+	//
+	//   - **请求里没有内容类型**：附件的下发类型恒为中性那一档（见 Attachment），
+	//     因此上传时那一次声明不产生任何对外可见的后果。存储侧的策略里仍带一条
+	//     类型规则——**上限绑在它上面**；
+	//   - **上限是一档**（如 500 MiB），不按类别分档；
+	//   - **另有一道工程总量配额**：声明的大小加上已占用的量超过上限时被拒。
+	//
+	// 两者都是**按声明值早退**，不是安全边界：真正的判定在 CommitAttachmentUpload，
+	// 用的是核对出来的真实字节数。
+	BeginAttachmentUpload(ctx context.Context, in *BeginAttachmentUploadRequest, opts ...grpc.CallOption) (*BeginAttachmentUploadResponse, error)
+	// 提交一次附件上传：核对字节确实到了、内容与声明的摘要相符，写入附件元数据。
+	//
+	// 核对顺序与 CommitAssetUpload 相同（存在性 → 真实字节数 → 单文件上限 →
+	// 工程配额 → 摘要），任一不过即删掉那个对象并拒绝。**配额在这里是用真实字节数
+	// 复核的**：声明一个小值、传一个大值上来，走到这一步就被挡住。
+	//
+	// 标注的版本在这里**重新校验**：两次调用之间服务端不保留任何状态，那正是
+	// "未提交的上传不留痕迹"的实现方式。
+	CommitAttachmentUpload(ctx context.Context, in *CommitAttachmentUploadRequest, opts ...grpc.CallOption) (*CommitAttachmentUploadResponse, error)
+	// 改一份附件的说明。
+	//
+	// **它只改说明**：文件名、字节数、内容摘要、标注的版本与对象键在改动前后逐字
+	// 不变，因此已经发出去的下载地址指向的还是同一份字节（与 UpdateAsset 同源）。
+	// 请求表达**期望的完整状态**：空串清空说明。
+	UpdateAttachment(ctx context.Context, in *UpdateAttachmentRequest, opts ...grpc.CallOption) (*UpdateAttachmentResponse, error)
+	// 删除一份附件：删私有区的对象与元数据行。
+	//
+	// **它不被任何引用拦阻。** 附件不被文件组引用；版本标注也不构成引用——标注在
+	// 版本删除时被清空，而不是反过来拦住删除（见 docs/design/galaxy/attachments.md）。
+	// 这与"被引用的资产不可删"是两件事：那条的理由是版本不可变意味着"它此后永远
+	// 可以发布"，而附件不参与发布。
+	DeleteAttachment(ctx context.Context, in *DeleteAttachmentRequest, opts ...grpc.CallOption) (*DeleteAttachmentResponse, error)
+	// 签发一份附件的**下载地址**（短时有效）。
+	//
+	// 它刻意**不标 idempotency_level**：签名本身是无副作用的，但这条响应里带的是
+	// 一份**短时凭证**——把它标成"可安全用 GET"会让那条地址进浏览器的缓存与各级
+	// 访问日志。与 PollDeviceLogin 不标是同一条理由（见 AGENTS.md 的传输方式一节）。
+	//
+	// 下载的响应头由签发策略固定（中性的内容类型 + `attachment`），因此不管这份
+	// 字节是什么、文件名以什么结尾，浏览器都只会把它存下来。调用方拿到的是**整条
+	// 地址**，不要自己拼来源头。
+	GetAttachmentDownloadURL(ctx context.Context, in *GetAttachmentDownloadURLRequest, opts ...grpc.CallOption) (*GetAttachmentDownloadURLResponse, error)
 	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
@@ -553,6 +612,66 @@ func (c *galaxyServiceClient) UpdateAsset(ctx context.Context, in *UpdateAssetRe
 	return out, nil
 }
 
+func (c *galaxyServiceClient) ListAttachments(ctx context.Context, in *ListAttachmentsRequest, opts ...grpc.CallOption) (*ListAttachmentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAttachmentsResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_ListAttachments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) BeginAttachmentUpload(ctx context.Context, in *BeginAttachmentUploadRequest, opts ...grpc.CallOption) (*BeginAttachmentUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginAttachmentUploadResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_BeginAttachmentUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) CommitAttachmentUpload(ctx context.Context, in *CommitAttachmentUploadRequest, opts ...grpc.CallOption) (*CommitAttachmentUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommitAttachmentUploadResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_CommitAttachmentUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) UpdateAttachment(ctx context.Context, in *UpdateAttachmentRequest, opts ...grpc.CallOption) (*UpdateAttachmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateAttachmentResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_UpdateAttachment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) DeleteAttachment(ctx context.Context, in *DeleteAttachmentRequest, opts ...grpc.CallOption) (*DeleteAttachmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteAttachmentResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_DeleteAttachment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *galaxyServiceClient) GetAttachmentDownloadURL(ctx context.Context, in *GetAttachmentDownloadURLRequest, opts ...grpc.CallOption) (*GetAttachmentDownloadURLResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAttachmentDownloadURLResponse)
+	err := c.cc.Invoke(ctx, GalaxyService_GetAttachmentDownloadURL_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *galaxyServiceClient) Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*PublishResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PublishResponse)
@@ -794,6 +913,59 @@ type GalaxyServiceServer interface {
 	// 请求表达**期望的完整状态**（与 UpdateProject 同取向）：空串清空标题或
 	// 备注，标签以请求集合**整体替换**。
 	UpdateAsset(context.Context, *UpdateAssetRequest) (*UpdateAssetResponse, error)
+	// 列出工程的**附件**（二进制、zip、导出文件），含**短时有效**的下载地址。
+	//
+	// 附件与资产并列而不混用（见 docs/design/galaxy/attachments.md）：资产会被网页
+	// 引用、由浏览器渲染；附件只给工程成员下载。**类型不限**，因此这条路径上没有
+	// 白名单，也没有标签与筛选——它们是构建产物，一个工程几十份就到头了。
+	//
+	// 它**不按任何东西筛选**：筛选是资产那边的问题（那里有几百张图与标签）。
+	ListAttachments(context.Context, *ListAttachmentsRequest) (*ListAttachmentsResponse, error)
+	// 开始一次附件上传：分配附件标识并签发一份直传凭证。
+	//
+	// 与 BeginAssetUpload 同构，差别有三处，都由"附件收任意类型"推出：
+	//
+	//   - **请求里没有内容类型**：附件的下发类型恒为中性那一档（见 Attachment），
+	//     因此上传时那一次声明不产生任何对外可见的后果。存储侧的策略里仍带一条
+	//     类型规则——**上限绑在它上面**；
+	//   - **上限是一档**（如 500 MiB），不按类别分档；
+	//   - **另有一道工程总量配额**：声明的大小加上已占用的量超过上限时被拒。
+	//
+	// 两者都是**按声明值早退**，不是安全边界：真正的判定在 CommitAttachmentUpload，
+	// 用的是核对出来的真实字节数。
+	BeginAttachmentUpload(context.Context, *BeginAttachmentUploadRequest) (*BeginAttachmentUploadResponse, error)
+	// 提交一次附件上传：核对字节确实到了、内容与声明的摘要相符，写入附件元数据。
+	//
+	// 核对顺序与 CommitAssetUpload 相同（存在性 → 真实字节数 → 单文件上限 →
+	// 工程配额 → 摘要），任一不过即删掉那个对象并拒绝。**配额在这里是用真实字节数
+	// 复核的**：声明一个小值、传一个大值上来，走到这一步就被挡住。
+	//
+	// 标注的版本在这里**重新校验**：两次调用之间服务端不保留任何状态，那正是
+	// "未提交的上传不留痕迹"的实现方式。
+	CommitAttachmentUpload(context.Context, *CommitAttachmentUploadRequest) (*CommitAttachmentUploadResponse, error)
+	// 改一份附件的说明。
+	//
+	// **它只改说明**：文件名、字节数、内容摘要、标注的版本与对象键在改动前后逐字
+	// 不变，因此已经发出去的下载地址指向的还是同一份字节（与 UpdateAsset 同源）。
+	// 请求表达**期望的完整状态**：空串清空说明。
+	UpdateAttachment(context.Context, *UpdateAttachmentRequest) (*UpdateAttachmentResponse, error)
+	// 删除一份附件：删私有区的对象与元数据行。
+	//
+	// **它不被任何引用拦阻。** 附件不被文件组引用；版本标注也不构成引用——标注在
+	// 版本删除时被清空，而不是反过来拦住删除（见 docs/design/galaxy/attachments.md）。
+	// 这与"被引用的资产不可删"是两件事：那条的理由是版本不可变意味着"它此后永远
+	// 可以发布"，而附件不参与发布。
+	DeleteAttachment(context.Context, *DeleteAttachmentRequest) (*DeleteAttachmentResponse, error)
+	// 签发一份附件的**下载地址**（短时有效）。
+	//
+	// 它刻意**不标 idempotency_level**：签名本身是无副作用的，但这条响应里带的是
+	// 一份**短时凭证**——把它标成"可安全用 GET"会让那条地址进浏览器的缓存与各级
+	// 访问日志。与 PollDeviceLogin 不标是同一条理由（见 AGENTS.md 的传输方式一节）。
+	//
+	// 下载的响应头由签发策略固定（中性的内容类型 + `attachment`），因此不管这份
+	// 字节是什么、文件名以什么结尾，浏览器都只会把它存下来。调用方拿到的是**整条
+	// 地址**，不要自己拼来源头。
+	GetAttachmentDownloadURL(context.Context, *GetAttachmentDownloadURLRequest) (*GetAttachmentDownloadURLResponse, error)
 	// 发布一个版本：校验、把引用的资产上架到公开区、落库产物清单、切换发布指针。
 	//
 	// **只能发布版本，不能发布草稿**——草稿是可变的，"发布一个可变的东西"
@@ -920,6 +1092,24 @@ func (UnimplementedGalaxyServiceServer) DeleteAsset(context.Context, *DeleteAsse
 }
 func (UnimplementedGalaxyServiceServer) UpdateAsset(context.Context, *UpdateAssetRequest) (*UpdateAssetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateAsset not implemented")
+}
+func (UnimplementedGalaxyServiceServer) ListAttachments(context.Context, *ListAttachmentsRequest) (*ListAttachmentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAttachments not implemented")
+}
+func (UnimplementedGalaxyServiceServer) BeginAttachmentUpload(context.Context, *BeginAttachmentUploadRequest) (*BeginAttachmentUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginAttachmentUpload not implemented")
+}
+func (UnimplementedGalaxyServiceServer) CommitAttachmentUpload(context.Context, *CommitAttachmentUploadRequest) (*CommitAttachmentUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitAttachmentUpload not implemented")
+}
+func (UnimplementedGalaxyServiceServer) UpdateAttachment(context.Context, *UpdateAttachmentRequest) (*UpdateAttachmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateAttachment not implemented")
+}
+func (UnimplementedGalaxyServiceServer) DeleteAttachment(context.Context, *DeleteAttachmentRequest) (*DeleteAttachmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteAttachment not implemented")
+}
+func (UnimplementedGalaxyServiceServer) GetAttachmentDownloadURL(context.Context, *GetAttachmentDownloadURLRequest) (*GetAttachmentDownloadURLResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAttachmentDownloadURL not implemented")
 }
 func (UnimplementedGalaxyServiceServer) Publish(context.Context, *PublishRequest) (*PublishResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Publish not implemented")
@@ -1404,6 +1594,114 @@ func _GalaxyService_UpdateAsset_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GalaxyService_ListAttachments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAttachmentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).ListAttachments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_ListAttachments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).ListAttachments(ctx, req.(*ListAttachmentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_BeginAttachmentUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginAttachmentUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).BeginAttachmentUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_BeginAttachmentUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).BeginAttachmentUpload(ctx, req.(*BeginAttachmentUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_CommitAttachmentUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitAttachmentUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).CommitAttachmentUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_CommitAttachmentUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).CommitAttachmentUpload(ctx, req.(*CommitAttachmentUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_UpdateAttachment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateAttachmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).UpdateAttachment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_UpdateAttachment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).UpdateAttachment(ctx, req.(*UpdateAttachmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_DeleteAttachment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAttachmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).DeleteAttachment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_DeleteAttachment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).DeleteAttachment(ctx, req.(*DeleteAttachmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GalaxyService_GetAttachmentDownloadURL_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAttachmentDownloadURLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GalaxyServiceServer).GetAttachmentDownloadURL(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GalaxyService_GetAttachmentDownloadURL_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GalaxyServiceServer).GetAttachmentDownloadURL(ctx, req.(*GetAttachmentDownloadURLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GalaxyService_Publish_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PublishRequest)
 	if err := dec(in); err != nil {
@@ -1582,6 +1880,30 @@ var GalaxyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateAsset",
 			Handler:    _GalaxyService_UpdateAsset_Handler,
+		},
+		{
+			MethodName: "ListAttachments",
+			Handler:    _GalaxyService_ListAttachments_Handler,
+		},
+		{
+			MethodName: "BeginAttachmentUpload",
+			Handler:    _GalaxyService_BeginAttachmentUpload_Handler,
+		},
+		{
+			MethodName: "CommitAttachmentUpload",
+			Handler:    _GalaxyService_CommitAttachmentUpload_Handler,
+		},
+		{
+			MethodName: "UpdateAttachment",
+			Handler:    _GalaxyService_UpdateAttachment_Handler,
+		},
+		{
+			MethodName: "DeleteAttachment",
+			Handler:    _GalaxyService_DeleteAttachment_Handler,
+		},
+		{
+			MethodName: "GetAttachmentDownloadURL",
+			Handler:    _GalaxyService_GetAttachmentDownloadURL_Handler,
 		},
 		{
 			MethodName: "Publish",

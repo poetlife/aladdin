@@ -38,6 +38,10 @@ export const PermissionCodes = {
   GalaxyAssetRead: 'galaxy.asset.read',
   /** 上传与删除工程资产 */
   GalaxyAssetWrite: 'galaxy.asset.write',
+  /** 读取自己工程下的附件列表与下载地址 */
+  GalaxyAttachmentRead: 'galaxy.attachment.read',
+  /** 上传与删除工程附件，以及改它的说明。上传的是任意类型的构建产物 */
+  GalaxyAttachmentWrite: 'galaxy.attachment.write',
   /** 检索平台技能目录、读取技能正文、收藏技能。只读 */
   SkillCatalogRead: 'skill.catalog.read',
   /** 从远端纳管技能、同步、回滚，修改说明层与标签。删除属不可逆操作 */

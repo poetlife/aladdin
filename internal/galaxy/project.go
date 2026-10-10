@@ -251,6 +251,13 @@ type Store interface {
 	// ErrVersionNotFound。
 	GetVersion(ctx context.Context, projectID string, slot ContentSlot, versionID string) (Version, error)
 
+	// GetVersionByID 按标识读回工程下的一个版本，**不限内容槽**。
+	//
+	// 它存在的理由是**附件上的版本标注**：标注只记一个版本标识，不带槽（槽是版本
+	// 的属性，不是标注的）。用 GetVersion 去查就要求调用方先知道是哪个槽，而标注
+	// 恰恰没有这个信息（见 attachment.go 的 attachmentVersion）。
+	GetVersionByID(ctx context.Context, projectID, versionID string) (Version, error)
+
 	// ListVersions 返回该工程**该槽**的版本，按序号升序。**清单随行返回**：
 	// 它只有路径与摘要，几 KB 量级，而"哪些版本引用了这个资产"正是靠它回答的。
 	ListVersions(ctx context.Context, projectID string, slot ContentSlot) ([]Version, error)
@@ -278,6 +285,19 @@ type Store interface {
 	// GetDraftSnapshot 按标识读回一条草稿快照，不存在（或已过期被清掉）时返回
 	// ErrDraftSnapshotNotFound。
 	GetDraftSnapshot(ctx context.Context, projectID string, slot ContentSlot, snapshotID string) (DraftSnapshot, error)
+
+	// GetAttachment 返回该工程下的一份附件，不存在时返回 ErrAttachmentNotFound。
+	GetAttachment(ctx context.Context, projectID, attachmentID string) (Attachment, error)
+
+	// ListAttachments 返回该工程的附件，按上传时间倒序。
+	ListAttachments(ctx context.Context, projectID string) ([]Attachment, error)
+
+	// SumAttachmentBytes 返回该工程已占用的附件字节数。
+	//
+	// 它是**配额**的判定输入（见 attachment.go 的 checkAttachmentQuota），算的是
+	// 库里的行：库内的元数据行是"存在哪些附件"的权威，桶上可能留下无从被引用的
+	// 孤儿对象，那是回收的事，不是配额的事。
+	SumAttachmentBytes(ctx context.Context, projectID string) (int64, error)
 
 	// GetPublication 按发布标识读回发布记录（含产物清单）。
 	GetPublication(ctx context.Context, publicationID string) (Publication, error)
@@ -355,8 +375,26 @@ type MutableStore interface {
 	// 返回 ErrVersionNotFound。
 	UpdateVersionDescription(ctx context.Context, projectID string, slot ContentSlot, versionID, description string) error
 
-	// DeleteVersion 删除**某一个槽**的一个版本。
+	// DeleteVersion 删除**某一个槽**的一个版本，并**清空指向它的附件标注**
+	// （同一个事务）。
+	//
+	// 清空的理由与"引用完整性"同源（见 docs/design/galaxy/attachments.md）：标注
+	// 指向的东西已经不存在，留着它就在界面上留下一个打不开的版本号。**标注反过来
+	// 不拦阻删除**——它不参与发布，让它锁住一个版本会让"想删一版"变成一件先要翻遍
+	// 附件列表才能做的事。
 	DeleteVersion(ctx context.Context, projectID string, slot ContentSlot, versionID string) error
+
+	// CreateAttachment 写入一份附件（标识、摘要与字节数由调用方给定）。
+	CreateAttachment(ctx context.Context, attachment Attachment) error
+
+	// UpdateAttachmentDescription 覆盖一份附件的说明。
+	//
+	// **它只动说明**：文件名、字节数、内容摘要、标注的版本与对象键逐字不变
+	// （见 docs/design/galaxy/attachments.md）。附件不存在时返回 ErrAttachmentNotFound。
+	UpdateAttachmentDescription(ctx context.Context, projectID, attachmentID, description string) error
+
+	// DeleteAttachment 删除一份附件的元数据行。
+	DeleteAttachment(ctx context.Context, projectID, attachmentID string) error
 
 	// CreateAsset 写入一个资产（标识、摘要与媒体类型由调用方给定）。
 	//
@@ -437,6 +475,16 @@ type Capabilities struct {
 	MaxFileSetBytes int64
 	MaxFiles        int64
 	AssetLimits     []AssetKindLimit
+	// AttachmentEnabled 为假时不渲染附件入口。
+	//
+	// 它与 AssetUploadEnabled **同源但分开表达**：两者都取决于"有没有桶"，而
+	// 客户端要能分别裁剪（一个部署可以只授其中一码）。同源不会漂移，两处各判
+	// 一次也不会——它们都从同一个 s.assets 派生。
+	AttachmentEnabled bool
+	// MaxAttachmentBytes 是单份附件的上限；ProjectAttachmentQuotaBytes 是一个
+	// 工程的附件总量上限。两者一起下发，客户端据此在选文件时就早退。
+	MaxAttachmentBytes          int64
+	ProjectAttachmentQuotaBytes int64
 }
 
 // Deps 是构造 Service 所需的取值。
@@ -498,13 +546,16 @@ func NewService(deps Deps) *Service {
 // Capabilities 汇报部署形态的边界。
 func (s *Service) Capabilities() Capabilities {
 	return Capabilities{
-		AssetUploadEnabled: s.assets != nil,
-		PublishEnabled:     s.publishEnabled(),
-		PreviewEnabled:     s.previewEnabled(),
-		MaxTextBytes:       MaxTextBytes,
-		MaxFileSetBytes:    MaxFileSetBytes,
-		MaxFiles:           MaxFiles,
-		AssetLimits:        AssetKindLimits(),
+		AssetUploadEnabled:          s.assets != nil,
+		AttachmentEnabled:           s.assets != nil,
+		PublishEnabled:              s.publishEnabled(),
+		PreviewEnabled:              s.previewEnabled(),
+		MaxTextBytes:                MaxTextBytes,
+		MaxFileSetBytes:             MaxFileSetBytes,
+		MaxFiles:                    MaxFiles,
+		AssetLimits:                 AssetKindLimits(),
+		MaxAttachmentBytes:          AttachmentMaxBytes,
+		ProjectAttachmentQuotaBytes: ProjectAttachmentQuotaBytes,
 	}
 }
 
@@ -696,7 +747,7 @@ func (s *Service) UpdateProject(ctx context.Context, subjectID, projectID, name,
 	return s.store.GetProject(ctx, projectID)
 }
 
-// DeleteProject 删除一个工程，并把它的私有区对象（资产与内容）一并清掉。
+// DeleteProject 删除一个工程，并把它的私有区对象（资产、附件与内容）一并清掉。
 //
 // 已发布的地址立刻变成"不存在"（发布记录随工程一起删）；公开区的副本不回收
 // ——它是一份独立对象，召回它需要一次对账，属于另一个职责。
@@ -709,6 +760,12 @@ func (s *Service) DeleteProject(ctx context.Context, subjectID, projectID string
 	if err != nil {
 		return err
 	}
+	// 附件随工程一起清掉：工程都不存在了，它的构建产物也没有留下的理由
+	// （见 docs/design/galaxy/attachments.md）。
+	attachments, err := s.store.ListAttachments(ctx, projectID)
+	if err != nil {
+		return err
+	}
 	if err := s.store.DeleteProject(ctx, projectID); err != nil {
 		return err
 	}
@@ -716,13 +773,21 @@ func (s *Service) DeleteProject(ctx context.Context, subjectID, projectID string
 	s.publishDeleted(projectID)
 	// 对象删除失败不影响"工程已删除"这一结论：库内是权威，桶上可能因此留下
 	// 无从被引用的孤儿对象，而它没有功能影响（与头像同源）。
-	s.deleteAssetObjects(ctx, projectID, assets, "删除工程")
+	keys := make([]string, 0, len(assets)+len(attachments))
+	for _, asset := range assets {
+		keys = append(keys, AssetObjectKey(projectID, asset.MediaKind, asset.ID))
+	}
+	for _, attachment := range attachments {
+		keys = append(keys, AttachmentObjectKey(projectID, attachment.ID))
+	}
+	s.deletePrivateObjects(ctx, projectID, keys, "删除工程")
 	if s.logger != nil {
 		s.logger.Info("已删除工程",
 			zap.String("project_id", projectID),
 			zap.String("subject_id", subjectID),
 			zap.Strings("slots", slotStrings(project.EnabledSlots())),
-			zap.Int("assets", len(assets)))
+			zap.Int("assets", len(assets)),
+			zap.Int("attachments", len(attachments)))
 	}
 	return nil
 }
@@ -835,28 +900,24 @@ func validateProjectMeta(name, description string) error {
 	return nil
 }
 
-// deleteAssetObjects 尽力删除一批资产的私有区对象。
+// deletePrivateObjects 尽力删除一批私有区对象。
 //
-// 它刻意不返回错误：库内的元数据行是"存在哪些资产"的权威，对象删除失败只会
+// 它刻意不返回错误：库内的元数据行是"存在哪些对象"的权威，对象删除失败只会
 // 留下一个无从被引用的孤儿对象。把这件事升级成一次失败，会让"工程已经删不掉
 // 了"变成一个由存储抖动决定的结果。
 //
-// **一次交下来而不是逐个删**：一个工程可能有几十上百个资产，逐个删在跨境链路
+// **一次交下来而不是逐个删**：一个工程可能有几十上百个对象，逐个删在跨境链路
 // 上就是每次都付一次往返（见 issue #33 的实测）。批量是存储实现的事，这里只管
 // 把键凑齐。
-func (s *Service) deleteAssetObjects(ctx context.Context, projectID string, assets []Asset, action string) {
-	if s.assets == nil || len(assets) == 0 {
+func (s *Service) deletePrivateObjects(ctx context.Context, projectID string, keys []string, action string) {
+	if s.assets == nil || len(keys) == 0 {
 		return
 	}
-	keys := make([]string, 0, len(assets))
-	for _, asset := range assets {
-		keys = append(keys, AssetObjectKey(projectID, asset.MediaKind, asset.ID))
-	}
 	if err := s.assets.DeleteMany(ctx, keys); err != nil && s.logger != nil {
-		s.logger.Warn("删除资产对象失败，元数据已清空",
+		s.logger.Warn("删除私有区对象失败，元数据已清空",
 			zap.String("action", action),
 			zap.String("project_id", projectID),
-			zap.Int("assets", len(keys)),
+			zap.Int("objects", len(keys)),
 			zap.Error(err))
 	}
 }

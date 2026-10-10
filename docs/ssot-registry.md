@@ -64,6 +64,7 @@
 | 发布产物交付时的内容安全策略 | CSP 响应头的构造入口 | [internal/galaxy/csp.go](../internal/galaxy/csp.go) |
 | 上传方声明的类型能不能作为头像 | 头像的类型白名单（唯一入口；声明不等于验证，见直传） | [internal/profile/avatar.go](../internal/profile/avatar.go) |
 | 上传方声明的类型能不能作为资产 | 资产的类型白名单与分档上限（唯一入口；声明不等于验证，见直传） | [internal/galaxy/asset.go](../internal/galaxy/asset.go) |
+| 一份字节作为**附件**下发时的响应头（内容类型与 `Content-Disposition` 的构造与过滤；签名与头像、资产共用同一条链路） | 下载地址的签发入口（响应头由签发策略固定，不取上传时声明的任何值） | [internal/objectstore/upload.go](../internal/objectstore/upload.go) |
 | 一份内容能不能发布（引用完整性 + 体积与文件数上限） | `galaxy` 的校验入口（**编辑器提示与发布前置校验共用**，不得在前端复写） | [internal/galaxy/validate.go](../internal/galaxy/validate.go) |
 | 产物里的一处取资源引用落在哪一条条目上、产物里有没有残留没解开的记号（**校验与回读发布态之后的复核共用**） | 产物复核入口（扫的是产物，不是源） | [internal/galaxy/artifact_audit.go](../internal/galaxy/artifact_audit.go) |
 | 一个版本引用了哪些资产 | 文件组里资产条目的读取入口（不解析正文） | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) |
@@ -176,7 +177,7 @@
 | 身份别名（（来源，身份标识）→ 主体）的持久化数据 | 身份别名的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/identity/identity.go](../internal/identity/identity.go) / [internal/identity/gormstore/identity.go](../internal/identity/gormstore/identity.go) |
 | 档案（昵称、简介、头像对象键）的持久化数据 | 档案的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/profile/profile.go](../internal/profile/profile.go) / [internal/profile/gormstore/profile.go](../internal/profile/gormstore/profile.go) |
 | 上传的字节怎么进对象存储（签发直传凭证、核对提交结果） | 直传的公共契约（生产实现是 COS，测试注入假实现） | [internal/objectstore/upload.go](../internal/objectstore/upload.go) / [internal/objectstore/cosupload/](../internal/objectstore/cosupload/) |
-| 工程、文件清单（草稿与版本）、资产与发布产物清单的持久化数据 | galaxy 的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) / [internal/galaxy/gormstore/](../internal/galaxy/gormstore/) |
+| 工程、文件清单（草稿与版本）、资产、附件与发布产物清单的持久化数据 | galaxy 的存储接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/galaxy/content_set.go](../internal/galaxy/content_set.go) / [internal/galaxy/gormstore/](../internal/galaxy/gormstore/) |
 | 直传凭证里那条策略长什么样（动作、资源、类型与长度条件） | 策略的构造入口 | [internal/objectstore/cosupload/policy.go](../internal/objectstore/cosupload/policy.go) |
 | 公开区的对象与它的地址 | 上架入口（公开区唯一的写入口，按（工程，内容摘要，类型）幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
 | 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用）；随机部分取自 `idgen.New` | [internal/galaxy/project.go](../internal/galaxy/project.go) |

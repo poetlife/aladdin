@@ -434,6 +434,41 @@ type GalaxyAssetTagRecord struct {
 // TableName 实现 gorm 的表名解析。
 func (GalaxyAssetTagRecord) TableName() string { return "galaxy_asset_tags" }
 
+// GalaxyAttachmentRecord 是工程里的一份**发布物**（二进制、zip、导出文件）在库里的一行。
+//
+// 它与资产表**并列而不合并**（见 docs/design/galaxy/attachments.md）：资产会被网页
+// 引用、由浏览器渲染，因此类型必须过白名单、发布后进公开区；附件只给工程成员下载，
+// 类型不限，且**永不进公开区**。合成一张表会让"这个工程有哪些东西"变成一句需要
+// 按列分辨的话，而它直接决定了下发那一侧走哪条路径。
+//
+// **字节不在这张表里**，键为 `galaxy/<工程标识>/attachments/<附件标识>`。
+type GalaxyAttachmentRecord struct {
+	// ID 是附件标识，主键。由 aladdin 分配，不可猜、不复用。
+	ID string `gorm:"primaryKey;size:191"`
+	// ProjectID 是该附件所属工程。建索引的理由与资产表相同。
+	ProjectID string `gorm:"size:191;index"`
+	// VersionID 是**标注**的版本，可空。它不是外键、也没有级联：删除一个版本时
+	// 指向它的标注被清空（见 MutableStore.DeleteVersion），而标注**不拦阻**版本
+	// 删除——它不参与发布（见 attachments.md）。
+	VersionID string `gorm:"size:191;index"`
+	// Filename 是原始文件名。**仅供展示与排障**：它不进对象键，也不参与任何判断。
+	// 它另外会进下载响应头，而那一处会先滤掉会破坏响应头的字符。
+	Filename string
+	// SizeBytes 是字节数。它取自提交时对对象的核对，不是声明值；工程的附件总量
+	// 配额也是按这一列求和得出的。
+	SizeBytes int64
+	// Digest 是字节的 SHA-256。**不是寻址键**（附件按标识寻址），只用于核对与展示。
+	Digest string `gorm:"size:64"`
+	// Description 是说明。可改，可空。
+	Description string
+	// UploadedBySubjectID 与 UploadedAt 是留痕。
+	UploadedBySubjectID string `gorm:"size:191"`
+	UploadedAt          time.Time
+}
+
+// TableName 实现 gorm 的表名解析。
+func (GalaxyAttachmentRecord) TableName() string { return "galaxy_attachments" }
+
 // GalaxyPublicationRecord 是每次发布产生的产物在库里的一行。
 //
 // **产物放在独立的发布表上，不放在工程行上**：工程行会被列表接口读取，往它
