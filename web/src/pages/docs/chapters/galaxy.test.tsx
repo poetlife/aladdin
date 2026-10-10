@@ -114,6 +114,20 @@ describe('创作与发布介绍页', () => {
     }
   })
 
+  // 这一章要教的不止"每一步打哪条命令"，还有**推荐流程**：推完就存一版，别在
+  // 只推草稿那条路上走到黑（见 issue #73 与 docs/design/galaxy/cli.md）。
+  it('把"里程碑就存版本"写成明确规则，并给出示例命令', async () => {
+    const container = await renderPage()
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('每完成一个里程碑就存一版')
+    expect(text).toContain('--save')
+    expect(text).toContain('draft history')
+    expect(text).toContain('draft restore')
+    // 会过期的那一份与不会过期的那一份要分得开：版本不过期，草稿历史会。
+    expect(text).toContain('版本不会过期')
+  })
+
   // 发布是唯一让内容离开私有边界的动作（见 docs/design/galaxy/cli.md），
   // 脚本里必须显式 --yes；而撤回发布不在危险集合里，这一章不能把两者混为一谈。
   it('点明危险操作要 --yes，且说明撤回发布不算危险操作', async () => {

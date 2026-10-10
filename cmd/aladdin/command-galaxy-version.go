@@ -19,6 +19,10 @@ func newGalaxyVersionCommand() *cobra.Command {
 保存即冻结：此后改草稿、改工程名称、删资产都不改变一个版本读回的清单。
 因此"发布过的页面内容变了"这件事不会发生。发布只能发布版本，不能发布草稿。
 
+**每完成一个可演示的里程碑就存一版**：这是推荐的做法，也是唯一能保证"随时退回去"
+的做法（草稿历史会过期，版本不会）。-m 给这一版一句说明，日后再看列表时认得出
+哪一版是哪一版。
+
 **版本按内容槽隔离**：每个槽各有自己的一串版本，序号在槽内递增。--slot 在单槽
 工程上可以省略；两个槽都有时必须给出。`,
 	}
@@ -27,13 +31,14 @@ func newGalaxyVersionCommand() *cobra.Command {
 		newGalaxyVersionListCommand(),
 		newGalaxyVersionGetCommand(),
 		newGalaxyVersionPullCommand(),
+		newGalaxyVersionDescribeCommand(),
 		newGalaxyVersionDeleteCommand(),
 	)
 	return cmd
 }
 
 func newGalaxyVersionSaveCommand() *cobra.Command {
-	var slot string
+	var slot, description, fromSnapshot string
 
 	cmd := &cobra.Command{
 		Use:   "save <工程标识>",
@@ -42,6 +47,13 @@ func newGalaxyVersionSaveCommand() *cobra.Command {
 
 连续保存两次相同清单会产生两个版本，而不是"检测到重复就不新增"：两次保存
 是两个不同的动作。
+
+-m 给这一版一句说明（加了什么、改了什么）。说明**可以事后改**（version describe），
+因为写错一句话与"把这一版的内容改掉"是两件事。
+
+--from-snapshot 存的是**某一条草稿历史**的清单，而不是当前草稿：它回答的是
+"我想把那次中间态正式记下来"。那条历史引用的资产必须都还在，否则会被拒绝——
+存一个发布不出去的版本与"版本不可变"的含义冲突。
 
 这一次冻结**不搬运任何字节**：字节本来就是按内容摘要寻址的不可变对象，由多个
 版本共享。**它也不碰另一个槽**。`,
@@ -58,8 +70,10 @@ func newGalaxyVersionSaveCommand() *cobra.Command {
 				return err
 			}
 			resp, err := svc.SaveVersion(ctx, connect.NewRequest(&galaxyv1.SaveVersionRequest{
-				ProjectId: args[0],
-				Slot:      resolved,
+				ProjectId:      args[0],
+				Slot:           resolved,
+				Description:    description,
+				FromSnapshotId: fromSnapshot,
 			}))
 			if err != nil {
 				return err
@@ -70,10 +84,71 @@ func newGalaxyVersionSaveCommand() *cobra.Command {
 			v := resp.Msg.GetVersion()
 			printf(cmd.OutOrStdout(), "已保存版本 #%d（%s），%d 个文件\n",
 				v.GetSeq(), v.GetId(), len(v.GetEntries()))
+			if v.GetDescription() != "" {
+				printf(cmd.OutOrStdout(), "  说明: %s\n", v.GetDescription())
+			}
 			return nil
 		},
 	}
 	addSlotFlag(cmd, &slot, "要保存哪个内容槽的草稿：site 或 docs（单槽工程可省略）")
+	cmd.Flags().StringVarP(&description, "description", "m", "", "这一版的说明（可留空，之后也能改）")
+	cmd.Flags().StringVar(&fromSnapshot, "from-snapshot", "",
+		"存某一条草稿历史（draft history 的标识）而不是当前草稿")
+	requirePermission(cmd, rbac.PermissionGalaxyProjectWrite)
+	return cmd
+}
+
+// newGalaxyVersionDescribeCommand 改一个版本的说明。
+//
+// 它只动说明那一层：清单、序号与保存时间逐字不变（见
+// docs/design/galaxy/project-versioning.md）。命令名用 describe 而不是 update，
+// 是因为"更新一个版本"读起来像"改这一版的内容"，而那个动作不存在。
+func newGalaxyVersionDescribeCommand() *cobra.Command {
+	var slot, description string
+
+	cmd := &cobra.Command{
+		Use:   "describe <工程标识> <版本标识>",
+		Short: "给一个版本补写或修改说明",
+		Long: `给一个版本补写或修改那一句说明。
+
+**它只改说明**：清单、序号、保存时间与渲染规则版本在改动前后逐字不变，因此已经
+发出去的页面不受影响，产物里也没有说明这一项。给出空串表示清空。
+
+写错一句话不必再存一版——那正是说明可以事后改的理由。`,
+		Args: exactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("description") {
+				return usageErrorf("必须给出 --description（空串表示清空说明）")
+			}
+			ctx, svc, done, err := galaxyCall()
+			if err != nil {
+				return err
+			}
+			defer done()
+
+			_, resolved, err := projectForSlot(ctx, svc, cmd, args[0])
+			if err != nil {
+				return err
+			}
+			resp, err := svc.UpdateVersion(ctx, connect.NewRequest(&galaxyv1.UpdateVersionRequest{
+				ProjectId:   args[0],
+				VersionId:   args[1],
+				Slot:        resolved,
+				Description: description,
+			}))
+			if err != nil {
+				return err
+			}
+			if flags.output == "json" {
+				return printJSON(resp.Msg)
+			}
+			v := resp.Msg.GetVersion()
+			printf(cmd.OutOrStdout(), "已更新版本 #%d 的说明: %s\n", v.GetSeq(), v.GetDescription())
+			return nil
+		},
+	}
+	addSlotFlag(cmd, &slot, "这个版本属于哪个内容槽：site 或 docs（单槽工程可省略）")
+	cmd.Flags().StringVarP(&description, "description", "m", "", "新的说明（给出空串表示清空）")
 	requirePermission(cmd, rbac.PermissionGalaxyProjectWrite)
 	return cmd
 }
@@ -118,6 +193,9 @@ func newGalaxyVersionListCommand() *cobra.Command {
 			for _, v := range versions {
 				printf(cmd.OutOrStdout(), "#%-4d %s  %s  %d 个文件\n",
 					v.GetSeq(), v.GetId(), v.GetSavedAt(), len(v.GetEntries()))
+				if v.GetDescription() != "" {
+					printf(cmd.OutOrStdout(), "      说明: %s\n", v.GetDescription())
+				}
 			}
 			return nil
 		},

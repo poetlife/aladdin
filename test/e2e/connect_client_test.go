@@ -14,6 +14,7 @@ import (
 
 	rbacv1 "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1"
 	"github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1/rbacv1connect"
+	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -49,6 +50,9 @@ type headerTransport struct {
 	base  http.RoundTripper
 	token string
 	scope string
+	// client 是**上报端标识**（`web` / `cli`）。为空时不带这个头——生产里也有一些
+	// 客户端不带它，而"没带"与"带了一个未知值"是两件事（见 observability.ClientFromHeader）。
+	client string
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -57,6 +61,9 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	if t.scope != "" {
 		req.Header.Set("aladdin-scope", t.scope)
+	}
+	if t.client != "" {
+		req.Header.Set(observability.HeaderClient, t.client)
 	}
 	return t.base.RoundTrip(req)
 }

@@ -205,6 +205,8 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			&database.GalaxyAttachmentRecord{},
 			&database.GalaxyPublicationRecord{},
 			&database.GalaxyDraftRecord{},
+			// 草稿历史也是工程的东西：工程没了，它的快照一条都不该留下。
+			&database.GalaxyDraftSnapshotRecord{},
 			// 预览凭证也是工程的东西：工程没了，它的凭证一条都不该留下。
 			&database.GalaxyPreviewGrantRecord{},
 			&database.GalaxySlotRecord{},
@@ -245,24 +247,157 @@ func (s *Store) GetDraft(ctx context.Context, projectID string, slot galaxy.Cont
 	return toDraft(rec)
 }
 
-// PutDraft 实现 galaxy.MutableStore：整组替换**某一个槽**的草稿，行不存在时创建。
-func (s *Store) PutDraft(ctx context.Context, projectID string, slot galaxy.ContentSlot, manifest galaxy.Manifest, at time.Time) error {
+// PutDraft 实现 galaxy.MutableStore：整组替换**某一个槽**的草稿，并把被替换掉的
+// 旧清单留成一条快照。
+//
+// 写入与清理在**同一个事务**里：清理到一半的表现是"这条快照既不在历史里、又还
+// 占着名额"。
+func (s *Store) PutDraft(ctx context.Context, projectID string, slot galaxy.ContentSlot, manifest galaxy.Manifest, at time.Time,
+	snapshot galaxy.DraftSnapshot, retention galaxy.DraftSnapshotRetention) error {
 	encoded, err := encodeManifest(manifest)
 	if err != nil {
 		return err
 	}
-	rec := database.GalaxyDraftRecord{
-		ProjectID: projectID,
-		Slot:      string(slot),
-		Manifest:  encoded,
-		UpdatedAt: at,
-	}
-	err = s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "project_id"}, {Name: "slot"}},
-		DoUpdates: clause.AssignmentColumns([]string{"manifest", "updated_at"}),
-	}).Create(&rec).Error
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		rec := database.GalaxyDraftRecord{
+			ProjectID: projectID,
+			Slot:      string(slot),
+			Manifest:  encoded,
+			UpdatedAt: at,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "project_id"}, {Name: "slot"}},
+			DoUpdates: clause.AssignmentColumns([]string{"manifest", "updated_at"}),
+		}).Create(&rec).Error; err != nil {
+			return err
+		}
+		if snapshot.ID == "" {
+			return nil
+		}
+		return insertDraftSnapshot(tx, snapshot, retention)
+	})
 	if err != nil {
 		return unavailable("写入草稿", err)
+	}
+	return nil
+}
+
+// insertDraftSnapshot 写入一条草稿快照并按保留策略清理（唯一入口）。
+//
+// 清理分两步：先取出这个槽要留下的那些标识（最近的 N 条），再删掉不在其中的。
+// 不用"删掉早于第 N 条的时间"那种写法：同一时刻的两条快照会让那个判据既可能多删
+// 也可能少删，而"留下哪几条"必须是一个确定的集合。
+func insertDraftSnapshot(tx *gorm.DB, snapshot galaxy.DraftSnapshot, retention galaxy.DraftSnapshotRetention) error {
+	encoded, err := encodeManifest(snapshot.Manifest)
+	if err != nil {
+		return err
+	}
+	// 序号在**写入它的那个事务里**分配（与版本表同一条理由）：先查最大值再写入在
+	// 并发下会得到两个相同的序号，而"最近的那一条"必须是一个确定的答案。
+	var maxSeq int64
+	row := tx.Model(&database.GalaxyDraftSnapshotRecord{}).
+		Where("project_id = ? AND slot = ?", snapshot.ProjectID, string(snapshot.Slot)).
+		Select("COALESCE(MAX(seq), 0)").
+		Row()
+	if err := row.Scan(&maxSeq); err != nil {
+		return err
+	}
+	rec := database.GalaxyDraftSnapshotRecord{
+		ID:                  snapshot.ID,
+		ProjectID:           snapshot.ProjectID,
+		Slot:                string(snapshot.Slot),
+		Seq:                 maxSeq + 1,
+		Manifest:            encoded,
+		Source:              snapshot.Source,
+		ReplacedBySubjectID: snapshot.ReplacedBySubjectID,
+		CreatedAt:           snapshot.CreatedAt,
+	}
+	if err := tx.Create(&rec).Error; err != nil {
+		return err
+	}
+	// 保留策略的第二个上限（时间）先按列筛掉，再把剩下的按条数留。
+	if err := tx.Where("project_id = ? AND slot = ? AND created_at < ?",
+		snapshot.ProjectID, string(snapshot.Slot), retention.NotBefore).
+		Delete(&database.GalaxyDraftSnapshotRecord{}).Error; err != nil {
+		return err
+	}
+	if retention.Keep <= 0 {
+		return nil
+	}
+	var kept []string
+	if err := tx.Model(&database.GalaxyDraftSnapshotRecord{}).
+		Where("project_id = ? AND slot = ?", snapshot.ProjectID, string(snapshot.Slot)).
+		Order("seq DESC").
+		Limit(retention.Keep).
+		Pluck("id", &kept).Error; err != nil {
+		return err
+	}
+	return tx.Where("project_id = ? AND slot = ? AND id NOT IN ?",
+		snapshot.ProjectID, string(snapshot.Slot), kept).
+		Delete(&database.GalaxyDraftSnapshotRecord{}).Error
+}
+
+// ListDraftSnapshots 实现 galaxy.Store：最近的在前。
+func (s *Store) ListDraftSnapshots(ctx context.Context, projectID string, slot galaxy.ContentSlot) ([]galaxy.DraftSnapshot, error) {
+	var recs []database.GalaxyDraftSnapshotRecord
+	err := s.db.WithContext(ctx).
+		Where("project_id = ? AND slot = ?", projectID, string(slot)).
+		Order("seq DESC").
+		Find(&recs).Error
+	if err != nil {
+		return nil, unavailable("列出草稿历史", err)
+	}
+	snapshots := make([]galaxy.DraftSnapshot, 0, len(recs))
+	for _, rec := range recs {
+		snapshot, err := toDraftSnapshot(rec)
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
+// GetDraftSnapshot 实现 galaxy.Store。
+//
+// 查询同时约束工程与槽：**"属于别的槽"与"不存在"因此从查询这一层就是同一个
+// 结果**（与版本、资产同源）。
+func (s *Store) GetDraftSnapshot(ctx context.Context, projectID string, slot galaxy.ContentSlot, snapshotID string) (galaxy.DraftSnapshot, error) {
+	var rec database.GalaxyDraftSnapshotRecord
+	err := s.db.WithContext(ctx).
+		First(&rec, "id = ? AND project_id = ? AND slot = ?", snapshotID, projectID, string(slot)).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return galaxy.DraftSnapshot{}, galaxy.ErrDraftSnapshotNotFound
+		}
+		return galaxy.DraftSnapshot{}, unavailable("读取草稿快照", err)
+	}
+	return toDraftSnapshot(rec)
+}
+
+// UpdateVersionDescription 实现 galaxy.MutableStore：**只改说明那一列**。
+//
+// 与 UpdateAssetMeta 同源：行不存在与"值本来就相同"要分开——后者是合法的空改动，
+// 前者不是。
+func (s *Store) UpdateVersionDescription(ctx context.Context, projectID string, slot galaxy.ContentSlot, versionID, description string) error {
+	result := s.db.WithContext(ctx).
+		Model(&database.GalaxyVersionRecord{}).
+		Where("id = ? AND project_id = ? AND slot = ?", versionID, projectID, string(slot)).
+		Update("description", description)
+	if result.Error != nil {
+		return unavailable("更新版本说明", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		var count int64
+		if err := s.db.WithContext(ctx).
+			Model(&database.GalaxyVersionRecord{}).
+			Where("id = ? AND project_id = ? AND slot = ?", versionID, projectID, string(slot)).
+			Count(&count).Error; err != nil {
+			return unavailable("更新版本说明", err)
+		}
+		if count == 0 {
+			return galaxy.ErrVersionNotFound
+		}
 	}
 	return nil
 }
@@ -348,6 +483,7 @@ func (s *Store) CreateVersion(ctx context.Context, version galaxy.Version) (gala
 			Slot:               string(version.Slot),
 			Seq:                maxSeq + 1,
 			Manifest:           encoded,
+			Description:        version.Description,
 			RenderRulesVersion: version.RenderRulesVersion,
 			SavedAt:            version.SavedAt,
 		}

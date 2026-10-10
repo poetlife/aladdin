@@ -137,6 +137,7 @@
 | 一个工程的变更通知谁（按主题扇出、变更合并） | 进程内总线（`Hub` 实例由服务端装配处唯一持有） | [internal/watch/hub.go](../internal/watch/hub.go) |
 | 一个主题能不能被订阅（类型前缀、权限码、归属判定） | 主题类型注册表（属主模块注册，通道只查表） | [internal/watch/topic.go](../internal/watch/topic.go) |
 | 资产字节上架到公开区 | 上架入口（按内容摘要幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
+| 替换草稿时留下快照（写入新清单与被替换的旧清单**在同一步**；相同清单不留） | 草稿替换的唯一入口（push 与"恢复到某条历史"都走它） | [internal/galaxy/draft_snapshot.go](../internal/galaxy/draft_snapshot.go) |
 | 客户端把字节直传到对象存储（资产与内容对象共用） | 两端的直传实现；**共享的是凭证形状（`DirectUploadCredential`），代码因跨语言各一份，不得出现第三种形状** | [web/src/upload/direct-upload.ts](../web/src/upload/direct-upload.ts) / [cmd/aladdin/direct-upload.go](../cmd/aladdin/direct-upload.go) |
 | 拒绝结论到 RPC 错误码与错误详情的转换 | `Reject` / `DenyByAnnotation`（鉴权拦截器与事件通道的逐主题判定共用） | [internal/server/interceptor/rejection.go](../internal/server/interceptor/rejection.go) |
 | 按客户端协议写出错误响应（中间件层） | `connect.ErrorWriter` | [internal/server/middleware.go](../internal/server/middleware.go) |

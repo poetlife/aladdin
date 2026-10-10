@@ -521,9 +521,14 @@ paths:
          它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
          否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
 
-         **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
-         "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
-         收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+         **这是内容唯一的编辑路径**（命令行）。网页端不能编辑内容：两个编辑器并存会
+         引出"网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+         收成一条路径，那份冲突连同它需要的基线校验一起不存在。**唯一的例外是恢复草稿
+         历史**（RestoreDraftSnapshot）——它不是编辑，而是一次**显式的整组替换**，并且
+         落在这同一条路径上、同样先给被换掉的那一份留一条快照，因此它不会静默盖掉什么。
+
+         **被换掉的那份清单会留成一条草稿快照**（见 ListDraftSnapshots）："只推不存
+         版本"这条最常见的用法因此不会让中间过程消失。相同清单不重复留。
 
          请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
          资产标识），因此本方法不带字节，也不触发任何上传。
@@ -557,6 +562,104 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.PushDraftResponse'
+  /aladdin.galaxy.v1.GalaxyService/ListDraftSnapshots:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: ListDraftSnapshots
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
+        列出某个槽的**草稿历史**：被替换掉的那些旧清单，最近的在前。
+
+         草稿快照**不是版本**：没有序号、不能发布、按保留策略过期（见
+         docs/design/galaxy/project-versioning.md）。它是"只推不存版本"这条用法的
+         兜底——那套用法下中间过程本来一点记录都没有。
+      operationId: aladdin.galaxy.v1.GalaxyService.ListDraftSnapshots
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.ListDraftSnapshotsRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.ListDraftSnapshotsResponse'
+  /aladdin.galaxy.v1.GalaxyService/RestoreDraftSnapshot:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: RestoreDraftSnapshot
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        把草稿**整组换回**某一条快照的清单。
+
+         **恢复本身也留一条快照**：它是同一处草稿替换，因此恢复不会让你丢掉恢复前的
+         内容。它不碰另一个槽。
+
+         **引用了已删除资产的快照不能恢复**：恢复出来的会是一份必然在校验阶段失败的
+         草稿，而用户从"恢复成功"这句话里看不出问题在哪。服务端如实拒绝并指出那一处。
+      operationId: aladdin.galaxy.v1.GalaxyService.RestoreDraftSnapshot
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.RestoreDraftSnapshotRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.RestoreDraftSnapshotResponse'
   /aladdin.galaxy.v1.GalaxyService/SaveVersion:
     post:
       x-aladdin-auth:
@@ -574,6 +677,10 @@ paths:
          保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
          连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
          看起来一样的清单对用户是两次不同的保存动作。
+
+         两个可选入参：`description` 是这一版的一句说明（可事后改，见 UpdateVersion）；
+         `from_snapshot_id` 非空时存的是**那条草稿快照**的清单，而不是当前草稿——它
+         回答的是"我想把那次中间态正式记下来"。
       operationId: aladdin.galaxy.v1.GalaxyService.SaveVersion
       parameters:
         - name: Connect-Protocol-Version
@@ -604,6 +711,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.SaveVersionResponse'
+  /aladdin.galaxy.v1.GalaxyService/UpdateVersion:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.project.write
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: UpdateVersion
+      description: |-
+        **鉴权**：需要权限 `galaxy.project.write`；作用域取自凭证的默认作用域。
+
+        改一个版本的**说明**。
+
+         **它只改说明那一层。** 与资产同一条：不可变说的是**内容**（文件清单、渲染规则
+         版本），而说明回答的是"这一版是干什么的"，它不进产物、不参与任何判定。清单、
+         序号、保存时间在改动前后逐字不变，已发布的页面也不受影响。
+
+         请求表达**期望的完整状态**：空串清空说明。**两端都能改**——写错一句话与"把
+         这一版的内容改掉"是两件事，而前者若只能靠再存一版来修，人会宁可不写。
+      operationId: aladdin.galaxy.v1.GalaxyService.UpdateVersion
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateVersionRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.UpdateVersionResponse'
   /aladdin.galaxy.v1.GalaxyService/ListVersions:
     post:
       x-aladdin-auth:
@@ -4612,6 +4769,47 @@ components:
         Draft 是**某个内容槽**当前正在编辑的文件清单。
 
          它不是版本：随时可改，改它不产生版本，不参与发布，也不保证可退回。
+    aladdin.galaxy.v1.DraftSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+          description: |-
+            快照标识。由服务端分配。
+
+             **它与版本标识的段位不同**（`snp_` 对 `ver_`）：拿一条快照的标识去发布必须
+             失败，而标识一眼看得出拿错了哪一种。
+        slot:
+          allOf:
+            - title: slot
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.ContentSlot'
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.FileEntry'
+          title: entries
+          description: |-
+            被替换掉的那份清单。清单很小，因此随列表一起给出：界面上"这一份与现在差多少"
+             要靠它答。
+        source:
+          type: string
+          title: source
+          description: 替换它的那一端：`web` 或 `cli`。没带上报端标识时为空。
+        createdAt:
+          type: string
+          title: created_at
+          description: 它被替换掉的时刻。
+      title: DraftSnapshot
+      additionalProperties: false
+      description: |-
+        DraftSnapshot 是**被替换掉的**那一份草稿清单。
+
+         它不是版本：没有序号、**不能发布**、按保留策略过期（每个槽最近 50 条且不超过
+         14 天）。它存在的理由是"只推草稿不存版本"这条最常见的误用——那种用法下中间
+         过程在改动发生的那一刻就没有任何记录（见 docs/design/galaxy/project-versioning.md）。
+
+         **字节不随清单走**：条目指向的是按内容摘要寻址的不可变对象，与版本共享同一批。
     aladdin.galaxy.v1.FileEntry:
       type: object
       allOf:
@@ -4856,6 +5054,29 @@ components:
             $ref: '#/components/schemas/aladdin.galaxy.v1.Attachment'
           title: attachments
       title: ListAttachmentsResponse
+      additionalProperties: false
+    aladdin.galaxy.v1.ListDraftSnapshotsRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        slot:
+          allOf:
+            - title: slot
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.ContentSlot'
+      title: ListDraftSnapshotsRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.ListDraftSnapshotsResponse:
+      type: object
+      properties:
+        snapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/aladdin.galaxy.v1.DraftSnapshot'
+          title: snapshots
+          description: 草稿历史，**最近的在前**。
+      title: ListDraftSnapshotsResponse
       additionalProperties: false
     aladdin.galaxy.v1.ListProjectsRequest:
       type: object
@@ -5139,6 +5360,33 @@ components:
              与发布态相同的"不存在"。
       title: ResolveSharedPageResponse
       additionalProperties: false
+    aladdin.galaxy.v1.RestoreDraftSnapshotRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        slot:
+          allOf:
+            - title: slot
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.ContentSlot'
+        snapshotId:
+          type: string
+          title: snapshot_id
+      title: RestoreDraftSnapshotRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.RestoreDraftSnapshotResponse:
+      type: object
+      properties:
+        draft:
+          allOf:
+            - title: draft
+              description: |-
+                恢复之后的草稿。**恢复前的那一份已经成了一条新快照**，因此这一步不会丢掉
+                 任何内容。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Draft'
+      title: RestoreDraftSnapshotResponse
+      additionalProperties: false
     aladdin.galaxy.v1.SaveVersionRequest:
       type: object
       properties:
@@ -5150,6 +5398,21 @@ components:
             - title: slot
               description: 把哪个内容槽的草稿存成版本。
             - $ref: '#/components/schemas/aladdin.galaxy.v1.ContentSlot'
+        description:
+          type: string
+          title: description
+          description: |-
+            这一版的一句说明，可空（见 Version.description）。写出了错可以事后用
+             UpdateVersion 改，不必为一句说明再存一版。
+        fromSnapshotId:
+          type: string
+          title: from_snapshot_id
+          description: |-
+            非空时存的是**那条草稿快照**的清单，而不是当前草稿：它回答的是"我想把那次
+             中间态正式记下来"。
+
+             那条快照引用的资产必须都还在：存一个"发布不出去的版本"与"版本不可变"的含义
+             （它此后永远可以发布）直接冲突，服务端因此如实拒绝。
       title: SaveVersionRequest
       additionalProperties: false
     aladdin.galaxy.v1.SaveVersionResponse:
@@ -5269,6 +5532,36 @@ components:
             - $ref: '#/components/schemas/aladdin.galaxy.v1.Project'
       title: UpdateProjectResponse
       additionalProperties: false
+    aladdin.galaxy.v1.UpdateVersionRequest:
+      type: object
+      properties:
+        projectId:
+          type: string
+          title: project_id
+        versionId:
+          type: string
+          title: version_id
+        slot:
+          allOf:
+            - title: slot
+              description: 该版本所属的内容槽。版本按槽隔离，因此要给。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.ContentSlot'
+        description:
+          type: string
+          title: description
+          description: 期望的说明。空串表示清空。
+      title: UpdateVersionRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.UpdateVersionResponse:
+      type: object
+      properties:
+        version:
+          allOf:
+            - title: version
+              description: 改完之后的版本（含说明）。清单、序号与保存时间逐字不变。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.Version'
+      title: UpdateVersionResponse
+      additionalProperties: false
     aladdin.galaxy.v1.ValidateDraftRequest:
       type: object
       properties:
@@ -5356,6 +5649,14 @@ components:
             - title: slot
               description: 这个版本属于哪个槽。**版本按槽隔离**：它只在自己的槽里被列出与发布。
             - $ref: '#/components/schemas/aladdin.galaxy.v1.ContentSlot'
+        description:
+          type: string
+          title: description
+          description: |-
+            这一版的一句说明（"加了封面"）。空表示没有。
+
+             **它是元数据层，与"版本不可变"不冲突**：不可变说的是清单与渲染规则版本，
+             而说明不进产物、不参与任何判定，因此**可以事后改**（见 UpdateVersion）。
       title: Version
       additionalProperties: false
       description: Version 是文件清单的一次不可变快照。
@@ -7103,6 +7404,7 @@ components:
         - ACTION_VERSIONS_OPEN
         - ACTION_ASSET_META_SAVE
         - ACTION_ASSET_UPLOAD
+        - ACTION_DRAFT_RESTORE
         - ACTION_CLI_LOCAL_FAIL
         - ACTION_ATTACHMENTS_OPEN
         - ACTION_ATTACHMENT_UPLOAD

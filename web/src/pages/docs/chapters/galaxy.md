@@ -85,8 +85,8 @@ vite build --base "$(aladdin galaxy project base <工程标识> --slot site)"
 aladdin galaxy draft push <工程标识> ./dist --slot site
 aladdin galaxy validate <工程标识> --slot site
 
-# 存成一个版本，发布它，拿到地址
-aladdin galaxy version save <工程标识> --slot site
+# 存成一个版本（-m 给这一版一句话），发布它，拿到地址
+aladdin galaxy version save <工程标识> --slot site -m "加了封面"
 aladdin galaxy publish <工程标识> <版本标识> --slot site --yes
 
 # 发布之后核对：按访客的路径把产物取回来，逐条复核引用有没有解开
@@ -104,6 +104,18 @@ aladdin galaxy draft push <工程标识> ./docs --slot docs
 `publish` 的返回值只说「发布成功了」：产物里的地址是渲染时补上的，源里、版本里都只有记号。所以发布之后还要能读回来核对——`publication verify` 按访客走的那条地址把产物取回来，复核取回的字节与发布记录是否一致、产物里有没有残留的记号、每一处引用是否都落在产物清单上、每一条素材是否可达；读清单用 `publication get`（加 `--path` 取其中一份的字节）。
 
 把内容取回本地有三条路：正在编辑的那一份用 `draft pull`，某一版用 `version pull`，**已经发出去的那一份**用 `publication pull`——前两条取的是你推上去的源，最后一条取的是访客拿到的东西。
+
+## 每完成一个里程碑就存一版
+
+**这是推荐流程里最要紧的一条。** 反复 `draft push` 而从不存版本，是这条路最常见的用法错误——那样工程只剩最新的那份草稿，中间过程一份都留不下。
+
+```bash
+aladdin galaxy draft push <工程标识> ./dist --slot site --save -m "加了封面"
+```
+
+`--save` 在推完之后立刻存一个版本；`-m "说明"` 给这一版一句话（给出 `-m` 就隐含 `--save`）。不带这两个时，命令会在末尾提醒你「尚未存为版本」。写错了说明可以事后改，用 `version describe` 或网页端版本面板里的「补写说明」——改说明不动内容。
+
+不这么做的代价是有的：每次推送都会**把被换掉的那一份留进草稿历史**（`aladdin galaxy draft history <工程标识>` 看得到，能 `draft restore` 退回去），但那份历史每个槽只留最近 50 条、最多 14 天。**版本不会过期**，这才是"随时退得回去"的保证。
 
 ## 边界与危险操作
 

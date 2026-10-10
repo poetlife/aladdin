@@ -22,6 +22,7 @@ type MemoryStore struct {
 
 	projects      map[string]Project
 	drafts        map[string]Draft
+	draftSnaps    map[string]DraftSnapshot
 	versions      map[string]Version
 	assets        map[string]Asset
 	attachments   map[string]Attachment
@@ -34,6 +35,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		projects:      map[string]Project{},
 		drafts:        map[string]Draft{},
+		draftSnaps:    map[string]DraftSnapshot{},
 		versions:      map[string]Version{},
 		assets:        map[string]Asset{},
 		attachments:   map[string]Attachment{},
@@ -424,6 +426,12 @@ func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 			delete(s.versions, id)
 		}
 	}
+	// 草稿历史也是工程的东西：工程没了，它的快照一条都不该留下。
+	for id, snapshot := range s.draftSnaps {
+		if snapshot.ProjectID == projectID {
+			delete(s.draftSnaps, id)
+		}
+	}
 	for id, asset := range s.assets {
 		if asset.ProjectID == projectID {
 			delete(s.assets, id)
@@ -448,8 +456,13 @@ func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 	return nil
 }
 
-// PutDraft 实现 MutableStore：整组替换**某一个槽**的草稿。
-func (s *MemoryStore) PutDraft(_ context.Context, projectID string, slot ContentSlot, manifest Manifest, at time.Time) error {
+// PutDraft 实现 MutableStore：整组替换**某一个槽**的草稿，并把被替换掉的旧清单
+// 留成一条快照。
+//
+// 写入与清理在**同一个临界区**里完成（SQL 那边是同一个事务）：清理到一半的表现是
+// "这条快照既不在历史里、又还占着名额"。
+func (s *MemoryStore) PutDraft(_ context.Context, projectID string, slot ContentSlot, manifest Manifest, at time.Time,
+	snapshot DraftSnapshot, retention DraftSnapshotRetention) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -459,7 +472,85 @@ func (s *MemoryStore) PutDraft(_ context.Context, projectID string, slot Content
 		Manifest:  cloneManifest(manifest),
 		UpdatedAt: at,
 	}
+	if snapshot.ID == "" {
+		return nil
+	}
+	// 序号在设计里由存储分配（与版本表同一条），因此内存实现也在这里给。
+	snapshot.Manifest = cloneManifest(snapshot.Manifest)
+	snapshot.Seq = s.nextSnapshotSeq(projectID, slot)
+	s.draftSnaps[snapshot.ID] = snapshot
+	s.pruneDraftSnapshots(projectID, slot, retention)
 	return nil
+}
+
+// nextSnapshotSeq 返回这个槽下一个可用的快照序号。
+//
+// 它在写锁里被调用，因此"查最大值"与"写进去"之间没有别人插进来——这正是序号
+// 不能由调用方计算的那条理由。
+func (s *MemoryStore) nextSnapshotSeq(projectID string, slot ContentSlot) int64 {
+	var maxSeq int64
+	for _, snapshot := range s.draftSnaps {
+		if snapshot.ProjectID == projectID && snapshot.Slot == slot && snapshot.Seq > maxSeq {
+			maxSeq = snapshot.Seq
+		}
+	}
+	return maxSeq + 1
+}
+
+// pruneDraftSnapshots 按保留策略清掉这个槽过期的快照（只在写路径上调用）。
+func (s *MemoryStore) pruneDraftSnapshots(projectID string, slot ContentSlot, retention DraftSnapshotRetention) {
+	kept := s.snapshotIDsNewestFirst(projectID, slot)
+	for index, id := range kept {
+		snapshot := s.draftSnaps[id]
+		if index >= retention.Keep || snapshot.CreatedAt.Before(retention.NotBefore) {
+			delete(s.draftSnaps, id)
+		}
+	}
+}
+
+// snapshotIDsNewestFirst 返回这个槽的快照标识，最近的在前。
+//
+// **按序号倒序**（与 SQL 实现同一条）：时间不能当排序键，两次替换可以落在同一个
+// 时间刻上，那时"哪一条最近"会变成一个由标识的随机性决定的答案。
+func (s *MemoryStore) snapshotIDsNewestFirst(projectID string, slot ContentSlot) []string {
+	ids := make([]string, 0, len(s.draftSnaps))
+	for id, snapshot := range s.draftSnaps {
+		if snapshot.ProjectID == projectID && snapshot.Slot == slot {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		return s.draftSnaps[ids[i]].Seq > s.draftSnaps[ids[j]].Seq
+	})
+	return ids
+}
+
+// ListDraftSnapshots 实现 Store。
+func (s *MemoryStore) ListDraftSnapshots(_ context.Context, projectID string, slot ContentSlot) ([]DraftSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	ids := s.snapshotIDsNewestFirst(projectID, slot)
+	snapshots := make([]DraftSnapshot, 0, len(ids))
+	for _, id := range ids {
+		snapshot := s.draftSnaps[id]
+		snapshot.Manifest = cloneManifest(snapshot.Manifest)
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
+// GetDraftSnapshot 实现 Store。
+func (s *MemoryStore) GetDraftSnapshot(_ context.Context, projectID string, slot ContentSlot, snapshotID string) (DraftSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	snapshot, ok := s.draftSnaps[snapshotID]
+	if !ok || snapshot.ProjectID != projectID || snapshot.Slot != slot {
+		return DraftSnapshot{}, ErrDraftSnapshotNotFound
+	}
+	snapshot.Manifest = cloneManifest(snapshot.Manifest)
+	return snapshot, nil
 }
 
 // CreateVersion 实现 MutableStore：**在槽内**分配序号。
@@ -480,6 +571,20 @@ func (s *MemoryStore) CreateVersion(_ context.Context, version Version) (Version
 	version.Manifest = cloneManifest(version.Manifest)
 	s.versions[version.ID] = version
 	return version, nil
+}
+
+// UpdateVersionDescription 实现 MutableStore：**只改说明那一列**。
+func (s *MemoryStore) UpdateVersionDescription(_ context.Context, projectID string, slot ContentSlot, versionID, description string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	version, ok := s.versions[versionID]
+	if !ok || version.ProjectID != projectID || version.Slot != slot {
+		return ErrVersionNotFound
+	}
+	version.Description = description
+	s.versions[versionID] = version
+	return nil
 }
 
 // DeleteVersion 实现 MutableStore：删版本，并清空指向它的附件标注。

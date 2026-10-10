@@ -55,6 +55,12 @@ func storeCases(t *testing.T) []storeCase {
 	}
 }
 
+// noRetention 是一次**不留快照**的替换：ID 为空表示不留（见 MutableStore.PutDraft）。
+// 它给"只关心草稿本身"的用例用。
+func noRetention() galaxy.DraftSnapshotRetention {
+	return galaxy.DraftSnapshotRetention{Keep: 0}
+}
+
 // testManifest 造一份最小的清单：一条文本条目。
 //
 // 摘要用一个合法形状的取值：存储层不判形状（那是上层的入口），但用真形状能让
@@ -135,7 +141,7 @@ func TestStoreContract(t *testing.T) {
 					t.Fatalf("err = %v，期望 ErrDraftNotFound", err)
 				}
 				first := testManifest("index.html", "aa")
-				if err := store.PutDraft(ctx, "prj_draft", galaxy.SlotSite, first, now); err != nil {
+				if err := store.PutDraft(ctx, "prj_draft", galaxy.SlotSite, first, now, galaxy.DraftSnapshot{}, noRetention()); err != nil {
 					t.Fatalf("写入草稿失败: %v", err)
 				}
 				draft, err := store.GetDraft(ctx, "prj_draft", galaxy.SlotSite)
@@ -150,7 +156,7 @@ func TestStoreContract(t *testing.T) {
 					{Path: "index.html", Kind: galaxy.EntryKindText, Digest: "bb"},
 					{Path: "a.png", Kind: galaxy.EntryKindAsset, AssetID: "ast_1"},
 				}
-				if err := store.PutDraft(ctx, "prj_draft", galaxy.SlotSite, second, now); err != nil {
+				if err := store.PutDraft(ctx, "prj_draft", galaxy.SlotSite, second, now, galaxy.DraftSnapshot{}, noRetention()); err != nil {
 					t.Fatalf("覆盖草稿失败: %v", err)
 				}
 				draft, err = store.GetDraft(ctx, "prj_draft", galaxy.SlotSite)
@@ -378,6 +384,131 @@ func TestStoreContract(t *testing.T) {
 				}
 				if len(after) != 0 {
 					t.Errorf("工程标签 = %v，期望空集", after)
+				}
+			})
+
+			t.Run("草稿快照按槽往返，并按保留策略清理", func(t *testing.T) {
+				keepTwo := galaxy.DraftSnapshotRetention{Keep: 2, NotBefore: now.AddDate(0, 0, -14)}
+				snapshot := func(id, digest string, at time.Time) galaxy.DraftSnapshot {
+					return galaxy.DraftSnapshot{
+						ID: id, ProjectID: "prj_v", Slot: galaxy.SlotSite,
+						Manifest: testManifest("index.html", digest), Source: "cli",
+						ReplacedBySubjectID: "usr_1", CreatedAt: at,
+					}
+				}
+
+				if err := store.PutDraft(ctx, "prj_v", galaxy.SlotSite,
+					testManifest("index.html", "cc"), now, snapshot("snp_1", "aa", now), keepTwo); err != nil {
+					t.Fatalf("写入带快照的草稿失败: %v", err)
+				}
+				got, err := store.GetDraftSnapshot(ctx, "prj_v", galaxy.SlotSite, "snp_1")
+				if err != nil {
+					t.Fatalf("读取草稿快照失败: %v", err)
+				}
+				// 清单与留痕字段都要原样往返。
+				if len(got.Manifest) != 1 || got.Manifest[0].Digest != "aa" ||
+					got.Source != "cli" || got.ReplacedBySubjectID != "usr_1" ||
+					!got.CreatedAt.Equal(now) {
+					t.Errorf("快照 = %+v，期望逐字往返", got)
+				}
+				// **按槽隔离**：另一个槽下没有这一条。
+				if _, err := store.GetDraftSnapshot(ctx, "prj_v", galaxy.SlotDocs, "snp_1"); !errors.Is(err, galaxy.ErrDraftSnapshotNotFound) {
+					t.Errorf("err = %v，期望 ErrDraftSnapshotNotFound", err)
+				}
+				// 别的工程同样取不到。
+				if _, err := store.GetDraftSnapshot(ctx, "prj_other", galaxy.SlotSite, "snp_1"); !errors.Is(err, galaxy.ErrDraftSnapshotNotFound) {
+					t.Errorf("err = %v，期望 ErrDraftSnapshotNotFound", err)
+				}
+
+				// 再推两次，三次的**时间完全相同**：序号是唯一的排序依据，而它必须
+				// 让两个实现给出同一个"最近的那一条"。保留 2 条，最早的被清掉。
+				for _, id := range []string{"snp_2", "snp_3"} {
+					if err := store.PutDraft(ctx, "prj_v", galaxy.SlotSite,
+						testManifest("index.html", "dd"), now, snapshot(id, "bb", now), keepTwo); err != nil {
+						t.Fatalf("替换失败: %v", err)
+					}
+				}
+				snapshots, err := store.ListDraftSnapshots(ctx, "prj_v", galaxy.SlotSite)
+				if err != nil {
+					t.Fatalf("列出草稿快照失败: %v", err)
+				}
+				if len(snapshots) != 2 {
+					t.Fatalf("快照数 = %d，期望 2（超过保留条数的被清掉）", len(snapshots))
+				}
+				// **最近的在前**：两个实现必须给出同一个顺序，且同一时间刻不构成歧义。
+				if snapshots[0].ID != "snp_3" || snapshots[1].ID != "snp_2" {
+					t.Errorf("顺序 = %s, %s，期望最近的在最前", snapshots[0].ID, snapshots[1].ID)
+				}
+				if snapshots[0].Seq <= snapshots[1].Seq {
+					t.Errorf("序号 = %d, %d，期望在槽内递增", snapshots[0].Seq, snapshots[1].Seq)
+				}
+				if _, err := store.GetDraftSnapshot(ctx, "prj_v", galaxy.SlotSite, "snp_1"); !errors.Is(err, galaxy.ErrDraftSnapshotNotFound) {
+					t.Errorf("被清掉的快照仍读得到: %v", err)
+				}
+
+				// 时间那一档：把 NotBefore 放到未来，刚才那两条全部过期。
+				if err := store.PutDraft(ctx, "prj_v", galaxy.SlotSite,
+					testManifest("index.html", "ee"), now.Add(time.Hour),
+					snapshot("snp_4", "cc", now.Add(time.Hour)),
+					galaxy.DraftSnapshotRetention{Keep: 50, NotBefore: now.Add(30 * time.Minute)}); err != nil {
+					t.Fatalf("替换失败: %v", err)
+				}
+				snapshots, err = store.ListDraftSnapshots(ctx, "prj_v", galaxy.SlotSite)
+				if err != nil {
+					t.Fatalf("列出草稿快照失败: %v", err)
+				}
+				if len(snapshots) != 1 || snapshots[0].ID != "snp_4" {
+					t.Errorf("按时间清理之后 = %+v，期望只剩刚写的那一条", snapshots)
+				}
+
+				// ID 为空表示不留快照：再推一次不会多出一条。
+				if err := store.PutDraft(ctx, "prj_v", galaxy.SlotSite,
+					testManifest("index.html", "ff"), now.Add(2*time.Hour),
+					galaxy.DraftSnapshot{}, keepTwo); err != nil {
+					t.Fatalf("替换失败: %v", err)
+				}
+				snapshots, err = store.ListDraftSnapshots(ctx, "prj_v", galaxy.SlotSite)
+				if err != nil {
+					t.Fatalf("列出草稿快照失败: %v", err)
+				}
+				if len(snapshots) != 1 {
+					t.Errorf("快照数 = %d，期望仍是 1（这次不留）", len(snapshots))
+				}
+			})
+
+			t.Run("版本说明可改而不动内容", func(t *testing.T) {
+				if _, err := store.CreateVersion(ctx, galaxy.Version{
+					ID: "ver_desc", ProjectID: "prj_v", Slot: galaxy.SlotSite,
+					Manifest: testManifest("index.html", "aa"), Description: "第一版", SavedAt: now,
+				}); err != nil {
+					t.Fatalf("写入版本失败: %v", err)
+				}
+				before, err := store.GetVersion(ctx, "prj_v", galaxy.SlotSite, "ver_desc")
+				if err != nil {
+					t.Fatalf("读取版本失败: %v", err)
+				}
+				if before.Description != "第一版" {
+					t.Errorf("说明 = %q，期望随写入落库", before.Description)
+				}
+				if err := store.UpdateVersionDescription(ctx, "prj_v", galaxy.SlotSite, "ver_desc", "改过的"); err != nil {
+					t.Fatalf("改说明失败: %v", err)
+				}
+				after, err := store.GetVersion(ctx, "prj_v", galaxy.SlotSite, "ver_desc")
+				if err != nil {
+					t.Fatalf("读取版本失败: %v", err)
+				}
+				if after.Description != "改过的" {
+					t.Errorf("说明 = %q，期望被改掉", after.Description)
+				}
+				// **只动说明那一列**：清单、序号与保存时间逐字不变。
+				if after.Seq != before.Seq || !after.SavedAt.Equal(before.SavedAt) ||
+					after.RenderRulesVersion != before.RenderRulesVersion ||
+					len(after.Manifest) != len(before.Manifest) || after.Manifest[0] != before.Manifest[0] {
+					t.Errorf("改说明动了别的东西：%+v / %+v", after, before)
+				}
+				// 另外的槽下没有这个版本。
+				if err := store.UpdateVersionDescription(ctx, "prj_v", galaxy.SlotDocs, "ver_desc", "x"); !errors.Is(err, galaxy.ErrVersionNotFound) {
+					t.Errorf("err = %v，期望 ErrVersionNotFound", err)
 				}
 			})
 

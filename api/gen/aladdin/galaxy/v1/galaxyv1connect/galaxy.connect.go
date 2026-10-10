@@ -58,9 +58,18 @@ const (
 	GalaxyServiceGetDraftProcedure = "/aladdin.galaxy.v1.GalaxyService/GetDraft"
 	// GalaxyServicePushDraftProcedure is the fully-qualified name of the GalaxyService's PushDraft RPC.
 	GalaxyServicePushDraftProcedure = "/aladdin.galaxy.v1.GalaxyService/PushDraft"
+	// GalaxyServiceListDraftSnapshotsProcedure is the fully-qualified name of the GalaxyService's
+	// ListDraftSnapshots RPC.
+	GalaxyServiceListDraftSnapshotsProcedure = "/aladdin.galaxy.v1.GalaxyService/ListDraftSnapshots"
+	// GalaxyServiceRestoreDraftSnapshotProcedure is the fully-qualified name of the GalaxyService's
+	// RestoreDraftSnapshot RPC.
+	GalaxyServiceRestoreDraftSnapshotProcedure = "/aladdin.galaxy.v1.GalaxyService/RestoreDraftSnapshot"
 	// GalaxyServiceSaveVersionProcedure is the fully-qualified name of the GalaxyService's SaveVersion
 	// RPC.
 	GalaxyServiceSaveVersionProcedure = "/aladdin.galaxy.v1.GalaxyService/SaveVersion"
+	// GalaxyServiceUpdateVersionProcedure is the fully-qualified name of the GalaxyService's
+	// UpdateVersion RPC.
+	GalaxyServiceUpdateVersionProcedure = "/aladdin.galaxy.v1.GalaxyService/UpdateVersion"
 	// GalaxyServiceListVersionsProcedure is the fully-qualified name of the GalaxyService's
 	// ListVersions RPC.
 	GalaxyServiceListVersionsProcedure = "/aladdin.galaxy.v1.GalaxyService/ListVersions"
@@ -175,19 +184,51 @@ type GalaxyServiceClient interface {
 	// 它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
 	// 否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
 	//
-	// **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
-	// "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
-	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+	// **这是内容唯一的编辑路径**（命令行）。网页端不能编辑内容：两个编辑器并存会
+	// 引出"网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。**唯一的例外是恢复草稿
+	// 历史**（RestoreDraftSnapshot）——它不是编辑，而是一次**显式的整组替换**，并且
+	// 落在这同一条路径上、同样先给被换掉的那一份留一条快照，因此它不会静默盖掉什么。
+	//
+	// **被换掉的那份清单会留成一条草稿快照**（见 ListDraftSnapshots）："只推不存
+	// 版本"这条最常见的用法因此不会让中间过程消失。相同清单不重复留。
 	//
 	// 请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
 	// 资产标识），因此本方法不带字节，也不触发任何上传。
 	PushDraft(context.Context, *connect.Request[v1.PushDraftRequest]) (*connect.Response[v1.PushDraftResponse], error)
+	// 列出某个槽的**草稿历史**：被替换掉的那些旧清单，最近的在前。
+	//
+	// 草稿快照**不是版本**：没有序号、不能发布、按保留策略过期（见
+	// docs/design/galaxy/project-versioning.md）。它是"只推不存版本"这条用法的
+	// 兜底——那套用法下中间过程本来一点记录都没有。
+	ListDraftSnapshots(context.Context, *connect.Request[v1.ListDraftSnapshotsRequest]) (*connect.Response[v1.ListDraftSnapshotsResponse], error)
+	// 把草稿**整组换回**某一条快照的清单。
+	//
+	// **恢复本身也留一条快照**：它是同一处草稿替换，因此恢复不会让你丢掉恢复前的
+	// 内容。它不碰另一个槽。
+	//
+	// **引用了已删除资产的快照不能恢复**：恢复出来的会是一份必然在校验阶段失败的
+	// 草稿，而用户从"恢复成功"这句话里看不出问题在哪。服务端如实拒绝并指出那一处。
+	RestoreDraftSnapshot(context.Context, *connect.Request[v1.RestoreDraftSnapshotRequest]) (*connect.Response[v1.RestoreDraftSnapshotResponse], error)
 	// 把草稿的当前清单保存成一个**不可变**版本。
 	//
 	// 保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
 	// 连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
 	// 看起来一样的清单对用户是两次不同的保存动作。
+	//
+	// 两个可选入参：`description` 是这一版的一句说明（可事后改，见 UpdateVersion）；
+	// `from_snapshot_id` 非空时存的是**那条草稿快照**的清单，而不是当前草稿——它
+	// 回答的是"我想把那次中间态正式记下来"。
 	SaveVersion(context.Context, *connect.Request[v1.SaveVersionRequest]) (*connect.Response[v1.SaveVersionResponse], error)
+	// 改一个版本的**说明**。
+	//
+	// **它只改说明那一层。** 与资产同一条：不可变说的是**内容**（文件清单、渲染规则
+	// 版本），而说明回答的是"这一版是干什么的"，它不进产物、不参与任何判定。清单、
+	// 序号、保存时间在改动前后逐字不变，已发布的页面也不受影响。
+	//
+	// 请求表达**期望的完整状态**：空串清空说明。**两端都能改**——写错一句话与"把
+	// 这一版的内容改掉"是两件事，而前者若只能靠再存一版来修，人会宁可不写。
+	UpdateVersion(context.Context, *connect.Request[v1.UpdateVersionRequest]) (*connect.Response[v1.UpdateVersionResponse], error)
 	// 列出工程的版本，按序号排序。清单很小，因此**列表也带清单**（不带地址）。
 	ListVersions(context.Context, *connect.Request[v1.ListVersionsRequest]) (*connect.Response[v1.ListVersionsResponse], error)
 	// 读取一个版本，含清单与每一项的短时读取地址。保存时的内容此后逐字不变。
@@ -444,10 +485,29 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(galaxyServiceMethods.ByName("PushDraft")),
 			connect.WithClientOptions(opts...),
 		),
+		listDraftSnapshots: connect.NewClient[v1.ListDraftSnapshotsRequest, v1.ListDraftSnapshotsResponse](
+			httpClient,
+			baseURL+GalaxyServiceListDraftSnapshotsProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("ListDraftSnapshots")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		restoreDraftSnapshot: connect.NewClient[v1.RestoreDraftSnapshotRequest, v1.RestoreDraftSnapshotResponse](
+			httpClient,
+			baseURL+GalaxyServiceRestoreDraftSnapshotProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("RestoreDraftSnapshot")),
+			connect.WithClientOptions(opts...),
+		),
 		saveVersion: connect.NewClient[v1.SaveVersionRequest, v1.SaveVersionResponse](
 			httpClient,
 			baseURL+GalaxyServiceSaveVersionProcedure,
 			connect.WithSchema(galaxyServiceMethods.ByName("SaveVersion")),
+			connect.WithClientOptions(opts...),
+		),
+		updateVersion: connect.NewClient[v1.UpdateVersionRequest, v1.UpdateVersionResponse](
+			httpClient,
+			baseURL+GalaxyServiceUpdateVersionProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("UpdateVersion")),
 			connect.WithClientOptions(opts...),
 		),
 		listVersions: connect.NewClient[v1.ListVersionsRequest, v1.ListVersionsResponse](
@@ -601,7 +661,10 @@ type galaxyServiceClient struct {
 	deleteProject            *connect.Client[v1.DeleteProjectRequest, v1.DeleteProjectResponse]
 	getDraft                 *connect.Client[v1.GetDraftRequest, v1.GetDraftResponse]
 	pushDraft                *connect.Client[v1.PushDraftRequest, v1.PushDraftResponse]
+	listDraftSnapshots       *connect.Client[v1.ListDraftSnapshotsRequest, v1.ListDraftSnapshotsResponse]
+	restoreDraftSnapshot     *connect.Client[v1.RestoreDraftSnapshotRequest, v1.RestoreDraftSnapshotResponse]
 	saveVersion              *connect.Client[v1.SaveVersionRequest, v1.SaveVersionResponse]
+	updateVersion            *connect.Client[v1.UpdateVersionRequest, v1.UpdateVersionResponse]
 	listVersions             *connect.Client[v1.ListVersionsRequest, v1.ListVersionsResponse]
 	getVersion               *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
 	deleteVersion            *connect.Client[v1.DeleteVersionRequest, v1.DeleteVersionResponse]
@@ -671,9 +734,24 @@ func (c *galaxyServiceClient) PushDraft(ctx context.Context, req *connect.Reques
 	return c.pushDraft.CallUnary(ctx, req)
 }
 
+// ListDraftSnapshots calls aladdin.galaxy.v1.GalaxyService.ListDraftSnapshots.
+func (c *galaxyServiceClient) ListDraftSnapshots(ctx context.Context, req *connect.Request[v1.ListDraftSnapshotsRequest]) (*connect.Response[v1.ListDraftSnapshotsResponse], error) {
+	return c.listDraftSnapshots.CallUnary(ctx, req)
+}
+
+// RestoreDraftSnapshot calls aladdin.galaxy.v1.GalaxyService.RestoreDraftSnapshot.
+func (c *galaxyServiceClient) RestoreDraftSnapshot(ctx context.Context, req *connect.Request[v1.RestoreDraftSnapshotRequest]) (*connect.Response[v1.RestoreDraftSnapshotResponse], error) {
+	return c.restoreDraftSnapshot.CallUnary(ctx, req)
+}
+
 // SaveVersion calls aladdin.galaxy.v1.GalaxyService.SaveVersion.
 func (c *galaxyServiceClient) SaveVersion(ctx context.Context, req *connect.Request[v1.SaveVersionRequest]) (*connect.Response[v1.SaveVersionResponse], error) {
 	return c.saveVersion.CallUnary(ctx, req)
+}
+
+// UpdateVersion calls aladdin.galaxy.v1.GalaxyService.UpdateVersion.
+func (c *galaxyServiceClient) UpdateVersion(ctx context.Context, req *connect.Request[v1.UpdateVersionRequest]) (*connect.Response[v1.UpdateVersionResponse], error) {
+	return c.updateVersion.CallUnary(ctx, req)
 }
 
 // ListVersions calls aladdin.galaxy.v1.GalaxyService.ListVersions.
@@ -834,19 +912,51 @@ type GalaxyServiceHandler interface {
 	// 它表达的是**期望的完整状态**，不是增量：清单里没有的路径就是"删掉"。
 	// 否则"我到底删没删掉那一份"会变成一个需要读命令行实现才能回答的问题。
 	//
-	// **这是内容唯一的写入路径**（命令行）。网页端只读：两个入口并存会引出
-	// "网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
-	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。
+	// **这是内容唯一的编辑路径**（命令行）。网页端不能编辑内容：两个编辑器并存会
+	// 引出"网页上刚改的一句被一次 push 静默盖掉"这类只在两个入口之间发生的冲突，
+	// 收成一条路径，那份冲突连同它需要的基线校验一起不存在。**唯一的例外是恢复草稿
+	// 历史**（RestoreDraftSnapshot）——它不是编辑，而是一次**显式的整组替换**，并且
+	// 落在这同一条路径上、同样先给被换掉的那一份留一条快照，因此它不会静默盖掉什么。
+	//
+	// **被换掉的那份清单会留成一条草稿快照**（见 ListDraftSnapshots）："只推不存
+	// 版本"这条最常见的用法因此不会让中间过程消失。相同清单不重复留。
 	//
 	// 请求里的条目**只引用已经上传好的对象**（文本条目是内容摘要，资产条目是
 	// 资产标识），因此本方法不带字节，也不触发任何上传。
 	PushDraft(context.Context, *connect.Request[v1.PushDraftRequest]) (*connect.Response[v1.PushDraftResponse], error)
+	// 列出某个槽的**草稿历史**：被替换掉的那些旧清单，最近的在前。
+	//
+	// 草稿快照**不是版本**：没有序号、不能发布、按保留策略过期（见
+	// docs/design/galaxy/project-versioning.md）。它是"只推不存版本"这条用法的
+	// 兜底——那套用法下中间过程本来一点记录都没有。
+	ListDraftSnapshots(context.Context, *connect.Request[v1.ListDraftSnapshotsRequest]) (*connect.Response[v1.ListDraftSnapshotsResponse], error)
+	// 把草稿**整组换回**某一条快照的清单。
+	//
+	// **恢复本身也留一条快照**：它是同一处草稿替换，因此恢复不会让你丢掉恢复前的
+	// 内容。它不碰另一个槽。
+	//
+	// **引用了已删除资产的快照不能恢复**：恢复出来的会是一份必然在校验阶段失败的
+	// 草稿，而用户从"恢复成功"这句话里看不出问题在哪。服务端如实拒绝并指出那一处。
+	RestoreDraftSnapshot(context.Context, *connect.Request[v1.RestoreDraftSnapshotRequest]) (*connect.Response[v1.RestoreDraftSnapshotResponse], error)
 	// 把草稿的当前清单保存成一个**不可变**版本。
 	//
 	// 保存即冻结：此后改草稿、改工程名称、删资产都不改变这个版本读回的内容。
 	// 连续保存两次相同清单产生两个版本，而不是"检测到重复就不新增"——两份
 	// 看起来一样的清单对用户是两次不同的保存动作。
+	//
+	// 两个可选入参：`description` 是这一版的一句说明（可事后改，见 UpdateVersion）；
+	// `from_snapshot_id` 非空时存的是**那条草稿快照**的清单，而不是当前草稿——它
+	// 回答的是"我想把那次中间态正式记下来"。
 	SaveVersion(context.Context, *connect.Request[v1.SaveVersionRequest]) (*connect.Response[v1.SaveVersionResponse], error)
+	// 改一个版本的**说明**。
+	//
+	// **它只改说明那一层。** 与资产同一条：不可变说的是**内容**（文件清单、渲染规则
+	// 版本），而说明回答的是"这一版是干什么的"，它不进产物、不参与任何判定。清单、
+	// 序号、保存时间在改动前后逐字不变，已发布的页面也不受影响。
+	//
+	// 请求表达**期望的完整状态**：空串清空说明。**两端都能改**——写错一句话与"把
+	// 这一版的内容改掉"是两件事，而前者若只能靠再存一版来修，人会宁可不写。
+	UpdateVersion(context.Context, *connect.Request[v1.UpdateVersionRequest]) (*connect.Response[v1.UpdateVersionResponse], error)
 	// 列出工程的版本，按序号排序。清单很小，因此**列表也带清单**（不带地址）。
 	ListVersions(context.Context, *connect.Request[v1.ListVersionsRequest]) (*connect.Response[v1.ListVersionsResponse], error)
 	// 读取一个版本，含清单与每一项的短时读取地址。保存时的内容此后逐字不变。
@@ -1099,10 +1209,29 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(galaxyServiceMethods.ByName("PushDraft")),
 		connect.WithHandlerOptions(opts...),
 	)
+	galaxyServiceListDraftSnapshotsHandler := connect.NewUnaryHandler(
+		GalaxyServiceListDraftSnapshotsProcedure,
+		svc.ListDraftSnapshots,
+		connect.WithSchema(galaxyServiceMethods.ByName("ListDraftSnapshots")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	galaxyServiceRestoreDraftSnapshotHandler := connect.NewUnaryHandler(
+		GalaxyServiceRestoreDraftSnapshotProcedure,
+		svc.RestoreDraftSnapshot,
+		connect.WithSchema(galaxyServiceMethods.ByName("RestoreDraftSnapshot")),
+		connect.WithHandlerOptions(opts...),
+	)
 	galaxyServiceSaveVersionHandler := connect.NewUnaryHandler(
 		GalaxyServiceSaveVersionProcedure,
 		svc.SaveVersion,
 		connect.WithSchema(galaxyServiceMethods.ByName("SaveVersion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	galaxyServiceUpdateVersionHandler := connect.NewUnaryHandler(
+		GalaxyServiceUpdateVersionProcedure,
+		svc.UpdateVersion,
+		connect.WithSchema(galaxyServiceMethods.ByName("UpdateVersion")),
 		connect.WithHandlerOptions(opts...),
 	)
 	galaxyServiceListVersionsHandler := connect.NewUnaryHandler(
@@ -1262,8 +1391,14 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 			galaxyServiceGetDraftHandler.ServeHTTP(w, r)
 		case GalaxyServicePushDraftProcedure:
 			galaxyServicePushDraftHandler.ServeHTTP(w, r)
+		case GalaxyServiceListDraftSnapshotsProcedure:
+			galaxyServiceListDraftSnapshotsHandler.ServeHTTP(w, r)
+		case GalaxyServiceRestoreDraftSnapshotProcedure:
+			galaxyServiceRestoreDraftSnapshotHandler.ServeHTTP(w, r)
 		case GalaxyServiceSaveVersionProcedure:
 			galaxyServiceSaveVersionHandler.ServeHTTP(w, r)
+		case GalaxyServiceUpdateVersionProcedure:
+			galaxyServiceUpdateVersionHandler.ServeHTTP(w, r)
 		case GalaxyServiceListVersionsProcedure:
 			galaxyServiceListVersionsHandler.ServeHTTP(w, r)
 		case GalaxyServiceGetVersionProcedure:
@@ -1353,8 +1488,20 @@ func (UnimplementedGalaxyServiceHandler) PushDraft(context.Context, *connect.Req
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.PushDraft is not implemented"))
 }
 
+func (UnimplementedGalaxyServiceHandler) ListDraftSnapshots(context.Context, *connect.Request[v1.ListDraftSnapshotsRequest]) (*connect.Response[v1.ListDraftSnapshotsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.ListDraftSnapshots is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) RestoreDraftSnapshot(context.Context, *connect.Request[v1.RestoreDraftSnapshotRequest]) (*connect.Response[v1.RestoreDraftSnapshotResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.RestoreDraftSnapshot is not implemented"))
+}
+
 func (UnimplementedGalaxyServiceHandler) SaveVersion(context.Context, *connect.Request[v1.SaveVersionRequest]) (*connect.Response[v1.SaveVersionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.SaveVersion is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) UpdateVersion(context.Context, *connect.Request[v1.UpdateVersionRequest]) (*connect.Response[v1.UpdateVersionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.UpdateVersion is not implemented"))
 }
 
 func (UnimplementedGalaxyServiceHandler) ListVersions(context.Context, *connect.Request[v1.ListVersionsRequest]) (*connect.Response[v1.ListVersionsResponse], error) {

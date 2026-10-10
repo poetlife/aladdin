@@ -182,7 +182,7 @@ func TestWritesThatFailPublishNothing(t *testing.T) {
 			name: "推送一份缺入口文件的清单",
 			act: func(t *testing.T, f *fixture, project Project) {
 				entry := f.textEntry(t, project.ID, "other.html", "内容")
-				if _, err := f.service.PushDraft(context.Background(), testOwner, project.ID, SlotSite, []Entry{entry}); err == nil {
+				if _, err := f.service.PushDraft(context.Background(), testOwner, project.ID, SlotSite, []Entry{entry}, testDraftSource); err == nil {
 					t.Fatal("static 形态缺 index.html 的清单应当被拒")
 				}
 			},

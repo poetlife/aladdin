@@ -65,6 +65,7 @@ var actionPolicies = map[telemetryv1.Action]actionPolicy{
 	telemetryv1.Action_ACTION_ATTACHMENT_META_SAVE: {
 		name: "attachment_meta.save",
 	},
+	telemetryv1.Action_ACTION_DRAFT_RESTORE: {name: "draft.restore"},
 	telemetryv1.Action_ACTION_CLI_LOCAL_FAIL: {
 		name:      "cli.local_fail",
 		anonymous: true,

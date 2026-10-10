@@ -120,6 +120,11 @@ enum Action {
   // 选择并开始上传资产。result=ok/fail/blocked；blocked 表示按声明的上限在本地
   // 早退（文件过大），请求没发出去。
   ACTION_ASSET_UPLOAD = 13;
+  // 把草稿恢复到某一条历史。result=ok/fail/cancel；cancel 表示确认框被取消。
+  //
+  // 它是网页端唯一一处会改变内容状态的动作，因此单独一个动作值：从"谁在什么时候
+  // 把草稿退回去了"这个角度看，它比其它动作都更值得能在遥测里一眼找出来。
+  ACTION_DRAFT_RESTORE = 18;
   // 命令行本地失败：配置无效、未登录、参数校验不过——都在出站之前结束，服务端
   // 请求留痕里没有它们。result=fail；attrs 带 command 与 reason。
   ACTION_CLI_LOCAL_FAIL = 14;
