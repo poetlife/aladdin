@@ -20,6 +20,10 @@ export const PermissionCodes = {
   RbacScopeWrite: 'rbac.scope.write',
   /** 使一次角色变更正式生效（缓存失效与生效确认） */
   RbacPolicyPublish: 'rbac.policy.publish',
+  /** 读取注册策略与邀请码列表。只读 */
+  IdentityRegistrationRead: 'identity.registration.read',
+  /** 改注册策略、签发与撤销邀请码。它会改变新主体的权限边界 */
+  IdentityRegistrationWrite: 'identity.registration.write',
   /** 查阅审计日志 */
   AuditLogRead: 'audit.log.read',
   /** 导出审计日志。属批量操作 */

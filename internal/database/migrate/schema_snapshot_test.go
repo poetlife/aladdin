@@ -111,6 +111,23 @@ table identities
   external_id text pk=true null=true
   source text pk=true null=true
   subject_id text pk=false null=true
+table registration_invites
+  code_hash text pk=false null=true
+  created_at datetime pk=false null=true
+  created_by_subject_id text pk=false null=true
+  expires_at datetime pk=false null=true
+  id text pk=true null=true
+  label text pk=false null=true
+  max_uses integer pk=false null=true
+  revoked_at datetime pk=false null=true
+  used_count integer pk=false null=true
+table registration_policy
+  default_role_id text pk=false null=true
+  default_scope text pk=false null=true
+  id text pk=true null=true
+  mode text pk=false null=true
+  updated_at datetime pk=false null=true
+  updated_by_subject_id text pk=false null=true
 table role_bindings
   role_id text pk=true null=true
   scope text pk=true null=true

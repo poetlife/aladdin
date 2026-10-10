@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -20,6 +21,9 @@ var (
 	ErrBuiltinRoleImmutable = errors.New("内置角色的权限范围不可修改")
 	// ErrScopeInUse 表示范围仍被角色绑定引用（含其后代上的绑定），不可删除。
 	ErrScopeInUse = errors.New("范围仍被使用")
+	// ErrRegistrationRoleUnfit 表示这个角色不能当"默认注册角色"：它持有（或经
+	// 继承、通配而覆盖）一个能授予角色或改写注册策略的权限码。
+	ErrRegistrationRoleUnfit = errors.New("该角色不能作为默认注册角色")
 )
 
 // ValidateInheritance 校验候选角色的继承链不成环，且被继承的角色都存在。
@@ -161,4 +165,44 @@ func ValidateScopeDeletion(path string, bindings []RoleBinding) error {
 	example := bindings[0]
 	return fmt.Errorf("%w: %q 仍被 %d 条绑定引用（例如主体 %q 的角色 %q 在 %q 上）",
 		ErrScopeInUse, path, len(bindings), example.SubjectID, example.RoleID, string(example.Scope))
+}
+
+// registrationUnfitPermissions 是"默认注册角色"不得覆盖的权限码。
+//
+// 它们各自对应一条路径：授予角色、发布策略、改写注册策略本身。任何一个落进
+// 默认角色，都会让"开放注册"或"发一个邀请码"变成一次无痕提权——而这两件事
+// 的输入分别是"打开一个开关"与"把一串字符给出去"，都不是管理员在授权界面前
+// 做的动作。`*` 无需单列：它覆盖全部权限，因此会被 covers 一致地判为不合格。
+var registrationUnfitPermissions = []PermissionCode{
+	PermissionRbacSubjectAssign,
+	PermissionRbacPolicyPublish,
+	PermissionIdentityRegistrationWrite,
+}
+
+// ValidateRegistrationDefaultRole 校验一个角色能不能当"默认注册角色"。
+//
+// 它是这条判断的**唯一入口**，与互斥约束同处：同属"授予前的校验"，而不是运行时
+// 护栏（见 docs/design/rbac/role-model.md 的约束一节）。理由见
+// docs/design/identity/registration.md。
+//
+// 判据是角色**展开之后**的权限集合，不是它直接声明的那几条：一个继承了系统管理
+// 员的角色同样能自我放大，只比较直接声明会把这条缝留着。展开复用唯一的继承实现
+// （expand），不另写一份。
+//
+// 空标识表示"不给默认角色"，那是合法取值，直接通过。
+func ValidateRegistrationDefaultRole(ctx context.Context, store Store, roleID string) error {
+	if roleID == "" {
+		return nil
+	}
+	_, permissions, err := expand(ctx, store, []string{roleID})
+	if err != nil {
+		return err
+	}
+	for _, unfit := range registrationUnfitPermissions {
+		if covers(permissions, unfit) {
+			return fmt.Errorf("%w: %q 持有 %s（或一个覆盖它的通配），它能让新来的人自己提权",
+				ErrRegistrationRoleUnfit, roleID, unfit)
+		}
+	}
+	return nil
 }

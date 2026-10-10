@@ -5,6 +5,7 @@ import { createConnectTransport } from '@connectrpc/connect-web'
 import { EventsService } from '../gen/proto/aladdin/events/v1/events_pb'
 import { GalaxyService } from '../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { IdentityService } from '../gen/proto/aladdin/identity/v1/identity_pb'
+import { RegistrationService } from '../gen/proto/aladdin/identity/v1/registration_pb'
 import { OpsService } from '../gen/proto/aladdin/ops/v1/ops_pb'
 import { ProfileService } from '../gen/proto/aladdin/profile/v1/profile_pb'
 import { RBACService } from '../gen/proto/aladdin/rbac/v1/rbac_pb'
@@ -162,6 +163,11 @@ export function identityClient() {
 /** 权限管理服务的客户端。 */
 export function rbacClient() {
   return createClient(RBACService, getTransport())
+}
+
+/** 注册面服务的客户端：准入姿态、邀请码，以及"完成注册"。 */
+export function registrationClient() {
+  return createClient(RegistrationService, getTransport())
 }
 
 /** 个人档案服务的客户端。 */

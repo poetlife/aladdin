@@ -23,6 +23,15 @@ const LOGIN_FAILED_SUFFIX = '_login_failed'
 const BIND_FAILED_SUFFIX = '_bind_failed'
 
 /**
+ * "本站不接受新账号"的标记后缀。
+ *
+ * 它与"登录未完成"**分开**是有意的：这句话不是失败细节，而是一条本该公开的站点
+ * 事实（登录页已经从渠道清单里拿到了同一个取值）。混进"登录未完成"会让使用者
+ * 以为是自己操作出了问题，去反复重试一件无论试几次都不会成功的事。
+ */
+const REGISTRATION_CLOSED_SUFFIX = '_registration_closed'
+
+/**
  * 重定向型登录渠道的回调页。
  *
  * 服务端在渠道侧完成校验之后，把浏览器送回这里。它有两种去向：
@@ -91,6 +100,10 @@ export function AuthCallbackPage(): React.ReactNode {
     }
 
     const failure = params.get(FRAGMENT_ERROR)
+    if (failure !== null && failure.endsWith(REGISTRATION_CLOSED_SUFFIX)) {
+      setError('本站不接受新账号，只有已经在册的账号可以登录。需要账号请联系管理员。')
+      return
+    }
     if (failure !== null && failure.endsWith(BIND_FAILED_SUFFIX)) {
       setError('绑定未完成，请重试。')
       return

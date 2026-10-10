@@ -19,6 +19,8 @@ export const PermissionCatalog: readonly PermissionCatalogEntry[] = [
   { code: 'rbac.scope.read', description: '读取范围目录：这个部署里登记了哪些范围' },
   { code: 'rbac.scope.write', description: '登记范围、改显示名、删除范围。删除属不可逆操作' },
   { code: 'rbac.policy.publish', description: '使一次角色变更正式生效（缓存失效与生效确认）' },
+  { code: 'identity.registration.read', description: '读取注册策略与邀请码列表。只读' },
+  { code: 'identity.registration.write', description: '改注册策略、签发与撤销邀请码。它会改变新主体的权限边界' },
   { code: 'audit.log.read', description: '查阅审计日志' },
   { code: 'audit.log.export', description: '导出审计日志。属批量操作' },
   { code: 'telemetry.read', description: '读取客户端遥测的计数与明细（Web/CLI 本地动作）。只读' },

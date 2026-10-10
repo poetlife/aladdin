@@ -1,0 +1,208 @@
+syntax = "proto3";
+
+package aladdin.identity.v1;
+
+import "aladdin/rbac/v1/annotations.proto";
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1;identityv1";
+
+// RegistrationService 是**注册面**：谁进得来、进来拿什么。
+//
+// 边界只有一句：**它写下的是一条真实的角色绑定，判定路径从不读它。**
+// 注册策略是一条管理面的记录，不是配置——改它不改变任何一次既有的放行判定，
+// 删掉它也不撤销任何一条已写下的绑定（见 docs/design/identity/registration.md
+// 的「与 AGENTS.md 第 7 条的关系」）。
+service RegistrationService {
+  // 读取当前注册策略。
+  //
+  // 标了 NO_SIDE_EFFECTS：只读、请求体小到能放进查询串，因此同一条路径同时
+  // 接受 GET 与 POST（见 AGENTS.md 的「传输方式的既定选择」）。请求里唯一的
+  // 字段是用于鉴权的 scope，它不是秘密。
+  rpc GetRegistrationPolicy(GetRegistrationPolicyRequest) returns (GetRegistrationPolicyResponse) {
+    option (aladdin.rbac.v1.required_permission) = "identity.registration.read";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // 修改注册策略。
+  //
+  // 它**只在存储里改一条记录、不授予任何权限**：新主体的默认角色是在登记
+  // 那一刻写进绑定表的，改策略不追溯已登记的主体，也不改变任何一次判定。
+  //
+  // 默认角色必须过"不能自我放大"的校验（不得持有 `*` / `rbac.subject.assign` /
+  // `rbac.policy.publish` / `identity.registration.write`，含经继承得到的）。
+  rpc PutRegistrationPolicy(PutRegistrationPolicyRequest) returns (PutRegistrationPolicyResponse) {
+    option (aladdin.rbac.v1.required_permission) = "identity.registration.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 列出已签发的邀请码。
+  //
+  // **没有明文**：库里存的是摘要，明文只在签发那一刻返回过一次。
+  rpc ListInvites(ListInvitesRequest) returns (ListInvitesResponse) {
+    option (aladdin.rbac.v1.required_permission) = "identity.registration.read";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // 签发一份邀请码。
+  //
+  // 邀请码**只作准入闸门**：它不带角色、不带范围、不绑定收件人。进来之后拿
+  // 什么，由站点策略那一份决定——否则同一个码既是准入凭证又是权限凭证，泄漏
+  // 一个码就泄漏了它所带的那份权限。
+  rpc CreateInvite(CreateInviteRequest) returns (CreateInviteResponse) {
+    option (aladdin.rbac.v1.required_permission) = "identity.registration.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 撤销一份邀请码。
+  //
+  // **只撤销，不删除**：删掉会连用量与留痕一起丢掉，"这个码被谁用过、用过
+  // 几次"就再也答不上来。撤销之后该码立即不可兑换。
+  rpc RevokeInvite(RevokeInviteRequest) returns (RevokeInviteResponse) {
+    option (aladdin.rbac.v1.required_permission) = "identity.registration.write";
+    option (aladdin.rbac.v1.scope_source) = SCOPE_SOURCE_REQUEST_FIELD;
+  }
+
+  // 完成一次因邀请码而暂停的注册。
+  //
+  // 公开是必须的：调用方正是那个还没登录、也还没有账号的人。
+  //
+  // **邀请码不在这里，注册凭据也不在这里。** 渠道凭证由回调校验过之后记成一份
+  // 一次性凭据，只经浏览器不可读的 cookie 交回；本方法只做最后一件事：消费
+  // 邀请码、登记主体、授默认角色、签发会话。请求里**只有码**——没有主体、也没有
+  // 渠道身份，因此不存在"替某个身份注册"的形状（与 CompleteIdentityBinding 同）。
+  //
+  // 码放在**请求体**而不是地址里：地址会进访问日志、浏览器历史与跳转来源，而
+  // 邀请码与口令同级。同一条理由，它**不**标 idempotency_level——标了就等于同时
+  // 接受 GET（见 PollDeviceLogin）。
+  rpc CompleteRegistration(CompleteRegistrationRequest) returns (CompleteRegistrationResponse) {
+    option (aladdin.rbac.v1.public) = true;
+  }
+}
+
+// RegistrationMode 是站点的准入姿态。**三选一，互斥且穷尽。**
+//
+// 拆成"允许注册"与"需要邀请码"两个布尔量会造出四种状态，其中两种没有意义，
+// 而实现必须为它们各写一个分支。
+enum RegistrationMode {
+  // **"不知道"**，两侧含义不同：
+  //
+  //   - 输入侧（PutRegistrationPolicy）：非法取值，必须显式指定。落成"开放注册"
+  //     会让一次漏传把站点悄悄打开。
+  //   - 输出侧（GetRegistrationPolicy 与渠道清单）：策略这次没读出来。客户端据此
+  //     **不写那句话**，而不是替服务端猜一个姿态——任何一次真正的放行都由登记
+  //     那一刻重读的策略决定，因此留空不会让谁多进来或少进来一个人。
+  REGISTRATION_MODE_UNSPECIFIED = 0;
+  // 未登记的渠道身份直接登记成新主体。
+  REGISTRATION_MODE_OPEN = 1;
+  // 未登记的渠道身份要先给一份有效邀请码。
+  REGISTRATION_MODE_INVITE = 2;
+  // 不接受新主体。**只拦新主体**：已经登记过的身份照常登录。
+  REGISTRATION_MODE_CLOSED = 3;
+}
+
+// RegistrationPolicy 是站点级的注册策略。
+//
+// 站点级一份，对全部渠道生效。**没有"按渠道分别设"**：要做的话是策略多一维，
+// 不是新机制（见 docs/design/identity/registration.md）。
+message RegistrationPolicy {
+  RegistrationMode mode = 1;
+  // 新主体的默认角色。**空表示不给默认角色**（新主体零权限，这是此前的唯一形态）。
+  string default_role_id = 2;
+  // 默认角色的作用范围。空表示全局。它同时成为新主体的**默认作用域**——
+  // 主体的默认作用域只能来自绑定关系，因此它取自这条绑定，不另有一个配置项。
+  //
+  // 与 default_role_id **同进同退**：要么都给、要么都不给。
+  string default_scope = 3;
+  // 最近一次改动的留痕。**不参与判定**，只回答"这个姿态是谁定的"。
+  string updated_by_subject_id = 4;
+  string updated_at = 5;
+}
+
+message GetRegistrationPolicyRequest {
+  // 仅用于鉴权：在哪个范围上有资格读。策略本身是站点级的。
+  string scope = 1;
+}
+
+message GetRegistrationPolicyResponse {
+  RegistrationPolicy policy = 1;
+}
+
+message PutRegistrationPolicyRequest {
+  string scope = 1;
+  RegistrationMode mode = 2;
+  // 与 default_scope 同进同退；两者都空表示不给默认角色。
+  string default_role_id = 3;
+  string default_scope = 4;
+}
+
+message PutRegistrationPolicyResponse {
+  RegistrationPolicy policy = 1;
+}
+
+// Invite 是一份已签发的邀请码。
+//
+// **这里没有任何字段能还原出码的明文。** 库里存的是摘要，明文只在签发那一次
+// 返回过；要收回一份，只能用 revoked_at 撤销它，不能把它读回来。
+message Invite {
+  // 邀请码标识。它是撤销时的定位键；**不是码**，拿到它也兑换不了。
+  string id = 1;
+  // 管理员自己看的标签。**不参与任何判断。**
+  string label = 2;
+  string created_by_subject_id = 3;
+  string created_at = 4;
+  // 次数上限。0 表示不限次。
+  int32 max_uses = 5;
+  int32 used_count = 6;
+  // 空表示不过期。
+  string expires_at = 7;
+  // 空表示未撤销。非空即不可兑换。
+  string revoked_at = 8;
+}
+
+message ListInvitesRequest {
+  string scope = 1;
+}
+
+message ListInvitesResponse {
+  // 顺序稳定：按签发时间倒序（最近的在前）。
+  repeated Invite invites = 1;
+}
+
+message CreateInviteRequest {
+  string scope = 1;
+  string label = 2;
+  // 次数上限。0 表示不限次。
+  int32 max_uses = 3;
+  // ISO 8601 UTC。空表示不过期。
+  string expires_at = 4;
+}
+
+message CreateInviteResponse {
+  Invite invite = 1;
+  // 码的明文。**只在这一次返回**，此后任何接口都读不回来——界面上要把这句话
+  // 说出来，否则管理员会以为列表加载失败。
+  string code = 2;
+}
+
+message RevokeInviteRequest {
+  string scope = 1;
+  string id = 2;
+}
+
+message RevokeInviteResponse {
+  Invite invite = 1;
+}
+
+message CompleteRegistrationRequest {
+  // 邀请码的明文。**不是归属输入**：要登记哪个渠道身份，只由服务端在回调时
+  // 记下的那份一次性注册凭据决定（见 registration.proto 的 CompleteRegistration）。
+  string invite_code = 1;
+}
+
+message CompleteRegistrationResponse {
+  string access_token = 1;
+  // ISO 8601 UTC。
+  string expires_at = 2;
+}

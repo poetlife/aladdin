@@ -24,6 +24,7 @@ import (
 	"github.com/poetlife/aladdin/internal/observability"
 	profilegormstore "github.com/poetlife/aladdin/internal/profile/gormstore"
 	"github.com/poetlife/aladdin/internal/rbac/gormstore"
+	registrationgormstore "github.com/poetlife/aladdin/internal/registration/gormstore"
 	"github.com/poetlife/aladdin/internal/server"
 	"github.com/poetlife/aladdin/internal/skill"
 	skillgormstore "github.com/poetlife/aladdin/internal/skill/gormstore"
@@ -182,6 +183,9 @@ func run() error {
 		Identities: identities,
 		Sessions:   sessions,
 		Channels:   channels,
+		// 注册策略与邀请码与其它表同库同连接：注册闸门在每一条渠道登录路径上，
+		// 它不是可选件。
+		Registrations: registrationgormstore.New(store.DB()),
 	}, server.ProfileStores{
 		Profiles: profilegormstore.New(store.DB()),
 		Avatars:  objects,

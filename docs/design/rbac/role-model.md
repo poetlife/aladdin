@@ -93,6 +93,7 @@ Go 侧常量与前端常量均由它派生（`make gen`），不允许任何一�
 
 - 角色数量与继承深度需有上限（具体阈值在实现时确定并记录），避免判定路径爆炸。
 - 角色标识一旦发布不可更改；角色**名称**可改。标识的变更视为"删除旧角色 + 新建角色"。
+- **能当"默认注册角色"的角色是受限的**：不得持有 `*`、`rbac.subject.assign`、`rbac.policy.publish` 或 `identity.registration.write`（含经继承得到的）。判据与互斥约束同处——它是**授予前的校验**，不是运行时护栏，唯一入口见 [constraints.go](../../../internal/rbac/constraints.go) 的 `ValidateRegistrationDefaultRole`。理由见 [../identity/registration.md](../identity/registration.md)：默认角色取一个能自我放大的角色，等于把"开放注册"或"发一个邀请码"变成一次无痕提权。
 
 ## 可验证性与长程执行
 

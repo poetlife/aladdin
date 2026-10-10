@@ -755,3 +755,73 @@ type ClientEventRecord struct {
 
 // TableName 实现 gorm 的表名解析。
 func (ClientEventRecord) TableName() string { return "client_events" }
+
+// RegistrationPolicyRecord 是站点级注册策略在库里的一行（见
+// docs/design/identity/registration.md）。
+//
+// **一行，主键是一个固定取值。** 它是站点级的一份策略，不是一张按维度索引的
+// 表；把主键钉死成一行，比"取第一行"少一个"到底以哪一行为准"的疑问。将来若真
+// 要做"按渠道分别设"，那时是一个维度列进主键，而不是换一套读法。
+//
+// **没有记录时的取值就是缺省姿态**（开放注册、无默认角色、全局范围），因此迁移
+// 只建表、不写行：初值写进迁移是把同一件事说两遍，而两处迟早会有一处被改。这一条
+// 同时保证了既有部署升级后行为逐字不变。
+//
+// 它**不参与任何判定**：判定路径读的是绑定表，这张表只在"登记一个新主体"那一刻
+// 被读一次。与绑定表之间因此不建外键——角色是否存在、范围是否已登记都是领域约束，
+// 唯一入口是管理面的校验。
+type RegistrationPolicyRecord struct {
+	// ID 是固定主键，恒为"site"。
+	ID string `gorm:"primaryKey;size:16"`
+	// Mode 是准入姿态：open / invite / closed。
+	Mode string `gorm:"size:16"`
+	// DefaultRoleID 与 DefaultScope **同进同退**：要么都有，要么都没有。
+	//
+	// 后者空表示全局。它同时成为新主体的默认作用域——主体的默认作用域只能来自
+	// 绑定关系，因此它取自那条绑定，不另有一个配置项。
+	DefaultRoleID string `gorm:"size:191"`
+	DefaultScope  string `gorm:"size:191"`
+	// UpdatedBySubjectID 与 UpdatedAt 是留痕，**不参与判定**：它们回答"这个姿态
+	// 是谁、什么时候定的"，而答案不影响任何一次放行。
+	UpdatedBySubjectID string `gorm:"size:191"`
+	UpdatedAt          time.Time
+}
+
+// TableName 实现 gorm 的表名解析。
+func (RegistrationPolicyRecord) TableName() string { return "registration_policy" }
+
+// RegistrationInviteRecord 是一份已签发的邀请码在库里的一行（见
+// docs/design/identity/registration.md）。
+//
+// **码原文不入库。** 这里存的是它的摘要，与访问凭证同一条性质、同一个入口：
+// 一次数据库泄露交出的是摘要，而摘要构造不出原文。
+//
+// CodeHash 而不是 ID 作查找键，但**ID 才是撤销与列表的定位键**：读侧拿不到摘要，
+// 也就无从离线比对一份猜出来的码。唯一索引落在摘要上，是因为兑换只按摘要进。
+//
+// **只撤销，不删除**：RevokedAt 非空即不可兑换，行仍在——删掉会连用量与留痕
+// 一起丢掉，"这个码被谁用过、用过几次"就再也答不上来。
+type RegistrationInviteRecord struct {
+	// ID 是邀请码标识，主键，由 aladdin 分配、不可猜。
+	ID string `gorm:"primaryKey;size:191"`
+	// CodeHash 是码明文的 SHA-256。建唯一索引是因为兑换只按它进。
+	CodeHash string `gorm:"size:64;uniqueIndex"`
+	// Label 是管理员自己看的标签，**不参与任何判断**。
+	Label string
+	// CreatedBySubjectID 与 CreatedAt 是留痕。
+	CreatedBySubjectID string `gorm:"size:191"`
+	CreatedAt          time.Time
+	// MaxUses 是次数上限，0 表示不限次；UsedCount 由兑换时的一次条件更新推进。
+	MaxUses   int32
+	UsedCount int32
+	// ExpiresAt 为 NULL 表示不过期。
+	//
+	// 用可空列而不是零值：MySQL 的 datetime 下界是 1000 年，零值时间在那上面
+	// 根本插不进去，而在 SQLite 上会变成一串看起来像数据的 '0001-01-01'。
+	ExpiresAt *time.Time
+	// RevokedAt 为 NULL 表示未撤销。
+	RevokedAt *time.Time
+}
+
+// TableName 实现 gorm 的表名解析。
+func (RegistrationInviteRecord) TableName() string { return "registration_invites" }

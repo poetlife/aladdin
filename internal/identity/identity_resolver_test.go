@@ -21,6 +21,20 @@ func newTestIdentities() (*Identities, rbac.MutableStore) {
 	return NewIdentities(NewMemoryIdentityStore(), subjects), subjects
 }
 
+// registerForTest 把"解析，没有就登记"合成一次调用，供用例使用。
+//
+// **生产路径刻意没有这个合成入口**：解析与登记之间要插的是注册闸门，留一条
+// "查不到就建"的捷径就等于留了一条绕开它的路，而那条路在正常使用中看起来完全
+// 正常。这里合成一次只是为了不让三十个既有用例都改写成两步——它调用的仍然是
+// 那两个入口本身。
+func registerForTest(ctx context.Context, identities *Identities, source, externalID, display string) (rbac.Subject, error) {
+	subject, found, err := identities.Resolve(ctx, source, externalID)
+	if err != nil || found {
+		return subject, err
+	}
+	return identities.Register(ctx, source, externalID, display, RegisterOptions{})
+}
+
 // 首次登录：登记一个新主体，类型是人类用户，且默认作用域为空。
 //
 // "零权限"是预期路径而不是错误路径：他能登录、能看见界面框架，
@@ -29,7 +43,7 @@ func TestResolveRegistersNewSubject(t *testing.T) {
 	ctx := context.Background()
 	identities, subjects := newTestIdentities()
 
-	subject, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "a@example.com")
+	subject, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "a@example.com")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -58,11 +72,11 @@ func TestResolveIsStable(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	first, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "a@example.com")
+	first, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "a@example.com")
 	if err != nil {
 		t.Fatalf("第一次解析失败: %v", err)
 	}
-	second, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "a@example.com")
+	second, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "a@example.com")
 	if err != nil {
 		t.Fatalf("第二次解析失败: %v", err)
 	}
@@ -76,11 +90,11 @@ func TestResolveIgnoresDisplay(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	first, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "a@example.com")
+	first, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "a@example.com")
 	if err != nil {
 		t.Fatalf("第一次解析失败: %v", err)
 	}
-	renamed, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "a+renamed@example.com")
+	renamed, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "a+renamed@example.com")
 	if err != nil {
 		t.Fatalf("第二次解析失败: %v", err)
 	}
@@ -97,11 +111,11 @@ func TestResolveDoesNotMergeByDisplay(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	first, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "same@example.com")
+	first, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "same@example.com")
 	if err != nil {
 		t.Fatalf("第一次解析失败: %v", err)
 	}
-	second, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-b", "same@example.com")
+	second, err := registerForTest(ctx, identities, SourceGoogle, "sub-b", "same@example.com")
 	if err != nil {
 		t.Fatalf("第二次解析失败: %v", err)
 	}
@@ -117,11 +131,11 @@ func TestResolveSeparatesSources(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	google, err := identities.ResolveOrRegister(ctx, SourceGoogle, "same-id", "")
+	google, err := registerForTest(ctx, identities, SourceGoogle, "same-id", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
-	other, err := identities.ResolveOrRegister(ctx, "example", "same-id", "")
+	other, err := registerForTest(ctx, identities, "example", "same-id", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -137,7 +151,7 @@ func TestBindJoinsSecondChannel(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	first, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "a@example.com")
+	first, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "a@example.com")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -145,7 +159,7 @@ func TestBindJoinsSecondChannel(t *testing.T) {
 		t.Fatalf("绑定失败: %v", err)
 	}
 
-	second, err := identities.ResolveOrRegister(ctx, "example", "ext-1", "a@other.example")
+	second, err := registerForTest(ctx, identities, "example", "ext-1", "a@other.example")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -159,11 +173,11 @@ func TestBindIdempotentAndRejectsOthers(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	mine, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "")
+	mine, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
-	other, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-b", "")
+	other, err := registerForTest(ctx, identities, SourceGoogle, "sub-b", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -180,7 +194,7 @@ func TestBindIdempotentAndRejectsOthers(t *testing.T) {
 		t.Fatalf("err = %v，期望 ErrIdentityTaken", err)
 	}
 	// 归属一字不动。
-	got, err := identities.ResolveOrRegister(ctx, "example", "ext-1", "")
+	got, err := registerForTest(ctx, identities, "example", "ext-1", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -194,11 +208,11 @@ func TestUnbindRejectsOtherSubject(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	mine, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "")
+	mine, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
-	other, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-b", "")
+	other, err := registerForTest(ctx, identities, SourceGoogle, "sub-b", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -207,7 +221,7 @@ func TestUnbindRejectsOtherSubject(t *testing.T) {
 	if !errors.Is(err, ErrIdentityNotFound) {
 		t.Fatalf("err = %v，期望 ErrIdentityNotFound", err)
 	}
-	still, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "")
+	still, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -222,7 +236,7 @@ func TestUnbindKeepsLastIdentity(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	subject, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "")
+	subject, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -231,7 +245,7 @@ func TestUnbindKeepsLastIdentity(t *testing.T) {
 	if !errors.Is(err, ErrLastIdentity) {
 		t.Fatalf("err = %v，期望 ErrLastIdentity", err)
 	}
-	if _, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", ""); err != nil {
+	if _, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", ""); err != nil {
 		t.Errorf("身份被误删: %v", err)
 	}
 }
@@ -243,7 +257,7 @@ func TestUnbindLeavesChannelOnNewSubject(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	original, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "")
+	original, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -254,7 +268,7 @@ func TestUnbindLeavesChannelOnNewSubject(t *testing.T) {
 		t.Fatalf("解绑失败: %v", err)
 	}
 
-	again, err := identities.ResolveOrRegister(ctx, "example", "ext-1", "")
+	again, err := registerForTest(ctx, identities, "example", "ext-1", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -272,7 +286,7 @@ func TestListIsSorted(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	subject, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-z", "")
+	subject, err := registerForTest(ctx, identities, SourceGoogle, "sub-z", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -317,7 +331,7 @@ func TestSubjectIDIsOpaque(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	subject, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "")
+	subject, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -334,7 +348,7 @@ func TestOwnerReportsCurrentSubject(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	subject, err := identities.ResolveOrRegister(ctx, SourceGoogle, "sub-a", "")
+	subject, err := registerForTest(ctx, identities, SourceGoogle, "sub-a", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -355,11 +369,11 @@ func TestReclaimMovesIdentityFromVacantSubject(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	from, err := identities.ResolveOrRegister(ctx, SourceGithub, "gh-1", "old")
+	from, err := registerForTest(ctx, identities, SourceGithub, "gh-1", "old")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
-	to, err := identities.ResolveOrRegister(ctx, SourceGoogle, "g-1", "")
+	to, err := registerForTest(ctx, identities, SourceGoogle, "g-1", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -373,7 +387,7 @@ func TestReclaimMovesIdentityFromVacantSubject(t *testing.T) {
 		t.Fatalf("认领失败: %v", err)
 	}
 
-	resolved, err := identities.ResolveOrRegister(ctx, SourceGithub, "gh-1", "new")
+	resolved, err := registerForTest(ctx, identities, SourceGithub, "gh-1", "new")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -394,14 +408,14 @@ func TestReclaimRejectsNonVacantSubject(t *testing.T) {
 	ctx := context.Background()
 	identities, _ := newTestIdentities()
 
-	from, err := identities.ResolveOrRegister(ctx, SourceGithub, "gh-1", "")
+	from, err := registerForTest(ctx, identities, SourceGithub, "gh-1", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
 	if err := identities.Bind(ctx, from.ID, SourceGithub, "gh-2", ""); err != nil {
 		t.Fatalf("绑定失败: %v", err)
 	}
-	to, err := identities.ResolveOrRegister(ctx, SourceGoogle, "g-1", "")
+	to, err := registerForTest(ctx, identities, SourceGoogle, "g-1", "")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}

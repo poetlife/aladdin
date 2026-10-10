@@ -5,6 +5,7 @@ import { RequirePermission } from './auth'
 import { AppLayout } from './layouts/AppLayout'
 import { PublicDocsLayout } from './layouts/PublicDocsLayout'
 import { AuthCallbackPage } from './pages/AuthCallbackPage'
+import { CompleteRegistrationPage } from './pages/CompleteRegistrationPage'
 import { DeviceApprovalPage } from './pages/DeviceApprovalPage'
 import { ForbiddenPage } from './pages/ForbiddenPage'
 import { HomePage } from './pages/HomePage'
@@ -14,6 +15,7 @@ import { PermissionCatalogPage } from './pages/PermissionCatalogPage'
 import { DeploymentPage } from './pages/admin/DeploymentPage'
 import { TelemetryPage } from './pages/admin/TelemetryPage'
 import { RolesPage } from './pages/RolesPage'
+import { RegistrationPage } from './pages/RegistrationPage'
 import { ScopesPage } from './pages/ScopesPage'
 import { SubjectBindingsPage } from './pages/SubjectBindingsPage'
 import { PermissionCodes } from './gen/permission-codes'
@@ -56,6 +58,13 @@ export const routes: RouteObject[] = [
   // 它**不在 /auth/ 下**：那一段被反向代理整段转发给服务端（服务端的
   // 回调端点在 /auth/github/），前端在这里放路由会被服务端接走。
   { path: '/login/callback', element: <AuthCallbackPage /> },
+  // 填邀请码那一页。它**必须公开**：走到这里的人还没有账号，因此它不能挂在
+  // `RequirePermission` 之下。
+  //
+  // 地址由服务端在渠道回调里给出（internal/server 的 RegistrationPath），改这里
+  // 要同时改那里。与 /login/callback 同理，它**不在 /auth/ 下**：那一段被反向
+  // 代理整段转发给服务端。
+  { path: '/register', element: <CompleteRegistrationPage /> },
   { path: '/forbidden', element: <ForbiddenPage /> },
   // 主站壳：一条**已发布内容**的分享地址落点（`/g/<工程标识>[/docs][/路径]`）。
   //
@@ -126,6 +135,13 @@ export const routes: RouteObject[] = [
           {
             element: <RequirePermission require={[PermissionCodes.RbacScopeRead]} />,
             children: [{ path: '/access/scopes', element: <ScopesPage /> }],
+          },
+          // 注册管理：谁能进来、进来拿什么。基础权限是 `identity.registration.read`
+          // ——策略与邀请码同属一块能力；改策略、签发与撤销在页面内部按
+          // `identity.registration.write` 裁剪（见 docs/design/identity/registration.md）。
+          {
+            element: <RequirePermission require={[PermissionCodes.IdentityRegistrationRead]} />,
+            children: [{ path: '/access/registration', element: <RegistrationPage /> }],
           },
           // 权限管理原先挂在 /roles 下。旧地址留一次跳转：部署文档里
           // 的 SPA 回落冒烟步骤正是拿它当例子（见 docs/deploy.md）。

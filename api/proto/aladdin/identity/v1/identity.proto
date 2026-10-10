@@ -3,6 +3,7 @@ syntax = "proto3";
 package aladdin.identity.v1;
 
 import "aladdin/rbac/v1/annotations.proto";
+import "aladdin/identity/v1/registration.proto";
 
 option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1;identityv1";
 
@@ -170,6 +171,14 @@ message GetAuthMethodsResponse {
   // 一个已有主体的会话交给终端。不可用时命令行据此不去发起，而不是发起了
   // 再收到一次"未实现"。
   bool device_login_enabled = 2;
+  // 当前站点的准入姿态（开放注册 / 需要邀请码 / 不接受新账号）。
+  //
+  // 登录页要能说明白"这里需要邀请码"或"这里不接受新账号"，因此它随同一份
+  // 清单下发。它同属公开取值——本来就会展示给任何一个打开登录页的人；藏起来
+  // 不保护任何东西，只会让前端去硬编码一份会漂移的副本。
+  //
+  // **它只说准入，不说进来拿什么**：默认角色是权限信息，公开清单里不放。
+  RegistrationMode registration_mode = 3;
 }
 
 // AuthMethod 是一个已启用的登录渠道。

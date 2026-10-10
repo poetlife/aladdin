@@ -47,6 +47,15 @@
 - 通配（`*`）与角色继承的展开**不在这里做**：那是服务端的职责，前端自己推一遍就是第二份实现。因此"谁持有"这一列只列**直接声明**该码的角色，并把这条边界写在界面上——否则读者会把"直接声明"读成"只有这些角色能用"，而一个持有 `*` 的角色明明对全部权限生效。
 - 角色列表读取失败时，目录本身照常可读：把一次读取失败显示成"没有角色持有它"是个错误结论，因此那一列留空并说明原因。
 
+### 注册管理
+
+- 它回答"**这里谁进得来、进来拿什么**"（见 [../identity/registration.md](../identity/registration.md)）。准入姿态是**三选一**（开放注册 / 需要邀请码 / 不接受新账号），界面上就是一组互斥选项——不是三个各自独立的开关。
+- 默认角色与默认范围**要么都给、要么都不给**，因此界面上是一处成对的取值，不是一个"可选角色"下拉加一个总有效的范围框。
+- 默认角色的候选项**不必在前端过滤**：能不能当默认角色由服务端的约束校验说了算，前端按服务端返回的拒绝原因显示即可。前端自行维护一份"哪些角色可以当默认角色"的判断，就是第二份实现（见 [../identity/registration.md](../identity/registration.md) 的那条约束）。
+- 邀请码列表要显示**状态与用量**（已用几次 / 上限几次 / 何时过期 / 是否已撤销），因为这三样决定了管理员下一步该做什么。
+- 邀请码的**明文只在签发那一刻显示一次**，此后任何页面都读不回来；界面上要把这句话说出来，否则管理员会以为列表加载失败。
+- 撤销邀请码**不做二次确认**：它是可重发的动作，且撤销本身不产生新的暴露（见 [../uiux/README.md](../uiux/README.md) 的"破坏性操作"）。
+
 ### 管理面的作用域约定
 
 - **管理面（`rbac.proto`）的范围一律取自请求体里显式的范围字段**，不从请求元数据（`aladdin-scope` 头）取。这条不是风格：管理操作的"在哪个范围上做"必须是被调用方明确写下来的，否则一次漏传就会静默落到全局范围上，看起来像"权限不够"。
@@ -101,6 +110,8 @@
 | 范围页 | [web/src/pages/ScopesPage.tsx](../../../web/src/pages/ScopesPage.tsx) |
 | 角色定义页 | [web/src/pages/RolesPage.tsx](../../../web/src/pages/RolesPage.tsx) |
 | 权限码目录页 | [web/src/pages/PermissionCatalogPage.tsx](../../../web/src/pages/PermissionCatalogPage.tsx) |
+| 注册管理页（准入姿态、默认角色、邀请码） | [web/src/pages/RegistrationPage.tsx](../../../web/src/pages/RegistrationPage.tsx) |
+| 填邀请码那一页（公开，见 [../identity/registration.md](../identity/registration.md)） | [web/src/pages/CompleteRegistrationPage.tsx](../../../web/src/pages/CompleteRegistrationPage.tsx) |
 | 权限码目录数据（由权限目录生成） | [web/src/gen/permission-catalog.ts](../../../web/src/gen/permission-catalog.ts) |
 | 管理面调用封装 | [web/src/api/rbac.ts](../../../web/src/api/rbac.ts) |
 | 管理面接口与范围来源声明 | [api/proto/aladdin/rbac/v1/rbac.proto](../../../api/proto/aladdin/rbac/v1/rbac.proto) |

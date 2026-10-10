@@ -38,6 +38,9 @@
 | 重定向型绑定的一份已校验身份是否还在等待兑换 | `pendingBindings` | [internal/server/pending_bindings.go](../internal/server/pending_bindings.go) |
 | 一个身份能不能从原主体被认领（原主体只有这条身份、且没有角色绑定） | 身份存储的 `Reclaim`（身份侧不变式）+ 生命周期锁下的 RBAC 只读检查 | [internal/identity/identity.go](../internal/identity/identity.go) / [internal/server/subject_lifecycle_gate.go](../internal/server/subject_lifecycle_gate.go) |
 | 一个渠道身份属于哪个主体 | 身份的解析入口（按（来源，身份标识）查别名，未命中才登记主体） | [internal/identity/identity_resolver.go](../internal/identity/identity_resolver.go) |
+| 一个未登记的渠道身份能不能被登记成新主体（开放 / 邀请码 / 不接受） | 注册闸门的判定入口（读策略、消费邀请码；**只有这一处**） | [internal/registration/registrations.go](../internal/registration/registrations.go) / [internal/server/registration_service.go](../internal/server/registration_service.go) |
+| 一个角色能不能当**默认注册角色** | `rbac.ValidateRegistrationDefaultRole`（与互斥约束同处，是授予前的校验） | [internal/rbac/constraints.go](../internal/rbac/constraints.go) |
+| 一份邀请码的明文是否成立（归一化 + 摘要 + 扣减是否成功） | 邀请码的兑换入口（归一化与摘要各只有一处实现） | [internal/registration/invite.go](../internal/registration/invite.go) |
 | 一份会话凭证是否有效、代表谁 | 会话存储的查询入口 | [internal/identity/session.go](../internal/identity/session.go) |
 | 某个邮箱（展示值）对应哪些已登记身份 | 身份别名的按展示值查询 | [internal/identity/identity.go](../internal/identity/identity.go) |
 | 一个主体的展示名（昵称，未设则回退到渠道标识，再回退到主体标识） | 档案的展示名解析入口 | [internal/profile/profiles.go](../internal/profile/profiles.go) |
@@ -95,6 +98,8 @@
 | 分层顺序（默认值 < 配置文件 < 本地覆盖 < 环境变量 < 命令行参数） | 两端展开时共用同一条语义与同一批来源读取函数 | [internal/config/load.go](../internal/config/load.go) |
 | CLI 内置默认目标地址的解析（源码常量，或发布构建注入值） | `config.DefaultCLI` 内的解析入口；注入值的生产者是 `make release-build` / `release.yml` | [internal/config/config.go](../internal/config/config.go) |
 | CLI 凭证解析（参数 > 环境变量 > 凭证文件） | `auth.Resolve` | [internal/auth/credentials.go](../internal/auth/credentials.go) |
+| 一份邀请码的归一化（大小写、连字符、易混字符）与展示分组 | `registration.NormalizeInviteCode` / `FormatInviteCode`（服务端与命令行共用；**调用方不得各自再折一遍**） | [internal/registration/invite.go](../internal/registration/invite.go) |
+| 一份凭证（会话凭证与邀请码共用）在库里的查找键 | `identity.HashToken` | [internal/identity/session_token.go](../internal/identity/session_token.go) |
 | 日志 logger 构建 | `observability.NewLogger` | [internal/observability/logger.go](../internal/observability/logger.go) |
 | trace_id / span_id 的生成与继承 | OTel 传播器，经 `observability.StartServerSpan` / `StartClientSpan` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
 | 日志与链路的关联（`trace_id` / `span_id` 字段） | `observability.SpanLogger` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
@@ -197,6 +202,7 @@
 | 品牌标识的形状与颜色（页签图标、主屏图标、侧边栏品牌区用的都是它的产物；**组件里不内联路径**） | 标识源文件，各尺寸产物由同一处脚本派生 | [docs/design/web/brand/aladdin-mark.svg](../docs/design/web/brand/aladdin-mark.svg) / [generate-icons.sh](../docs/design/web/brand/generate-icons.sh) |
 | 弹窗的高度约束、滚动行为与滚动条落在哪一侧（内容比窗口高时滚的是内容区，不是整屏遮罩；头尾与内容三块的横向边界重合） | `AppModal`（**不再从 antd 直接引 `Modal`**） | [web/src/ui/AppModal.tsx](../web/src/ui/AppModal.tsx) |
 | 技能、版本、标签、展示图集、收藏与使用日次的持久化数据 | `skill.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着）；**字节不在库里** | [internal/skill/store.go](../internal/skill/store.go) / [internal/skill/gormstore/](../internal/skill/gormstore/store.go) |
+| 注册策略与邀请码的持久化数据（**站点级一行 + 每份码一行，码只存摘要**） | `registration.Store` 接口（内存实现与 SQL 实现并存，语义由同一套契约测试守着） | [internal/registration/store.go](../internal/registration/store.go) / [internal/registration/gormstore/](../internal/registration/gormstore/store.go) |
 | 远端技能内容的拉取出口（解析引用、取回一棵树；**测试注入假实现**） | `skill.Remote` 接口 | [internal/skill/remote.go](../internal/skill/remote.go) |
 | 技能目录的接口契约（读面与维护面的划分、权限码、作用域来源） | proto 定义，经 `buf generate` 派生两端代码 | [api/proto/aladdin/skill/v1/skill.proto](../api/proto/aladdin/skill/v1/skill.proto) |
 | 一份字节能不能当**展示小图**（收哪些格式、上限多大、扩展名与文件头怎么判） | `imagetype`（**头像与技能展示图共用一份**；它与 galaxy 资产的素材白名单**不是同一个判断**，不合并，理由见该包说明） | [internal/imagetype/imagetype.go](../internal/imagetype/imagetype.go) |

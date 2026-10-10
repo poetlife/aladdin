@@ -17,6 +17,7 @@ import (
 	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/registration"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
@@ -94,6 +95,7 @@ type identityFixture struct {
 	identityStore identity.IdentityStore
 	sessions      *identity.Sessions
 	sessionStore  *countingSessionStore
+	registrations *registration.Registrations
 	service       *IdentityService
 	logs          *observer.ObservedLogs
 }
@@ -108,6 +110,9 @@ func newIdentityFixture(t *testing.T, channels ...identity.Channel) identityFixt
 	sessionStore := newCountingSessionStore()
 	sessions := identity.NewSessions(sessionStore)
 	identityStore := identity.NewMemoryIdentityStore()
+	// 注册策略**不预置**：没有记录就是缺省姿态（开放注册、无默认角色），与一个
+	// 刚迁移完的库一致。需要别的姿态的用例自己写一次（见 registration_test.go）。
+	registrations := registration.New(registration.NewMemoryStore())
 	core, logs := observer.New(zapcore.DebugLevel)
 
 	return identityFixture{
@@ -115,8 +120,9 @@ func newIdentityFixture(t *testing.T, channels ...identity.Channel) identityFixt
 		identityStore: identityStore,
 		sessions:      sessions,
 		sessionStore:  sessionStore,
+		registrations: registrations,
 		logs:          logs,
-		service:       newIdentityServiceOn(subjects, identityStore, sessions, channels, zap.New(core)),
+		service:       newIdentityServiceOn(subjects, identityStore, sessions, registrations, channels, zap.New(core)),
 	}
 }
 
@@ -125,13 +131,14 @@ func newIdentityFixture(t *testing.T, channels ...identity.Channel) identityFixt
 // 用于模拟"另一个人"或"另一条渠道"：只有共用存储，身份的唯一归属才会真的
 // 被撞上。
 func (f identityFixture) as(channels ...identity.Channel) *IdentityService {
-	return newIdentityServiceOn(f.subjects, f.identityStore, f.sessions, channels, zap.NewNop())
+	return newIdentityServiceOn(f.subjects, f.identityStore, f.sessions, f.registrations, channels, zap.NewNop())
 }
 
 func newIdentityServiceOn(
 	subjects rbac.MutableStore,
 	identityStore identity.IdentityStore,
 	sessions *identity.Sessions,
+	registrations *registration.Registrations,
 	channels []identity.Channel,
 	logger *zap.Logger,
 ) *IdentityService {
@@ -141,8 +148,12 @@ func newIdentityServiceOn(
 		Sessions:        sessions,
 		Channels:        identity.NewRegistry(channels...),
 		Logger:          logger,
+		Registrations:   registrations,
 		PendingBindings: newPendingBindings(time.Now, false),
-		DeviceLogins:    newDeviceLogins(time.Now),
+		// 待注册凭据与待绑定凭据同一套形状，两者都必须装配：前者在渠道登录
+		// 路径上，缺了它"需要邀请码"那一支根本没有落点。
+		PendingRegistrations: newPendingRegistrations(time.Now, false),
+		DeviceLogins:         newDeviceLogins(time.Now),
 		// 这里一律启用命令行登录：需要"未启用"的用例自己装配一个不带它的
 		// 认证面（见 device_logins_test.go）。
 		DeviceApprovalURL: testPublicBaseURL + DeviceApprovalPath,
@@ -155,23 +166,33 @@ func verifierFor(externalID string) identity.TokenVerifier {
 	return fakeVerifier{identity: identity.VerifiedIdentity{ExternalID: externalID}}
 }
 
-// loginAs 走一次登录的两段：校验渠道凭证，然后解析主体并签发会话。
+// admitAs 走一次登录的两段：校验渠道凭证，然后过注册闸门。
 //
 // 它直接把服务端在回调里走的那两段接起来（见 redirect_login_flow.go 的
 // Callback），而不是调某个 RPC：登录已经没有 RPC 形状了。
-func loginAs(t *testing.T, service *IdentityService, credential string) *identityv1.LoginResponse {
+func admitAs(t *testing.T, service *IdentityService, credential string) admission {
 	t.Helper()
 	verified, err := service.verify(context.Background(), identity.SourceGoogle, credential)
 	if err != nil {
 		t.Fatalf("校验渠道凭证失败: %v", err)
 	}
-	issued, err := service.resolveAndIssue(context.Background(), identity.SourceGoogle, verified)
+	result, err := service.admit(context.Background(), identity.SourceGoogle, verified)
 	if err != nil {
 		t.Fatalf("登录失败: %v", err)
 	}
+	return result
+}
+
+// loginAs 走一次登录并取回会话凭证，要求这次登录**签发了会话**。
+func loginAs(t *testing.T, service *IdentityService, credential string) *identityv1.LoginResponse {
+	t.Helper()
+	result := admitAs(t, service, credential)
+	if result.kind != admissionIssued {
+		t.Fatalf("这次登录的去向是 %v，不是签发了会话", result.kind)
+	}
 	return &identityv1.LoginResponse{
-		AccessToken: issued.Token,
-		ExpiresAt:   issued.Session.ExpiresAt.Format(time.RFC3339),
+		AccessToken: result.issued.Token,
+		ExpiresAt:   result.issued.Session.ExpiresAt.Format(time.RFC3339),
 	}
 }
 
@@ -402,12 +423,27 @@ func bindOverRedirect(t *testing.T, service *IdentityService, ctx context.Contex
 	return service.CompleteIdentityBinding(ctx, pendingBindingRequest(source, token))
 }
 
+// registerOrResolve 把"解析，没有就登记"合成一次调用，供本包的用例造数据使用。
+//
+// **生产路径刻意没有这个合成入口**：解析与登记之间要插的是注册闸门（见
+// internal/server/registration_service.go），留一条"查不到就建"的捷径就等于留了
+// 一条绕开它的路。这里合成一次只是为了用例不必都写成两步——它调用的仍然是
+// internal/identity 的那两个入口本身。
+func registerOrResolve(resolver *identity.Identities, source, externalID, display string) (rbac.Subject, error) {
+	ctx := context.Background()
+	subject, found, err := resolver.Resolve(ctx, source, externalID)
+	if err != nil || found {
+		return subject, err
+	}
+	return resolver.Register(ctx, source, externalID, display, identity.RegisterOptions{})
+}
+
 // registerGithubThrowaway 直接在存储上登记一个只有 GitHub 身份的零权限主体，
 // 模拟"先用 GitHub 单独登录过一次"。
 func registerGithubThrowaway(t *testing.T, fixture identityFixture, externalID string) rbac.Subject {
 	t.Helper()
 	resolver := identity.NewIdentities(fixture.identityStore, fixture.subjects)
-	subject, err := resolver.ResolveOrRegister(context.Background(), identity.SourceGithub, externalID, "octo")
+	subject, err := registerOrResolve(resolver, identity.SourceGithub, externalID, "octo")
 	if err != nil {
 		t.Fatalf("登记 GitHub 主体失败: %v", err)
 	}
@@ -556,7 +592,7 @@ func TestCompleteIdentityBindingReclaimsVacantSubject(t *testing.T) {
 	}
 
 	resolver := identity.NewIdentities(fixture.identityStore, fixture.subjects)
-	again, err := resolver.ResolveOrRegister(context.Background(), identity.SourceGithub, "gh-a", "")
+	again, err := registerOrResolve(resolver, identity.SourceGithub, "gh-a", "")
 	if err != nil {
 		t.Fatalf("再次解析失败: %v", err)
 	}

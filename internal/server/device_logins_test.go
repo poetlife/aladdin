@@ -15,6 +15,7 @@ import (
 	identityv1 "github.com/poetlife/aladdin/api/gen/aladdin/identity/v1"
 	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/registration"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
@@ -418,8 +419,12 @@ func TestDeviceLoginDisabledWithoutPublicURL(t *testing.T) {
 		Sessions:        sessions,
 		Channels:        identity.NewRegistry(),
 		Logger:          zap.NewNop(),
+		Registrations:   registration.New(registration.NewMemoryStore()),
 		PendingBindings: newPendingBindings(time.Now, false),
-		DeviceLogins:    newDeviceLogins(time.Now),
+		// 待注册凭据与待绑定凭据同一套形状，两者都要装配：注册闸门在渠道登录
+		// 路径上，缺了它"需要邀请码"那一支根本没有落点。
+		PendingRegistrations: newPendingRegistrations(time.Now, false),
+		DeviceLogins:         newDeviceLogins(time.Now),
 		// 关键：没有批准页地址。
 		DeviceApprovalURL: "",
 		LifecycleGate:     &subjectLifecycleGate{},
@@ -490,13 +495,13 @@ func TestDeviceLoginLogsContainNoSecrets(t *testing.T) {
 	identityStore := identity.NewMemoryIdentityStore()
 	sessions := identity.NewSessions(newCountingSessionStore())
 	core, logs := observer.New(zapcore.DebugLevel)
-	service := newIdentityServiceOn(subjects, identityStore, sessions, nil, zap.New(core))
+	service := newIdentityServiceOn(subjects, identityStore, sessions,
+		registration.New(registration.NewMemoryStore()), nil, zap.New(core))
 
 	deviceCode, userCode := startDeviceLogin(t, service)
 
 	// 造一个已认证的调用方：先登记一个主体并签发会话。
-	subject, err := identity.NewIdentities(identityStore, subjects).
-		ResolveOrRegister(context.Background(), identity.SourceGoogle, "google-sub-a", "a@example.com")
+	subject, err := registerOrResolve(identity.NewIdentities(identityStore, subjects), identity.SourceGoogle, "google-sub-a", "a@example.com")
 	if err != nil {
 		t.Fatalf("登记主体失败: %v", err)
 	}

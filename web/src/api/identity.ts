@@ -1,4 +1,4 @@
-import type { AuthMethod } from '../gen/proto/aladdin/identity/v1/identity_pb'
+import type { AuthMethod, GetAuthMethodsResponse } from '../gen/proto/aladdin/identity/v1/identity_pb'
 import { traceCallOptions, type TraceCapture } from './call-trace'
 import { identityClient } from './transport'
 
@@ -9,7 +9,7 @@ import { identityClient } from './transport'
  * 这里只做"把一次调用包成有名字的函数"这一件事。
  */
 
-export type { AuthMethod }
+export type { AuthMethod, GetAuthMethodsResponse }
 
 /**
  * 登录并换取访问凭证。这是公开方法，不需要凭证即可调用。
@@ -66,8 +66,21 @@ export const AuthSource = {
  * 编一份进来就会与配置漂移，而漂移的表现是"界面上有个入口，点了一直报错"。
  */
 export async function getAuthMethods(): Promise<AuthMethod[]> {
-  const resp = await identityClient().getAuthMethods({})
-  return resp.methods
+  return (await getAuthOptions()).methods
+}
+
+/**
+ * 服务端下发的**全部登录选项**：已启用的渠道清单、命令行登录是否可用，以及
+ * 站点的准入姿态（见 docs/design/identity/registration.md）。
+ *
+ * 登录页用它一次拿到三样东西。`getAuthMethods` 是它的一个投影，供只关心渠道
+ * 清单的地方使用（个人资料页的渠道区）。
+ *
+ * 准入姿态是**公开**取值：它本来就会展示给任何一个打开登录页的人。它只说准入，
+ * 不说进来拿什么——默认角色是权限信息，不在这里下发。
+ */
+export async function getAuthOptions(): Promise<GetAuthMethodsResponse> {
+  return identityClient().getAuthMethods({})
 }
 
 /** 列出当前主体已绑定的全部登录渠道。 */

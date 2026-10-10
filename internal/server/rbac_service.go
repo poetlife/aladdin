@@ -143,7 +143,7 @@ func (s *RBACService) AssignRole(ctx context.Context, req *connect.Request[rbacv
 		}), nil
 	}
 
-	if err := s.requireRegisteredScope(ctx, req.Msg.GetScope()); err != nil {
+	if err := requireRegisteredScope(ctx, s.store, req.Msg.GetScope()); err != nil {
 		return nil, err
 	}
 
@@ -283,11 +283,15 @@ func (s *RBACService) PublishPolicy(_ context.Context, req *connect.Request[rbac
 // 全局不需要登记：它是模型的根，不是目录里的一条。**存储故障必须原样上报**——
 // 把它当成"未登记"会把一次数据库故障表现成一次输入错误，于是管理员去改范围
 // 配置，而真正的故障被掩盖了。
-func (s *RBACService) requireRegisteredScope(ctx context.Context, path string) error {
+//
+// 它是一个**自由函数**而不是某个服务的方法：注册策略里那个默认范围要过同一条
+// 校验（见 registration_service.go），两边各写一遍会让"哪些范围能用"出现两个
+// 判据。
+func requireRegisteredScope(ctx context.Context, store rbac.MutableStore, path string) error {
 	if rbac.Scope(path) == rbac.GlobalScope {
 		return nil
 	}
-	if _, err := s.store.Scope(ctx, path); err != nil {
+	if _, err := store.Scope(ctx, path); err != nil {
 		if errors.Is(err, rbac.ErrScopeNotFound) {
 			return connect.NewError(connect.CodeNotFound,
 				fmt.Errorf("范围未登记: %s。请先登记这个范围，再授予角色", path))

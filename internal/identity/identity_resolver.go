@@ -30,6 +30,10 @@ const subjectIDPrefix = "usr_"
 // （见 docs/design/persistence/schema.md）。
 //
 // 它不读角色、不参与任何判定：判定在 internal/rbac。
+//
+// **解析与登记是分开的两个动作**，不再有一个"查不到就建"的合成入口：两者之间
+// 要插的是**注册闸门**（见 docs/design/identity/registration.md）。留一个合成
+// 入口，就等于留了一条绕开闸门的路——而它在正常使用中看起来完全正常。
 type Identities struct {
 	identities IdentityStore
 	subjects   rbac.MutableStore
@@ -43,28 +47,129 @@ func NewIdentities(identities IdentityStore, subjects rbac.MutableStore) *Identi
 	return &Identities{identities: identities, subjects: subjects}
 }
 
-// ResolveOrRegister 解析一份**已校验**的渠道身份对应哪个主体。
+// Resolve 查一个**已校验**的渠道身份对应哪个主体，**不登记任何东西**。
 //
-// 命中已登记的身份，就用它指向的主体；没有命中，就登记一个新主体并记下
-// 这条对应关系。这是"同一个人两次登录不会变成两个主体"的落点——它由
-// （来源，身份标识）的唯一归属保证，而不是由主体标识的构造方式保证。
+// 第二个返回值报告这个身份是不是已经登记过，它就是**注册闸门唯一认的判据**：
+// 登记过的身份走"直接签发会话"那一支，策略一个字都不参与。把它与"查不到"分成
+// 两个返回值而不是用零值主体表示，是为了不给"空主体标识"留下任何可以被读成
+// "已登记"的余地。
 //
 // 它**不做任何令牌校验，也不做任何归并**：调用方必须先完成确认
-// （见 google_verifier.go），而"这个身份与那个主体是同一个人"在这里
-// 永远不是一个可以推断的结论——只由登录与绑定两次动作写下来的事实决定。
-func (i *Identities) ResolveOrRegister(ctx context.Context, source, externalID, display string) (rbac.Subject, error) {
+// （见 google_verifier.go），而"这个身份与那个主体是同一个人"在这里永远不是
+// 一个可以推断的结论——只由登录与绑定两次动作写下来的事实决定。
+func (i *Identities) Resolve(ctx context.Context, source, externalID string) (rbac.Subject, bool, error) {
 	existing, err := i.identities.Lookup(ctx, source, externalID)
 	switch {
 	case err == nil:
 		// 展示信息不在这里刷新：登录是读路径，读路径不写库——一次登录有
 		// 没有副作用，应当只取决于"是否新登记了一个主体"。渠道侧改名后，
 		// 界面上显示的邮箱会停在登记那一刻的值，而它不参与任何判定。
-		return i.subjects.Subject(ctx, existing.SubjectID)
+		subject, err := i.subjects.Subject(ctx, existing.SubjectID)
+		if err != nil {
+			return rbac.Subject{}, false, err
+		}
+		return subject, true, nil
 	case errors.Is(err, ErrIdentityNotFound):
-		return i.register(ctx, source, externalID, display)
+		return rbac.Subject{}, false, nil
 	default:
+		return rbac.Subject{}, false, err
+	}
+}
+
+// RegisterOptions 是登记一个新主体时可选的附加项。
+//
+// 两项都由**注册策略**决定（见 docs/design/identity/registration.md）：默认作用域
+// 取自策略里那条绑定的范围，默认角色由 Grant 落在正确的窗口里。都不给时，登记的
+// 就是一个零权限、默认作用域为空的新主体——那是这条策略存在之前唯一的形态。
+type RegisterOptions struct {
+	// DefaultScope 是新主体的默认作用域，空表示全局。
+	//
+	// 它只能来自绑定关系（见 docs/design/config/README.md），因此它是策略里那条
+	// 默认绑定的范围，而不是另有一个来源。
+	DefaultScope rbac.Scope
+	// Grant 是登记时顺带要做的一步，零值表示不做。
+	Grant RegistrationGrant
+}
+
+// RegistrationGrant 是"登记时顺带要做的一步"，以及它被作废时怎么收回。
+//
+// 它存在的唯一理由是**默认注册角色**：策略指定了一份默认角色时，它必须在
+// "主体已登记"与"身份别名已写下"这一段窗口里落成一条真实的绑定。
+//
+// **身份模块不知道那条绑定长什么样**（角色、范围），因此它只负责在正确的时刻
+// 调用这两个动作，内容由调用方给。它仍然不决定任何权限。
+type RegistrationGrant struct {
+	// Apply 在主体已登记、身份别名尚未写下时执行。
+	Apply func(ctx context.Context, subjectID string) error
+	// Undo 在并发认输的那一支把 Apply 刚写下的东西收回，可为 nil。
+	Undo func(ctx context.Context, subjectID string) error
+}
+
+// Register 登记一个新主体，并把这条身份记到它名下。
+//
+// **三步的顺序是刻意的：主体 → Grant.Apply → 身份别名。**
+//
+// 身份别名是"这个身份已经登记过"的**唯一事实来源**（见 Resolve）。因此只有在它
+// 写下去之前失败，下一次登录才会重新走一遍登记、也就重新走一遍那道闸门与那一次
+// 授予。反过来先写别名再授予，一次授予失败会留下一个"已登记、永远拿不到默认
+// 角色、且已经绕过闸门"的主体，而它的表现只是"这个账号权限不对"——没有任何
+// 迹象指向真正的原因。
+//
+// 调用方必须已经**确认过这份身份**：登记会把主体写进库里，因此绝不能在校验之前
+// 发生，否则任何字符串都能在库里造出一个主体。
+func (i *Identities) Register(ctx context.Context, source, externalID, display string, opts RegisterOptions) (rbac.Subject, error) {
+	subjectID, err := newSubjectID()
+	if err != nil {
 		return rbac.Subject{}, err
 	}
+	// 新主体的默认作用域取自策略里那条默认绑定；没有任何绑定时它就是空，
+	// 于是这个人能登录、能看到界面框架，但什么都做不了——这是预期路径。
+	subject := rbac.Subject{ID: subjectID, Type: rbac.SubjectTypeUser, DefaultScope: opts.DefaultScope}
+
+	// 先登记主体、再写身份。反过来的话，一次写入失败会留下一条指向不存在
+	// 的主体的身份，而"未登记的主体在判定时视为不存在"：这个人每次登录都
+	// 会被解析到一个判定看不见的主体上，且再也无法自愈。
+	if err := i.subjects.PutSubject(ctx, subject); err != nil {
+		return rbac.Subject{}, err
+	}
+
+	if opts.Grant.Apply != nil {
+		if err := opts.Grant.Apply(ctx, subject.ID); err != nil {
+			return rbac.Subject{}, err
+		}
+	}
+
+	err = i.identities.Put(ctx, Identity{
+		Source:     source,
+		ExternalID: externalID,
+		SubjectID:  subjectID,
+		Display:    display,
+	})
+	if err == nil {
+		return subject, nil
+	}
+	if !errors.Is(err, ErrIdentityTaken) {
+		return rbac.Subject{}, err
+	}
+
+	// 并发下另一个请求抢先写下了同一条身份。让它赢——两次并发的首次登录
+	// 本来就该落到同一个主体上。
+	//
+	// 刚登记的那个主体成了没有任何身份引用的空壳。它如果已经挂上了
+	// Grant.Apply 写下的东西，就在这里收回：否则留下的是一个"持有角色、却
+	// 没有任何进入方式"的主体，日后删那个角色会冒出"仍被主体 X 持有"，而
+	// 管理员在界面上找不到这个主体，只看到一个孤零零的标识。
+	if opts.Grant.Undo != nil {
+		if err := opts.Grant.Undo(ctx, subject.ID); err != nil {
+			return rbac.Subject{}, err
+		}
+	}
+
+	winner, err := i.identities.Lookup(ctx, source, externalID)
+	if err != nil {
+		return rbac.Subject{}, err
+	}
+	return i.subjects.Subject(ctx, winner.SubjectID)
 }
 
 // Bind 把一个渠道身份绑到某个主体上。
@@ -110,8 +215,8 @@ func (i *Identities) Reclaim(ctx context.Context, fromSubjectID string, ident Id
 
 // Unbind 从主体上摘掉一个渠道身份。
 //
-// 摘掉之后该渠道不再通向这个主体：下次用它登录会按"未命中"登记出一个
-// 新的、零权限的主体。这是预期行为，不是权限丢失。
+// 摘掉之后该渠道不再通向这个主体：下次用它登录会按"未登记"重走一遍注册路径，
+// 因此注册闸门在那条路上照常生效。这是预期行为，不是权限丢失。
 //
 // 两条不变式——"只能摘自己的"与"不能摘掉最后一个"——由存储在同一次
 // 操作里保证，因此这里不先查后写：先查后写在并发下会同时被打破。
@@ -134,46 +239,6 @@ func (i *Identities) List(ctx context.Context, subjectID string) ([]Identity, er
 	}
 	sortIdentities(list)
 	return list, nil
-}
-
-// register 登记一个新主体，并把这条身份记到它名下。
-func (i *Identities) register(ctx context.Context, source, externalID, display string) (rbac.Subject, error) {
-	subjectID, err := newSubjectID()
-	if err != nil {
-		return rbac.Subject{}, err
-	}
-	// 新主体的默认作用域为空：默认作用域来自绑定关系，而它一条绑定也没有。
-	// 于是这个人能登录、能看到界面框架，但什么都做不了——这是预期路径。
-	subject := rbac.Subject{ID: subjectID, Type: rbac.SubjectTypeUser}
-
-	// 先登记主体、再写身份。反过来的话，一次写入失败会留下一条指向不存在
-	// 的主体的身份，而"未登记的主体在判定时视为不存在"：这个人每次登录都
-	// 会被解析到一个判定看不见的主体上，且再也无法自愈。
-	if err := i.subjects.PutSubject(ctx, subject); err != nil {
-		return rbac.Subject{}, err
-	}
-
-	err = i.identities.Put(ctx, Identity{
-		Source:     source,
-		ExternalID: externalID,
-		SubjectID:  subjectID,
-		Display:    display,
-	})
-	if err == nil {
-		return subject, nil
-	}
-	if !errors.Is(err, ErrIdentityTaken) {
-		return rbac.Subject{}, err
-	}
-
-	// 并发下另一个请求抢先写下了同一条身份。让它赢——两次并发的首次登录
-	// 本来就该落到同一个主体上。刚登记的那个主体成了没有任何身份引用的
-	// 空壳：它没有任何绑定、也没有进入方式，留在库里无害，重查一次即可。
-	winner, err := i.identities.Lookup(ctx, source, externalID)
-	if err != nil {
-		return rbac.Subject{}, err
-	}
-	return i.subjects.Subject(ctx, winner.SubjectID)
 }
 
 // newSubjectID 分配一个新主体的标识。

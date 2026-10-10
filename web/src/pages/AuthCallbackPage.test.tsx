@@ -112,6 +112,20 @@ describe('重定向登录的回调页', () => {
     expect(container.querySelector('[data-testid="profile"]')).toBeNull()
   })
 
+  // "不接受新账号"与"登录未完成"分开：前者不是操作失误，而是一条本该公开的站点
+  // 事实（登录页已经从渠道清单里拿到了同一个取值）。混成一句话会让使用者去反复
+  // 重试一件无论试几次都不会成功的事。
+  it.each([
+    ['github_registration_closed'],
+    ['google_registration_closed'],
+  ])('准入标记 %s 说清"不接受新账号"，而不是"登录未完成"', async (marker) => {
+    const container = await renderCallbackPage(`#error=${marker}`)
+
+    expect(container.textContent).toContain('不接受新账号')
+    expect(container.textContent).not.toContain('登录未完成')
+    expect(globalThis.localStorage?.getItem('aladdin.token')).toBeNull()
+  })
+
   it('服务端不认这份凭证时给出提示，而不是静默回到登录页', async () => {
     // 凭证随跳转交回，但用不了（例如已失效）。会话层把失败收敛成"未登录"，
     // 本页必须自己确认结果，否则用户只会被弹回登录页且看不到任何解释。

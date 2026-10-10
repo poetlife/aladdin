@@ -14,6 +14,7 @@ import (
 
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/identity"
+	"github.com/poetlife/aladdin/internal/registration"
 	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
@@ -217,6 +218,74 @@ func TestRedirectCallbackCompletesLogin(t *testing.T) {
 			}
 			if n := fixture.issuedSessions(); n != 1 {
 				t.Errorf("签发了 %d 条会话，期望 1 条", n)
+			}
+		})
+	}
+}
+
+// 站点不接受新账号时，回调把浏览器送回前端并附一个**专用**标记。
+//
+// 它与"登录未完成"分开：那句话不是操作失误，而是一条本该公开的站点事实
+// （登录页已经从渠道清单里拿到了同一个取值）。混成一句会让使用者去反复重试一件
+// 无论试几次都不会成功的事。
+func TestRedirectCallbackRefusesNewSubjectWhenClosed(t *testing.T) {
+	for _, c := range redirectCases() {
+		t.Run(c.channel.source, func(t *testing.T) {
+			srv, fixture := redirectFlowHarness(t, testPublicBaseURL, c.channel, c.enabled(verifierFor("1001")))
+			setPolicy(t, fixture, registration.Policy{Mode: registration.ModeClosed})
+
+			_, cookie := startFlow(t, c, srv.URL, "")
+			location := callback(t, c, srv.URL, cookie, "the-code", cookie.Value)
+
+			if got := fragmentValue(t, location, frontendErrorFragment); got != c.channel.registrationClosed() {
+				t.Fatalf("失败标记 = %q，期望 %q", got, c.channel.registrationClosed())
+			}
+			// 拒绝意味着**什么都不登记**：库里不该因此多出任何一行。
+			if _, found, _ := fixture.service.identities.Resolve(context.Background(), c.channel.source, "1001"); found {
+				t.Error("被拒绝的身份不该被登记")
+			}
+			if n := fixture.issuedSessions(); n != 0 {
+				t.Errorf("签发了 %d 条会话，期望 0 条", n)
+			}
+		})
+	}
+}
+
+// 需要邀请码时，回调把浏览器送到填码页，并把那份已校验身份记成 HttpOnly cookie。
+//
+// **地址里没有凭据**：凭据在 cookie 里，因此这一步没有"回跳页要把 fragment 抹掉"
+// 这回事。
+func TestRedirectCallbackAsksForInvite(t *testing.T) {
+	for _, c := range redirectCases() {
+		t.Run(c.channel.source, func(t *testing.T) {
+			srv, fixture := redirectFlowHarness(t, testPublicBaseURL, c.channel, c.enabled(verifierFor("1001")))
+			setPolicy(t, fixture, registration.Policy{Mode: registration.ModeInvite})
+
+			_, cookie := startFlow(t, c, srv.URL, "")
+			result := callbackResponse(t, c, srv.URL, cookie, "the-code", cookie.Value)
+
+			if result.location != testPublicBaseURL+RegistrationPath {
+				t.Fatalf("跳转目标 = %q，期望填码页", result.location)
+			}
+			var staged *http.Cookie
+			for _, got := range result.cookies {
+				if got.Name == registrationCookie {
+					staged = got
+				}
+			}
+			if staged == nil {
+				t.Fatal("没有写下待注册凭据")
+			}
+			// HttpOnly 是必需而非可选：这份凭据换来的是一次注册。
+			if !staged.HttpOnly {
+				t.Error("待注册凭据必须是 HttpOnly")
+			}
+			// 这一刻**什么都不登记**：没有码的人不该在库里占一个主体。
+			if _, found, _ := fixture.service.identities.Resolve(context.Background(), c.channel.source, "1001"); found {
+				t.Error("还没给码就不该登记主体")
+			}
+			if n := fixture.issuedSessions(); n != 0 {
+				t.Errorf("签发了 %d 条会话，期望 0 条", n)
 			}
 		})
 	}

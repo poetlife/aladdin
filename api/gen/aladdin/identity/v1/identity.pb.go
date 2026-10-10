@@ -325,8 +325,16 @@ type GetAuthMethodsResponse struct {
 	// 一个已有主体的会话交给终端。不可用时命令行据此不去发起，而不是发起了
 	// 再收到一次"未实现"。
 	DeviceLoginEnabled bool `protobuf:"varint,2,opt,name=device_login_enabled,json=deviceLoginEnabled,proto3" json:"device_login_enabled,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// 当前站点的准入姿态（开放注册 / 需要邀请码 / 不接受新账号）。
+	//
+	// 登录页要能说明白"这里需要邀请码"或"这里不接受新账号"，因此它随同一份
+	// 清单下发。它同属公开取值——本来就会展示给任何一个打开登录页的人；藏起来
+	// 不保护任何东西，只会让前端去硬编码一份会漂移的副本。
+	//
+	// **它只说准入，不说进来拿什么**：默认角色是权限信息，公开清单里不放。
+	RegistrationMode RegistrationMode `protobuf:"varint,3,opt,name=registration_mode,json=registrationMode,proto3,enum=aladdin.identity.v1.RegistrationMode" json:"registration_mode,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetAuthMethodsResponse) Reset() {
@@ -371,6 +379,13 @@ func (x *GetAuthMethodsResponse) GetDeviceLoginEnabled() bool {
 		return x.DeviceLoginEnabled
 	}
 	return false
+}
+
+func (x *GetAuthMethodsResponse) GetRegistrationMode() RegistrationMode {
+	if x != nil {
+		return x.RegistrationMode
+	}
+	return RegistrationMode_REGISTRATION_MODE_UNSPECIFIED
 }
 
 // AuthMethod 是一个已启用的登录渠道。
@@ -1508,7 +1523,7 @@ var File_aladdin_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_aladdin_identity_v1_identity_proto_rawDesc = "" +
 	"\n" +
-	"\"aladdin/identity/v1/identity.proto\x12\x13aladdin.identity.v1\x1a!aladdin/rbac/v1/annotations.proto\"\xa1\x01\n" +
+	"\"aladdin/identity/v1/identity.proto\x12\x13aladdin.identity.v1\x1a!aladdin/rbac/v1/annotations.proto\x1a&aladdin/identity/v1/registration.proto\"\xa1\x01\n" +
 	"\fLoginRequest\x12E\n" +
 	"\bpassword\x18\x01 \x01(\v2'.aladdin.identity.v1.PasswordCredentialH\x00R\bpassword\x12<\n" +
 	"\x05token\x18\x02 \x01(\v2$.aladdin.identity.v1.TokenCredentialH\x00R\x05tokenB\f\n" +
@@ -1519,10 +1534,11 @@ const file_aladdin_identity_v1_identity_proto_rawDesc = "" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"'\n" +
 	"\x0fTokenCredential\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"\x17\n" +
-	"\x15GetAuthMethodsRequest\"\x85\x01\n" +
+	"\x15GetAuthMethodsRequest\"\xd9\x01\n" +
 	"\x16GetAuthMethodsResponse\x129\n" +
 	"\amethods\x18\x01 \x03(\v2\x1f.aladdin.identity.v1.AuthMethodR\amethods\x120\n" +
-	"\x14device_login_enabled\x18\x02 \x01(\bR\x12deviceLoginEnabled\"$\n" +
+	"\x14device_login_enabled\x18\x02 \x01(\bR\x12deviceLoginEnabled\x12R\n" +
+	"\x11registration_mode\x18\x03 \x01(\x0e2%.aladdin.identity.v1.RegistrationModeR\x10registrationMode\"$\n" +
 	"\n" +
 	"AuthMethod\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\"Q\n" +
@@ -1660,44 +1676,46 @@ var file_aladdin_identity_v1_identity_proto_goTypes = []any{
 	(*ApproveDeviceLoginResponse)(nil),      // 26: aladdin.identity.v1.ApproveDeviceLoginResponse
 	(*DenyDeviceLoginRequest)(nil),          // 27: aladdin.identity.v1.DenyDeviceLoginRequest
 	(*DenyDeviceLoginResponse)(nil),         // 28: aladdin.identity.v1.DenyDeviceLoginResponse
+	(RegistrationMode)(0),                   // 29: aladdin.identity.v1.RegistrationMode
 }
 var file_aladdin_identity_v1_identity_proto_depIdxs = []int32{
 	2,  // 0: aladdin.identity.v1.LoginRequest.password:type_name -> aladdin.identity.v1.PasswordCredential
 	3,  // 1: aladdin.identity.v1.LoginRequest.token:type_name -> aladdin.identity.v1.TokenCredential
 	6,  // 2: aladdin.identity.v1.GetAuthMethodsResponse.methods:type_name -> aladdin.identity.v1.AuthMethod
-	20, // 3: aladdin.identity.v1.CompleteIdentityBindingResponse.identities:type_name -> aladdin.identity.v1.Identity
-	20, // 4: aladdin.identity.v1.UnbindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
-	20, // 5: aladdin.identity.v1.ListIdentitiesResponse.identities:type_name -> aladdin.identity.v1.Identity
-	0,  // 6: aladdin.identity.v1.PollDeviceLoginResponse.state:type_name -> aladdin.identity.v1.DeviceLoginState
-	1,  // 7: aladdin.identity.v1.IdentityService.Login:input_type -> aladdin.identity.v1.LoginRequest
-	8,  // 8: aladdin.identity.v1.IdentityService.Refresh:input_type -> aladdin.identity.v1.RefreshRequest
-	4,  // 9: aladdin.identity.v1.IdentityService.GetAuthMethods:input_type -> aladdin.identity.v1.GetAuthMethodsRequest
-	10, // 10: aladdin.identity.v1.IdentityService.WhoAmI:input_type -> aladdin.identity.v1.WhoAmIRequest
-	12, // 11: aladdin.identity.v1.IdentityService.GetSessionPermissions:input_type -> aladdin.identity.v1.GetSessionPermissionsRequest
-	16, // 12: aladdin.identity.v1.IdentityService.UnbindIdentity:input_type -> aladdin.identity.v1.UnbindIdentityRequest
-	14, // 13: aladdin.identity.v1.IdentityService.CompleteIdentityBinding:input_type -> aladdin.identity.v1.CompleteIdentityBindingRequest
-	18, // 14: aladdin.identity.v1.IdentityService.ListIdentities:input_type -> aladdin.identity.v1.ListIdentitiesRequest
-	21, // 15: aladdin.identity.v1.IdentityService.StartDeviceLogin:input_type -> aladdin.identity.v1.StartDeviceLoginRequest
-	23, // 16: aladdin.identity.v1.IdentityService.PollDeviceLogin:input_type -> aladdin.identity.v1.PollDeviceLoginRequest
-	25, // 17: aladdin.identity.v1.IdentityService.ApproveDeviceLogin:input_type -> aladdin.identity.v1.ApproveDeviceLoginRequest
-	27, // 18: aladdin.identity.v1.IdentityService.DenyDeviceLogin:input_type -> aladdin.identity.v1.DenyDeviceLoginRequest
-	7,  // 19: aladdin.identity.v1.IdentityService.Login:output_type -> aladdin.identity.v1.LoginResponse
-	9,  // 20: aladdin.identity.v1.IdentityService.Refresh:output_type -> aladdin.identity.v1.RefreshResponse
-	5,  // 21: aladdin.identity.v1.IdentityService.GetAuthMethods:output_type -> aladdin.identity.v1.GetAuthMethodsResponse
-	11, // 22: aladdin.identity.v1.IdentityService.WhoAmI:output_type -> aladdin.identity.v1.WhoAmIResponse
-	13, // 23: aladdin.identity.v1.IdentityService.GetSessionPermissions:output_type -> aladdin.identity.v1.GetSessionPermissionsResponse
-	17, // 24: aladdin.identity.v1.IdentityService.UnbindIdentity:output_type -> aladdin.identity.v1.UnbindIdentityResponse
-	15, // 25: aladdin.identity.v1.IdentityService.CompleteIdentityBinding:output_type -> aladdin.identity.v1.CompleteIdentityBindingResponse
-	19, // 26: aladdin.identity.v1.IdentityService.ListIdentities:output_type -> aladdin.identity.v1.ListIdentitiesResponse
-	22, // 27: aladdin.identity.v1.IdentityService.StartDeviceLogin:output_type -> aladdin.identity.v1.StartDeviceLoginResponse
-	24, // 28: aladdin.identity.v1.IdentityService.PollDeviceLogin:output_type -> aladdin.identity.v1.PollDeviceLoginResponse
-	26, // 29: aladdin.identity.v1.IdentityService.ApproveDeviceLogin:output_type -> aladdin.identity.v1.ApproveDeviceLoginResponse
-	28, // 30: aladdin.identity.v1.IdentityService.DenyDeviceLogin:output_type -> aladdin.identity.v1.DenyDeviceLoginResponse
-	19, // [19:31] is the sub-list for method output_type
-	7,  // [7:19] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	29, // 3: aladdin.identity.v1.GetAuthMethodsResponse.registration_mode:type_name -> aladdin.identity.v1.RegistrationMode
+	20, // 4: aladdin.identity.v1.CompleteIdentityBindingResponse.identities:type_name -> aladdin.identity.v1.Identity
+	20, // 5: aladdin.identity.v1.UnbindIdentityResponse.identities:type_name -> aladdin.identity.v1.Identity
+	20, // 6: aladdin.identity.v1.ListIdentitiesResponse.identities:type_name -> aladdin.identity.v1.Identity
+	0,  // 7: aladdin.identity.v1.PollDeviceLoginResponse.state:type_name -> aladdin.identity.v1.DeviceLoginState
+	1,  // 8: aladdin.identity.v1.IdentityService.Login:input_type -> aladdin.identity.v1.LoginRequest
+	8,  // 9: aladdin.identity.v1.IdentityService.Refresh:input_type -> aladdin.identity.v1.RefreshRequest
+	4,  // 10: aladdin.identity.v1.IdentityService.GetAuthMethods:input_type -> aladdin.identity.v1.GetAuthMethodsRequest
+	10, // 11: aladdin.identity.v1.IdentityService.WhoAmI:input_type -> aladdin.identity.v1.WhoAmIRequest
+	12, // 12: aladdin.identity.v1.IdentityService.GetSessionPermissions:input_type -> aladdin.identity.v1.GetSessionPermissionsRequest
+	16, // 13: aladdin.identity.v1.IdentityService.UnbindIdentity:input_type -> aladdin.identity.v1.UnbindIdentityRequest
+	14, // 14: aladdin.identity.v1.IdentityService.CompleteIdentityBinding:input_type -> aladdin.identity.v1.CompleteIdentityBindingRequest
+	18, // 15: aladdin.identity.v1.IdentityService.ListIdentities:input_type -> aladdin.identity.v1.ListIdentitiesRequest
+	21, // 16: aladdin.identity.v1.IdentityService.StartDeviceLogin:input_type -> aladdin.identity.v1.StartDeviceLoginRequest
+	23, // 17: aladdin.identity.v1.IdentityService.PollDeviceLogin:input_type -> aladdin.identity.v1.PollDeviceLoginRequest
+	25, // 18: aladdin.identity.v1.IdentityService.ApproveDeviceLogin:input_type -> aladdin.identity.v1.ApproveDeviceLoginRequest
+	27, // 19: aladdin.identity.v1.IdentityService.DenyDeviceLogin:input_type -> aladdin.identity.v1.DenyDeviceLoginRequest
+	7,  // 20: aladdin.identity.v1.IdentityService.Login:output_type -> aladdin.identity.v1.LoginResponse
+	9,  // 21: aladdin.identity.v1.IdentityService.Refresh:output_type -> aladdin.identity.v1.RefreshResponse
+	5,  // 22: aladdin.identity.v1.IdentityService.GetAuthMethods:output_type -> aladdin.identity.v1.GetAuthMethodsResponse
+	11, // 23: aladdin.identity.v1.IdentityService.WhoAmI:output_type -> aladdin.identity.v1.WhoAmIResponse
+	13, // 24: aladdin.identity.v1.IdentityService.GetSessionPermissions:output_type -> aladdin.identity.v1.GetSessionPermissionsResponse
+	17, // 25: aladdin.identity.v1.IdentityService.UnbindIdentity:output_type -> aladdin.identity.v1.UnbindIdentityResponse
+	15, // 26: aladdin.identity.v1.IdentityService.CompleteIdentityBinding:output_type -> aladdin.identity.v1.CompleteIdentityBindingResponse
+	19, // 27: aladdin.identity.v1.IdentityService.ListIdentities:output_type -> aladdin.identity.v1.ListIdentitiesResponse
+	22, // 28: aladdin.identity.v1.IdentityService.StartDeviceLogin:output_type -> aladdin.identity.v1.StartDeviceLoginResponse
+	24, // 29: aladdin.identity.v1.IdentityService.PollDeviceLogin:output_type -> aladdin.identity.v1.PollDeviceLoginResponse
+	26, // 30: aladdin.identity.v1.IdentityService.ApproveDeviceLogin:output_type -> aladdin.identity.v1.ApproveDeviceLoginResponse
+	28, // 31: aladdin.identity.v1.IdentityService.DenyDeviceLogin:output_type -> aladdin.identity.v1.DenyDeviceLoginResponse
+	20, // [20:32] is the sub-list for method output_type
+	8,  // [8:20] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_aladdin_identity_v1_identity_proto_init() }
@@ -1705,6 +1723,7 @@ func file_aladdin_identity_v1_identity_proto_init() {
 	if File_aladdin_identity_v1_identity_proto != nil {
 		return
 	}
+	file_aladdin_identity_v1_registration_proto_init()
 	file_aladdin_identity_v1_identity_proto_msgTypes[0].OneofWrappers = []any{
 		(*LoginRequest_Password)(nil),
 		(*LoginRequest_Token)(nil),
