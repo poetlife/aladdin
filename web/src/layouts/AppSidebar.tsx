@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { usePermissionSet, useSession } from '../auth'
 import type { PermissionCode } from '../gen/permission-codes'
@@ -178,7 +178,7 @@ export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps):
     // 三段纵向排布：品牌区固定，导航占满剩余高度，账号区钉底。
     // 导航自己滚动，账号区因此始终留在视口内。
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Brand collapsed={collapsed} onClose={onClose} />
+      <Brand collapsed={collapsed} onNavigate={onNavigate} onClose={onClose} />
       {/* 不传 inlineCollapsed：在 Sider 里它自己读 SiderContext 跟着收起，
           在抽屉里那份内容被 portal 到 SiderContext 之外，自然就是展开的——
           正是我们要的，不用手动分叉。
@@ -205,12 +205,20 @@ export function AppSidebar({ collapsed, onNavigate, onClose }: AppSidebarProps):
  *
  * 高度取自 `controlHeight * 2`——与 antd 的页头默认高度同一个算式，
  * 于是品牌区与页头始终齐平，中间那条分隔线是连续的一根。
+ *
+ * 标识与站名连着一个指向 `/` 的链接：回主页是**外壳**自带的一件事，不该只从
+ * 导航里那一项进——窄屏下导航还在抽屉里，要先展开才点得到（见 docs/design/web/README.md
+ * 的「外壳」）。用 `Link` 而不是给这一行挂 `onClick`：它才是"这是个链接"这件事
+ * 在无障碍与中键新开标签页上的表达。跳转本身由 `Link` 做，`onNavigate` 只管
+ * 跳完之后通知外壳（窄屏下就是收起抽屉）。
  */
 function Brand({
   collapsed,
+  onNavigate,
   onClose,
 }: {
   collapsed: boolean
+  onNavigate?: (() => void) | undefined
   onClose?: (() => void) | undefined
 }): React.ReactNode {
   const { token } = theme.useToken()
@@ -221,24 +229,39 @@ function Brand({
         height: token.controlHeight * 2,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'flex-start',
         gap: 8,
         paddingInline: collapsed ? 0 : 20,
         borderBottom: `1px solid ${token.colorBorderSecondary}`,
         overflow: 'hidden',
       }}
     >
-      {/* 标识自身带明暗两版，因此这里不再给它上色——上色会把渐变整个盖掉
-          （那是 lucide 那种单色图标的做法，见 docs/design/web/brand/README.md）。
-          收起成导轨时旁边没有文字，标识就成了这一行唯一说明"这是哪个站"的东西，
-          名字这时走 alt。
+      {/* 链接吃掉整行剩下的宽度：可点的区域因此是标识加站名这一片，
+          而不是只有那几个字。对齐仍在链接上做——它是这一行里唯一的弹性子项。 */}
+      <Link
+        to="/"
+        onClick={() => onNavigate?.()}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          gap: 8,
+          flex: 1,
+          minWidth: 0,
+          color: token.colorText,
+        }}
+      >
+        {/* 标识自身带明暗两版，因此这里不再给它上色——上色会把渐变整个盖掉
+            （那是 lucide 那种单色图标的做法，见 docs/design/web/brand/README.md）。
+            收起成导轨时旁边没有文字，标识就成了这一行唯一说明"这是哪个站"的东西，
+            名字这时走 alt。
 
-          22 而不是导航图标的 16：标识是**面**，导航图标是**线**，同样边长下面比线
-          占的视觉重量小，等大看着就偏小。 */}
-      <BrandMark size={22} label={collapsed ? '阿拉丁神灯' : ''} />
-      {!collapsed && (
-        <span style={{ fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap' }}>阿拉丁神灯</span>
-      )}
+            22 而不是导航图标的 16：标识是**面**，导航图标是**线**，同样边长下面比线
+            占的视觉重量小，等大看着就偏小。 */}
+        <BrandMark size={22} label={collapsed ? '阿拉丁神灯' : ''} />
+        {!collapsed && (
+          <span style={{ fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap' }}>阿拉丁神灯</span>
+        )}
+      </Link>
       {/* 抽屉没有页头也没有遮罩之外的收起入口，关掉它的按钮就落在品牌行这一端。
           宽屏不需要它：那时开关在页头，侧边栏本来就能收成导轨。 */}
       {onClose !== undefined && (
@@ -247,7 +270,7 @@ function Brand({
           aria-label="关闭导航"
           icon={<X size={18} />}
           onClick={onClose}
-          style={{ marginLeft: 'auto', flexShrink: 0 }}
+          style={{ flexShrink: 0 }}
         />
       )}
     </div>

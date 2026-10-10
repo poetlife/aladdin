@@ -144,6 +144,15 @@ async function clickDrawerNav(label: string): Promise<void> {
   })
 }
 
+/** 按下品牌区那个指向概览的链接。`scope` 决定取侧边栏那一份还是抽屉那一份。 */
+async function clickBrand(scope: string): Promise<void> {
+  const link = document.querySelector(`${scope} a[href="/"]`)
+  expect(link, `${scope} 里没有品牌区链接`).not.toBeNull()
+  await act(async () => {
+    link?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
 /**
  * 打开底部账号区的菜单，返回各菜单项的文字。
  *
@@ -234,6 +243,30 @@ describe('外壳的宽窄两态', () => {
     await clickByLabel(container, '打开导航')
 
     await clickDrawerNav('概览')
+
+    expect(container.textContent).toContain('概览内容')
+    expect(document.querySelector(DRAWER_OPEN)).toBeNull()
+  })
+
+  // 品牌区是回概览的另一条路。它不经过导航，因此窄屏下不必先展开抽屉——
+  // 那正是它存在的理由（导航里那一项要先开抽屉才点得到）。
+  it('点品牌区回到概览', async () => {
+    installMatchMedia(false)
+
+    const container = await renderShell('/profile')
+
+    await clickBrand(SIDER)
+
+    expect(container.textContent).toContain('概览内容')
+  })
+
+  it('窄屏下点品牌区回概览，并收起抽屉', async () => {
+    installMatchMedia(true)
+
+    const container = await renderShell('/profile')
+    await clickByLabel(container, '打开导航')
+
+    await clickBrand('.ant-drawer')
 
     expect(container.textContent).toContain('概览内容')
     expect(document.querySelector(DRAWER_OPEN)).toBeNull()
