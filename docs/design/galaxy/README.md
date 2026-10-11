@@ -16,6 +16,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | 图片、视频、音频放哪 | **资产库**（[asset-library.md](asset-library.md)） |
 | 二进制、zip 包这一类发布物放哪 | **工程附件**（[attachments.md](attachments.md)） |
 | 写下的东西怎么变成别人能看的站点 | **内容槽与文件组**（[site-model.md](site-model.md)）、**编写与预览**（[authoring.md](authoring.md)）、**发布**（[publication.md](publication.md)） |
+| 用户在自己的构建与自己的页面里怎么用平台能力 | **创作与发布 SDK**（[sdk.md](sdk.md)） |
 
 成功的衡量标准：
 
@@ -219,6 +220,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | 工程附件 | 类型不限的发布物：上传、配额、强制下载的响应头、与资产的边界 | [attachments.md](attachments.md) |
 | 编写与预览 | 源侧记号（`asset://` 与文档间链接）、这一页的形态（预览与状态为主体、源码只读）、自动校验、预览的沙箱隔离 | [authoring.md](authoring.md) |
 | 发布 | 校验规则、改写、上架、对外地址、可见性与撤回 | [publication.md](publication.md) |
+| 创作与发布 SDK | 用户在自己的构建与自己的页面里的接入面：构建期把标准写法解析成文件组条目、可编程的原子操作调用、运行期取凭证与取内容 | [sdk.md](sdk.md) |
 
 ## 依赖关系
 
@@ -236,6 +238,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | 前端权限 | galaxy 页面的入口按 `galaxy.*` 权限码裁剪（见 [../rbac/frontend-permissions.md](../rbac/frontend-permissions.md)） |
 | Web 界面 | 呈现机制见 [../web/README.md](../web/README.md)；取舍见 [../uiux/README.md](../uiux/README.md) |
 | 命令行 | 原子命令到各能力的映射、文件组的输入输出、命令行侧的直传见 [cli.md](cli.md) |
+| 创作与发布 SDK | 用户侧的接入面，消费本模块已有的能力而**不新增一条判定或一条取字节的路**（见 [sdk.md](sdk.md)） |
 | 可观测性 | 发布各阶段留痕，见 [publication.md](publication.md) 与 [../../observability.md](../../observability.md) |
 
 ## 可验证性与长程执行

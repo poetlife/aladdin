@@ -1,15 +1,32 @@
 import { describe, expect, it } from 'vitest'
 
-import { FRAME_CHANNEL, FRAME_CHANNEL_VERSION, FRAME_IMAGE_PREVIEW_TYPE } from '../../galaxy/frame-channel'
+import {
+  FRAME_CHANNEL,
+  FRAME_CHANNEL_VERSION,
+  FRAME_CONTENT_CREDENTIAL_REQUEST_TYPE,
+  FRAME_CONTENT_CREDENTIAL_TYPE,
+  FRAME_IMAGE_PREVIEW_TYPE,
+} from '../../galaxy/frame-channel'
 import { fillTokens } from './frame-tokens'
 
 describe('章节源里的占位符', () => {
   // 通道名、协议版本、消息类型都是对外契约，取值只有 frame-channel.ts 一处。
   // 正文里手抄一份的表现是协议改了而文档继续说旧的——它是对外契约，说错话比看不了更糟。
-  it('三个取值都取自实现里那一份', () => {
-    const filled = fillTokens('{{frame.channel}} {{frame.version}} {{frame.image-preview}}')
+  it('每一个取值都取自实现里那一份', () => {
+    const filled = fillTokens(
+      '{{frame.channel}} {{frame.version}} {{frame.image-preview}}' +
+        ' {{frame.content-credential-request}} {{frame.content-credential}}',
+    )
 
-    expect(filled).toBe(`${FRAME_CHANNEL} ${FRAME_CHANNEL_VERSION} ${FRAME_IMAGE_PREVIEW_TYPE}`)
+    expect(filled).toBe(
+      [
+        FRAME_CHANNEL,
+        FRAME_CHANNEL_VERSION,
+        FRAME_IMAGE_PREVIEW_TYPE,
+        FRAME_CONTENT_CREDENTIAL_REQUEST_TYPE,
+        FRAME_CONTENT_CREDENTIAL_TYPE,
+      ].join(' '),
+    )
   })
 
   // 留着不认识的记号而没人报错，就是"手抄一份"换了个位置发生：页面上会出现

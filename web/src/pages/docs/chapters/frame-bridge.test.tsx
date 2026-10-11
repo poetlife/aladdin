@@ -3,7 +3,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { FRAME_CHANNEL, FRAME_CHANNEL_VERSION, FRAME_IMAGE_PREVIEW_TYPE } from '../../galaxy/frame-channel'
+import {
+  FRAME_CHANNEL,
+  FRAME_CHANNEL_VERSION,
+  FRAME_CONTENT_CREDENTIAL_REQUEST_TYPE,
+  FRAME_CONTENT_CREDENTIAL_TYPE,
+  FRAME_IMAGE_PREVIEW_TYPE,
+} from '../../galaxy/frame-channel'
 import { ChapterPage } from '../ChapterPage'
 import { chapterBySlug } from './manifest'
 
@@ -75,14 +81,16 @@ describe('页面与外壳的通道参考页', () => {
     }
   })
 
-  // 方向只有两个，而"外壳 → 文档页"在版本 1 里是空的——这一条不写，作者会以为
-  // 自己能收到外壳的消息。
-  it('列出两个方向，并写明反向未定义', async () => {
+  // 方向有三个条目、两个方向，而**两个方向都有定义**——只写页面发出去的那一条，
+  // 作者会以为收不到外壳的消息；写了又不说清"拿不到也回一条"，作者会把它当成异常。
+  it('列出两个方向上的三种消息', async () => {
     const text = (await renderPage()).textContent ?? ''
 
     expect(text).toContain('文档页 → 外壳')
-    expect(text).toContain('外壳 → 文档页')
-    expect(text).toContain('未定义')
+    expect(text).toContain('页面 → 外壳')
+    expect(text).toContain('外壳 → 页面')
+    expect(text).toContain(FRAME_CONTENT_CREDENTIAL_REQUEST_TYPE)
+    expect(text).toContain(FRAME_CONTENT_CREDENTIAL_TYPE)
   })
 
   // 五条处理规则就是这条通道的边界。少一条，作者就会以为它比实际更能干。
@@ -96,13 +104,15 @@ describe('页面与外壳的通道参考页', () => {
     expect(text).toContain('收发双方丢弃通道名或版本不匹配的消息')
   })
 
-  // 三处最容易误解的地方：以为站点槽也有、以为直连发布域也能弹、以为消息能带代码。
+  // 四处最容易误解的地方：以为站点槽天生就有、以为直连发布域也能弹、以为凭证就是
+  // 外壳的登录凭证、以为消息能带代码。
   it('写清适用范围', async () => {
     const text = (await renderPage()).textContent ?? ''
 
-    expect(text).toContain('本通道只用于 docs 槽的页面')
+    expect(text).toContain('图片预览用于 docs 槽的页面')
     expect(text).toContain('直接打开发布域地址时没有外壳')
-    expect(text).toContain('site 槽的页面没有本通道')
+    expect(text).toContain('site 槽的页面默认没有本通道')
+    expect(text).toContain('这份凭证不是外壳自己的登录凭证')
     expect(text).toContain('消息只包含数据，不包含代码')
   })
 

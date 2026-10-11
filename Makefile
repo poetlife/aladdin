@@ -109,12 +109,14 @@ gen: ## 由 proto 与权限目录生成两端代码（唯一生成入口）
 check-gen: ## 校验生成产物与源定义同步（CI 用）
 	buf generate
 	go run ./internal/tools/permissiongen -check
-	@# buf 生成是幂等的：重新生成后若 api/gen 或 web/src/gen 出现改动，
-	@# 说明提交进去的生成产物与 proto 不同步（有人手改过，或忘了 make gen）。
+	@# buf 生成是幂等的：重新生成后若 api/gen、web/src/gen 或 sdk/src/gen 出现
+	@# 改动，说明提交进去的生成产物与 proto 不同步（有人手改过，或忘了 make gen）。
+	@# sdk/src/gen 是同一次 buf generate 的另一份派生物：sdk 是独立发布的包，不能
+	@# import 主应用内部的路径，因此它自己那一份（见 buf.gen.yaml）。
 	@if git rev-parse --git-dir >/dev/null 2>&1; then \
-		if ! git diff --quiet -- api/gen web/src/gen; then \
+		if ! git diff --quiet -- api/gen web/src/gen sdk/src/gen; then \
 			echo "生成产物与 proto 不同步，请运行 make gen 并提交结果："; \
-			git diff --stat -- api/gen web/src/gen; \
+			git diff --stat -- api/gen web/src/gen sdk/src/gen; \
 			exit 1; \
 		fi; \
 		echo "生成产物与 proto 同步"; \
@@ -175,6 +177,18 @@ web-build: ## 构建前端
 	@# （见文件开头的说明）。缺省时前端退化成 dev，与后端的缺省值一样诚实。
 	cd web && $(WEB_BUILD_ENV) npm run build
 
+.PHONY: sdk-ci
+sdk-ci: ## 按 lockfile 安装 SDK 依赖（CI 用，与 sdk-install 的区别是不更新 lockfile）
+	cd sdk && npm ci
+
+.PHONY: sdk-install
+sdk-install: ## 安装 SDK 依赖
+	cd sdk && npm install
+
+.PHONY: sdk-build
+sdk-build: ## 构建 SDK（对外发布的 TS 包）
+	cd sdk && npm run build
+
 .PHONY: release-build
 release-build: web-build ## 产出发布产物到 dist/（跨平台二进制、前端包、校验和）
 	@rm -rf $(DIST_DIR) && mkdir -p $(DIST_DIR)
@@ -215,6 +229,13 @@ test: ## 运行全部 Go 测试（含竞态检测与生成同步校验）
 .PHONY: test-web
 test-web: ## 运行前端测试
 	cd web && npm run test
+
+.PHONY: test-sdk
+test-sdk: ## 运行 SDK 的类型检查与测试
+	@# 类型检查与测试同一个目标：sdk 是对外发布的包，"它编译得过"与"它跑得对"
+	@# 是同一个门禁的两半，分成两个目标只会让人只跑其中一个。
+	cd sdk && npm run typecheck
+	cd sdk && npm run test
 
 .PHONY: test-e2e
 test-e2e: ## 运行端到端测试（测试自带服务端，随机端口，可并行）

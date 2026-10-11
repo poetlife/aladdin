@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, Flex, Spin, Typography, theme } from 'antd'
 
 import { LoadingHint } from '../../ui/LoadingHint'
-import { parseFrameImagePreview, type FrameImagePreview } from './frame-channel'
+import { parseFrameImagePreview, isFrameContentCredentialRequest, frameContentCredentialAnswer, type FrameImagePreview } from './frame-channel'
 import { FrameImageLightbox } from './FrameImageLightbox'
 
 /**
@@ -155,6 +155,13 @@ export function SandboxFrame({ url, title, height = 420, onSettled }: SandboxFra
       const request = parseFrameImagePreview(event.data)
       if (request !== null) {
         setPreview(request)
+        return
+      }
+      if (isFrameContentCredentialRequest(event.data)) {
+        // **回一条明确的否定，而不是不回**：不回的那一侧只表现为一次超时，
+        // 而与"网络慢"分不开。取内容用的凭证不是主站的会话凭证，它的签发属于
+        // 内容保密那一条（#87）的服务端一半——在那之前这里是它唯一的实现。
+        frame.current?.contentWindow?.postMessage(frameContentCredentialAnswer(), '*')
       }
     }
     window.addEventListener('message', onMessage)

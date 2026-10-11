@@ -371,3 +371,82 @@ describe('接入桥（文档页 → 宿主）', () => {
     expect(lightboxShows('https://bucket.example.com/b.png')).toBe(false)
   })
 })
+
+/** 一条约定的取内容凭证请求。`source` 的判据与上面那一条相同。 */
+function contentCredentialRequest(source: MessageEventSource | null): MessageEvent {
+  return new MessageEvent('message', {
+    data: {
+      channel: FRAME_CHANNEL,
+      version: FRAME_CHANNEL_VERSION,
+      type: 'content-credential-request',
+      payload: {},
+    },
+    source,
+  })
+}
+
+describe('接入桥（页面 → 宿主 → 页面）：取内容用的凭证', () => {
+  /**
+   * **回一条明确的否定，而不是不回。** 不回的那一侧只表现为页面等一次超时，
+   * 而与"网络慢"分不开——用户内容里的运行期包因此分不出"这个部署不给凭证"
+   * 与"宿主没理我"（见 sdk/src/runtime/credentials.ts）。
+   */
+  it('页面来要凭证时回一条明确的否定', async () => {
+    const container = await renderFrame('https://pub.example.com/g/prj_x/index.html')
+    const frame = iframe(container)
+    const posted: unknown[] = []
+    vi.spyOn(frame.contentWindow as Window, 'postMessage').mockImplementation(((
+      message: unknown,
+    ) => {
+      posted.push(message)
+    }) as never)
+
+    await act(async () => {
+      window.dispatchEvent(contentCredentialRequest(frame.contentWindow))
+    })
+
+    expect(posted).toHaveLength(1)
+    expect(posted[0]).toMatchObject({
+      channel: FRAME_CHANNEL,
+      version: FRAME_CHANNEL_VERSION,
+      type: 'content-credential',
+    })
+  })
+
+  // **宿主不下发主站的会话凭证。** 这一页跑在不透明源的沙箱里、里面是用户自己的
+  // 脚本；把会话交进去，等于让用户的内容可以替这位访客调主站的接口——那正是沙箱
+  // 属性要挡住的事。这条断言把"现在拿不到"与"将来换成窄凭证"之间那条不变的边界
+  // 钉住：无论何时，这里都不可能回主站会话那一份。
+  it('回的那一份里没有主站会话凭证', async () => {
+    const container = await renderFrame('https://pub.example.com/g/prj_x/index.html')
+    const frame = iframe(container)
+    const posted: { payload?: { credential?: string } }[] = []
+    vi.spyOn(frame.contentWindow as Window, 'postMessage').mockImplementation(((
+      message: { payload?: { credential?: string } },
+    ) => {
+      posted.push(message)
+    }) as never)
+
+    await act(async () => {
+      window.dispatchEvent(contentCredentialRequest(frame.contentWindow))
+    })
+
+    expect(posted[0]?.payload?.credential).toBe('')
+  })
+
+  it('来自别处的凭证请求不回', async () => {
+    const container = await renderFrame('https://pub.example.com/g/prj_x/index.html')
+    const posted: unknown[] = []
+    vi.spyOn(iframe(container).contentWindow as Window, 'postMessage').mockImplementation(((
+      message: unknown,
+    ) => {
+      posted.push(message)
+    }) as never)
+
+    await act(async () => {
+      window.dispatchEvent(contentCredentialRequest(window))
+    })
+
+    expect(posted).toEqual([])
+  })
+})

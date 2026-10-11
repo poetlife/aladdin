@@ -19,6 +19,14 @@ web/node_modules/.vite/
 # API 文档页的 Redoc 运行时：由 npm run sync-redoc 从 node_modules 复制（predev/prebuild）
 web/public/api-docs/redoc.standalone.js
 
+# SDK（对外发布的 TS 包，见 docs/design/galaxy/sdk.md）
+# sdk/src/gen/ **不在此列**：它是 proto 的派生物，与 web/src/gen 一样要进版本库，
+# 并由 make check-gen 守着它与 proto 同步。
+sdk/node_modules/
+sdk/dist/
+sdk/*.tsbuildinfo
+sdk/node_modules/.vite/
+
 # 本地配置与凭证
 # config.yml 是团队共享的，可以提交；下面这些是个人本机改动与密钥，不可提交。
 .env

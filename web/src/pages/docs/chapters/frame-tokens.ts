@@ -1,6 +1,8 @@
 import {
   FRAME_CHANNEL,
   FRAME_CHANNEL_VERSION,
+  FRAME_CONTENT_CREDENTIAL_REQUEST_TYPE,
+  FRAME_CONTENT_CREDENTIAL_TYPE,
   FRAME_IMAGE_PREVIEW_TYPE,
 } from '../../galaxy/frame-channel'
 
@@ -17,6 +19,8 @@ const TOKENS: ReadonlyMap<string, string> = new Map([
   ['frame.channel', FRAME_CHANNEL],
   ['frame.version', String(FRAME_CHANNEL_VERSION)],
   ['frame.image-preview', FRAME_IMAGE_PREVIEW_TYPE],
+  ['frame.content-credential-request', FRAME_CONTENT_CREDENTIAL_REQUEST_TYPE],
+  ['frame.content-credential', FRAME_CONTENT_CREDENTIAL_TYPE],
 ])
 
 /** 记号的形状。名字里只允许小写字母、数字、点与短横，免得把正文里的其它花括号卷进来。 */
