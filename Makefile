@@ -202,10 +202,10 @@ sdk-check-package: ## 检查发布包里有什么（入口产物、类型声明�
 # ——那是一次有意预支，代价见 docs/release.md。
 SDK_VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
-# 账号开了 2FA 时，注册表对"令牌"这条路回的是 **E403**，而 npm 只在 **EOTP / E401**
-# 时才提示输口令（见 npm 的 lib/utils/auth.js，otplease）——它于是永远不问，只把这次
-# 请求判死。所以口令要自己递过去：`make sdk-publish SDK_OTP=123456`。
-# 另一条路是预配一把勾了 Bypass 2FA 的 granular token，那样连这一步都不需要。
+# 发布要 2FA：npm 的规矩是"发布者要有 2FA，或一把开了 Bypass 2FA 的 granular token"。
+# 账号没开 2FA 时注册表回 **E403**，而 npm 只在 **EOTP / E401** 时才提示输口令
+# （见 npm 的 lib/utils/auth.js，otplease）——它不会替你问。开好 2FA 之后若 npm 仍不
+# 提示而手上正好有码，就自己递过去：`make sdk-publish SDK_OTP=123456`。
 SDK_OTP_ARG = $(if $(SDK_OTP),--otp=$(SDK_OTP),)
 
 # 两条前置守卫：知道版本号（HEAD 在 tag 上，或显式预支），以及工作区干净

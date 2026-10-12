@@ -115,7 +115,7 @@ grep -aqF -- "<注入值>" dist/aladdin || 中止
 - **版本只有一个来源：发布 tag。** `make sdk-publish` 缺省取 HEAD 上那个 tag（`git describe --tags --exact-match`），**要求 HEAD 就在 tag 上**——这时包里的字节与那个 tag 逐字一致，"SDK 版本 = 服务端版本"才不是一句空话。仓库 [sdk/package.json](../sdk/package.json) 里那个值是占位（`0.0.0-development`），发布不改它：发完命令自己把改写过的两个文件还原回去。
 - **预支一个号是有代价的。** tag 还没打但就是要用它的号（第一个正式版必然如此）：`make sdk-publish SDK_VERSION=v0.7.3`。**那个号从此废了**——npm 不允许重发同一个版本，若之后 v0.7.3 的 tag 没有恰好落在这次发布的内容上，那个 tag 对应的包就发不出来，只能跳到下一个号。所以预支之后要尽快把 tag 打在同一份内容上。
 - **两条守卫**：工作区必须干净（发出去的字节要能对应到一次提交）、npm 上已有该版本就跳过（幂等，重跑不报红）。
-- **账号开了 2FA 时，口令要自己递过去**：`make sdk-publish SDK_VERSION=v0.7.3 SDK_OTP=123456`。注册表对"令牌"这条路回的是 **E403**，而 npm 只在 **EOTP / E401** 时才提示输口令——它不会替你问，直接把这次请求判死。另一条路是预配一把勾了 **Bypass 2FA** 的 granular token，那样连这一步都不需要。两种情况的判据与实测见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md)。
+- **账号必须先开 2FA，否则发不出去**。npm 的规矩：发布者要有 2FA，或一把开了 **Bypass 2FA** 的 granular token。没开的时候注册表回的是 **E403**，而 npm 只在 **EOTP / E401** 时才提示输口令——它不会替你问，也不会告诉你"缺的是账号上的那一步"。两条路：在浏览器里把 2FA 开起来（之后发布时 npm 会按你的 2FA 方式提示），或建一把 Bypass 2FA 的 granular token 写进 `~/.npmrc`（此后连口令都不用输）。细节与实测见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md)。
 - **包里有什么由 `files` 与 `prepack` 决定**，发布前自动跑一遍打包检查（`make sdk-check-package`，门禁里也跑）。**`dist/` 不进版本库**，而 `npm pack` 在缺产物时**不报错**——它只是安静地打出一个只含 `package.json` 的包。
 - **许可证正文是根 [LICENSE](../LICENSE) 的一份副本**（`sdk/LICENSE`）：npm 只收包目录里的许可证文件，收不到包外的。改根许可证时要同步这一份。
 - **一次性前置**（不在仓库里）：npm org 与发布权限。仓库这边的第一次发布用 `SDK_VERSION=` 预支号，之后每次正常发版都发生在 tag 之后。
@@ -183,7 +183,7 @@ cd sdk && npm pack --dry-run
 ```bash
 make sdk-publish                          # 发完 tag 之后
 make sdk-publish SDK_VERSION=v0.7.3       # 预支一个号（第一个正式版）
-make sdk-publish SDK_VERSION=v0.7.3 SDK_OTP=123456   # 账号开了 2FA 时，口令一起递过去
+make sdk-publish SDK_VERSION=v0.7.3 SDK_OTP=123456   # 只有当 npm 没提示、你手上又有码时才用
 ```
 
 然后打 tag 并推送：
@@ -206,5 +206,5 @@ git tag v0.1.0 && git push origin v0.1.0
 | `make sdk-publish` 报"工作区不干净" | 那是守卫，不是故障：先提交，再发（发布的内容要能对应到一次提交） |
 | `make sdk-publish` 报"HEAD 不在任何 tag 上" | 位置不对：要么先把 tag 打在这个提交上再发，要么用 `SDK_VERSION=vX.Y.Z` 显式预支一个号 |
 | `make sdk-publish` 报认证失败（401 / ENEEDAUTH） | 本机没有凭证：`npm login` |
-| `make sdk-publish` 报 403 且**没有**提示输 OTP | 账号开了 2FA，而注册表对"令牌"这条路回的是 E403、npm 又只在 EOTP / E401 时才提示口令——它不会替你问。三条路：`SDK_OTP=<码>` 把口令直接递过去（最省事）、给 granular token 勾上 Bypass 2FA（此后不问口令）、或确认那台机器上用的是**新**token。判据与实测见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md) |
+| `make sdk-publish` 报 403 且**没有**提示输 OTP | 账号没开 2FA（`npm profile get` 的 `tfa` 是 `false`）：npm 要求发布者有 2FA 或一把 Bypass 2FA 的 token，而注册表回的是 E403、npm 只在 EOTP / E401 时才提示口令，于是它不问也不说缺什么。先把 2FA 开起来（浏览器里），或建一把 Bypass 2FA 的 granular token。判据与实测见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md) |
 | npm 上出现了两个版本、而 tag 只有一个 | 预支号时把号发重了：那个 tag 的内容发不出来（npm 不允许重发同一版本），只能跳到下一个号 |
