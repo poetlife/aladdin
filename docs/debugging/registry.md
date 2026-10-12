@@ -20,6 +20,7 @@
 | 感觉 CI 越来越慢，每次推送要等 4 分钟 | 不是变慢（近 10 次 212s 对更早 9 次 206s），是门禁九个步骤串行在同一个 job 里，总时长等于相加；`make test`(72s) 与前端三步(52s) 之间没有依赖 | [2026-10-07-ci-gate-serial-steps.md](records/2026-10-07-ci-gate-serial-steps.md) |
 | 暗色主题下 Google 登录按钮**四周一圈白框**（按钮自己是对的：暗底白字），亮色下看不见。**历史条目**：现象已随那个第三方控件一起消失 | Chrome 对"暗色页面里的跨源 iframe"有一条可读性兜底：iframe 的文档没声明支持暗色时，就给它的画布刷一层不透明白底。GIS 把按钮画在一个比可见按钮大一圈的跨源 iframe 里，那层白就从热区露出来。**收场不是修这个现象，而是去掉前提**：Google 渠道改成了授权码重定向型，登录入口变成本站自己的按钮，页面里不再有第三方脚本与 iframe | [2026-10-07-google-button-white-ring-in-dark-mode.md](records/2026-10-07-google-button-white-ring-in-dark-mode.md) |
 | Google 登录按钮的圆角、字号不受本站控制（站点统一成 8px 没生效），页面上**找不到 `[role="button"]`**。**历史条目**：同上一行 | 第三方控件整个画在跨源 iframe 里时，圆角与字号都是提供方画的：直接盖样式跨源够不着，**按盒子裁也只会切断它自己的描边**。收场同上——不去遮、不去裁，把那个嵌入件整体去掉 | [2026-10-07-google-button-white-ring-in-dark-mode.md](records/2026-10-07-google-button-white-ring-in-dark-mode.md) |
+| `npm publish` 报 403 要 2FA，却**连 OTP 都不问**（账号已登录、org 是 owner、包也打好了） | 本机 `~/.npmrc` 里那把是 granular access token 且没开 Bypass 2FA：账号开了 2FA 时这种凭证直接拒。"问了口令没输"是缺口令，"压根没问"是缺权限——两者不是同一件事 | [2026-10-12-npm-publish-403-without-otp-prompt.md](records/2026-10-12-npm-publish-403-without-otp-prompt.md) |
 
 ---
 

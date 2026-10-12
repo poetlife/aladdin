@@ -203,5 +203,6 @@ git tag v0.1.0 && git push origin v0.1.0
 | npm 上出现了 `0.0.0-development`，或一个几 KB 的空包 | 版本取自 tag 那一步没生效，或包在没有构建产物的情况下被打包。两者都有守卫（`make sdk-publish` 的版本来源、打包检查），看日志里哪一条没跑到——`npm publish` 自己不会为此报错 |
 | `make sdk-publish` 报"工作区不干净" | 那是守卫，不是故障：先提交，再发（发布的内容要能对应到一次提交） |
 | `make sdk-publish` 报"HEAD 不在任何 tag 上" | 位置不对：要么先把 tag 打在这个提交上再发，要么用 `SDK_VERSION=vX.Y.Z` 显式预支一个号 |
-| `make sdk-publish` 报认证失败（401 / ENEEDAUTH） | 本机 npm 登录态（`npm whoami`），以及这个账号在 `poetlife` 这个 org 里有没有发布权限 |
+| `make sdk-publish` 报认证失败（401 / ENEEDAUTH） | 本机没有凭证：`npm login` |
+| `make sdk-publish` 报 403 且**没有**提示输 OTP | 本机 `~/.npmrc` 里那把是 **granular access token**，而它没开 **Bypass 2FA**——账号开了 2FA 时，这种凭证连 OTP 都不问就直接拒。两条路：给这把 token 勾上 Bypass 2FA（一次设置，此后不问 OTP），或改用 `npm login` 的会话凭证（每次发布提示输 OTP，且会替换掉 `~/.npmrc` 里的 token） |
 | npm 上出现了两个版本、而 tag 只有一个 | 预支号时把号发重了：那个 tag 的内容发不出来（npm 不允许重发同一版本），只能跳到下一个号 |
