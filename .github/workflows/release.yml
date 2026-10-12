@@ -1,8 +1,12 @@
 # 发布流水线：推送 vX.Y.Z tag 时触发。
 #
-# 顺序是刻意的：validate → gate → build → publish → prune。
+# 顺序是刻意的：validate → gate → build → publish → publish-npm → prune。
 # 门禁在构建之前，失败则不产出任何东西——宁可没有 Release，也不要半个。
 # 完整说明见 docs/release.md。
+#
+# SDK 那个包也是在这里发的（`publish-npm`）：它排在 Release 之后，走 npm 的
+# Trusted Publishing，因此仓库里没有 npm 的长期 token、也不需要谁去输一次性口令。
+# 本地的 `make sdk-publish` 是**应急**（热修、或这次流水线没发成），不是主路。
 
 name: release
 
@@ -150,6 +154,100 @@ jobs:
             --title "${GITHUB_REF_NAME}" \
             --generate-notes
 
+  publish-npm:
+    name: 发布 npm 包
+    # 排在 Release 之后：npm 的版本**发出去就撤不回来**，因此让它发生在"这次发布
+    # 确实成立"之后——宁可出现"有 Release、npm 上还没有"，也不要反过来的那种。
+    # 真的落在中间时重跑这个 job 即可补齐（它是幂等的，见下）。
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # npm 的 Trusted Publishing 走 OIDC：仓库里因此**没有 npm 的长期 token**，
+      # 也没有一个能长期拿来发版的 secret 可以被读出来；provenance 由它自动生成。
+      # npm 侧要配一次（包 → Settings → Trusted Publisher），见 docs/release.md。
+      id-token: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: sdk/package-lock.json
+          # 这一行同时写出 .npmrc：registry 指向公共源。Trusted Publishing 认的
+          # 是这个 registry；少了它 npm 会按 runner 上的默认配置去问。
+          registry-url: https://registry.npmjs.org
+
+      - name: 安装 SDK 依赖
+        run: make sdk-ci
+
+      - name: 确认 npm 够新
+        # Trusted Publishing 要 npm ≥ 11.5.1。基础镜像轮换时，这是"某天起发布
+        # 突然失败"的典型来源，因此显式断言并把话说清楚（与门禁里断言
+        # golangci-lint 存在是同一条理由：静默降级等于没有这道门）。
+        run: |
+          set -euo pipefail
+          current=$(npm --version)
+          echo "npm ${current}"
+          node -e '
+            const need = [11, 5, 1]
+            const got = process.argv[1].split(".").map(Number)
+            for (let i = 0; i < need.length; i++) {
+              if (got[i] > need[i]) process.exit(0)
+              if (got[i] < need[i]) {
+                console.error(`Trusted Publishing 需要 npm ≥ ${need.join(".")}，当前 ${process.argv[1]}`)
+                process.exit(1)
+              }
+            }
+          ' "${current}"
+
+      - name: SDK 类型检查与测试
+        run: make test-sdk
+
+      # 版本只有一个来源：这个 tag。仓库 sdk/package.json 里那个值是占位
+      # （0.0.0-development），在这里覆写它——**不维护第二处版本号**，
+      # 也不允许"包里的版本"与"发布它的 tag"各说各的（见 docs/release.md）。
+      - name: 版本取自 tag
+        working-directory: sdk
+        run: |
+          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+          node -p "'将发布：' + require('./package.json').name + '@' + require('./package.json').version"
+
+      - name: 打包检查
+        run: make sdk-check-package
+
+      # 幂等：npm 上的版本不可回收，也没有"清理旧版本"的形态，因此**重跑一次发布
+      # 流水线不该报红**。已经有这个版本就跳过（Release 那一侧由 prune 收敛数量，
+      # npm 这一侧只能靠版本不重复发布）。
+      #
+      # `--access public` 与 provenance 都不在这里写：前者是 publishConfig 的事
+      # （scoped 包默认私有），后者由 Trusted Publishing 自动生成。
+      - name: 发布到 npm
+        working-directory: sdk
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+
+          if [ "$version" = "0.0.0-development" ]; then
+            echo "::error::版本仍是占位值，说明上一步的 tag 覆写没生效。" >&2
+            exit 1
+          fi
+
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "${name}@${version} 已在 npm 上，跳过。"
+            exit 0
+          fi
+
+          npm publish
+          echo "::notice::registry 上若先出现 0.0.0-stage，那是 npm 处理新版本的暂存状态（真版本过一会儿才放行），不是失败。"
+
   prune:
     name: 清理旧版本产物
     needs: publish
@@ -162,7 +260,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 保留的版本数。更早的 Release 会被删掉，git tag 不受影响。
           KEEP: "5"
-        # 本步骤是全流程唯一不可逆的操作，因此每一条防护都写在明面上：
+        # 本步骤是全流程唯一**删除**操作（另一处不可逆的是 npm 包的发布，那边靠
+        # "同一个版本不发第二次"兜住），因此每一条防护都写在明面上：
         #   · 只处理 tag 形如 vX.Y.Z 的 Release，人工创建的、名字不匹配的一律不碰
         #   · 只删 Release，绝不删 git tag（不带 --cleanup-tag）
         #   · 数量未超过 KEEP 时什么也不做

@@ -1,14 +1,31 @@
 {
-  "name": "@aladdin/sdk",
-  "version": "0.1.0",
+  "name": "@poetlife/aladdin-sdk",
+  "version": "0.0.0-development",
   "description": "aladdin 创作与发布 SDK：在自己的构建与自己的页面里接入平台",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=20.12"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/poetlife/aladdin.git",
+    "directory": "sdk"
+  },
+  "homepage": "https://github.com/poetlife/aladdin/tree/main/sdk#readme",
+  "bugs": {
+    "url": "https://github.com/poetlife/aladdin/issues"
+  },
+  "keywords": [
+    "aladdin",
+    "galaxy",
+    "vite-plugin",
+    "connect"
+  ],
   "files": [
-    "dist"
+    "dist",
+    "src",
+    "!src/**/*.test.ts"
   ],
   "exports": {
     ".": {
@@ -28,11 +45,17 @@
       "import": "./dist/runtime/index.js"
     }
   },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:package": "npm run build && publint && node scripts/check-package.mjs",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.15.0",
@@ -50,6 +73,7 @@
   "devDependencies": {
     "@types/node": "^26.6.2",
     "cos-js-sdk-v5": "^1.10.1",
+    "publint": "^0.3.25",
     "typescript": "^5.9.3",
     "vite": "^8.3.1",
     "vitest": "^5.0.1"

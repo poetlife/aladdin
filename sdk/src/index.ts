@@ -3,9 +3,9 @@
  *
  * 这个包有三个面，各自住在一个子路径下——**按面引入，不要从这个入口引**：
  *
- *   - `@aladdin/sdk/build` —— 构建期插件。跑在用户的构建里，**不联网**。
- *   - `@aladdin/sdk/client` —— 调用面。跑在用户的构建脚本里，联网。
- *   - `@aladdin/sdk/runtime` —— 运行期包。跑在访客浏览器里的那一页上。
+ *   - `@poetlife/aladdin-sdk/build` —— 构建期插件。跑在用户的构建里，**不联网**。
+ *   - `@poetlife/aladdin-sdk/client` —— 调用面。跑在用户的构建脚本里，联网。
+ *   - `@poetlife/aladdin-sdk/runtime` —— 运行期包。跑在访客浏览器里的那一页上。
  *
  * 从这里引会把三个面全部拖进来，其中两个用到 node 的内置模块（`node:crypto`、
  * `node:fs`），在浏览器里会**在打包期**就报错——报得响，但没必要先踩一次。

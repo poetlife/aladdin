@@ -143,10 +143,10 @@
 | 一个主题能不能被订阅（类型前缀、权限码、归属判定） | 主题类型注册表（属主模块注册，通道只查表） | [internal/watch/topic.go](../internal/watch/topic.go) |
 | 资产字节上架到公开区 | 上架入口（按内容摘要幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
 | 替换草稿时留下快照（写入新清单与被替换的旧清单**在同一步**；相同清单不留） | 草稿替换的唯一入口（push 与"恢复到某条历史"都走它） | [internal/galaxy/draft_snapshot.go](../internal/galaxy/draft_snapshot.go) |
-| 客户端把字节直传到对象存储（资产与内容对象共用） | 客户端的直传实现；**共享的是凭证形状（`DirectUploadCredential`），代码因运行环境各一份，不得出现第二种形状**。SDK 那一份是手写的签名，由测试与官方浏览器 SDK 逐字对齐 | [web/src/upload/direct-upload.ts](../web/src/upload/direct-upload.ts) / [cmd/aladdin/direct-upload.go](../cmd/aladdin/direct-upload.go) / [sdk/src/client/direct-upload.ts](../sdk/src/client/direct-upload.ts)（签名见 [sdk/src/client/cos-signature.ts](../sdk/src/client/cos-signature.ts)） |
+| 客户端把字节直传到对象存储（资产与内容对象共用） | 客户端的直传实现；**共享的是凭证形状（`DirectUploadCredential`），代码因运行环境各一份，不得出现第二种形状**。这是**已定的取舍**（不再收敛成一份代码，理由见 [design/galaxy/sdk.md](design/galaxy/sdk.md) 的待定决策）：浏览器那份是官方 SDK、node 那份是手写的签名，由测试与官方浏览器 SDK 逐字对齐；"桶真的接受它"由部署后的一次冒烟证明（见 [deploy.md](deploy.md) 的可验证性表） | [web/src/upload/direct-upload.ts](../web/src/upload/direct-upload.ts) / [cmd/aladdin/direct-upload.go](../cmd/aladdin/direct-upload.go) / [sdk/src/client/direct-upload.ts](../sdk/src/client/direct-upload.ts)（签名见 [sdk/src/client/cos-signature.ts](../sdk/src/client/cos-signature.ts)） |
 | 把一个目录整组替换成某个槽的草稿（判据是"这份字节在不在本地资产记录里"，在 ⇒ 资产条目、不在 ⇒ 文本条目） | 客户端侧的组目录上送；命令行与 SDK 是同一件事在两种语言里的两份实现，**判据只有一条**：本地资产记录（见 [docs/design/galaxy/sdk.md](design/galaxy/sdk.md) 的"素材"） | [cmd/aladdin/galaxy-content.go](../cmd/aladdin/galaxy-content.go) / [sdk/src/client/content.ts](../sdk/src/client/content.ts) |
 | 一份字节的内容摘要（SHA-256 十六进制，三端必须同形） | 服务端的摘要规则与 SDK 的算法入口；**按字节算，不经过 utf8 解码** | [internal/objectstore/content.go](../internal/objectstore/content.go) / [sdk/src/content-digest.ts](../sdk/src/content-digest.ts) |
-| 一个资产标识在文件组里的默认条目路径（`assets/<资产标识>`） | 服务端把 `asset://` 登记成条目时用的前缀与 SDK 的默认前缀；**两处必须同值**，由 SDK 的测试直接读服务端源码钉住（否则同一个资产在两条路上有两个地址） | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) / [sdk/src/build/asset-reference.ts](../sdk/src/build/asset-reference.ts) |
+| 一个资产标识在文件组里的默认条目路径（`assets/<资产标识>`） | 服务端把 `asset://` 登记成条目时用的前缀与 SDK 的默认前缀；**两处必须同值**（跨语言两处，同"一份形状、按载体各一份"），由 SDK 的测试直接读服务端源码钉住（否则同一个资产在两条路上有两个地址） | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) / [sdk/src/build/asset-reference.ts](../sdk/src/build/asset-reference.ts) |
 | 拒绝结论到 RPC 错误码与错误详情的转换 | `Reject` / `DenyByAnnotation`（鉴权拦截器与事件通道的逐主题判定共用） | [internal/server/interceptor/rejection.go](../internal/server/interceptor/rejection.go) |
 | 按客户端协议写出错误响应（中间件层） | `connect.ErrorWriter` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 服务端为每个请求起 span、回写 `traceparent` 与 `x-trace-id` 响应头 | `observability.StartServerSpan` / `WriteTraceHeaders` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
@@ -159,6 +159,7 @@
 | 一次客户端动作的耗时怎么量（起点、取整、下限） | `startTimer()` | [web/src/telemetry/track.ts](../web/src/telemetry/track.ts) |
 | 命令行本地失败的上报（配置/凭证/用法，退出前发出） | `recordLocalFailure` + `flushClientEvents`（只在退出路径调用） | [cmd/aladdin/telemetry-events.go](../cmd/aladdin/telemetry-events.go) |
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
+| SDK 包发到公共 npm 源（版本改写、幂等、provenance） | **主路**是发布流水线的 `publish-npm`（tag 触发，Trusted Publishing）；本地 `make sdk-publish` 是应急（两条守卫：版本来源、工作区干净）。包内容本身由 `npm pack` 定（`files` + `prepack`） | [.github/workflows/release.yml](../.github/workflows/release.yml) / [Makefile](../Makefile) / [sdk/package.json](../sdk/package.json) |
 | 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh`（产物来源由 `--from` 给出，默认是 Release；**中转不另起一份部署实现**） | [deploy/deploy.sh](../deploy/deploy.sh) |
 | 把发布产物放到中转地址（上传 + 逐个对象置公开读；用完删掉） | `deploy/relay` | [deploy/relay/main.go](../deploy/relay/main.go) |
 | 本地开发环境的拉起（服务端 + 前端，同起同停） | `make dev`；两边的命令与种子配置各只有一处来源（`DEV_SERVER_CMD` / `WEB_DEV_CMD`），`dev` 与 `dev-server` / `web-dev` 都引用它们 | [Makefile](../Makefile) |
@@ -174,7 +175,8 @@
 |---------|---------|---------|
 | 接口契约与消息定义（服务端 + 前端类型） | proto 定义，经 `buf generate` 同时派生出 Go 与 TS 两侧代码 | [api/proto/](../api/proto/) |
 | 拒绝原因枚举（Go / TypeScript / CLI 三端同源） | [api/proto/aladdin/rbac/v1/errors.proto](../api/proto/aladdin/rbac/v1/errors.proto) | 由 `buf generate` 派生，三端均引用生成常量 |
-| 文档页 ↔ 宿主之间消息的形状（通道名、协议版本、消息类型） | 接入桥协议；**共享的是形状，代码因载体各一份**：服务端渲染进 `docs` 页的那一段常量脚本、宿主侧的解析（唯一一处，预览与壳共用）、以及用户打进 `site` 产物的运行期包。**不得出现第二种形状**，取值由运行期包的测试读另外两处的源码钉住 | [internal/galaxy/doc_frame_bridge.go](../internal/galaxy/doc_frame_bridge.go) / [web/src/pages/galaxy/frame-channel.ts](../web/src/pages/galaxy/frame-channel.ts) / [sdk/src/runtime/frame-channel.ts](../sdk/src/runtime/frame-channel.ts) |
+| 文档页 ↔ 宿主之间消息的形状（通道名、协议版本、消息类型） | 接入桥协议；**一份形状、按载体各一份，不得出现第四种形状**（这是已定的取舍，理由见 [design/galaxy/sdk.md](design/galaxy/sdk.md) 的待定决策）：服务端渲染进 `docs` 页的那一段常量脚本、宿主侧的解析（唯一一处，预览与壳共用）、以及用户打进 `site` 产物的运行期包。取值由运行期包的测试读另外两处的源码钉住 | [internal/galaxy/doc_frame_bridge.go](../internal/galaxy/doc_frame_bridge.go) / [web/src/pages/galaxy/frame-channel.ts](../web/src/pages/galaxy/frame-channel.ts) / [sdk/src/runtime/frame-channel.ts](../sdk/src/runtime/frame-channel.ts) |
+| SDK 包的版本号 | **发布 tag**：发布流水线在打包前把 tag 覆写成包里的 `version`，仓库里的那个值是占位——同一件事不在第二处维护 | [.github/workflows/release.yml](../.github/workflows/release.yml) 的 `publish-npm` |
 | 权限码全集（Go 常量与前端常量同源） | 权限目录，经 `make gen` 双向派生 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
 | 客户端事件的类型、动作允许清单与字段（Go / TypeScript 两端同源） | proto 定义，经 `buf generate` 派生 | [api/proto/aladdin/telemetry/v1/telemetry.proto](../api/proto/aladdin/telemetry/v1/telemetry.proto) |
 | 一个动作的日志取值、是否允许匿名、可携带哪些属性 | 动作策略表 | [internal/telemetry/actions.go](../internal/telemetry/actions.go) |

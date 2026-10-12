@@ -166,3 +166,9 @@ jobs:
 
       - name: 构建 SDK
         run: make sdk-build
+
+      # 发出去的包里到底有什么：入口产物、类型声明、许可证与说明都在不在，
+      # 以及入口能不能被解析（publint）。这一条只在发布时才被证明就太晚了——
+      # dist/ 不进版本库，少一步构建打出来的是**一个空包，而且不报错**。
+      - name: SDK 打包检查
+        run: make sdk-check-package

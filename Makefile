@@ -189,6 +189,59 @@ sdk-install: ## 安装 SDK 依赖
 sdk-build: ## 构建 SDK（对外发布的 TS 包）
 	cd sdk && npm run build
 
+.PHONY: sdk-check-package
+sdk-check-package: ## 检查发布包里有什么（入口产物、类型声明、许可证、说明；自建一遍再打）
+	@# 这个包发到公共 npm 源，用户拿到的就是这些字节。dist/ 不进版本库，而
+	@# `npm pack` 在缺产物时**不报错**——它只是安静地打出一个空包。因此检查
+	@# 自建一遍再打包核对，而不是"假定调用方已经构建过"。
+	cd sdk && npm run check:package
+
+# SDK 发到 npm 的版本号。只有一个来源：**发布 tag**（主路是流水线在 tag 上发，
+# 见 release.yml 的 publish-npm）。这条本地命令只作**应急**，因此它的缺省要求更严：
+# HEAD 就在 tag 上（`--exact-match`），这时"包里的字节"与"那个 tag"逐字一致。
+# tag 还没打、但就是要用它的号（包名第一次发布必然如此）：`SDK_VERSION=v0.7.3`
+# ——那是一次有意预支，代价见 docs/release.md。
+SDK_VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null)
+
+# 发布要 2FA：npm 的规矩是"发布者要有 2FA，或一把开了 Bypass 2FA 的 granular token"。
+# 账号没开 2FA 时注册表回 **E403**，而 npm 只在 **EOTP / E401** 时才提示输口令
+# （见 npm 的 lib/utils/auth.js，otplease）——它不会替你问。开好 2FA 之后若 npm 仍不
+# 提示而手上正好有码，就自己递过去：`make sdk-publish SDK_OTP=123456`。
+SDK_OTP_ARG = $(if $(SDK_OTP),--otp=$(SDK_OTP),)
+
+# 两条前置守卫：知道版本号（HEAD 在 tag 上，或显式预支），以及工作区干净
+# （发出去的字节要能对应到一次提交，否则事后说不清发的是什么）。
+# 发布**不改仓库里的值**：那个占位号是设计如此，真正的版本在 tag 上；因此发完
+# 把 npm version 改写过的两个文件还原回去（守卫保证了它们此刻与 HEAD 一致）。
+.PHONY: sdk-publish
+sdk-publish: ## 把 SDK 发到公共 npm 源（**应急**：主路是流水线在 tag 上发）
+	@# 只在流水线没发成、或要跳过发版流程补一版时用。代价：这条路没有 provenance，
+	@# 且每一次都要过浏览器 2FA。见 docs/release.md 的"npm 包（SDK）"。
+	@test -n "$(SDK_VERSION)" || { \
+		echo "HEAD 不在任何 tag 上，因此不知道这个包该是哪个版本。" >&2; \
+		echo "要么先把 tag 打在这个提交上，要么显式预支一个号：" >&2; \
+		echo "  make sdk-publish SDK_VERSION=v0.7.3" >&2; \
+		exit 1; }
+	@test -z "$$(git status --porcelain)" || { \
+		echo "工作区不干净——发布的内容必须能对应到一次提交，先提交再发。" >&2; \
+		git status --short >&2; \
+		exit 1; }
+	@version=$$(echo "$(SDK_VERSION)" | sed 's/^v//'); \
+	status=0; \
+	( cd sdk || exit 1; \
+	  npm version "$$version" --no-git-tag-version --allow-same-version >/dev/null || exit 1; \
+	  name=$$(node -p "require('./package.json').name"); \
+	  version=$$(node -p "require('./package.json').version"); \
+	  echo ">>> $$name@$$version"; \
+	  if npm view "$$name@$$version" version >/dev/null 2>&1; then \
+	    echo ">>> npm 上已有这个版本，跳过（版本不可回收，也就不重发）"; \
+	  else \
+	    npm run check:package && npm publish $(SDK_OTP_ARG) && \
+	      echo ">>> 已提交。registry 上若先出现 0.0.0-stage，那是 npm 的暂存发布（真版本过一会儿才放行），不是失败——npm stage list 看状态。"; \
+	  fi ) || status=$$?; \
+	git checkout -- sdk/package.json sdk/package-lock.json; \
+	exit $$status
+
 .PHONY: release-build
 release-build: web-build ## 产出发布产物到 dist/（跨平台二进制、前端包、校验和）
 	@rm -rf $(DIST_DIR) && mkdir -p $(DIST_DIR)

@@ -5,7 +5,7 @@
 | 工作流 | 触发 | 做什么 |
 |--------|------|--------|
 | [ci.yml](../.github/workflows/ci.yml) | PR、push `main` | 跑门禁 |
-| [release.yml](../.github/workflows/release.yml) | push tag `vX.Y.Z` | 门禁 → 构建 → 发布 Release → 清理旧版本 |
+| [release.yml](../.github/workflows/release.yml) | push tag `vX.Y.Z` | 门禁 → 构建 → 发布 Release → 发布 npm 包 → 清理旧版本 |
 
 两者都不自己定义"什么算通过"，而是共同调用 [gate.yml](../.github/workflows/gate.yml)。
 
@@ -13,11 +13,29 @@
 
 这个形状**必须与客户端解析能接受的一模一样**（[internal/upgrade/version.go](../internal/upgrade/version.go) 的 `ParseVersion`，见 [design/cli/self-update.md](design/cli/self-update.md)）。放开一点就会发布一个客户端解析不了的版本号，而它的表现是：`releases/latest` 指向它之后，**全体用户的自更新一直失败**，直到出现一个形态干净的 tag。前导零正是这样一处——它让同一个版本有两种写法，严格比较不接受它。
 
+## 谁能发版（信任边界）
+
+发布由 `push tag vX.Y.Z` 触发，因此**能推这个 tag 的人就是能发版的人**：能产出 Release 产物，也能把包发到 npm。把发布从本机搬进流水线，换来的正是这件事——信任边界从"本机持有 npm 凭证的人"变成"仓库里有写权限的人"。这条必须明说，因为它比以前**宽**，而宽出来的那部分影响的是**装了包的外部使用者**：改仓库代码影响的是自己部署的实例，发包影响的是别人的机器。
+
+**它仍然严于 NPM_TOKEN 那一套。** OIDC 没有可被偷走的长期凭证——凭证只在"这一次 CI 运行、这个仓库、这个 workflow"下成立；而一把放在仓库设置里的长期 token，泄漏一次就是"此后任何人任何时间都能发包"，且没人看得出来。
+
+**现在的收口**（只作用于 `v*` 这个形状的 tag；它是 **GitHub 仓库设置里的一条 ruleset**，不在仓库里，名字是「发布 tag（v*）只能由维护者创建」）：
+
+- tag 的**创建、删除、强推**都只允许 bypass 名单上的人——目前名单里只有 `poetlife` 一个账号。**新增维护者时要把他加进这份名单**，否则他推不了发布 tag。
+- 其余 tag 不受这条规则约束；删除保护与"tag 是不可变历史、绝不删除"那条约定同向。
+
+**还想更严的话有两档**，都要求人肉批准——而那一步正是"把发布搬进流水线"想省掉的，因此要有意识地二选一：
+
+| 手段 | 效果 | 代价 |
+|------|------|------|
+| npm 侧 Allowed actions 只留 `npm stage publish` | 每次发布进暂存区，必须一个维护者用 **2FA 批准**才公开（批准不能用 OIDC——它要 proof of presence） | 每次发版多一步人肉批准 |
+| GitHub Environment + 必需审批人 | job 上写 `environment:`、npm 侧填同名；就算有人推了 tag，job 也会停下来等批准 | 同上；且 npm 文档没写死它如何比对 token，把它当 GitHub 侧的闸门理解更稳 |
+
 ## 门禁（Gate）
 
 门禁的范围只有一处定义：`.github/workflows/gate.yml`。CI 与发布都调它，**不复制步骤**——否则两份定义迟早漂移，例如有人只给其中一份加了前端测试。
 
-门禁是**四个并行 job**，它们是四段互不相干的检查：
+门禁是**五个并行 job**，它们是五段互不相干的检查：
 
 | job | 依次执行 |
 |-----|---------|
@@ -25,8 +43,9 @@
 | 后端单元测试 | `make test` |
 | 端到端测试 | `make test-e2e` |
 | 前端 | `make web-ci`（按 lockfile 装依赖）→ `make test-web` → `make web-build` |
+| SDK | `make sdk-ci`（按 lockfile 装依赖）→ `make test-sdk` → `make sdk-build` → `make sdk-check-package` |
 
-四段之间没有依赖，串行的总时长是它们相加，并行是最慢的那一段。代价是每个 job 各自检出、各自恢复一遍缓存：**机器时间变多，墙钟时间变少**（见下面的"时间花在哪里"）。另一处收益是原先"所有 Go 步骤必须先于 `make web-ci`"这条脆弱约束消失了——前端独立成 job 之后，Go 的 job 里根本不存在 `node_modules`。
+五段之间没有依赖，串行的总时长是它们相加，并行是最慢的那一段。代价是每个 job 各自检出、各自恢复一遍缓存：**机器时间变多，墙钟时间变少**（见下面的"时间花在哪里"）。另一处收益是原先"所有 Go 步骤必须先于 `make web-ci`"这条脆弱约束消失了——前端独立成 job 之后，Go 的 job 里根本不存在 `node_modules`。
 
 一处有意的行为变化：并行的 job 默认不互相取消，**某个 job 失败时其余照常跑完**。这是要的——一次推送就能看到全部结论，而不是"修完 lint 才发现测试也红"。取消仍然发生在推送这一层：`ci.yml` 的 `concurrency` 会取消同一分支上过期的那次运行。
 
@@ -49,7 +68,7 @@
 
 并行之后，关键路径换成最慢的那一个 job，另外三段与之重叠。每个 job 都要各付一次约 20s 的 Go 缓存恢复（这份 817MB 的缓存下载约 6s、解压约 11s），它买到的是冷缓存下每个 job 多出来的 40~60s 编译。
 
-拆分的首次实测（就是拆完的那一推，一次成功运行）：**run 总时长 75s**，四个 job 分别 73s / 70s / 65s / 63s。最慢的是**端到端测试**，不是后端单元测试——关键路径落在哪一段，取决于该次运行里哪一段最慢，不是固定的。
+拆分的首次实测（就是拆完的那一推，一次成功运行）：**run 总时长 75s**，四个 job 分别 73s / 70s / 65s / 63s。**这组数字里没有 SDK**——那时还没有它，SDK 是后来加的第五个 job。最慢的是**端到端测试**，不是后端单元测试——关键路径落在哪一段，取决于该次运行里哪一段最慢，不是固定的。
 
 两处"搬家之后变慢"，都在关键路径之外，且都有结构性原因：
 
@@ -105,6 +124,26 @@ grep -aqF -- "<注入值>" dist/aladdin || 中止
 - 前端产物名带版本号：前端界面不显示版本，`web/dist` 也不进 Go 二进制，文件名是它唯一的版本载体。
 - **命名与 `SHA256SUMS` 从此是对外契约。** 命令行的自更新会解析两者（见 [design/cli/self-update.md](design/cli/self-update.md)）：包名形如 `aladdin_<tag>_<os>_<arch>.tar.gz`，校验和清单是 `<摘要>  <文件名>` 的标准两列格式。改命名、改清单格式、或把二进制从包根挪走，都会让**已经装出去的命令行**失去升级能力——而它们的表现是使用者那一侧的一句"升级失败"，不会在这里报任何错。
 
+### npm 包（SDK）
+
+`@poetlife/aladdin-sdk` 与上面那些产物同源：同一个 tag、同一次门禁。它由 `release.yml` 的 `publish-npm` 发，排在 Release 之后——npm 的版本**发出去就撤不回来**，因此让它发生在"这次发布确实成立"之后；真落在中间（有 Release、npm 上没有）时重跑那个 job 即可补齐。
+
+- **走 npm 的 Trusted Publishing（OIDC）**：`id-token: write` 是它需要的全部东西。仓库里因此**没有 npm 的长期 token**，也没有谁要在发版时输一次性口令；**provenance 自动生成**，包页面上写着它来自哪个仓库的哪一次运行。这条是选它的主要理由——本地发布那条路每一次都躲不过浏览器验证，而那正是"发布"这件事里最不该由人肉承担的一环。
+- **一次性前置**（不在仓库里，配一次即可）：npmjs.com → 包 → Settings → **Trusted Publisher** → GitHub Actions，填 Organization/user `poetlife`、Repository `aladdin`、Workflow filename `release.yml`、Environment 留空，**Allowed actions 勾上 `npm publish`**（只勾 `npm stage publish` 的话，每次发版都要一个维护者用 2FA 点一次批准）。包必须先存在才能配——所以**第一次发布只能走下面那条应急路**。
+- **版本只有一个来源：发布 tag。** 打包前用 `npm version "${GITHUB_REF_NAME#v}"` 覆写包里的 `version`，仓库 [sdk/package.json](../sdk/package.json) 里那个值是占位（`0.0.0-development`）。**不维护第二处版本号**：包内的 proto 派生物与包来自同一个 tag，因此"SDK 版本 = 服务端版本"直接成立，不需要第二张兼容矩阵。发布发生在 tag 之后，所以也不会出现"预支了一个号、那个 tag 又不落在这份内容上"的账。
+- **包里有什么由 `files` 与 `prepack` 决定**，门禁与发布前都跑打包检查（`make sdk-check-package`）。**`dist/` 不进版本库**，而 `npm pack` 在缺产物时**不报错**——它只是安静地打出一个只含 `package.json` 的包。
+- **发布是幂等的**：npm 上已有该版本就跳过而不是报红，流水线因此可以重跑（npm 的版本不可回收，也没有像 Release 那样的 prune）。
+- **发布后 registry 上可能先出现一个 `0.0.0-stage` 占位版本**（首次发布实测如此，约两三分钟后真版本才放行）：npm 会先占住新包名，真版本在暂存区等放行，期间 `npm install` 拿到的是那个占位版、`npm view` 看到的 `latest` 也是它。`npm stage list` 查状态。**别把它当成发布失败。**
+- **许可证正文是根 [LICENSE](../LICENSE) 的一份副本**（`sdk/LICENSE`）：npm 只收包目录里的许可证文件，收不到包外的。改根许可证时要同步这一份。
+
+#### 应急：本地发一次（`make sdk-publish`）
+
+流水线发不成、或要跳过发版流程补一版时才用它。**它不是主路**，代价要认：这条路上没有 provenance，而且每一次都躲不过浏览器 2FA。
+
+- 缺省取 HEAD 上那个 tag（`git describe --tags --exact-match`），**要求 HEAD 就在 tag 上**（这时包里的字节与那个 tag 逐字一致）。tag 还没打就是要用它的号：`SDK_VERSION=v0.7.3` ——**那次预支把号用掉了**，npm 不允许重发同一个版本，因此那个 tag 必须恰好落在这次发布的内容上，否则只能跳到下一个号。**包名第一次发布时只能走这里**（Trusted Publisher 要包先存在）。
+- 两条守卫：工作区必须干净（发出去的字节要能对应到一次提交）、npm 上已有该版本就跳过（幂等）。发完把 `npm version` 改写过的两个文件还原，仓库里的占位号不变。
+- **账号必须先开 2FA**，否则发不出去：npm 要求发布者有 2FA 或一把开了 **Bypass 2FA** 的 granular token；没开时注册表回 **E403**，而 npm 只在 **EOTP / E401** 时才提示输口令——它不问，也不说缺的是账号上的那一步。开好之后 npm 会开浏览器让你验证一次。细节与实测（含一条走错的排查路径）见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md)。
+
 ## 保留最近 5 个版本
 
 `release.yml` 的 `prune` 步骤在发布成功后清理更早的 Release，只留最近 5 个。
@@ -148,13 +187,27 @@ grep -aqF -- "<注入值>" dist/aladdin || 中止
 先确认门禁在本地是绿的，再打 tag——否则推上去才发现失败，比本地发现更晚：
 
 ```bash
-make web-ci && make tools && make lint && make test && make test-e2e && make check-gen && make check-api-docs && make test-web
+make web-ci && make sdk-ci && make tools && make lint && make test && make test-e2e && make check-gen && make check-api-docs && make test-web && make test-sdk && make sdk-check-package
 ```
 
 本地验证产物（`VERSION` 换成等价于 tag 的值）：
 
 ```bash
 make release-build VERSION=v0.0.0-test
+```
+
+本地看 npm 包里装了什么（这条不改任何东西，也不联网发布）：
+
+```bash
+cd sdk && npm pack --dry-run
+```
+
+发 SDK 到 npm（**应急才用**——主路是流水线在 tag 上发；这条路缺省要求 HEAD 已在 tag 上，包名第一次发布时也只能走它）：
+
+```bash
+make sdk-publish                          # 发完 tag 之后
+make sdk-publish SDK_VERSION=v0.7.3       # 预支一个号（那次预支把号用掉了，代价见上）
+make sdk-publish SDK_VERSION=v0.7.3 SDK_OTP=123456   # 只有当 npm 没提示、你手上又有码时才用
 ```
 
 然后打 tag 并推送：
@@ -173,3 +226,12 @@ git tag v0.1.0 && git push origin v0.1.0
 | tag 推上去了但没产出 Release | 先看 `validate` 是否因 tag 形状被拒 |
 | 门禁跑得慢 | 日志里出现成片的 `>>> go install`，说明工具缓存没命中（正常情况下 `make tools` 全是 `>>> 已就绪`）。看 `缓存已装好的工具` 那一步是 hit 还是 miss；`setup-go` 自己的缓存只按 `go.sum` 哈希与 git ref 隔离，加个依赖或换个分支就会 miss，不必指望它 |
 | Release 数量没有收敛到 5 | 看 `prune` 步骤的日志：它每次都会打印候选集与将要删除的列表 |
+| `publish-npm` 报 401 / 404 | npm 上的 **Trusted Publisher 没配**，或仓库/工作流名对不上（Workflow filename 只填文件名 `release.yml`）。包必须先存在才能配，因此**包名第一次发布只能走应急路** |
+| `publish-npm` 报 npm 版本太旧 | 基础镜像轮换过，runner 上的 npm < 11.5.1；job 里那一步会把这句话直接说出来 |
+| 发布后 registry 上只有 `0.0.0-stage` | 不是失败：npm 处理新版本的暂存状态，过一会儿（首次实测约两三分钟）真版本才放行。`npm stage list` 查状态 |
+| （应急路）npm 上出现了 `0.0.0-development`，或一个几 KB 的空包 | 版本取自 tag 那一步没生效，或包在没有构建产物的情况下被打包。两者都有守卫（`make sdk-publish` 的版本来源、打包检查），看日志里哪一条没跑到——`npm publish` 自己不会为此报错 |
+| （应急路）`make sdk-publish` 报"工作区不干净" | 那是守卫，不是故障：先提交，再发（发布的内容要能对应到一次提交） |
+| （应急路）`make sdk-publish` 报"HEAD 不在任何 tag 上" | 位置不对：要么先把 tag 打在这个提交上再发，要么用 `SDK_VERSION=vX.Y.Z` 显式预支一个号 |
+| （应急路）`make sdk-publish` 报认证失败（401 / ENEEDAUTH） | 本机没有凭证：`npm login` |
+| （应急路）`make sdk-publish` 报 403 且**没有**提示输 OTP | 账号没开 2FA（`npm profile get` 的 `tfa` 是 `false`）：npm 要求发布者有 2FA 或一把 Bypass 2FA 的 token，而注册表回的是 E403、npm 只在 EOTP / E401 时才提示口令，于是它不问也不说缺什么。先把 2FA 开起来（浏览器里），或建一把 Bypass 2FA 的 granular token。判据与实测见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md) |
+| npm 上出现了两个版本、而 tag 只有一个 | 预支号时把号发重了：那个 tag 的内容发不出来（npm 不允许重发同一版本），只能跳到下一个号 |
