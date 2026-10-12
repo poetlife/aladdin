@@ -5,7 +5,7 @@
 | 工作流 | 触发 | 做什么 |
 |--------|------|--------|
 | [ci.yml](../.github/workflows/ci.yml) | PR、push `main` | 跑门禁 |
-| [release.yml](../.github/workflows/release.yml) | push tag `vX.Y.Z` | 门禁 → 构建 → 发布 Release → 清理旧版本 |
+| [release.yml](../.github/workflows/release.yml) | push tag `vX.Y.Z` | 门禁 → 构建 → 发布 Release → 发布 npm 包 → 清理旧版本 |
 
 两者都不自己定义"什么算通过"，而是共同调用 [gate.yml](../.github/workflows/gate.yml)。
 
@@ -108,18 +108,23 @@ grep -aqF -- "<注入值>" dist/aladdin || 中止
 
 ### npm 包（SDK）
 
-`@poetlife/aladdin-sdk` **也在发版这一步产出，但发布本身在本地做**：一条 `make sdk-publish`，不进流水线。
+`@poetlife/aladdin-sdk` 与上面那些产物同源：同一个 tag、同一次门禁。它由 `release.yml` 的 `publish-npm` 发，排在 Release 之后——npm 的版本**发出去就撤不回来**，因此让它发生在"这次发布确实成立"之后；真落在中间（有 Release、npm 上没有）时重跑那个 job 即可补齐。
 
-- **为什么不在流水线里。** 这个包的发布与 Release 的产物不是同一件事：Release 那边是"多平台二进制 + 校验和 + 清理旧版本"的成套动作，npm 这边只是一次 `npm publish`；把它接进 `release.yml` 就要在流水线里放一份发布凭证（Trusted Publishing 的 OIDC 配置或一个长期 token），而它换来的是"少敲一条命令"。发版的人本来就在本机，凭证也本来就在本机（`npm whoami`）。
-- **代价写在这里，别装作没有**：本地发布**没有 provenance attestation**（它需要 CI 的 OIDC），包页面上能看到的来源只有 `repository` 字段。想补上它，办法是把发布搬回流水线（`id-token: write` + `npm publish --provenance`）。
-- **版本只有一个来源：发布 tag。** `make sdk-publish` 缺省取 HEAD 上那个 tag（`git describe --tags --exact-match`），**要求 HEAD 就在 tag 上**——这时包里的字节与那个 tag 逐字一致，"SDK 版本 = 服务端版本"才不是一句空话。仓库 [sdk/package.json](../sdk/package.json) 里那个值是占位（`0.0.0-development`），发布不改它：发完命令自己把改写过的两个文件还原回去。
-- **预支一个号是有代价的。** tag 还没打但就是要用它的号（第一个正式版必然如此）：`make sdk-publish SDK_VERSION=v0.7.3`。**那个号从此废了**——npm 不允许重发同一个版本，若之后 v0.7.3 的 tag 没有恰好落在这次发布的内容上，那个 tag 对应的包就发不出来，只能跳到下一个号。所以预支之后要尽快把 tag 打在同一份内容上。
-- **两条守卫**：工作区必须干净（发出去的字节要能对应到一次提交）、npm 上已有该版本就跳过（幂等，重跑不报红）。
-- **账号必须先开 2FA，否则发不出去**。npm 的规矩：发布者要有 2FA，或一把开了 **Bypass 2FA** 的 granular token。没开的时候注册表回的是 **E403**，而 npm 只在 **EOTP / E401** 时才提示输口令——它不会替你问，也不会告诉你"缺的是账号上的那一步"。两条路：在浏览器里把 2FA 开起来（之后发布时 npm 会开浏览器让你验证一次），或建一把 Bypass 2FA 的 granular token 写进 `~/.npmrc`（此后连口令都不用输）。细节与实测见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md)。
-- **发布后 registry 上可能先出现一个 `0.0.0-stage` 占位版本**（首次发布实测如此，约两三分钟后真版本才放行）：这是 npm 的**暂存发布**——新包名先被占住，真版本在暂存区等放行，期间 `npm install` 拿到的是那个占位版，`npm view` 看到的 `latest` 也是它。`npm stage list` 查状态。**别把它当成发布失败。**
-- **包里有什么由 `files` 与 `prepack` 决定**，发布前自动跑一遍打包检查（`make sdk-check-package`，门禁里也跑）。**`dist/` 不进版本库**，而 `npm pack` 在缺产物时**不报错**——它只是安静地打出一个只含 `package.json` 的包。
+- **走 npm 的 Trusted Publishing（OIDC）**：`id-token: write` 是它需要的全部东西。仓库里因此**没有 npm 的长期 token**，也没有谁要在发版时输一次性口令；**provenance 自动生成**，包页面上写着它来自哪个仓库的哪一次运行。这条是选它的主要理由——本地发布那条路每一次都躲不过浏览器验证，而那正是"发布"这件事里最不该由人肉承担的一环。
+- **一次性前置**（不在仓库里，配一次即可）：npmjs.com → 包 → Settings → **Trusted Publisher** → GitHub Actions，填 Organization/user `poetlife`、Repository `aladdin`、Workflow filename `release.yml`、Environment 留空，**Allowed actions 勾上 `npm publish`**（只勾 `npm stage publish` 的话，每次发版都要一个维护者用 2FA 点一次批准）。包必须先存在才能配——所以**第一次发布只能走下面那条应急路**。
+- **版本只有一个来源：发布 tag。** 打包前用 `npm version "${GITHUB_REF_NAME#v}"` 覆写包里的 `version`，仓库 [sdk/package.json](../sdk/package.json) 里那个值是占位（`0.0.0-development`）。**不维护第二处版本号**：包内的 proto 派生物与包来自同一个 tag，因此"SDK 版本 = 服务端版本"直接成立，不需要第二张兼容矩阵。发布发生在 tag 之后，所以也不会出现"预支了一个号、那个 tag 又不落在这份内容上"的账。
+- **包里有什么由 `files` 与 `prepack` 决定**，门禁与发布前都跑打包检查（`make sdk-check-package`）。**`dist/` 不进版本库**，而 `npm pack` 在缺产物时**不报错**——它只是安静地打出一个只含 `package.json` 的包。
+- **发布是幂等的**：npm 上已有该版本就跳过而不是报红，流水线因此可以重跑（npm 的版本不可回收，也没有像 Release 那样的 prune）。
+- **发布后 registry 上可能先出现一个 `0.0.0-stage` 占位版本**（首次发布实测如此，约两三分钟后真版本才放行）：npm 会先占住新包名，真版本在暂存区等放行，期间 `npm install` 拿到的是那个占位版、`npm view` 看到的 `latest` 也是它。`npm stage list` 查状态。**别把它当成发布失败。**
 - **许可证正文是根 [LICENSE](../LICENSE) 的一份副本**（`sdk/LICENSE`）：npm 只收包目录里的许可证文件，收不到包外的。改根许可证时要同步这一份。
-- **一次性前置**（不在仓库里）：npm org 与发布权限。仓库这边的第一次发布用 `SDK_VERSION=` 预支号，之后每次正常发版都发生在 tag 之后。
+
+#### 应急：本地发一次（`make sdk-publish`）
+
+流水线发不成、或要跳过发版流程补一版时才用它。**它不是主路**，代价要认：这条路上没有 provenance，而且每一次都躲不过浏览器 2FA。
+
+- 缺省取 HEAD 上那个 tag（`git describe --tags --exact-match`），**要求 HEAD 就在 tag 上**（这时包里的字节与那个 tag 逐字一致）。tag 还没打就是要用它的号：`SDK_VERSION=v0.7.3` ——**那次预支把号用掉了**，npm 不允许重发同一个版本，因此那个 tag 必须恰好落在这次发布的内容上，否则只能跳到下一个号。**包名第一次发布时只能走这里**（Trusted Publisher 要包先存在）。
+- 两条守卫：工作区必须干净（发出去的字节要能对应到一次提交）、npm 上已有该版本就跳过（幂等）。发完把 `npm version` 改写过的两个文件还原，仓库里的占位号不变。
+- **账号必须先开 2FA**，否则发不出去：npm 要求发布者有 2FA 或一把开了 **Bypass 2FA** 的 granular token；没开时注册表回 **E403**，而 npm 只在 **EOTP / E401** 时才提示输口令——它不问，也不说缺的是账号上的那一步。开好之后 npm 会开浏览器让你验证一次。细节与实测（含一条走错的排查路径）见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md)。
 
 ## 保留最近 5 个版本
 
@@ -179,11 +184,11 @@ make release-build VERSION=v0.0.0-test
 cd sdk && npm pack --dry-run
 ```
 
-发 SDK 到 npm（**本地一步，不进流水线**；缺省要求 HEAD 已在 tag 上，第一次发时 tag 还没有，用 `SDK_VERSION=` 预支一个号，代价见上）：
+发 SDK 到 npm（**应急才用**——主路是流水线在 tag 上发；这条路缺省要求 HEAD 已在 tag 上，包名第一次发布时也只能走它）：
 
 ```bash
 make sdk-publish                          # 发完 tag 之后
-make sdk-publish SDK_VERSION=v0.7.3       # 预支一个号（第一个正式版）
+make sdk-publish SDK_VERSION=v0.7.3       # 预支一个号（那次预支把号用掉了，代价见上）
 make sdk-publish SDK_VERSION=v0.7.3 SDK_OTP=123456   # 只有当 npm 没提示、你手上又有码时才用
 ```
 
@@ -203,9 +208,12 @@ git tag v0.1.0 && git push origin v0.1.0
 | tag 推上去了但没产出 Release | 先看 `validate` 是否因 tag 形状被拒 |
 | 门禁跑得慢 | 日志里出现成片的 `>>> go install`，说明工具缓存没命中（正常情况下 `make tools` 全是 `>>> 已就绪`）。看 `缓存已装好的工具` 那一步是 hit 还是 miss；`setup-go` 自己的缓存只按 `go.sum` 哈希与 git ref 隔离，加个依赖或换个分支就会 miss，不必指望它 |
 | Release 数量没有收敛到 5 | 看 `prune` 步骤的日志：它每次都会打印候选集与将要删除的列表 |
-| npm 上出现了 `0.0.0-development`，或一个几 KB 的空包 | 版本取自 tag 那一步没生效，或包在没有构建产物的情况下被打包。两者都有守卫（`make sdk-publish` 的版本来源、打包检查），看日志里哪一条没跑到——`npm publish` 自己不会为此报错 |
-| `make sdk-publish` 报"工作区不干净" | 那是守卫，不是故障：先提交，再发（发布的内容要能对应到一次提交） |
-| `make sdk-publish` 报"HEAD 不在任何 tag 上" | 位置不对：要么先把 tag 打在这个提交上再发，要么用 `SDK_VERSION=vX.Y.Z` 显式预支一个号 |
-| `make sdk-publish` 报认证失败（401 / ENEEDAUTH） | 本机没有凭证：`npm login` |
-| `make sdk-publish` 报 403 且**没有**提示输 OTP | 账号没开 2FA（`npm profile get` 的 `tfa` 是 `false`）：npm 要求发布者有 2FA 或一把 Bypass 2FA 的 token，而注册表回的是 E403、npm 只在 EOTP / E401 时才提示口令，于是它不问也不说缺什么。先把 2FA 开起来（浏览器里），或建一把 Bypass 2FA 的 granular token。判据与实测见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md) |
+| `publish-npm` 报 401 / 404 | npm 上的 **Trusted Publisher 没配**，或仓库/工作流名对不上（Workflow filename 只填文件名 `release.yml`）。包必须先存在才能配，因此**包名第一次发布只能走应急路** |
+| `publish-npm` 报 npm 版本太旧 | 基础镜像轮换过，runner 上的 npm < 11.5.1；job 里那一步会把这句话直接说出来 |
+| 发布后 registry 上只有 `0.0.0-stage` | 不是失败：npm 处理新版本的暂存状态，过一会儿（首次实测约两三分钟）真版本才放行。`npm stage list` 查状态 |
+| （应急路）npm 上出现了 `0.0.0-development`，或一个几 KB 的空包 | 版本取自 tag 那一步没生效，或包在没有构建产物的情况下被打包。两者都有守卫（`make sdk-publish` 的版本来源、打包检查），看日志里哪一条没跑到——`npm publish` 自己不会为此报错 |
+| （应急路）`make sdk-publish` 报"工作区不干净" | 那是守卫，不是故障：先提交，再发（发布的内容要能对应到一次提交） |
+| （应急路）`make sdk-publish` 报"HEAD 不在任何 tag 上" | 位置不对：要么先把 tag 打在这个提交上再发，要么用 `SDK_VERSION=vX.Y.Z` 显式预支一个号 |
+| （应急路）`make sdk-publish` 报认证失败（401 / ENEEDAUTH） | 本机没有凭证：`npm login` |
+| （应急路）`make sdk-publish` 报 403 且**没有**提示输 OTP | 账号没开 2FA（`npm profile get` 的 `tfa` 是 `false`）：npm 要求发布者有 2FA 或一把 Bypass 2FA 的 token，而注册表回的是 E403、npm 只在 EOTP / E401 时才提示口令，于是它不问也不说缺什么。先把 2FA 开起来（浏览器里），或建一把 Bypass 2FA 的 granular token。判据与实测见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md) |
 | npm 上出现了两个版本、而 tag 只有一个 | 预支号时把号发重了：那个 tag 的内容发不出来（npm 不允许重发同一版本），只能跳到下一个号 |

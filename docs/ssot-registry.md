@@ -159,7 +159,7 @@
 | 一次客户端动作的耗时怎么量（起点、取整、下限） | `startTimer()` | [web/src/telemetry/track.ts](../web/src/telemetry/track.ts) |
 | 命令行本地失败的上报（配置/凭证/用法，退出前发出） | `recordLocalFailure` + `flushClientEvents`（只在退出路径调用） | [cmd/aladdin/telemetry-events.go](../cmd/aladdin/telemetry-events.go) |
 | 发布产物的构建与打包（跨平台二进制、前端包、校验和） | `make release-build` | [Makefile](../Makefile) |
-| SDK 包发到公共 npm 源（版本来源、工作区干净、幂等） | `make sdk-publish`（本地一条命令，不走流水线）；包内容本身由 `npm pack` 定（`files` + `prepack`） | [Makefile](../Makefile) / [sdk/package.json](../sdk/package.json) |
+| SDK 包发到公共 npm 源（版本改写、幂等、provenance） | **主路**是发布流水线的 `publish-npm`（tag 触发，Trusted Publishing）；本地 `make sdk-publish` 是应急（两条守卫：版本来源、工作区干净）。包内容本身由 `npm pack` 定（`files` + `prepack`） | [.github/workflows/release.yml](../.github/workflows/release.yml) / [Makefile](../Makefile) / [sdk/package.json](../sdk/package.json) |
 | 把产物部署到生产（拉取、校验、替换、重启、回滚） | `deploy/deploy.sh`（产物来源由 `--from` 给出，默认是 Release；**中转不另起一份部署实现**） | [deploy/deploy.sh](../deploy/deploy.sh) |
 | 把发布产物放到中转地址（上传 + 逐个对象置公开读；用完删掉） | `deploy/relay` | [deploy/relay/main.go](../deploy/relay/main.go) |
 | 本地开发环境的拉起（服务端 + 前端，同起同停） | `make dev`；两边的命令与种子配置各只有一处来源（`DEV_SERVER_CMD` / `WEB_DEV_CMD`），`dev` 与 `dev-server` / `web-dev` 都引用它们 | [Makefile](../Makefile) |
@@ -176,7 +176,7 @@
 | 接口契约与消息定义（服务端 + 前端类型） | proto 定义，经 `buf generate` 同时派生出 Go 与 TS 两侧代码 | [api/proto/](../api/proto/) |
 | 拒绝原因枚举（Go / TypeScript / CLI 三端同源） | [api/proto/aladdin/rbac/v1/errors.proto](../api/proto/aladdin/rbac/v1/errors.proto) | 由 `buf generate` 派生，三端均引用生成常量 |
 | 文档页 ↔ 宿主之间消息的形状（通道名、协议版本、消息类型） | 接入桥协议；**一份形状、按载体各一份，不得出现第四种形状**（这是已定的取舍，理由见 [design/galaxy/sdk.md](design/galaxy/sdk.md) 的待定决策）：服务端渲染进 `docs` 页的那一段常量脚本、宿主侧的解析（唯一一处，预览与壳共用）、以及用户打进 `site` 产物的运行期包。取值由运行期包的测试读另外两处的源码钉住 | [internal/galaxy/doc_frame_bridge.go](../internal/galaxy/doc_frame_bridge.go) / [web/src/pages/galaxy/frame-channel.ts](../web/src/pages/galaxy/frame-channel.ts) / [sdk/src/runtime/frame-channel.ts](../sdk/src/runtime/frame-channel.ts) |
-| SDK 包的版本号 | **发布 tag**：发布这条命令要求 HEAD 就在 tag 上，把那个号写进包里的 `version`，仓库里的值只是占位、发布不改它——同一件事不在第二处维护 | [Makefile](../Makefile) 的 `sdk-publish` |
+| SDK 包的版本号 | **发布 tag**：发布流水线在打包前把 tag 覆写成包里的 `version`，仓库里的那个值是占位——同一件事不在第二处维护 | [.github/workflows/release.yml](../.github/workflows/release.yml) 的 `publish-npm` |
 | 权限码全集（Go 常量与前端常量同源） | 权限目录，经 `make gen` 双向派生 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |
 | 客户端事件的类型、动作允许清单与字段（Go / TypeScript 两端同源） | proto 定义，经 `buf generate` 派生 | [api/proto/aladdin/telemetry/v1/telemetry.proto](../api/proto/aladdin/telemetry/v1/telemetry.proto) |
 | 一个动作的日志取值、是否允许匿名、可携带哪些属性 | 动作策略表 | [internal/telemetry/actions.go](../internal/telemetry/actions.go) |

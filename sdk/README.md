@@ -115,7 +115,7 @@ make sdk-install        # 装依赖
 make test-sdk           # 类型检查 + 测试
 make sdk-build          # 产出 dist/
 make sdk-check-package  # 检查发布包里有什么（自建一遍再打包核对，含 publint）
-make sdk-publish        # 发到公共 npm 源（本地执行，版本取自发布 tag）
+make sdk-publish        # 发到公共 npm 源（**应急**；主路是流水线在 tag 上发）
 ```
 
 `sdk/src/gen/` 是 `make gen` 从 proto 派生的，**不手工改**。

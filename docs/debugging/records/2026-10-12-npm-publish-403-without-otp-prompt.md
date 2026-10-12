@@ -40,7 +40,8 @@ npm profile get --json | python3 -c "import json,sys; print(json.load(sys.stdin)
 
 ## 结论与边界
 
-- **正确的顺序是先改账号，再上命令行**：npmjs.com → 账号 → Two-Factor Authentication → 启用（**这里**才是输码的地方）。之后发布时 npm 会按你配置的 2FA 方式提示。
+- **先定位到这一条的适用范围**：发布的主路已经改到流水线（`release.yml` 的 `publish-npm`，走 Trusted Publishing——没有长期 token，也不需要谁输口令），因此**下面这些坑只影响本地那条应急路**（`make sdk-publish`）。当时的判断是"发布留在本地"，正是那次选择把这几个交互式前置暴露了出来。
+- **正确的顺序是先改账号，再上命令行**：npmjs.com → 账号 → Two-Factor Authentication → 启用（**这里**才是输码的地方）。之后发布时 npm 会开浏览器让你验证一次。
 - **想彻底免码**（本地/CI 发布的官方路子）：建一把 granular access token——权限 `Read and write`、范围 `@poetlife`、勾上 **Bypass 2FA**，写进 `~/.npmrc`。官方对它的告诫照抄：只在自动化发布确实需要时开，权限取最小、有效期取最短、定期轮换。它是一把长期可发布的凭证，放在本机就等于"这台机器上的文件能发版"。
 - `make sdk-publish` 保留了 `SDK_OTP=<码>` 的口子（`--otp=` 会在第一次请求就带上，不依赖 npm 的提示），但那是**备选**：账号没 2FA 时，塞码也没用。
 - **仓库侧不用改**：两条守卫（版本来源、工作区干净）与打包检查都按预期工作；失败时仓库里没有残留（占位值与 lockfile 已还原），npm 上也没有半成品——**预支的那个号因此没有被烧掉**，修好账号重跑即可。

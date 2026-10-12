@@ -100,11 +100,13 @@
 
 **升级走 npm，SDK 自己不做自更新。** 命令行需要一条自更新路径，理由是它是**装在别人机器上的二进制**——没有人能替使用者把那个文件换掉（见 [cli.md](cli.md) 的升级一节）。SDK 是一份 JS：npm 自己的安装、升级与 lockfile 就是它的分发形态，包里再长一条自更新路径，等于给同一件事配第二套实现。
 
-**版本只有一个来源：发布 tag。** 包内那份 proto 派生物与包来自同一个 tag，因此"SDK 的版本"与"它对话的服务端版本"是同一个数——不维护第二张兼容矩阵，也不允许包里的版本号与 tag 各说各的。发布这一步因此要求 **HEAD 就在 tag 上**：包里的字节与那个 tag 逐字一致，这个号才不是一句空话。仓库里那个值只是占位，发布不会改它（见 [release.md](../../release.md)）。
+**版本只有一个来源：发布 tag。** 包内那份 proto 派生物与包来自同一个 tag，因此"SDK 的版本"与"它对话的服务端版本"是同一个数——不维护第二张兼容矩阵，也不允许包里的版本号与 tag 各说各的。仓库里那个值只是占位，发布不会改它（见 [release.md](../../release.md)）。
 
 **包里只有两类字节**：构建产物与它的类型声明、以及源码（使用者从声明跳进实现时要有东西可跳）。**包里没有一处是为使用者页面准备的脚本或样式**——页面里出现的 aladdin 字节，只可能是他自己打进产物的运行期包。
 
-**发布是本地的一步，不进流水线**：一条 `make sdk-publish`，凭证就是发版人本机已有的 npm 登录态——流水线那边为了少敲一条命令，要在仓库里放一份发布凭证。两条要写在明面上的前置：**账号必须开 2FA**（npm 的规矩：发布者要有 2FA，或一把开了 Bypass 2FA 的 granular token，否则注册表直接 403，且**不会**提示输码），以及**本地发布没有 provenance**（它需要 CI 的 OIDC），包页面上唯一的来源线索是 `repository` 字段。要不要为 provenance 把发布搬回流水线，是一个可以单独再定的取舍。
+**发布在流水线里，跟着发布 tag 走**：打 tag 之后由 `release.yml` 的 `publish-npm` 发，走 npm 的 **Trusted Publishing**——仓库里因此没有 npm 的长期 token，也不需要谁在发版时输一次性口令，而 provenance 自动生成（包页面上写明它来自哪个仓库的哪一次运行）。**主路选在这里的理由不只是省事**：发布发生在 tag 之后，包里的字节与那个 tag 逐字一致，"版本 = tag"这句话因此天然成立，也不会出现"预支了一个号、而那个 tag 又没落在同一份内容上"的账。
+
+**本地那条命令（`make sdk-publish`）是应急**，用在流水线没发成、或要跳过发版流程补一版的时候。两条代价写在明面上：**没有 provenance**（它要 CI 的 OIDC），以及**每一次都躲不过浏览器 2FA 验证**（账号必须先开 2FA，否则注册表直接 403 且不提示口令——判据见 [debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md](../../debugging/records/2026-10-12-npm-publish-403-without-otp-prompt.md)）。**包名的第一次发布只能走这条路**：npm 的 Trusted Publisher 只能配在已经存在的包上。
 
 ### 素材：入库是显式动作，引用走 SDK
 
@@ -201,7 +203,7 @@
 | 不透明源下无可用存储 | 页面里读不到 cookie、localStorage 与 indexedDB（示例工程 + 端到端测试） |
 | 素材入库只经显式动作 | 构建过程不产生任何资产、不上传任何字节（示例工程测试） |
 | 发出去的包能被外部消费者用 | 四个入口的产物与类型声明、许可证与说明都在包里，且入口按 `exports` 可解析（打包检查：`make sdk-check-package`） |
-| 包里的版本与发布它的那次 tag 是同一个数 | 发布这一步要求 HEAD 就在 tag 上，号取自那个 tag（`make sdk-publish`）；包内容与 tag 因此逐字一致。本地发布没有 provenance，来源线索只有 `repository` 字段 |
+| 包里的版本与发布它的那次 tag 是同一个数 | 发布在 tag 之后由流水线做（版本由 `GITHUB_REF_NAME` 覆写），包里的字节与 tag 因此逐字一致；包页面上带着 provenance，指向产生它的仓库与那一次运行 |
 | 直传的签名被真实桶接受 | 部署后一次真实直传冒烟：签发 → 直接传到桶 → 提交核对成功（部署后冒烟，见 [deploy.md](../../deploy.md)） |
 
 ## 依赖关系
@@ -224,7 +226,7 @@
 
 | 决策 | 结论 | 替换影响范围 |
 |------|---------|-------------|
-| 包的分发形态 | **公共 npm 源，包名 `@poetlife/aladdin-sdk`；版本取自发布 tag；发布在本地一步（`make sdk-publish`）；不做自更新**（**已定**，见上"包的分发与版本"） | 影响安装与升级路径 |
+| 包的分发形态 | **公共 npm 源，包名 `@poetlife/aladdin-sdk`；发布在流水线里跟着发布 tag 走（Trusted Publishing），版本只有 tag 这一个来源；本地 `make sdk-publish` 只作应急；不做自更新**（**已定**，见上"包的分发与版本"） | 影响安装与升级路径 |
 | 与 skill 目录共用同一条接入面 | **各走各的**（**已定**）：两边的凭证来源与形态不同（调用者已有的凭证 vs 宿主下发的窄凭证），而该共用的已经共用了——协议只有 Connect 一条，proto 由 `make gen` 派生 | 合并要重新论证：那等于让 agent 背一条浏览器通道，或让本包长出一个命令行形状的面 |
 | 接入桥与直传的 SSOT 收敛 | **一份形状、按载体各一份，不得出现第四种**（**已定**，登记在 [ssot-registry.md](../../ssot-registry.md)）：重复的是常量与类型而不是逻辑，而形状还**跨语言**（另一头是服务端渲染进 `docs` 页的 Go 常量脚本），"字面上一份实现"不可达 | 改成 web 依赖本包会动 web 的构建顺序，并让主站自己的需求开始塑造这个对外包的公开面 |
 | 手写 COS 签名的验证 | **补一次部署后的真桶直传冒烟**（**已定**）：与官方实现逐字对齐的那组测试只证明"与对照物一致"，不证明桶接受 | 冒烟需要真实凭证与网络，因此不进常规门禁（与"取内容只能发到发布域"同档） |
@@ -256,7 +258,8 @@
 | 依赖安装、类型检查、测试与构建 | [Makefile](../../../Makefile) 的 `sdk-ci` / `sdk-install` / `test-sdk` / `sdk-build` / `sdk-check-package` |
 | 打包内容与对外元数据（包名、入口、许可证、发布前的构建） | [sdk/package.json](../../../sdk/package.json) |
 | 打包检查（入口产物、类型声明、许可证在不在包里；入口能不能解析） | [sdk/scripts/check-package.mjs](../../../sdk/scripts/check-package.mjs) |
-| 发布到 npm（本地一条命令：版本取自 tag、工作区干净、幂等、发完还原占位值） | [Makefile](../../../Makefile) 的 `sdk-publish` |
+| 发布到 npm（**主路**：版本取自 tag、幂等、provenance 由 OIDC 自动生成） | [.github/workflows/release.yml](../../../.github/workflows/release.yml) 的 `publish-npm` |
+| 发布到 npm（**应急路**：本地一条命令，两条守卫，发完还原占位值） | [Makefile](../../../Makefile) 的 `sdk-publish` |
 | 门禁里的 SDK job | [.github/workflows/gate.yml](../../../.github/workflows/gate.yml) |
 
 ---

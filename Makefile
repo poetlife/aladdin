@@ -196,9 +196,10 @@ sdk-check-package: ## 检查发布包里有什么（入口产物、类型声明�
 	@# 自建一遍再打包核对，而不是"假定调用方已经构建过"。
 	cd sdk && npm run check:package
 
-# SDK 发到 npm 的版本号。只有一个来源：**发布 tag**。缺省要求 HEAD 就在 tag 上
-# （`--exact-match`），因为这时"包里的字节"与"那个 tag"逐字一致，版本号才不是一句
-# 空话。tag 还没打、但就是要用它的号时显式给一个：`make sdk-publish SDK_VERSION=v0.7.3`
+# SDK 发到 npm 的版本号。只有一个来源：**发布 tag**（主路是流水线在 tag 上发，
+# 见 release.yml 的 publish-npm）。这条本地命令只作**应急**，因此它的缺省要求更严：
+# HEAD 就在 tag 上（`--exact-match`），这时"包里的字节"与"那个 tag"逐字一致。
+# tag 还没打、但就是要用它的号（包名第一次发布必然如此）：`SDK_VERSION=v0.7.3`
 # ——那是一次有意预支，代价见 docs/release.md。
 SDK_VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
@@ -213,8 +214,9 @@ SDK_OTP_ARG = $(if $(SDK_OTP),--otp=$(SDK_OTP),)
 # 发布**不改仓库里的值**：那个占位号是设计如此，真正的版本在 tag 上；因此发完
 # 把 npm version 改写过的两个文件还原回去（守卫保证了它们此刻与 HEAD 一致）。
 .PHONY: sdk-publish
-sdk-publish: ## 把 SDK 发到公共 npm 源（本地执行；版本取自发布 tag）
-	@# 发布在本地做、不进流水线，见 docs/release.md 的"npm 包（SDK）"。
+sdk-publish: ## 把 SDK 发到公共 npm 源（**应急**：主路是流水线在 tag 上发）
+	@# 只在流水线没发成、或要跳过发版流程补一版时用。代价：这条路没有 provenance，
+	@# 且每一次都要过浏览器 2FA。见 docs/release.md 的"npm 包（SDK）"。
 	@test -n "$(SDK_VERSION)" || { \
 		echo "HEAD 不在任何 tag 上，因此不知道这个包该是哪个版本。" >&2; \
 		echo "要么先把 tag 打在这个提交上，要么显式预支一个号：" >&2; \
