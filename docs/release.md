@@ -17,7 +17,7 @@
 
 门禁的范围只有一处定义：`.github/workflows/gate.yml`。CI 与发布都调它，**不复制步骤**——否则两份定义迟早漂移，例如有人只给其中一份加了前端测试。
 
-门禁是**四个并行 job**，它们是四段互不相干的检查：
+门禁是**五个并行 job**，它们是五段互不相干的检查：
 
 | job | 依次执行 |
 |-----|---------|
@@ -25,8 +25,9 @@
 | 后端单元测试 | `make test` |
 | 端到端测试 | `make test-e2e` |
 | 前端 | `make web-ci`（按 lockfile 装依赖）→ `make test-web` → `make web-build` |
+| SDK | `make sdk-ci`（按 lockfile 装依赖）→ `make test-sdk` → `make sdk-build` → `make sdk-check-package` |
 
-四段之间没有依赖，串行的总时长是它们相加，并行是最慢的那一段。代价是每个 job 各自检出、各自恢复一遍缓存：**机器时间变多，墙钟时间变少**（见下面的"时间花在哪里"）。另一处收益是原先"所有 Go 步骤必须先于 `make web-ci`"这条脆弱约束消失了——前端独立成 job 之后，Go 的 job 里根本不存在 `node_modules`。
+五段之间没有依赖，串行的总时长是它们相加，并行是最慢的那一段。代价是每个 job 各自检出、各自恢复一遍缓存：**机器时间变多，墙钟时间变少**（见下面的"时间花在哪里"）。另一处收益是原先"所有 Go 步骤必须先于 `make web-ci`"这条脆弱约束消失了——前端独立成 job 之后，Go 的 job 里根本不存在 `node_modules`。
 
 一处有意的行为变化：并行的 job 默认不互相取消，**某个 job 失败时其余照常跑完**。这是要的——一次推送就能看到全部结论，而不是"修完 lint 才发现测试也红"。取消仍然发生在推送这一层：`ci.yml` 的 `concurrency` 会取消同一分支上过期的那次运行。
 
@@ -49,7 +50,7 @@
 
 并行之后，关键路径换成最慢的那一个 job，另外三段与之重叠。每个 job 都要各付一次约 20s 的 Go 缓存恢复（这份 817MB 的缓存下载约 6s、解压约 11s），它买到的是冷缓存下每个 job 多出来的 40~60s 编译。
 
-拆分的首次实测（就是拆完的那一推，一次成功运行）：**run 总时长 75s**，四个 job 分别 73s / 70s / 65s / 63s。最慢的是**端到端测试**，不是后端单元测试——关键路径落在哪一段，取决于该次运行里哪一段最慢，不是固定的。
+拆分的首次实测（就是拆完的那一推，一次成功运行）：**run 总时长 75s**，四个 job 分别 73s / 70s / 65s / 63s。**这组数字里没有 SDK**——那时还没有它，SDK 是后来加的第五个 job。最慢的是**端到端测试**，不是后端单元测试——关键路径落在哪一段，取决于该次运行里哪一段最慢，不是固定的。
 
 两处"搬家之后变慢"，都在关键路径之外，且都有结构性原因：
 
@@ -105,6 +106,19 @@ grep -aqF -- "<注入值>" dist/aladdin || 中止
 - 前端产物名带版本号：前端界面不显示版本，`web/dist` 也不进 Go 二进制，文件名是它唯一的版本载体。
 - **命名与 `SHA256SUMS` 从此是对外契约。** 命令行的自更新会解析两者（见 [design/cli/self-update.md](design/cli/self-update.md)）：包名形如 `aladdin_<tag>_<os>_<arch>.tar.gz`，校验和清单是 `<摘要>  <文件名>` 的标准两列格式。改命名、改清单格式、或把二进制从包根挪走，都会让**已经装出去的命令行**失去升级能力——而它们的表现是使用者那一侧的一句"升级失败"，不会在这里报任何错。
 
+### npm 包（SDK）
+
+`@poetlife/aladdin-sdk` **也在发版这一步产出，但发布本身在本地做**：一条 `make sdk-publish`，不进流水线。
+
+- **为什么不在流水线里。** 这个包的发布与 Release 的产物不是同一件事：Release 那边是"多平台二进制 + 校验和 + 清理旧版本"的成套动作，npm 这边只是一次 `npm publish`；把它接进 `release.yml` 就要在流水线里放一份发布凭证（Trusted Publishing 的 OIDC 配置或一个长期 token），而它换来的是"少敲一条命令"。发版的人本来就在本机，凭证也本来就在本机（`npm whoami`）。
+- **代价写在这里，别装作没有**：本地发布**没有 provenance attestation**（它需要 CI 的 OIDC），包页面上能看到的来源只有 `repository` 字段。想补上它，办法是把发布搬回流水线（`id-token: write` + `npm publish --provenance`）。
+- **版本只有一个来源：发布 tag。** `make sdk-publish` 缺省取 HEAD 上那个 tag（`git describe --tags --exact-match`），**要求 HEAD 就在 tag 上**——这时包里的字节与那个 tag 逐字一致，"SDK 版本 = 服务端版本"才不是一句空话。仓库 [sdk/package.json](../sdk/package.json) 里那个值是占位（`0.0.0-development`），发布不改它：发完命令自己把改写过的两个文件还原回去。
+- **预支一个号是有代价的。** tag 还没打但就是要用它的号（第一个正式版必然如此）：`make sdk-publish SDK_VERSION=v0.7.3`。**那个号从此废了**——npm 不允许重发同一个版本，若之后 v0.7.3 的 tag 没有恰好落在这次发布的内容上，那个 tag 对应的包就发不出来，只能跳到下一个号。所以预支之后要尽快把 tag 打在同一份内容上。
+- **两条守卫**：工作区必须干净（发出去的字节要能对应到一次提交）、npm 上已有该版本就跳过（幂等，重跑不报红）。
+- **包里有什么由 `files` 与 `prepack` 决定**，发布前自动跑一遍打包检查（`make sdk-check-package`，门禁里也跑）。**`dist/` 不进版本库**，而 `npm pack` 在缺产物时**不报错**——它只是安静地打出一个只含 `package.json` 的包。
+- **许可证正文是根 [LICENSE](../LICENSE) 的一份副本**（`sdk/LICENSE`）：npm 只收包目录里的许可证文件，收不到包外的。改根许可证时要同步这一份。
+- **一次性前置**（不在仓库里）：npm org 与发布权限。仓库这边的第一次发布用 `SDK_VERSION=` 预支号，之后每次正常发版都发生在 tag 之后。
+
 ## 保留最近 5 个版本
 
 `release.yml` 的 `prune` 步骤在发布成功后清理更早的 Release，只留最近 5 个。
@@ -148,13 +162,26 @@ grep -aqF -- "<注入值>" dist/aladdin || 中止
 先确认门禁在本地是绿的，再打 tag——否则推上去才发现失败，比本地发现更晚：
 
 ```bash
-make web-ci && make tools && make lint && make test && make test-e2e && make check-gen && make check-api-docs && make test-web
+make web-ci && make sdk-ci && make tools && make lint && make test && make test-e2e && make check-gen && make check-api-docs && make test-web && make test-sdk && make sdk-check-package
 ```
 
 本地验证产物（`VERSION` 换成等价于 tag 的值）：
 
 ```bash
 make release-build VERSION=v0.0.0-test
+```
+
+本地看 npm 包里装了什么（这条不改任何东西，也不联网发布）：
+
+```bash
+cd sdk && npm pack --dry-run
+```
+
+发 SDK 到 npm（**本地一步，不进流水线**；缺省要求 HEAD 已在 tag 上，第一次发时 tag 还没有，用 `SDK_VERSION=` 预支一个号，代价见上）：
+
+```bash
+make sdk-publish                          # 发完 tag 之后
+make sdk-publish SDK_VERSION=v0.7.3       # 预支一个号（第一个正式版）
 ```
 
 然后打 tag 并推送：
@@ -173,3 +200,8 @@ git tag v0.1.0 && git push origin v0.1.0
 | tag 推上去了但没产出 Release | 先看 `validate` 是否因 tag 形状被拒 |
 | 门禁跑得慢 | 日志里出现成片的 `>>> go install`，说明工具缓存没命中（正常情况下 `make tools` 全是 `>>> 已就绪`）。看 `缓存已装好的工具` 那一步是 hit 还是 miss；`setup-go` 自己的缓存只按 `go.sum` 哈希与 git ref 隔离，加个依赖或换个分支就会 miss，不必指望它 |
 | Release 数量没有收敛到 5 | 看 `prune` 步骤的日志：它每次都会打印候选集与将要删除的列表 |
+| npm 上出现了 `0.0.0-development`，或一个几 KB 的空包 | 版本取自 tag 那一步没生效，或包在没有构建产物的情况下被打包。两者都有守卫（`make sdk-publish` 的版本来源、打包检查），看日志里哪一条没跑到——`npm publish` 自己不会为此报错 |
+| `make sdk-publish` 报"工作区不干净" | 那是守卫，不是故障：先提交，再发（发布的内容要能对应到一次提交） |
+| `make sdk-publish` 报"HEAD 不在任何 tag 上" | 位置不对：要么先把 tag 打在这个提交上再发，要么用 `SDK_VERSION=vX.Y.Z` 显式预支一个号 |
+| `make sdk-publish` 报认证失败（401 / ENEEDAUTH） | 本机 npm 登录态（`npm whoami`），以及这个账号在 `poetlife` 这个 org 里有没有发布权限 |
+| npm 上出现了两个版本、而 tag 只有一个 | 预支号时把号发重了：那个 tag 的内容发不出来（npm 不允许重发同一版本），只能跳到下一个号 |

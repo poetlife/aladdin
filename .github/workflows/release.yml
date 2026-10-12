@@ -3,6 +3,9 @@
 # 顺序是刻意的：validate → gate → build → publish → prune。
 # 门禁在构建之前，失败则不产出任何东西——宁可没有 Release，也不要半个。
 # 完整说明见 docs/release.md。
+#
+# SDK 那个包**不在这里发**：它由本地的一条命令发（`make sdk-publish`），版本仍只
+# 取自 tag。理由与它不跟 Release 一起发的形态见 docs/release.md。
 
 name: release
 
@@ -162,7 +165,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 保留的版本数。更早的 Release 会被删掉，git tag 不受影响。
           KEEP: "5"
-        # 本步骤是全流程唯一不可逆的操作，因此每一条防护都写在明面上：
+        # 本步骤是全流程唯一**删除**操作（另一处不可逆的是 npm 包的发布，那边靠
+        # "同一个版本不发第二次"兜住），因此每一条防护都写在明面上：
         #   · 只处理 tag 形如 vX.Y.Z 的 Release，人工创建的、名字不匹配的一律不碰
         #   · 只删 Release，绝不删 git tag（不带 --cleanup-tag）
         #   · 数量未超过 KEEP 时什么也不做
