@@ -234,7 +234,8 @@ sdk-publish: ## 把 SDK 发到公共 npm 源（本地执行；版本取自发布
 	  if npm view "$$name@$$version" version >/dev/null 2>&1; then \
 	    echo ">>> npm 上已有这个版本，跳过（版本不可回收，也就不重发）"; \
 	  else \
-	    npm run check:package && npm publish $(SDK_OTP_ARG); \
+	    npm run check:package && npm publish $(SDK_OTP_ARG) && \
+	      echo ">>> 已提交。registry 上若先出现 0.0.0-stage，那是 npm 的暂存发布（真版本过一会儿才放行），不是失败——npm stage list 看状态。"; \
 	  fi ) || status=$$?; \
 	git checkout -- sdk/package.json sdk/package-lock.json; \
 	exit $$status
