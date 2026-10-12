@@ -4,7 +4,7 @@
 # 两份定义迟早漂移，例如有人只给其中一份加了前端测试。
 # 要调整门禁范围，只需改这里（见 docs/release.md 与 docs/ssot-registry.md）。
 #
-# 四个 job 之间没有依赖，所以并行跑。串行的总时长是四段相加，并行是最慢的那一段
+# 五个 job 之间没有依赖，所以并行跑。串行的总时长是五段相加，并行是最慢的那一段
 # （后端单元测试）——同一套检查，墙钟时间少一半。代价是每个 job 各自检出一次、
 # 各自恢复一遍缓存：这份开销本身也是并行的，不占关键路径，但机器时间确实变多
 # （见 docs/release.md 的"时间花在哪里"）。
@@ -138,3 +138,31 @@ jobs:
 
       - name: 构建前端
         run: make web-build
+
+  sdk:
+    name: 门禁 · SDK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: sdk/package-lock.json
+
+      - name: 安装 SDK 依赖
+        run: make sdk-ci
+
+      # 类型检查 + 单元测试。其中"接入桥的信封与仓库里另外两处同源"那一条会
+      # 直接读服务端与主站壳的源码，因此它必须在**整棵树**上跑，不能单独打包跑。
+      - name: SDK 类型检查与测试
+        run: make test-sdk
+
+      - name: 构建 SDK
+        run: make sdk-build

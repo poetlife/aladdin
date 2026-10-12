@@ -36,3 +36,18 @@ plugins:
     out: web/src/gen/proto
     opt:
       - target=ts
+
+  # 对外发布的 TS 包（sdk/）的 proto 生成产物。
+  #
+  # 它与 web 那一份**不能共用**：sdk 是一个独立发布出去的包，不能 import 主应用
+  # 内部的路径。同一份 proto 因此派生出两份 TS——**形状只有 proto 一处来源**，
+  # 这两份都是它的派生物，不是两份定义（与 api/gen 之于 proto 同一条理由）。
+  #
+  # import_extension=js 是 node 侧 ESM 的要求：没有它，产物里的相对 import 不带
+  # 扩展名，`tsc` 按 NodeNext 编译会直接报错。web 那份不需要它，因为 web 由 vite
+  # 打包，走的是 bundler 解析。
+  - remote: buf.build/bufbuild/es:v2.15.0
+    out: sdk/src/gen/proto
+    opt:
+      - target=ts
+      - import_extension=js
