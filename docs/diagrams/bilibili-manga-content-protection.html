@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>B 漫一次取图：明文在源站，加密在边缘</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      /* aladdin skin：取 antd 主题种子推导出的取值，见 docs/design/web/README.md */
+      --color-paper:   #f5f5f5;   /* colorBgLayout */
+      --color-ink:     #1f1f1f;   /* colorText */
+      --color-muted:   #595959;   /* colorTextSecondary */
+      --color-accent:  #7c3aed;   /* 品牌紫 #8B5CF6 压深一档：4.23:1 -> 5.23:1 */
+      --font-sans:     'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Sans SC', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1360px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .lede {
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: var(--color-muted);
+      max-width: 66ch;
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 1280px; display: block; }
+
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Sequence · 一次取图</p>
+    <h1>明文在源站，加密在边缘</h1>
+    <p class="lede">授权判断发生在漫画服务端（认人、签字），验签发生在边缘节点；内容的加密发生在出向那一跳，因此源站与边缘之间流动的是明文，回到客户端的才是密文。<br>“明文”一项由交付格式反推（只加密一段、其余字节原样拼回），未直接观测源站对象：两侧不带凭据一律 403。</p>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="bili-manga-title bili-manga-desc">
+        <title id="bili-manga-title">B 漫一次取图的时序：授权签发、边缘验签与边缘加密</title>
+        <desc id="bili-manga-desc">客户端生成椭圆曲线密钥对并向漫画服务换取带签名与时限的图片地址，边缘节点验签后回源取明文对象，再按版本派生的密钥加密指定区域返回，客户端解密渲染；凭据不成立时边缘直接拒绝，源站不会被触达。</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#595959"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#7c3aed"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#0958d9"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- ================= 生命线（在箭头之下） ================= -->
+        <line x1="200" y1="108" x2="200" y2="676" stroke="#1f1f1f" stroke-opacity="0.20" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="560" y1="108" x2="560" y2="676" stroke="#1f1f1f" stroke-opacity="0.20" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="920" y1="108" x2="920" y2="676" stroke="#1f1f1f" stroke-opacity="0.20" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="1200" y1="108" x2="1200" y2="676" stroke="#1f1f1f" stroke-opacity="0.20" stroke-width="1" stroke-dasharray="3,3"/>
+
+        <!-- ================= 消息：1–8 ================= -->
+
+        <!-- 1 · 客户端本地生成密钥对（自消息） -->
+        <path d="M 200 148 L 248 148 Q 256 148 256 156 L 256 164 Q 256 172 248 172 L 204 172"
+              fill="none" stroke="#595959" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="268" y="158" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">生成 P-256 密钥对</text>
+        <text x="268" y="174" fill="#595959" font-size="9"
+              font-family="'Geist Mono', ui-monospace, monospace">exportKey raw / jwk</text>
+
+        <!-- 2 · 要凭证 -->
+        <line x1="200" y1="212" x2="552" y2="212" stroke="#0958d9" stroke-width="1" marker-end="url(#arrow-link)"/>
+        <rect x="300" y="188" width="172" height="16" rx="4" fill="#f5f5f5"/>
+        <text x="312" y="200" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">要一份取图凭证</text>
+        <text x="460" y="200" fill="#595959" font-size="9" text-anchor="end"
+              font-family="'Geist Mono', ui-monospace, monospace">{urls, m1}</text>
+
+        <!-- 3 · 签出地址 -->
+        <line x1="560" y1="248" x2="208" y2="248" stroke="#595959" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="300" y="224" width="164" height="16" rx="4" fill="#f5f5f5"/>
+        <text x="312" y="236" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">认人之后签出</text>
+        <text x="452" y="236" fill="#595959" font-size="9" text-anchor="end"
+              font-family="'Geist Mono', ui-monospace, monospace">token &amp; ts</text>
+
+        <!-- 4 · 拿地址取图 -->
+        <line x1="200" y1="284" x2="912" y2="284" stroke="#0958d9" stroke-width="1" marker-end="url(#arrow-link)"/>
+        <rect x="228" y="260" width="292" height="16" rx="4" fill="#f5f5f5"/>
+        <text x="240" y="272" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">拿地址取图</text>
+        <text x="508" y="272" fill="#595959" font-size="9" text-anchor="end"
+              font-family="'Geist Mono', ui-monospace, monospace">GET ?token=&amp;ts=</text>
+
+        <!-- 5 · 回源取对象 -->
+        <line x1="920" y1="320" x2="1192" y2="320" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="986" y="296" width="140" height="16" rx="4" fill="#f5f5f5"/>
+        <text x="998" y="308" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">回源取对象</text>
+        <text x="1114" y="308" fill="#595959" font-size="9" text-anchor="end"
+              font-family="'Geist Mono', ui-monospace, monospace">origin</text>
+
+        <!-- 6 · 原图返回（明文） -->
+        <line x1="1200" y1="352" x2="928" y2="352" stroke="#595959" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="1002" y="328" width="132" height="16" rx="4" fill="#f5f5f5"/>
+        <text x="1068" y="340" fill="#1f1f1f" font-size="12" font-weight="600" text-anchor="middle"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">原图字节（明文）</text>
+
+        <!-- 7 · 密文回程（本图唯一主角） -->
+        <line x1="920" y1="500" x2="208" y2="500" stroke="#7c3aed" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        <rect x="228" y="472" width="292" height="16" rx="4" fill="#f5f5f5"/>
+        <text x="240" y="484" fill="#1f1f1f" font-size="12" font-weight="600"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">密文回程</text>
+        <text x="508" y="484" fill="#595959" font-size="9" text-anchor="end"
+              font-family="'Geist Mono', ui-monospace, monospace">salt · pos · svrPubKey</text>
+
+        <!-- 8 · 客户端解密（自消息） -->
+        <path d="M 200 536 L 248 536 Q 256 536 256 544 L 256 552 Q 256 560 248 560 L 204 560"
+              fill="none" stroke="#595959" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="268" y="546" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">用私钥解那一段</text>
+        <text x="268" y="562" fill="#595959" font-size="9"
+              font-family="'Geist Mono', ui-monospace, monospace">decrypt → Blob</text>
+
+        <!-- ================= 边缘节点内部处置 ================= -->
+        <rect x="912" y="292" width="16" height="208" rx="2" fill="#1f1f1f" fill-opacity="0.06" stroke="#595959" stroke-width="0.8"/>
+        <text x="944" y="392" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">① 验 token 与 ts</text>
+        <text x="944" y="416" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">② 按版本定加密区域</text>
+        <text x="944" y="440" fill="#1f1f1f" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">③ ECDH 派生本次密钥</text>
+        <text x="944" y="464" fill="#1f1f1f" font-size="12" font-weight="600"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">④ 就地加密那一段</text>
+
+        <!-- ================= 参与者（最上层，压住生命线顶端） ================= -->
+        <rect x="132" y="56" width="136" height="52" rx="6" fill="#ffffff" stroke="#1f1f1f" stroke-width="1"/>
+        <text x="200" y="79" fill="#1f1f1f" font-size="12" font-weight="600" text-anchor="middle"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">客户端</text>
+        <text x="200" y="95" fill="#595959" font-size="9" text-anchor="middle"
+              font-family="'Geist Mono', ui-monospace, monospace">reader.js</text>
+
+        <rect x="452" y="56" width="216" height="52" rx="6" fill="#ffffff" stroke="#1f1f1f" stroke-width="1"/>
+        <text x="560" y="79" fill="#1f1f1f" font-size="12" font-weight="600" text-anchor="middle"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">漫画服务（签发）</text>
+        <text x="560" y="95" fill="#595959" font-size="9" text-anchor="middle"
+              font-family="'Geist Mono', ui-monospace, monospace">manga.bilibili.com</text>
+
+        <rect x="796" y="56" width="248" height="52" rx="6" fill="#7c3aed" fill-opacity="0.08" stroke="#7c3aed" stroke-width="1.2"/>
+        <text x="920" y="79" fill="#1f1f1f" font-size="12" font-weight="600" text-anchor="middle"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">CDN 边缘节点</text>
+        <text x="920" y="95" fill="#595959" font-size="9" text-anchor="middle"
+              font-family="'Geist Mono', ui-monospace, monospace">req_auth + edge function</text>
+
+        <rect x="1140" y="56" width="120" height="52" rx="6" fill="#1f1f1f" fill-opacity="0.05" stroke="#595959" stroke-width="1"/>
+        <text x="1200" y="79" fill="#1f1f1f" font-size="12" font-weight="600" text-anchor="middle"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">源站存储</text>
+        <text x="1200" y="95" fill="#595959" font-size="9" text-anchor="middle"
+              font-family="'Geist Mono', ui-monospace, monospace">BFS · 原图</text>
+
+        <!-- ================= alt：凭据不成立 ================= -->
+        <rect x="184" y="588" width="752" height="84" rx="4" fill="#1f1f1f" fill-opacity="0.02" stroke="#1f1f1f" stroke-opacity="0.22" stroke-width="1"/>
+        <rect x="184" y="588" width="52" height="16" rx="2" fill="#f5f5f5" stroke="#1f1f1f" stroke-opacity="0.22" stroke-width="1"/>
+        <text x="210" y="600" fill="#595959" font-size="8" text-anchor="middle" letter-spacing="0.12em"
+              font-family="'Geist Mono', ui-monospace, monospace">ALT</text>
+        <text x="196" y="614" fill="#595959" font-size="12" font-weight="500"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">[凭据不成立]</text>
+        <text x="284" y="614" fill="#595959" font-size="9"
+              font-family="'Geist Mono', ui-monospace, monospace">invalid url · expired timestamp · md5spell</text>
+
+        <line x1="208" y1="648" x2="912" y2="648" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="536" y="624" width="112" height="16" rx="4" fill="#f5f5f5"/>
+        <text x="592" y="636" fill="#1f1f1f" font-size="12" font-weight="600" text-anchor="middle"
+              font-family="'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">403，源站无感</text>
+
+        <!-- ================= 图例 ================= -->
+        <line x1="120" y1="692" x2="1240" y2="692" stroke="#1f1f1f" stroke-opacity="0.12" stroke-width="1"/>
+        <g font-family="'Geist Mono', ui-monospace, monospace" font-size="8" fill="#595959" letter-spacing="0.06em">
+          <line x1="132" y1="708" x2="164" y2="708" stroke="#0958d9" stroke-width="1"/>
+          <text x="172" y="711">HTTP 调用</text>
+
+          <line x1="248" y1="708" x2="280" y2="708" stroke="#595959" stroke-width="1"/>
+          <text x="288" y="711">同步调用</text>
+
+          <line x1="372" y1="708" x2="404" y2="708" stroke="#595959" stroke-width="1" stroke-dasharray="5,4"/>
+          <text x="412" y="711">返回 / 自消息</text>
+
+          <line x1="528" y1="708" x2="560" y2="708" stroke="#7c3aed" stroke-width="1.4"/>
+          <text x="568" y="711">密文回程（本图唯一主角）</text>
+
+          <rect x="744" y="702" width="12" height="12" rx="2" fill="#1f1f1f" fill-opacity="0.05"/>
+          <text x="764" y="711">存储</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
