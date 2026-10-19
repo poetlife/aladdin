@@ -5,7 +5,10 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as galaxyApi from '../../api/galaxy'
-import { ResolveSharedPageResponseSchema } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import {
+  ResolveSharedPageResponseSchema,
+  WatermarkLayerSchema,
+} from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { LOADING_TEXT } from '../../ui/LoadingHint'
 import { PublishedPage } from './PublishedPage'
 
@@ -73,6 +76,52 @@ describe('主站壳', () => {
     const sandbox = iframe?.getAttribute('sandbox') ?? ''
     expect(sandbox).toContain('allow-scripts')
     expect(sandbox).not.toContain('allow-same-origin')
+  })
+
+  // **水印叠在壳上、不进行内。** 明水印是给人看的威慑，盲水印是给命令行读的取证；
+  // 两者都在 iframe **之外**的一层上（见 docs/design/galaxy/watermark.md 的"铺在哪"）。
+  // 页面里的层叠绕不到它，`site` 槽的产物也因此一个字节都没变。
+  it('水印叠在 iframe 之上，不在页内', async () => {
+    const contentUrl = 'https://pub.example.com/g/p1'
+    vi.mocked(galaxyApi.resolveSharedPage).mockResolvedValue(
+      create(ResolveSharedPageResponseSchema, {
+        contentUrl,
+        watermark: create(WatermarkLayerSchema, {
+          displayText: 'aladdin · 2026-10-18 · ABCD1234',
+          pattern: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+        }),
+      }),
+    )
+
+    const container = await renderAt('/g/p1')
+
+    const overlay = container.querySelector('[data-testid="watermark-overlay"]')
+    expect(overlay, '没有渲染出水印层').not.toBeNull()
+    // 它在 iframe 之外：不在那一帧里，而是它的兄弟。
+    const iframe = container.querySelector('iframe')
+    expect(iframe).not.toBeNull()
+    expect(overlay?.contains(iframe)).toBe(false)
+    // 明水印那一行字出现在页面上，但它不是内容的一部分。
+    expect(overlay?.textContent).toContain('ABCD1234')
+    expect(overlay?.querySelector('[data-testid="watermark-pattern"]')).not.toBeNull()
+    // **不接指针**：水印盖在正文上，点击、滚动、选中都该落到内容上。
+    expect((overlay as HTMLElement).style.pointerEvents).toBe('none')
+    // **不进无障碍树**：它是标记，不是内容。
+    expect(overlay?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  // 没有水印时这一层不渲染：一个空的绝对定位层只会多出一个挡住指针的风险，
+  // 而它一个像素的信息都没有。
+  it('解析结果里没有水印时不渲染水印层', async () => {
+    vi.mocked(galaxyApi.resolveSharedPage).mockResolvedValue(
+      create(ResolveSharedPageResponseSchema, {
+        contentUrl: 'https://pub.example.com/g/p1',
+      }),
+    )
+
+    const container = await renderAt('/g/p1')
+
+    expect(container.querySelector('[data-testid="watermark-overlay"]')).toBeNull()
   })
 
   // 空结果**是统一的否定结论**（未发布 / 已撤回 / 槽未启用 / 工程不存在 /

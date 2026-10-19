@@ -28,6 +28,7 @@ type MemoryStore struct {
 	attachments   map[string]Attachment
 	publications  map[string]Publication
 	previewGrants map[string]PreviewGrant
+	watermarkSeen map[string]WatermarkVisit
 }
 
 // NewMemoryStore 构造一个空的 galaxy 存储。
@@ -41,6 +42,7 @@ func NewMemoryStore() *MemoryStore {
 		attachments:   map[string]Attachment{},
 		publications:  map[string]Publication{},
 		previewGrants: map[string]PreviewGrant{},
+		watermarkSeen: map[string]WatermarkVisit{},
 	}
 }
 
@@ -453,6 +455,13 @@ func (s *MemoryStore) DeleteProject(_ context.Context, projectID string) error {
 			delete(s.previewGrants, token)
 		}
 	}
+	// 水印登记同理。**但撤回发布不删它**：登记回答的是"这一份图是谁看的"，
+	// 与"现在还能不能打开"是两件事（见 docs/design/galaxy/watermark.md）。
+	for code, visit := range s.watermarkSeen {
+		if visit.ProjectID == projectID {
+			delete(s.watermarkSeen, code)
+		}
+	}
 	return nil
 }
 
@@ -727,6 +736,75 @@ func (s *MemoryStore) PutPreviewGrant(_ context.Context, grant PreviewGrant, cle
 	}
 	s.previewGrants[grant.Token] = grant
 	return nil
+}
+
+// GetWatermarkVisit 实现 Store。
+//
+// **保留期不由它判定**：它只回答"库里有没有这一条"，过期与否由调用方比较时间
+// （见WatermarkVisit.Expired）。
+func (s *MemoryStore) GetWatermarkVisit(_ context.Context, code string) (WatermarkVisit, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	visit, ok := s.watermarkSeen[code]
+	if !ok {
+		return WatermarkVisit{}, ErrWatermarkNotFound
+	}
+	return visit, nil
+}
+
+// ReuseOrPutWatermarkVisit 实现 MutableStore：同一访客在窗口内已有登记时返回那一条、
+// 不写入；否则写入并顺带清掉超出保留期的那些。
+//
+// 查找与写入在**同一个临界区**里（SQL 那边是同一个事务）：分成两步的话，同一访客
+// 同时打开两次会各签一枚，"窗口内复用同一枚码"当场失效。
+func (s *MemoryStore) ReuseOrPutWatermarkVisit(_ context.Context, visit WatermarkVisit, reuseSince, cleanupBefore time.Time) (WatermarkVisit, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 先清理，再找：一条早就超出保留期的登记不该被复用，而它在下一次写入之前
+	// 也一直躺在表里。
+	//
+	// 判据与关系库那边逐字对齐：**访问时间早于 cutoff 就删**。写成
+	// `Expired(cleanupBefore)` 会让两种实现删掉的不是同一批行——那个判据算的是
+	// "在 cutoff 那一刻是否已过期"，比"访问时间早于 cutoff"严一个保留期。
+	for code, existing := range s.watermarkSeen {
+		if existing.VisitedAt.Before(cleanupBefore) {
+			delete(s.watermarkSeen, code)
+		}
+	}
+	// 取**最近**的那一条，与关系库那边的 ORDER BY visited_at DESC 对齐：窗口内
+	// 可能不止一条（例如窗口中途改过），两边各取一条不同的会让同一份夹具在两种
+	// 实现上给出不同答案。
+	var newest WatermarkVisit
+	found := false
+	for _, existing := range s.watermarkSeen {
+		if existing.ProjectID != visit.ProjectID || existing.Slot != visit.Slot {
+			continue
+		}
+		if existing.IdentityKey != visit.IdentityKey {
+			continue
+		}
+		if existing.VisitedAt.Before(reuseSince) {
+			continue
+		}
+		if !found || existing.VisitedAt.After(newest.VisitedAt) {
+			newest = existing
+			found = true
+		}
+	}
+	if found {
+		return newest, nil
+	}
+	s.watermarkSeen[visit.Code] = visit
+	return visit, nil
+}
+
+// watermarkCount 返回登记表的行数，供测试断言"窗口内复用只写一行"。
+func (s *MemoryStore) watermarkCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.watermarkSeen)
 }
 
 var _ MutableStore = (*MemoryStore)(nil)

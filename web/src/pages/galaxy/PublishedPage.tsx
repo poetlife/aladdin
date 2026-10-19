@@ -4,13 +4,20 @@ import { useLocation } from 'react-router-dom'
 
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
+import type { WatermarkLayer } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { LoadingHint } from '../../ui/LoadingHint'
 import { SandboxFrame } from './SandboxFrame'
+import { WatermarkOverlay } from './WatermarkOverlay'
 
 type ShellState =
   | { status: 'loading' }
-  /** 解析到了内容：iframe 该指向的那一条地址。 */
-  | { status: 'found'; contentUrl: string }
+  /**
+   * 解析到了内容：iframe 该指向的那一条地址，以及这一次访问要叠的水印。
+   *
+   * 水印与地址**来自同一次调用**（见 docs/design/galaxy/watermark.md）：那是访客
+   * 打开分享地址时平台唯一一次知道有人来了的时刻。没有水印时按缺省处理，页面照常。
+   */
+  | { status: 'found'; contentUrl: string; watermark: WatermarkLayer | undefined }
   /** 统一的否定结论：这一页不存在（未发布 / 已撤回 / 槽未启用 / 工程不存在 / 标识没被猜中 / 路径不在集合）。 */
   | { status: 'notfound' }
   | { status: 'failed'; message: string; traceId: string | null }
@@ -45,7 +52,7 @@ export function PublishedPage(): React.ReactNode {
         setState({ status: 'notfound' })
         return
       }
-      setState({ status: 'found', contentUrl: response.contentUrl })
+      setState({ status: 'found', contentUrl: response.contentUrl, watermark: response.watermark })
     } catch (err) {
       // 取不到解析结果与"这一页不存在"是两件事：前者可重试，后者是结论。
       setState({ status: 'failed', message: messageOf(err), traceId: traceIdOf(err) })
@@ -77,7 +84,16 @@ function ShellBody({
       return <LoadingHint />
     case 'found':
       // 撑满：壳除了这一框没有别的内容。
-      return <SandboxFrame url={state.contentUrl} title="已发布页面" height="100%" />
+      //
+      // **水印叠在 iframe 之上，而不是页内**（见 docs/design/galaxy/watermark.md 的
+      // "铺在哪"）：页面里的 `z-index` 再高也只在自己那个不透明源里生效，盖不到宿主
+      // 上的另一层。因此这一层放在这里、与那一帧同级，而两者共用一个相对定位的盒子。
+      return (
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <SandboxFrame url={state.contentUrl} title="已发布页面" height="100%" />
+          {state.watermark !== undefined && <WatermarkOverlay watermark={state.watermark} />}
+        </div>
+      )
     case 'notfound':
       return (
         <Centered>

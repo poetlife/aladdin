@@ -143,13 +143,13 @@ func TestGalaxyCommandTreeShape(t *testing.T) {
 	}
 	for _, name := range []string{
 		"capabilities", "project", "draft", "version", "validate", "asset", "attachment",
-		"publish", "unpublish", "publication",
+		"publish", "unpublish", "publication", "watermark",
 	} {
 		if !got[name] {
 			t.Errorf("galaxy 下缺少子命令 %q", name)
 		}
 	}
-	if len(got) != 10 {
-		t.Errorf("galaxy 下子命令数量变了：期望 10，实际 %d", len(got))
+	if len(got) != 11 {
+		t.Errorf("galaxy 下子命令数量变了：期望 11，实际 %d", len(got))
 	}
 }

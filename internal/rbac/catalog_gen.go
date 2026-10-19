@@ -55,6 +55,9 @@ const (
 	// PermissionGalaxyProjectPublish 发布与撤回发布。唯一一个让内容离开私有边界的动作
 	PermissionGalaxyProjectPublish PermissionCode = "galaxy.project.publish"
 
+	// PermissionGalaxyWatermarkRead 按水印码查回一次访问：主体（匿名为空）、时间、工程与来源。只读，用于溯源
+	PermissionGalaxyWatermarkRead PermissionCode = "galaxy.watermark.read"
+
 	// PermissionGalaxyAssetRead 读取自己工程下的资产列表与读取地址
 	PermissionGalaxyAssetRead PermissionCode = "galaxy.asset.read"
 
@@ -95,6 +98,7 @@ var AllPermissionCodes = []PermissionCode{
 	PermissionGalaxyProjectRead,
 	PermissionGalaxyProjectWrite,
 	PermissionGalaxyProjectPublish,
+	PermissionGalaxyWatermarkRead,
 	PermissionGalaxyAssetRead,
 	PermissionGalaxyAssetWrite,
 	PermissionGalaxyAttachmentRead,
@@ -168,6 +172,7 @@ var BuiltinRoles = []RoleDefinition{
 			PermissionRbacSubjectRead,
 			PermissionRbacScopeRead,
 			PermissionIdentityRegistrationRead,
+			PermissionGalaxyWatermarkRead,
 		},
 		Inherits:              nil,
 		MutuallyExclusiveWith: nil,

@@ -134,6 +134,9 @@ const (
 	// GalaxyServiceResolveSharedPageProcedure is the fully-qualified name of the GalaxyService's
 	// ResolveSharedPage RPC.
 	GalaxyServiceResolveSharedPageProcedure = "/aladdin.galaxy.v1.GalaxyService/ResolveSharedPage"
+	// GalaxyServiceLookupWatermarkProcedure is the fully-qualified name of the GalaxyService's
+	// LookupWatermark RPC.
+	GalaxyServiceLookupWatermarkProcedure = "/aladdin.galaxy.v1.GalaxyService/LookupWatermark"
 )
 
 // GalaxyServiceClient is a client for the aladdin.galaxy.v1.GalaxyService service.
@@ -413,7 +416,22 @@ type GalaxyServiceClient interface {
 	// 中、路径不在集合里，一律返回空的 `content_url`，而不是 RPC 错误——错误码会
 	// 成为一个"这个标识是真的"的第二信号（见 docs/design/galaxy/publication.md 的
 	// "主站壳"）。
+	// 壳解析这条地址时**同时拿到这次访问的水印**：明水印要显示的文字、以及盲水印
+	// 那一张随响应下发的图案。水印的码在这一次调用里签发（见
+	// docs/design/galaxy/watermark.md）。
+	//
+	// **水印不改变这一条的任一判定**：能看才谈得上水印，看不到的那一档照旧是空的
+	// `content_url`，`watermark` 也一并留空。
 	ResolveSharedPage(context.Context, *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error)
+	// 按一枚水印码查回它对应的那一次访问。
+	//
+	// 这是**溯源**那条路的读侧：一段截图先由命令行解出码，再按码查出主体（匿名时
+	// 为空）、时间、工程与来源。它**不是**创作者能用的接口——让作者查出"谁看了我的
+	// 页面"是一条独立的隐私决策（见 docs/design/galaxy/watermark.md）。
+	//
+	// **查不到不是错误**：超出保留窗口、码不存在、码形状非法，三者返回同一个空结果，
+	// 与发布态那条"否定结论只有一个"同一条取向。
+	LookupWatermark(context.Context, *connect.Request[v1.LookupWatermarkRequest]) (*connect.Response[v1.LookupWatermarkResponse], error)
 }
 
 // NewGalaxyServiceClient constructs a client for the aladdin.galaxy.v1.GalaxyService service. By
@@ -647,6 +665,13 @@ func NewGalaxyServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(galaxyServiceMethods.ByName("ResolveSharedPage")),
 			connect.WithClientOptions(opts...),
 		),
+		lookupWatermark: connect.NewClient[v1.LookupWatermarkRequest, v1.LookupWatermarkResponse](
+			httpClient,
+			baseURL+GalaxyServiceLookupWatermarkProcedure,
+			connect.WithSchema(galaxyServiceMethods.ByName("LookupWatermark")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -687,6 +712,7 @@ type galaxyServiceClient struct {
 	unpublish                *connect.Client[v1.UnpublishRequest, v1.UnpublishResponse]
 	getPublication           *connect.Client[v1.GetPublicationRequest, v1.GetPublicationResponse]
 	resolveSharedPage        *connect.Client[v1.ResolveSharedPageRequest, v1.ResolveSharedPageResponse]
+	lookupWatermark          *connect.Client[v1.LookupWatermarkRequest, v1.LookupWatermarkResponse]
 }
 
 // GetCapabilities calls aladdin.galaxy.v1.GalaxyService.GetCapabilities.
@@ -862,6 +888,11 @@ func (c *galaxyServiceClient) GetPublication(ctx context.Context, req *connect.R
 // ResolveSharedPage calls aladdin.galaxy.v1.GalaxyService.ResolveSharedPage.
 func (c *galaxyServiceClient) ResolveSharedPage(ctx context.Context, req *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error) {
 	return c.resolveSharedPage.CallUnary(ctx, req)
+}
+
+// LookupWatermark calls aladdin.galaxy.v1.GalaxyService.LookupWatermark.
+func (c *galaxyServiceClient) LookupWatermark(ctx context.Context, req *connect.Request[v1.LookupWatermarkRequest]) (*connect.Response[v1.LookupWatermarkResponse], error) {
+	return c.lookupWatermark.CallUnary(ctx, req)
 }
 
 // GalaxyServiceHandler is an implementation of the aladdin.galaxy.v1.GalaxyService service.
@@ -1141,7 +1172,22 @@ type GalaxyServiceHandler interface {
 	// 中、路径不在集合里，一律返回空的 `content_url`，而不是 RPC 错误——错误码会
 	// 成为一个"这个标识是真的"的第二信号（见 docs/design/galaxy/publication.md 的
 	// "主站壳"）。
+	// 壳解析这条地址时**同时拿到这次访问的水印**：明水印要显示的文字、以及盲水印
+	// 那一张随响应下发的图案。水印的码在这一次调用里签发（见
+	// docs/design/galaxy/watermark.md）。
+	//
+	// **水印不改变这一条的任一判定**：能看才谈得上水印，看不到的那一档照旧是空的
+	// `content_url`，`watermark` 也一并留空。
 	ResolveSharedPage(context.Context, *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error)
+	// 按一枚水印码查回它对应的那一次访问。
+	//
+	// 这是**溯源**那条路的读侧：一段截图先由命令行解出码，再按码查出主体（匿名时
+	// 为空）、时间、工程与来源。它**不是**创作者能用的接口——让作者查出"谁看了我的
+	// 页面"是一条独立的隐私决策（见 docs/design/galaxy/watermark.md）。
+	//
+	// **查不到不是错误**：超出保留窗口、码不存在、码形状非法，三者返回同一个空结果，
+	// 与发布态那条"否定结论只有一个"同一条取向。
+	LookupWatermark(context.Context, *connect.Request[v1.LookupWatermarkRequest]) (*connect.Response[v1.LookupWatermarkResponse], error)
 }
 
 // NewGalaxyServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1371,6 +1417,13 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(galaxyServiceMethods.ByName("ResolveSharedPage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	galaxyServiceLookupWatermarkHandler := connect.NewUnaryHandler(
+		GalaxyServiceLookupWatermarkProcedure,
+		svc.LookupWatermark,
+		connect.WithSchema(galaxyServiceMethods.ByName("LookupWatermark")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/aladdin.galaxy.v1.GalaxyService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GalaxyServiceGetCapabilitiesProcedure:
@@ -1443,6 +1496,8 @@ func NewGalaxyServiceHandler(svc GalaxyServiceHandler, opts ...connect.HandlerOp
 			galaxyServiceGetPublicationHandler.ServeHTTP(w, r)
 		case GalaxyServiceResolveSharedPageProcedure:
 			galaxyServiceResolveSharedPageHandler.ServeHTTP(w, r)
+		case GalaxyServiceLookupWatermarkProcedure:
+			galaxyServiceLookupWatermarkHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1590,4 +1645,8 @@ func (UnimplementedGalaxyServiceHandler) GetPublication(context.Context, *connec
 
 func (UnimplementedGalaxyServiceHandler) ResolveSharedPage(context.Context, *connect.Request[v1.ResolveSharedPageRequest]) (*connect.Response[v1.ResolveSharedPageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.ResolveSharedPage is not implemented"))
+}
+
+func (UnimplementedGalaxyServiceHandler) LookupWatermark(context.Context, *connect.Request[v1.LookupWatermarkRequest]) (*connect.Response[v1.LookupWatermarkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aladdin.galaxy.v1.GalaxyService.LookupWatermark is not implemented"))
 }

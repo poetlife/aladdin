@@ -47,6 +47,7 @@ galaxy 的每一次操作都是原子的：建一个工程、存一版、发布�
 | `galaxy publication get` | 读回某个槽**当前发布**的产物清单（`--path` 取其中一份的字节） | `galaxy.project.read` |
 | `galaxy publication pull` | 把某个槽当前发布的产物整组写到本地目录 | `galaxy.project.read` |
 | `galaxy publication verify` | 按访客路径逐条复核当前发布的产物：字节与发布记录一致、引用都解开了、资产可达 | `galaxy.project.read` |
+| `galaxy watermark extract` | 从一张截图里解出盲水印的码，并按码查回那次访问（`--code-only` 只解不查） | `galaxy.watermark.read` |
 
 工程、版本、资产与附件的标识一律**显式给出**，都是命令的位置参数。**资产与附件都不属于某一个槽**：它们是工程级的东西，两个槽引用同一份资产。
 

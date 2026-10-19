@@ -41,5 +41,6 @@ func migrations() []*gormigrate.Migration {
 		migration0016GalaxyAttachments,
 		migration0017GalaxyDraftSnapshots,
 		migration0018Registration,
+		migration0019GalaxyWatermarkVisits,
 	}
 }

@@ -689,6 +689,78 @@ func TestStoreContract(t *testing.T) {
 				}
 			})
 
+			t.Run("水印登记按码读回、窗口内复用、保留期清理", func(t *testing.T) {
+				// 时间基准同预览凭证：时刻由调用方算好传给存储，这里用**墙钟**。
+				wall := time.Now()
+				visit := galaxy.WatermarkVisit{
+					Code:            "0123456789ABCDEF",
+					ProjectID:       "prj_a",
+					Slot:            galaxy.SlotSite,
+					SubjectID:       "usr_1",
+					IdentityKey:     "subject:usr_1",
+					SourceAddress:   "203.0.113.9",
+					UserAgentDigest: "0123456789abcdef",
+					VisitedAt:       wall,
+				}
+				got, err := store.ReuseOrPutWatermarkVisit(ctx, visit, wall.Add(-24*time.Hour), wall.Add(-90*24*time.Hour))
+				if err != nil {
+					t.Fatalf("写入水印登记失败: %v", err)
+				}
+				if got.Code != visit.Code {
+					t.Fatalf("首次写入返回的码 = %q，期望 %q", got.Code, visit.Code)
+				}
+
+				read, err := store.GetWatermarkVisit(ctx, visit.Code)
+				if err != nil {
+					t.Fatalf("读取水印登记失败: %v", err)
+				}
+				if read.SubjectID != "usr_1" || read.IdentityKey != "subject:usr_1" || read.Slot != galaxy.SlotSite {
+					t.Errorf("水印登记 = %+v，期望与写入的一致", read)
+				}
+
+				// 窗口内同一访客再来一次：**返回旧的那一条、不新增行**。
+				// 判据是"查回来的码还是旧的那一枚"——新增一行会给出另一枚。
+				again := visit
+				again.Code = "ZZZZZZZZZZZZZZZZ"
+				again.VisitedAt = wall.Add(time.Hour)
+				got, err = store.ReuseOrPutWatermarkVisit(ctx, again, wall.Add(-24*time.Hour), wall.Add(-90*24*time.Hour))
+				if err != nil {
+					t.Fatalf("窗口内复用时写入失败: %v", err)
+				}
+				if got.Code != visit.Code {
+					t.Fatalf("窗口内复用了新码 %q，期望旧码 %q", got.Code, visit.Code)
+				}
+				if !got.VisitedAt.Equal(wall) {
+					t.Errorf("复用改写了首次访问时间：%v，期望 %v", got.VisitedAt, wall)
+				}
+				if _, err := store.GetWatermarkVisit(ctx, again.Code); !errors.Is(err, galaxy.ErrWatermarkNotFound) {
+					t.Errorf("窗口内不该新增一行，但 %q 读得回来", again.Code)
+				}
+
+				// 窗口之外：签一枚新码。时间取到保留期之外（91 天），于是这一次
+				// 写入同时会把上面那一条清掉——两条性质一次验完。
+				outside := visit
+				outside.Code = "YYYYYYYYYYYYYYYY"
+				outside.VisitedAt = wall.Add(91 * 24 * time.Hour)
+				got, err = store.ReuseOrPutWatermarkVisit(ctx, outside, outside.VisitedAt.Add(-24*time.Hour), outside.VisitedAt.Add(-90*24*time.Hour))
+				if err != nil {
+					t.Fatalf("窗口外写入失败: %v", err)
+				}
+				if got.Code != outside.Code {
+					t.Fatalf("窗口外仍沿用旧码 %q，期望新码 %q", got.Code, outside.Code)
+				}
+
+				// 保留期清理：这一次写入把超出保留期的那一条删掉。
+				if _, err := store.GetWatermarkVisit(ctx, visit.Code); !errors.Is(err, galaxy.ErrWatermarkNotFound) {
+					t.Errorf("超出保留期的登记应被清掉，实际是 %v", err)
+				}
+
+				// 没写过的码：与"这一条不存在"同一个结论。
+				if _, err := store.GetWatermarkVisit(ctx, "ZZZZZZZZZZZZZZZZ"); !errors.Is(err, galaxy.ErrWatermarkNotFound) {
+					t.Errorf("没写过的码应得 ErrWatermarkNotFound，实际是 %v", err)
+				}
+			})
+
 			t.Run("撤回不删发布记录", func(t *testing.T) {
 				if err := store.SetCurrentPublication(ctx, "prj_a", galaxy.SlotSite, "pub_1", now); err != nil {
 					t.Fatalf("切换发布指针失败: %v", err)

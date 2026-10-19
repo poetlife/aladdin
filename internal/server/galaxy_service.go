@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -15,6 +16,7 @@ import (
 	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/server/interceptor"
 )
 
 // GalaxyService 是创作面（"用户放下一组具名文件，再把它发布成一个站点"）的
@@ -801,10 +803,84 @@ func (s *GalaxyService) ResolveSharedPage(ctx context.Context, req *connect.Requ
 		}
 		return empty, nil
 	}
-	return connect.NewResponse(&galaxyv1.ResolveSharedPageResponse{
+	resp := &galaxyv1.ResolveSharedPageResponse{
 		// 槽根接上条目路径只有一处拼接（PublicOrigin.EntryURL）：读回发布态用的
 		// 也是它，两处各拼一份的表现是"壳指向的地址与回读取到的不是同一条"。
 		ContentUrl: s.galaxy.Origin().EntryURL(projectID, slot, entryPath),
+	}
+
+	// **能看才谈得上水印。** 签发放在"这一页确实存在"之后，因此否定结论那一档
+	// 一个字节都不多给（与上面那六个情形同一个回答）。
+	//
+	// 这是访客打开分享地址时平台唯一一次知道有人来了的时刻，因此签发与登记都在
+	// 这一次调用里发生（见 docs/design/galaxy/watermark.md 的"一枚码的生命周期"）。
+	if material, err := s.watermarkFor(ctx, req.Peer().Addr, req.Header().Get("User-Agent"), projectID, slot); err != nil {
+		// 水印签不出来**不该让访客打不开页面**：它是叠加层，不是内容。这里只留痕，
+		// 页面照常交付——那也是水印唯一允许的降级方向。
+		s.logger.Warn("签发水印失败，本次不叠加水印",
+			zap.String("project_id", projectID),
+			zap.String("slot", string(slot)),
+			zap.Error(err))
+	} else {
+		resp.Watermark = material
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// watermarkFor 为这次访问签发（或复用）一枚水印码，并把壳要叠的那一层翻译成接口形态。
+//
+// **身份优先取主体**：壳是匿名路由，但访客带着会话时中间件仍会尽力识别主体（见
+// middleware.go 的 KindPublic 分支），因此"这一份是给谁的"在这里能落到人身上。
+// 没有会话时退到来源地址与浏览器标识——那一档只指向"这一次匿名访问"。
+//
+// 浏览器标识**只从请求头取一次**：它对水印只做一件事——折成摘要存进登记，供"是不是
+// 同一台"这条判断用（见 galaxy.DigestUserAgent）。原值不进库、不进日志，那是一串能
+// 指纹化设备的字符串。
+func (s *GalaxyService) watermarkFor(ctx context.Context, sourceAddress, userAgent, projectID string, slot galaxy.ContentSlot) (*galaxyv1.WatermarkLayer, error) {
+	viewer := galaxy.WatermarkViewer{
+		SourceAddress: sourceAddress,
+		UserAgent:     userAgent,
+	}
+	if subject, ok := interceptor.SubjectFromContext(ctx); ok {
+		viewer.SubjectID = subject.ID
+	}
+	visit, err := s.galaxy.IssueWatermark(ctx, projectID, slot, viewer, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	material := s.galaxy.WatermarkFor(visit)
+	return &galaxyv1.WatermarkLayer{
+		DisplayText: material.DisplayText,
+		Pattern:     material.Pattern,
+	}, nil
+}
+
+// LookupWatermark 实现 GalaxyService：按一枚水印码查回那一次访问。
+//
+// **查不到不是错误**：码形状非法、码不存在、超出保留窗口，三者返回同一个空结果。
+// 用错误码区分它们等于给出一个"这枚码曾经是真的"的第二信号，而溯源场景里误报比
+// 查不到更糟（见 docs/design/galaxy/watermark.md）。
+func (s *GalaxyService) LookupWatermark(ctx context.Context, req *connect.Request[galaxyv1.LookupWatermarkRequest]) (*connect.Response[galaxyv1.LookupWatermarkResponse], error) {
+	if _, err := callerSubject(ctx); err != nil {
+		return nil, err
+	}
+	visit, err := s.galaxy.LookupWatermark(ctx, strings.TrimSpace(req.Msg.GetCode()), time.Now())
+	if err != nil {
+		if errors.Is(err, galaxy.ErrWatermarkNotFound) {
+			return connect.NewResponse(&galaxyv1.LookupWatermarkResponse{}), nil
+		}
+		return nil, toGalaxyConnectError(err)
+	}
+	return connect.NewResponse(&galaxyv1.LookupWatermarkResponse{
+		Visit: &galaxyv1.WatermarkRecord{
+			Code:            visit.Code,
+			SubjectId:       visit.SubjectID,
+			VisitedAt:       visit.VisitedAt.UTC().Format(time.RFC3339),
+			ProjectId:       visit.ProjectID,
+			Slot:            toProtoSlotValue(visit.Slot),
+			SourceAddress:   visit.SourceAddress,
+			UserAgentDigest: visit.UserAgentDigest,
+		},
 	}), nil
 }
 

@@ -525,6 +525,46 @@ type GalaxyPreviewGrantRecord struct {
 // TableName 实现 gorm 的表名解析。
 func (GalaxyPreviewGrantRecord) TableName() string { return "galaxy_preview_grants" }
 
+// GalaxyWatermarkVisitRecord 是**一次被水印标记过的访问**在库里的一行。
+//
+// 水印本身叠在主站壳上，像素里只有一枚随机码（见
+// docs/design/galaxy/watermark.md）；这张表就是"那枚码对回谁"的那一处。因此它是
+// 这套设计里唯一装着身份的一层，取舍写在下面几列上：
+//
+//   - **主体可以为空**。发布域是匿名可取用的，没有会话时身份退到来源地址与浏览器
+//     标识的摘要。那一档仍然是同一件事的一次留痕，只是它指向"这一次访问"而不是一个人。
+//   - **浏览器标识只存摘要**（见 galaxy.DigestUserAgent）：原值是一串能指纹化这台
+//     设备的字符串，而溯源只需要"是不是同一台"。
+//   - **来源地址只在这里**：不进日志、不进明水印、不进给访客的响应。发布物内不得
+//     承载任何秘密那条约束在这里的具体形态就是它。
+//
+// **它不含内容本身**，也不随发布指针变化：撤回发布不删它——登记回答的是"这一份图
+// 是谁看的"，与"现在还能不能打开"是两件事。
+type GalaxyWatermarkVisitRecord struct {
+	// Code 是水印码，主键。它就是像素里编着的那一串字符。
+	Code string `gorm:"primaryKey;size:32"`
+	// ProjectID 与 Slot 是这次访问落在哪个工程的哪个槽。
+	ProjectID string `gorm:"size:191;index"`
+	Slot      string `gorm:"size:16"`
+	// SubjectID 是访客的主体标识。**匿名为空。**
+	SubjectID string `gorm:"size:191"`
+	// IdentityKey 是"同一访客"这个判据的取值（见 galaxy.WatermarkViewer.IdentityKey）。
+	//
+	// 它单独成列而不是每次由主体与来源现算：匿名那一档的取值包含来源地址，而
+	// 来源地址是会变的**输入**，判据不能跟着它漂；存下来也让"窗口内复用同一枚码"
+	// 是一次带索引的查找，而不是把表扫一遍再比较。
+	IdentityKey string `gorm:"size:255;index:idx_galaxy_watermark_reuse"`
+	// SourceAddress 是访客的来源地址。**只在这里。**
+	SourceAddress string `gorm:"size:128"`
+	// UserAgentDigest 是浏览器标识的摘要。
+	UserAgentDigest string `gorm:"size:32"`
+	// VisitedAt 是这枚码第一次发出去的时刻。明水印上印的日期就是它。
+	VisitedAt time.Time `gorm:"index:idx_galaxy_watermark_reuse"`
+}
+
+// TableName 实现 gorm 的表名解析。
+func (GalaxyWatermarkVisitRecord) TableName() string { return "galaxy_watermark_visits" }
+
 // SkillRecord 是平台技能目录里的一个技能在库里的一行（见
 // docs/design/skill/README.md）。
 //

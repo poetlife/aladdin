@@ -309,6 +309,12 @@ type Store interface {
 	// 时间（见 PreviewGrant.Expired）。把判定放在读里会让"这条凭证此刻算不算
 	// 数"多出第二种说法。
 	GetPreviewGrant(ctx context.Context, token string) (PreviewGrant, error)
+
+	// GetWatermarkVisit 按码读回一条水印登记，没有时返回 ErrWatermarkNotFound。
+	//
+	// **保留期不由它判定**（与预览凭证同一条）：过期与否由调用方比较时间
+	// （见 WatermarkVisit.Expired）。一条没被回收掉的行因此不会多给一秒钟的可查性。
+	GetWatermarkVisit(ctx context.Context, code string) (WatermarkVisit, error)
 }
 
 // MutableStore 是 Store 的写能力。
@@ -424,6 +430,21 @@ type MutableStore interface {
 	// 失效时刻由调用方给出，不由存储自己取当前时间：判断留在上层，存储只读写
 	// 事实（与"存储保持哑"同源），这条清理因此可测。
 	PutPreviewGrant(ctx context.Context, grant PreviewGrant, cleanupBefore time.Time) error
+
+	// ReuseOrPutWatermarkVisit 写入一条水印登记，但**同一访客在窗口内已有登记时
+	// 返回那一条、不写入**；并在同一个事务里清掉 visitedAt 早于 cleanupBefore 的
+	// 那些。
+	//
+	// 查找与写入必须是**一次**存储操作：分成两步的话，同一访客同时打开两次就会各
+	// 签一枚、各写一行，"窗口内复用同一枚码"当场失效——而它的失效方式（登记表按
+	// 页面浏览量增长）要到线上跑了几个月才看得出来。
+	//
+	// 同一访客的判据是 visit 的（工程，槽，身份键）三元组，身份键由
+	// WatermarkViewer.IdentityKey 派生（唯一入口）：**谁算同一个访客只有那一处回答**。
+	//
+	// 清理挂在写入这一处（与预览凭证同一条理由）：表的增长只由"还有多少条在保留期
+	// 内"决定，而查询那条路是只读的。
+	ReuseOrPutWatermarkVisit(ctx context.Context, visit WatermarkVisit, reuseSince, cleanupBefore time.Time) (WatermarkVisit, error)
 }
 
 // 标识前缀。**唯一入口**是本文件的分配函数：工程标识与资产标识由创建入口

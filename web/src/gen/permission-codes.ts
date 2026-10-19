@@ -38,6 +38,8 @@ export const PermissionCodes = {
   GalaxyProjectWrite: 'galaxy.project.write',
   /** 发布与撤回发布。唯一一个让内容离开私有边界的动作 */
   GalaxyProjectPublish: 'galaxy.project.publish',
+  /** 按水印码查回一次访问：主体（匿名为空）、时间、工程与来源。只读，用于溯源 */
+  GalaxyWatermarkRead: 'galaxy.watermark.read',
   /** 读取自己工程下的资产列表与读取地址 */
   GalaxyAssetRead: 'galaxy.asset.read',
   /** 上传与删除工程资产 */

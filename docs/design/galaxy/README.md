@@ -17,6 +17,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | 二进制、zip 包这一类发布物放哪 | **工程附件**（[attachments.md](attachments.md)） |
 | 写下的东西怎么变成别人能看的站点 | **内容槽与文件组**（[site-model.md](site-model.md)）、**编写与预览**（[authoring.md](authoring.md)）、**发布**（[publication.md](publication.md)） |
 | 用户在自己的构建与自己的页面里怎么用平台能力 | **创作与发布 SDK**（[sdk.md](sdk.md)） |
+| 发布出去的站点上怎么标记「这一份是给谁的」 | **站点水印**（[watermark.md](watermark.md)） |
 
 成功的衡量标准：
 
@@ -26,6 +27,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 4. 一个版本一旦保存就**不可变**：它当时引用什么，此后永远引用什么。因此"发布过的页面内容变了"这件事不会发生。
 5. 已发布的站点对**未登录的人**可打开；草稿与未发布的版本对除拥有者外的所有人不可见。
 6. 未配置发布域时工程、内容与资产照常可用，只有发布不可用；连桶也没配置时，只有工程元数据可写（字节没有地方放）。前端据此不渲染对应入口。
+7. 通过主站壳打开的站点带着**这一次访问**的水印，而发布物的字节一个都没变——水印是叠加层，不是注入（见 [watermark.md](watermark.md)）。
 
 ## 概念模型
 
@@ -182,6 +184,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | `galaxy.project.read` | 读取自己的工程、草稿与版本 |
 | `galaxy.project.write` | 创建、修改、删除工程，保存版本 |
 | `galaxy.project.publish` | 发布与撤回发布 |
+| `galaxy.watermark.read` | 按水印码查回一次访问（主体、时间、工程与来源）。只读，用于溯源 |
 | `galaxy.asset.read` | 读取自己的资产列表与地址 |
 | `galaxy.asset.write` | 上传、删除资产，以及改它的标题 / 标签 / 备注 |
 | `galaxy.attachment.read` | 读取自己工程的附件列表与下载地址 |
@@ -221,6 +224,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | 编写与预览 | 源侧记号（`asset://` 与文档间链接）、这一页的形态（预览与状态为主体、源码只读）、自动校验、预览的沙箱隔离 | [authoring.md](authoring.md) |
 | 发布 | 校验规则、改写、上架、对外地址、可见性与撤回 | [publication.md](publication.md) |
 | 创作与发布 SDK | 用户在自己的构建与自己的页面里的接入面：构建期把标准写法解析成文件组条目、可编程的原子操作调用、运行期取凭证与取内容 | [sdk.md](sdk.md) |
+| 站点水印 | 发布站点上的明水印（威慑）与盲水印（取证）：铺在哪、标记什么身份、强度与验收标准 | [watermark.md](watermark.md) |
 
 ## 依赖关系
 
@@ -239,6 +243,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | Web 界面 | 呈现机制见 [../web/README.md](../web/README.md)；取舍见 [../uiux/README.md](../uiux/README.md) |
 | 命令行 | 原子命令到各能力的映射、文件组的输入输出、命令行侧的直传见 [cli.md](cli.md) |
 | 创作与发布 SDK | 用户侧的接入面，消费本模块已有的能力而**不新增一条判定或一条取字节的路**（见 [sdk.md](sdk.md)） |
+| 站点水印 | 壳上叠的那两层、码的签发与登记；它不改本模块的任何一条判定（见 [watermark.md](watermark.md)） |
 | 可观测性 | 发布各阶段留痕，见 [publication.md](publication.md) 与 [../../observability.md](../../observability.md) |
 
 ## 可验证性与长程执行
@@ -261,6 +266,7 @@ galaxy 补上这一块：用户在 aladdin 里放下一份**内容**——手写
 | 未发布不可达 | 未发布的工程、已撤回的工程，其发布地址返回"不存在"而不是空页（端到端测试） |
 | 不可枚举 | 接口面上不存在列出已发布工程的入口（`internal/server` 测试：遍历 method descriptor） |
 | 权限码不外泄 | 无 `galaxy.*` 权限时，工程与资产入口不渲染；直接调用被拒（前端测试 + 端到端测试） |
+| 水印不改变发布物 | 同一版本发布前后的产物逐字相同；水印只出现在壳上（`internal/galaxy` 测试 + 前端测试） |
 | 未配置时降级正确 | 发布域未配置时工程、内容与资产的读写照常，发布入口不可用；桶未配置时只有工程元数据可写（`internal/config` 与 `internal/galaxy` 测试） |
 
 ## 待定决策
