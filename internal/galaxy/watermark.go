@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net"
 	"strings"
 	"time"
 
@@ -102,15 +103,37 @@ func DigestUserAgent(userAgent string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
+// NormalizeSourceAddress 把一次请求的远端地址规约成"来源"（唯一入口）。
+//
+// **端口必须去掉。** 一次请求的远端地址是 `主机:端口`，而端口是每条连接临时分配的：
+// 把它算进"同一访客"的判据里，同一个人每打开一次页面就是一个新访客，窗口内复用
+// 当场失效——登记表的增长于是又变成按页面浏览量，而那正是复用本来要消掉的东西。
+// 对一个"这一次是谁"的判断，端口没有任何信息量。
+//
+// 它同时是**存进登记表的那一列**：留着端口只会让同一个人在库里看起来像很多个人。
+func NormalizeSourceAddress(address string) string {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(address); err == nil {
+		return host
+	}
+	// 不带端口时原样返回：回环之外的实现（测试里的假 Peer）可能只给主机。
+	return address
+}
+
 // IdentityKey 返回这次访问在"同一访客"这一维度上的键（唯一入口）。
 //
 // 有主体时用主体：换一台设备、换一个网络，仍然是同一个人。没有主体时退到
 // （来源地址，浏览器标识摘要）这一对——那是匿名能给出的最强的一种"同一访客"。
+//
+// 来源地址过 NormalizeSourceAddress：**端口不是身份的一部分**（见那里的说明）。
 func (v WatermarkViewer) IdentityKey() string {
 	if v.SubjectID != "" {
 		return "subject:" + v.SubjectID
 	}
-	return "anon:" + strings.TrimSpace(v.SourceAddress) + "\x00" + DigestUserAgent(v.UserAgent)
+	return "anon:" + NormalizeSourceAddress(v.SourceAddress) + "\x00" + DigestUserAgent(v.UserAgent)
 }
 
 // watermarkDisplayText 给出明水印要显示的那一行字（唯一入口）。
@@ -162,7 +185,7 @@ func (s *Service) IssueWatermark(ctx context.Context, projectID string, slot Con
 		Slot:            slot,
 		SubjectID:       viewer.SubjectID,
 		IdentityKey:     viewer.IdentityKey(),
-		SourceAddress:   strings.TrimSpace(viewer.SourceAddress),
+		SourceAddress:   NormalizeSourceAddress(viewer.SourceAddress),
 		UserAgentDigest: DigestUserAgent(viewer.UserAgent),
 		VisitedAt:       now,
 	}

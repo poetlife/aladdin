@@ -117,6 +117,57 @@ func TestIssueWatermarkReusesWithinWindow(t *testing.T) {
 	}
 }
 
+// TestIssueWatermarkReusesAcrossPorts 钉住"端口不是身份的一部分"。
+//
+// 一次请求的远端地址是 `主机:端口`，而端口是每条连接临时分配的。把它算进判据里，
+// 同一个人每打开一次页面就是一个新访客，**窗口内复用当场失效**——登记表的增长
+// 于是又变成按页面浏览量，而那正是复用本来要消掉的东西。
+//
+// 这条是在真机验收时发现的：同一个浏览器连开三次，库里写了三行、三个不同的码。
+func TestIssueWatermarkReusesAcrossPorts(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "水印·端口")
+
+	first, err := f.service.IssueWatermark(context.Background(), project.ID, SlotSite,
+		viewer("", "127.0.0.1:50185", "UA-1"), f.now)
+	if err != nil {
+		t.Fatalf("第一次签发失败: %v", err)
+	}
+	second, err := f.service.IssueWatermark(context.Background(), project.ID, SlotSite,
+		viewer("", "127.0.0.1:50404", "UA-1"), f.now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("第二次签发失败: %v", err)
+	}
+	if second.Code != first.Code {
+		t.Fatalf("换了临时端口的同一访客拿到了两枚码：%q 与 %q", first.Code, second.Code)
+	}
+	if got := f.store.watermarkCount(); got != 1 {
+		t.Fatalf("同一访客写了 %d 行，期望 1 行", got)
+	}
+	// 登记里存的也应当是**去掉端口**的来源：留着端口只会让同一个人在库里看起来
+	// 像很多个人。
+	if second.SourceAddress != "127.0.0.1" {
+		t.Fatalf("登记里的来源 = %q，期望 127.0.0.1", second.SourceAddress)
+	}
+}
+
+// TestNormalizeSourceAddress 钉住这一处的形状（它是唯一入口）。
+func TestNormalizeSourceAddress(t *testing.T) {
+	cases := map[string]string{
+		"127.0.0.1:50185":    "127.0.0.1",
+		"[::1]:50404":        "::1",
+		"203.0.113.9:443":    "203.0.113.9",
+		"203.0.113.9":        "203.0.113.9",
+		"":                   "",
+		"  host.example:80 ": "host.example",
+	}
+	for input, want := range cases {
+		if got := NormalizeSourceAddress(input); got != want {
+			t.Errorf("NormalizeSourceAddress(%q) = %q，期望 %q", input, got, want)
+		}
+	}
+}
+
 // TestIssueWatermarkIsPerProjectAndSlot 钉住复用不跨工程、不跨槽：同一访客打开两个
 // 工程得到两枚码——"这一份是哪个站点上的哪一次访问"必须能分开。
 func TestIssueWatermarkIsPerProjectAndSlot(t *testing.T) {
