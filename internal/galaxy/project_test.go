@@ -105,7 +105,7 @@ func TestContentSlotsAreAddOnly(t *testing.T) {
 	}
 
 	// 改元数据**不动内容槽**。
-	updated, err := f.service.UpdateProject(ctx, testOwner, project.ID, "改名", "新简介")
+	updated, err := f.service.UpdateProject(ctx, testOwner, project.ID, "改名", "新简介", false)
 	if err != nil {
 		t.Fatalf("改元数据失败: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestVersionIsImmutable(t *testing.T) {
 	// 改草稿、改名称、改简介。
 	f.advance(1)
 	f.pushDraft(t, project.ID, []Entry{f.textEntry(t, project.ID, "index.html", "<p>第二版</p>")})
-	if _, err := f.service.UpdateProject(context.Background(), testOwner, project.ID, "改名了", "新简介"); err != nil {
+	if _, err := f.service.UpdateProject(context.Background(), testOwner, project.ID, "改名了", "新简介", false); err != nil {
 		t.Fatalf("改元数据失败: %v", err)
 	}
 
@@ -400,7 +400,7 @@ func TestOwnershipCannotBeBypassed(t *testing.T) {
 			return err
 		}},
 		{"改元数据", func() error {
-			_, err := f.service.UpdateProject(ctx, testOther, project.ID, "改", "")
+			_, err := f.service.UpdateProject(ctx, testOther, project.ID, "改", "", false)
 			return err
 		}},
 		{"删版本", func() error {

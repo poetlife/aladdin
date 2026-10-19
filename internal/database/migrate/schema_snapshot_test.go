@@ -83,6 +83,7 @@ table galaxy_project_slots
   project_id text pk=true null=true
   slot text pk=true null=true
 table galaxy_projects
+  blind_watermark numeric pk=false null=true
   created_at datetime pk=false null=true
   description text pk=false null=true
   id text pk=true null=true

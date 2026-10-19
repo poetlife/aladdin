@@ -137,7 +137,8 @@ func (s *GalaxyService) UpdateProject(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	project, err := s.galaxy.UpdateProject(ctx, subject.ID, req.Msg.GetProjectId(), req.Msg.GetName(), req.Msg.GetDescription())
+	project, err := s.galaxy.UpdateProject(ctx, subject.ID, req.Msg.GetProjectId(),
+		req.Msg.GetName(), req.Msg.GetDescription(), req.Msg.GetBlindWatermark())
 	if err != nil {
 		return nil, toGalaxyConnectError(err)
 	}
@@ -791,7 +792,11 @@ func (s *GalaxyService) ResolveSharedPage(ctx context.Context, req *connect.Requ
 	if !ok {
 		return empty, nil
 	}
-	if _, err := s.galaxy.PublishedEntry(ctx, projectID, slot, entryPath); err != nil {
+	// 一次读取回答两件事：这一页在不在，以及这个工程要不要铺盲水印。分成两次
+	// 调用时，中间一次翻开关会让两者按两份不同的记录回答（见
+	// PublishedEntryWithBlindWatermark 的说明）。
+	_, blindWatermark, err := s.galaxy.PublishedEntryWithBlindWatermark(ctx, projectID, slot, entryPath)
+	if err != nil {
 		if !errors.Is(err, galaxy.ErrPublicationNotFound) {
 			// 存储故障不是"这一页不存在"。但对访客两者都只能看到"打不开"，
 			// 因此响应相同、留痕不同（与发布域那条直连入口同构）。
@@ -814,7 +819,7 @@ func (s *GalaxyService) ResolveSharedPage(ctx context.Context, req *connect.Requ
 	//
 	// 这是访客打开分享地址时平台唯一一次知道有人来了的时刻，因此签发与登记都在
 	// 这一次调用里发生（见 docs/design/galaxy/watermark.md 的"一枚码的生命周期"）。
-	if material, err := s.watermarkFor(ctx, req.Peer().Addr, req.Header().Get("User-Agent"), projectID, slot); err != nil {
+	if material, err := s.watermarkFor(ctx, req.Peer().Addr, req.Header().Get("User-Agent"), projectID, slot, blindWatermark); err != nil {
 		// 水印签不出来**不该让访客打不开页面**：它是叠加层，不是内容。这里只留痕，
 		// 页面照常交付——那也是水印唯一允许的降级方向。
 		s.logger.Warn("签发水印失败，本次不叠加水印",
@@ -836,7 +841,10 @@ func (s *GalaxyService) ResolveSharedPage(ctx context.Context, req *connect.Requ
 // 浏览器标识**只从请求头取一次**：它对水印只做一件事——折成摘要存进登记，供"是不是
 // 同一台"这条判断用（见 galaxy.DigestUserAgent）。原值不进库、不进日志，那是一串能
 // 指纹化设备的字符串。
-func (s *GalaxyService) watermarkFor(ctx context.Context, sourceAddress, userAgent, projectID string, slot galaxy.ContentSlot) (*galaxyv1.WatermarkLayer, error) {
+//
+// blindWatermark 来自**工程自己的开关**（默认关闭）：关着时这一层里没有图案，
+// 只留明水印。判定不在这一层做——它读的是已经读出来的工程记录，不重新判定一次。
+func (s *GalaxyService) watermarkFor(ctx context.Context, sourceAddress, userAgent, projectID string, slot galaxy.ContentSlot, blindWatermark bool) (*galaxyv1.WatermarkLayer, error) {
 	viewer := galaxy.WatermarkViewer{
 		SourceAddress: sourceAddress,
 		UserAgent:     userAgent,
@@ -848,7 +856,7 @@ func (s *GalaxyService) watermarkFor(ctx context.Context, sourceAddress, userAge
 	if err != nil {
 		return nil, err
 	}
-	material := s.galaxy.WatermarkFor(visit)
+	material := s.galaxy.WatermarkFor(visit, blindWatermark)
 	return &galaxyv1.WatermarkLayer{
 		DisplayText: material.DisplayText,
 		Pattern:     material.Pattern,
@@ -981,12 +989,13 @@ func toProtoMediaKind(kind galaxy.MediaKind) galaxyv1.MediaKind {
 // 相反：它是构建要用的，与"有没有发出去"无关。
 func toProtoProject(view galaxy.ProjectView) *galaxyv1.Project {
 	project := &galaxyv1.Project{
-		Id:          view.Project.ID,
-		Name:        view.Project.Name,
-		Description: view.Project.Description,
-		CreatedAt:   view.Project.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:   view.Project.UpdatedAt.UTC().Format(time.RFC3339),
-		Slots:       make([]*galaxyv1.ProjectSlot, 0, len(view.Slots)),
+		Id:             view.Project.ID,
+		Name:           view.Project.Name,
+		Description:    view.Project.Description,
+		CreatedAt:      view.Project.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:      view.Project.UpdatedAt.UTC().Format(time.RFC3339),
+		BlindWatermark: view.Project.BlindWatermark,
+		Slots:          make([]*galaxyv1.ProjectSlot, 0, len(view.Slots)),
 	}
 	for _, slotView := range view.Slots {
 		slot := &galaxyv1.ProjectSlot{

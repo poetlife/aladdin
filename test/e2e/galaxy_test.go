@@ -1412,8 +1412,22 @@ func TestGalaxySharedPageCarriesWatermark(t *testing.T) {
 	if layer.GetDisplayText() == "" {
 		t.Fatal("明水印没有文字")
 	}
-	if len(layer.GetPattern()) == 0 {
-		t.Fatal("盲水印没有图案")
+	// **盲水印默认关闭**：新建工程没打开它，因此这一层里不该有图案。明水印不受影响
+	// （见 docs/design/galaxy/watermark.md 的"默认关闭"）。
+	if len(layer.GetPattern()) != 0 {
+		t.Fatalf("工程的盲水印开关关着，却下发了 %d 字节图案", len(layer.GetPattern()))
+	}
+	// 打开它之后再解析，图案才出现——同一次读取回答"这一页在不在"与"要不要铺图案"。
+	if _, err := client.UpdateProject(context.Background(), connect.NewRequest(&galaxyv1.UpdateProjectRequest{
+		ProjectId:      projectID,
+		Name:           "带水印的站点",
+		BlindWatermark: true,
+	})); err != nil {
+		t.Fatalf("打开盲水印失败: %v", err)
+	}
+	layer = resolve()
+	if layer == nil || len(layer.GetPattern()) == 0 {
+		t.Fatal("打开开关后仍没有图案")
 	}
 	// **明水印不含身份明文**：它会被截进图里、被转发出去。
 	if strings.Contains(layer.GetDisplayText(), testSubject) {

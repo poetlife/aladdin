@@ -480,9 +480,13 @@ type Project struct {
 	//
 	// 槽只增不删（见 AddProjectSlot），因此这个列表只会在后面追加。**每个槽的
 	// 发布状态都属于它自己**：发布或撤回一个槽不改变另一个槽的任何字段。
-	Slots         []*ProjectSlot `protobuf:"bytes,12,rep,name=slots,proto3" json:"slots,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Slots []*ProjectSlot `protobuf:"bytes,12,rep,name=slots,proto3" json:"slots,omitempty"`
+	// 这个工程要不要在发布出来的站点上铺盲水印。**默认 false**。
+	//
+	// 明水印不受它影响（那一层始终在）。见 docs/design/galaxy/watermark.md。
+	BlindWatermark bool `protobuf:"varint,13,opt,name=blind_watermark,json=blindWatermark,proto3" json:"blind_watermark,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -555,6 +559,13 @@ func (x *Project) GetSlots() []*ProjectSlot {
 		return x.Slots
 	}
 	return nil
+}
+
+func (x *Project) GetBlindWatermark() bool {
+	if x != nil {
+		return x.BlindWatermark
+	}
+	return false
 }
 
 // ProjectSlot 是工程的一个内容槽，以及它当前的发布状态。
@@ -1807,10 +1818,18 @@ type UpdateProjectRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// 期望的完整状态，空串表示清空。
-	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Name        string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	// 要不要在发布出来的站点上铺**盲水印**（默认关闭）。
+	//
+	// 盲水印能在截图上留下可提取的痕迹，代价是**改变渲染出来的像素**——深色主题上
+	// 那点改动看得见（见 docs/design/galaxy/watermark.md）。因此它是创作者对自己作品
+	// 的选择，不是平台的默认行为。
+	//
+	// **它与明水印无关**：明水印（码的前 8 位那一行斜字）始终在，不受这个开关影响。
+	BlindWatermark bool `protobuf:"varint,4,opt,name=blind_watermark,json=blindWatermark,proto3" json:"blind_watermark,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *UpdateProjectRequest) Reset() {
@@ -1862,6 +1881,13 @@ func (x *UpdateProjectRequest) GetDescription() string {
 		return x.Description
 	}
 	return ""
+}
+
+func (x *UpdateProjectRequest) GetBlindWatermark() bool {
+	if x != nil {
+		return x.BlindWatermark
+	}
+	return false
 }
 
 type UpdateProjectResponse struct {
@@ -5294,7 +5320,7 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\x12attachment_enabled\x18\b \x01(\bR\x11attachmentEnabled\x120\n" +
 	"\x14max_attachment_bytes\x18\t \x01(\x04R\x12maxAttachmentBytes\x12C\n" +
 	"\x1eproject_attachment_quota_bytes\x18\n" +
-	" \x01(\x04R\x1bprojectAttachmentQuotaBytes\"\xe7\x01\n" +
+	" \x01(\x04R\x1bprojectAttachmentQuotaBytes\"\x90\x02\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -5303,7 +5329,8 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"updated_at\x18\x05 \x01(\tR\tupdatedAt\x124\n" +
-	"\x05slots\x18\f \x03(\v2\x1e.aladdin.galaxy.v1.ProjectSlotR\x05slotsJ\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	"\x05slots\x18\f \x03(\v2\x1e.aladdin.galaxy.v1.ProjectSlotR\x05slots\x12'\n" +
+	"\x0fblind_watermark\x18\r \x01(\bR\x0eblindWatermarkJ\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
 	"J\x04\b\n" +
 	"\x10\vJ\x04\b\v\x10\f\"\xf4\x01\n" +
 	"\vProjectSlot\x122\n" +
@@ -5398,12 +5425,13 @@ const file_aladdin_galaxy_v1_galaxy_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\"J\n" +
 	"\x12GetProjectResponse\x124\n" +
-	"\aproject\x18\x01 \x01(\v2\x1a.aladdin.galaxy.v1.ProjectR\aproject\"k\n" +
+	"\aproject\x18\x01 \x01(\v2\x1a.aladdin.galaxy.v1.ProjectR\aproject\"\x94\x01\n" +
 	"\x14UpdateProjectRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"M\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12'\n" +
+	"\x0fblind_watermark\x18\x04 \x01(\bR\x0eblindWatermark\"M\n" +
 	"\x15UpdateProjectResponse\x124\n" +
 	"\aproject\x18\x01 \x01(\v2\x1a.aladdin.galaxy.v1.ProjectR\aproject\"5\n" +
 	"\x14DeleteProjectRequest\x12\x1d\n" +

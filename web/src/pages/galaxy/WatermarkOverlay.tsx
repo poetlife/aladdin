@@ -33,7 +33,7 @@ interface WatermarkOverlayProps {
  * 取值是"疏到不碍事、密到裁一刀也带一点"的那一档：斜向排布让它在正文上不像一条
  * 实线，重复铺满让它一屏里到处都在。
  */
-const DISPLAY_TILES = 12
+const DISPLAY_TILES = 9
 
 /**
  * 铺在已发布站点上的那一层水印：先盲水印（底），再明水印（上）。
@@ -46,6 +46,10 @@ export function WatermarkOverlay({ watermark }: WatermarkOverlayProps): React.Re
   const pattern = watermark.pattern
   // 没有文字也没有图案时整层不渲染：一个空的绝对定位层会挡住指针（万一将来有人
   // 改了下面那条 pointer-events），而它一个像素的信息都没有。
+  //
+  // **图案缺席是常态，不是异常**：盲水印由工程自己的开关控制，默认关闭（见
+  // docs/design/galaxy/watermark.md）。关着时服务端只下发 `displayText`，
+  // 这一层就只剩明水印那行字。
   if (text === '' && pattern.length === 0) {
     return null
   }
@@ -99,7 +103,18 @@ function BlindWatermarkLayer({ image }: { image: string }): React.ReactNode {
   )
 }
 
-/** 明水印那一行字，斜向疏排。 */
+/**
+ * 明水印那一行字，斜向疏排。
+ *
+ * **它的分量由"被正文压过去"这条定，不是由"看得清"这条定。** 早先取 0.08 时实测
+ * 把深色底（亮度 27）抬到平均 145、最亮 222——那是正文级别的亮度，读者第一眼看到的
+ * 是水印而不是内容。水印的用途是**威慑**：让看到的人在截图里知道"这份带标识"，
+ * 而不是让人读它。因此它只需要在**整片**上看得出来，单字认不认得出无关紧要。
+ *
+ * 取值与排布一起降到"存在感"这一档：不透明度压到接近正文的十分之一，字号再小一档，
+ * 密度减半。深色底上它落在 27↔35 之间，与正文的对比度差一个量级；放大或截图之后
+ * 仍然看得出来，正常阅读时不会抢注意力。
+ */
 function MarkText({ text }: { text: string }): React.ReactNode {
   return (
     <div
@@ -109,18 +124,19 @@ function MarkText({ text }: { text: string }): React.ReactNode {
         inset: 0,
         display: 'flex',
         flexWrap: 'wrap',
-        gap: 24,
+        gap: 48,
         alignContent: 'space-around',
         justifyContent: 'space-around',
         transform: 'rotate(-24deg) scale(1.2)',
         // 不提字重、不加描边：它在正文上，克制是这条呈现的唯一要求（见
         // docs/design/uiux/README.md 的"信息层级"——水印不是内容，不该争层级）。
         color: 'currentColor',
-        fontSize: 13,
+        fontSize: 11,
         lineHeight: 1,
         whiteSpace: 'nowrap',
-        // 白色页与深色页都要看得见：取一个中间档，靠正文自己的对比度兜住。
-        opacity: 0.08,
+        // 白色页与深色页都要看得见，但只到"整片看得出有一层字"为止。
+        //
+        opacity: MARK_OPACITY,
         userSelect: 'none',
       }}
     >
@@ -130,6 +146,17 @@ function MarkText({ text }: { text: string }): React.ReactNode {
     </div>
   )
 }
+
+/**
+ * 明水印的不透明度。
+ *
+ * 它只管**看得见的那一层字**（威慑用），与盲水印无关：后者的幅度由服务端生成的
+ * 图案自己带着（见 internal/watermark 的 tileAlpha），前端只负责铺，不负责调。
+ *
+ * 0.018 是实测出来的：0.04 时读者会主动去找它是什么（灰度 29→36，相对对比 24%），
+ * 0.018 落在"正常观看看不见、放大或截图才看得出有一层"那一档（29→32，相对 10%）。
+ */
+const MARK_OPACITY = 0.018
 
 /**
  * 把服务端下发的 PNG 字节折成一张能直接当背景用的地址。

@@ -233,7 +233,7 @@ func TestStoreContract(t *testing.T) {
 
 			t.Run("版本清单写入后不可改", func(t *testing.T) {
 				// 契约里没有"更新版本"这个方法；这里验证的是"改别的东西不会改到它"。
-				if err := store.PutProjectMeta(ctx, "prj_v", "改名", "", now); !errors.Is(err, galaxy.ErrProjectNotFound) {
+				if err := store.PutProjectMeta(ctx, "prj_v", "改名", "", false, now); !errors.Is(err, galaxy.ErrProjectNotFound) {
 					t.Fatalf("对不存在的工程改元数据 err = %v，期望 ErrProjectNotFound", err)
 				}
 				version, err := store.GetVersion(ctx, "prj_v", galaxy.SlotSite, "ver_1")

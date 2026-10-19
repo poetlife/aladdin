@@ -161,6 +161,9 @@ type WatermarkMaterial struct {
 	// Pattern 是盲水印的平铺图案（PNG 字节）。**由服务端生成**：前端再算一遍就是
 	// 同一个算法的第二份实现，而它的漂移只有在拿到一张真截图时才会被发现。
 	//
+	// **空表示这个工程没开盲水印**（默认），壳因此只叠明水印那一层。
+	// 与"生成失败"是同一档表现（都只有明水印），因为两者对访客的意义相同。
+	//
 	// 图案按**原尺寸**（CSS 像素）铺在壳上，因此它的几何只有一处定义——生成它的那
 	// 一处。壳不按另一个尺寸去等比拉伸它：拉一格就等于换了一套格子尺寸，而提取侧
 	// 假设的是生成时那一套。
@@ -199,14 +202,23 @@ func (s *Service) IssueWatermark(ctx context.Context, projectID string, slot Con
 
 // WatermarkFor 返回一次访问要叠上去的那一层东西。
 //
-// 图案由算法包生成；生成失败时**只有盲水印缺席**，明水印照旧——一次图案生成的
-// 失败不该让一个访客打不开页面（那也是水印唯一允许的降级方向）。
-func (s *Service) WatermarkFor(visit WatermarkVisit) WatermarkMaterial {
+// **盲水印是工程级开关，默认关闭**（见 WatermarkMaterial.Pattern 与
+// docs/design/galaxy/watermark.md 的"默认关闭"）。关闭时这一层里**没有图案**，
+// 明水印那行字照旧——两者本来就不是同一个能力：
+//
+//   - 明水印只画在宿主页面上，**一个字节都不改渲染结果的像素**，没有代价；
+//   - 盲水印要在渲染结果里留下可提取的痕迹，而那必然改变像素——深色主题上那点
+//     改动看得见。所以它是由创作者选择打开的能力，不是平台的默认行为。
+//
+// 图案生成失败时同样只有盲水印缺席，明水印照旧：一次生成的失败不该让一个访客
+// 打不开页面（那也是水印唯一允许的降级方向）。失败原因由调用方留痕。
+func (s *Service) WatermarkFor(visit WatermarkVisit, blindWatermark bool) WatermarkMaterial {
 	material := WatermarkMaterial{
 		DisplayText: watermarkDisplayText(visit.Code, visit.VisitedAt),
 	}
-	// 图案生成失败时**只有盲水印缺席**，明水印照旧——一次图案生成的失败不该让一个
-	// 访客打不开页面（那也是水印唯一允许的降级方向）。失败原因由调用方留痕。
+	if !blindWatermark {
+		return material
+	}
 	if pattern, err := watermark.Tile(visit.Code); err == nil {
 		material.Pattern = pattern
 	} else if s.logger != nil {

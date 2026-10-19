@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Button, Divider, Flex, Form, Input, Popover, Typography } from 'antd'
+import { Alert, Button, Divider, Flex, Form, Input, Popover, Switch, Typography } from 'antd'
 
 import * as galaxyApi from '../../api/galaxy'
 import { messageOf, traceIdOf } from '../../api/errors'
@@ -9,6 +9,8 @@ import { slotDescription, slotLabel } from './content-slot'
 interface ProjectFormValues {
   name?: string
   description?: string
+  /** 要不要在发布出来的站点上铺盲水印。**默认关闭**，理由见保存那一处的注释。 */
+  blindWatermark?: boolean
 }
 
 interface ProjectInfoPopoverProps {
@@ -59,6 +61,7 @@ export function ProjectInfoPopover({
         project.id,
         values.name ?? '',
         values.description ?? '',
+        values.blindWatermark ?? false,
       )
       if (response.project !== undefined) {
         onProjectChange(response.project)
@@ -106,7 +109,11 @@ export function ProjectInfoPopover({
       <Form<ProjectFormValues>
         form={form}
         layout="vertical"
-        initialValues={{ name: project.name, description: project.description }}
+        initialValues={{
+          name: project.name,
+          description: project.description,
+          blindWatermark: project.blindWatermark,
+        }}
         onFinish={(values) => void handleSave(values)}
       >
         <Form.Item name="name" label="名称" extra="仅用于你自己识别，不是地址、不需要唯一">
@@ -114,6 +121,18 @@ export function ProjectInfoPopover({
         </Form.Item>
         <Form.Item name="description" label="简介" extra="可留空">
           <Input.TextArea maxLength={280} rows={3} disabled={!canWrite} />
+        </Form.Item>
+        {/* **默认关闭。** 盲水印能从截图里解出"这一次是谁看的"，代价是它会改变
+            渲染出来的像素——深色主题上那层极淡的纹理是看得见的。因此它由创作者
+            为自己的作品决定，不由平台替所有人决定（见
+            docs/design/galaxy/watermark.md）。 */}
+        <Form.Item
+          name="blindWatermark"
+          label="盲水印"
+          valuePropName="checked"
+          extra="从截图里可解出访问记录。会让页面上多一层极淡的纹理，深色主题下可能看得出"
+        >
+          <Switch disabled={!canWrite} />
         </Form.Item>
         {canWrite && (
           <Button type="primary" htmlType="submit" loading={busy} size="small">
@@ -175,7 +194,11 @@ export function ProjectInfoPopover({
         setOpen(next)
         setFailure(null)
         // 每次打开都用服务端当前的工程信息重填，不保留上一次编辑到一半的值。
-        form.setFieldsValue({ name: project.name, description: project.description })
+        form.setFieldsValue({
+          name: project.name,
+          description: project.description,
+          blindWatermark: project.blindWatermark,
+        })
       }}
     >
       <Button

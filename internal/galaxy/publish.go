@@ -409,28 +409,65 @@ func (s *Service) Origin() PublicOrigin { return s.origin }
 // 请求路径为空表示入口页（`/g/<标识>` 与 `/g/<标识>/index.html` 是同一页；
 // docs 槽同理，入口在它自己的根下）。
 func (s *Service) PublishedEntry(ctx context.Context, projectID string, slot ContentSlot, requestPath string) (Entry, error) {
+	entry, _, err := s.publishedEntryWithProject(ctx, projectID, slot, requestPath)
+	return entry, err
+}
+
+// PublishedEntryWithBlindWatermark 是给**主站壳那一条**用的：同一次读取回答两件事
+// ——这一页在不在，以及这个工程要不要铺盲水印。
+//
+// 合成一次读取的理由是快照一致：分成两次调用时，中间一次改名或翻开关会让"这一页
+// 存在"与"要不要铺水印"按两份不同的工程记录回答。两者各自都不会错，但合起来可能
+// 描述一个从未同时成立过的状态。
+func (s *Service) PublishedEntryWithBlindWatermark(ctx context.Context, projectID string, slot ContentSlot, requestPath string) (Entry, bool, error) {
+	entry, project, err := s.publishedEntryWithProject(ctx, projectID, slot, requestPath)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	return entry, project.BlindWatermark, nil
+}
+
+// BlindWatermark 报告这个工程**要不要在发布出来的站点上铺盲水印**。
+//
+// 它只回答一个布尔值，**不参与任何可见性判定**：开关关着时站点照样能看，只是没有
+// 盲水印那一层。因此它与 PublishedEntry 那条"六合一否定"无关，也不需要与它合并成
+// 一次调用——取不到工程时返回零值（关闭），那是安全的默认。
+func (s *Service) BlindWatermark(ctx context.Context, projectID string) bool {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return false
+	}
+	return project.BlindWatermark
+}
+
+// publishedEntryWithProject 是 PublishedEntry 的实现，额外把读出来的工程带出去。
+//
+// 带出去的理由只有一个：调用方（解析分享地址那一条）紧接着要问工程的盲水印开关，
+// 而那需要同一份工程记录。**不让它自己再查一次**——两次读取之间工程可能已经被改，
+// 而"这一页存不存在"与"这一页要不要铺水印"必须对着同一份快照回答。
+func (s *Service) publishedEntryWithProject(ctx context.Context, projectID string, slot ContentSlot, requestPath string) (Entry, Project, error) {
 	if !s.publishEnabled() {
-		return Entry{}, ErrPublicationNotFound
+		return Entry{}, Project{}, ErrPublicationNotFound
 	}
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, ErrProjectNotFound) {
-			return Entry{}, ErrPublicationNotFound
+			return Entry{}, Project{}, ErrPublicationNotFound
 		}
-		return Entry{}, err
+		return Entry{}, Project{}, err
 	}
 	if _, ok := project.FindSlot(slot); !ok {
-		return Entry{}, ErrPublicationNotFound
+		return Entry{}, Project{}, ErrPublicationNotFound
 	}
 	publication, published, err := s.CurrentPublication(ctx, project, slot)
 	if err != nil {
 		if errors.Is(err, ErrPublicationNotFound) {
-			return Entry{}, ErrPublicationNotFound
+			return Entry{}, Project{}, ErrPublicationNotFound
 		}
-		return Entry{}, err
+		return Entry{}, Project{}, err
 	}
 	if !published {
-		return Entry{}, ErrPublicationNotFound
+		return Entry{}, Project{}, ErrPublicationNotFound
 	}
 	if requestPath == "" {
 		// **入口取的是产物路径，不是文件组里的路径。** 两者在 `docs` 槽上不同：
@@ -440,9 +477,9 @@ func (s *Service) PublishedEntry(ctx context.Context, projectID string, slot Con
 	}
 	entry, ok := publication.Manifest.Find(requestPath)
 	if !ok {
-		return Entry{}, ErrPublicationNotFound
+		return Entry{}, Project{}, ErrPublicationNotFound
 	}
-	return entry, nil
+	return entry, project, nil
 }
 
 // ReadPublishedText 读出一份发布态文本的字节。

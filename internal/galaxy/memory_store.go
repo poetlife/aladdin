@@ -348,7 +348,7 @@ func (s *MemoryStore) CreateProject(_ context.Context, project Project) error {
 }
 
 // PutProjectMeta 实现 MutableStore。
-func (s *MemoryStore) PutProjectMeta(_ context.Context, projectID, name, description string, at time.Time) error {
+func (s *MemoryStore) PutProjectMeta(_ context.Context, projectID, name, description string, blindWatermark bool, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -358,6 +358,7 @@ func (s *MemoryStore) PutProjectMeta(_ context.Context, projectID, name, descrip
 	}
 	project.Name = name
 	project.Description = description
+	project.BlindWatermark = blindWatermark
 	project.UpdatedAt = at
 	s.projects[projectID] = project
 	return nil

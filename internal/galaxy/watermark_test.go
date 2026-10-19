@@ -243,9 +243,10 @@ func TestWatermarkMaterialCarriesPatternAndDisplayText(t *testing.T) {
 		t.Fatalf("签发失败: %v", err)
 	}
 
-	material := f.service.WatermarkFor(visit)
+	// 开关打开：这才是"要盲水印"的那一档。
+	material := f.service.WatermarkFor(visit, true)
 	if len(material.Pattern) == 0 {
-		t.Fatal("没有生成盲水印图案")
+		t.Fatal("开关开着却没有生成盲水印图案")
 	}
 	if !bytes.HasPrefix(material.Pattern, []byte("\x89PNG")) {
 		t.Fatal("图案不是 PNG 字节")
@@ -263,6 +264,76 @@ func TestWatermarkMaterialCarriesPatternAndDisplayText(t *testing.T) {
 	// 码的前几位在里面：那是"同一枚码"的唯一可见线索，也是抄下来能查的那一段。
 	if !strings.Contains(material.DisplayText, visit.Code[:8]) {
 		t.Fatalf("明水印里没有码的前几位: %q", material.DisplayText)
+	}
+}
+
+// TestBlindWatermarkIsOffByDefault 钉住"默认关闭"这条，以及它与明水印的分界。
+//
+// 关着时：**没有图案**，但明水印那行字照旧。两者不是同一个能力——明水印只画在宿主
+// 页面上、不改渲染结果的像素；盲水印要在像素里留痕，深色主题上那点改动看得见，
+// 因此它由创作者选择打开（见 docs/design/galaxy/watermark.md）。
+func TestBlindWatermarkIsOffByDefault(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "水印·默认关闭")
+	if project.BlindWatermark {
+		t.Fatal("新建工程不该默认打开盲水印")
+	}
+
+	visit, err := f.service.IssueWatermark(context.Background(), project.ID, SlotSite,
+		viewer(testOwner, "203.0.113.9", "Mozilla/5.0"), f.now)
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	off := f.service.WatermarkFor(visit, false)
+	if len(off.Pattern) != 0 {
+		t.Fatalf("开关关着却下发了图案（%d 字节）", len(off.Pattern))
+	}
+	if off.DisplayText == "" {
+		t.Fatal("明水印不该受这个开关影响：它始终在")
+	}
+
+	on := f.service.WatermarkFor(visit, true)
+	if len(on.Pattern) == 0 {
+		t.Fatal("开关开着却没有图案")
+	}
+	// 两种状态下明水印是**同一个**：开关只管盲水印那一层。
+	if on.DisplayText != off.DisplayText {
+		t.Fatalf("开关改变了明水印：%q vs %q", on.DisplayText, off.DisplayText)
+	}
+}
+
+// TestBlindWatermarkSurvivesUpdate 钉住开关跟着工程行走：改一次名不要把它弄丢。
+func TestBlindWatermarkSurvivesUpdate(t *testing.T) {
+	f := newFixture(t)
+	project := f.createProject(t, "水印·开关持久")
+
+	updated, err := f.service.UpdateProject(context.Background(), testOwner, project.ID,
+		"改了名", "新简介", true)
+	if err != nil {
+		t.Fatalf("打开盲水印失败: %v", err)
+	}
+	if !updated.BlindWatermark {
+		t.Fatal("开关没写进去")
+	}
+
+	// 再改一次名，开关仍然是开着的（请求表达的是期望的完整状态，不是增量）。
+	again, err := f.service.UpdateProject(context.Background(), testOwner, project.ID,
+		"再改一次", "", true)
+	if err != nil {
+		t.Fatalf("改名失败: %v", err)
+	}
+	if !again.BlindWatermark {
+		t.Fatal("改名把开关弄丢了")
+	}
+
+	// 显式关掉。
+	off, err := f.service.UpdateProject(context.Background(), testOwner, project.ID,
+		"再改一次", "", false)
+	if err != nil {
+		t.Fatalf("关闭失败: %v", err)
+	}
+	if off.BlindWatermark {
+		t.Fatal("关不掉")
 	}
 }
 
@@ -310,7 +381,7 @@ func TestPublishIsUnaffectedByWatermark(t *testing.T) {
 		}
 	}
 	// 图案与明水印文字也不在产物里：它们只经壳下发（见 watermark.go 的 WatermarkFor）。
-	material := f.service.WatermarkFor(visit)
+	material := f.service.WatermarkFor(visit, true)
 	for _, entry := range first.Manifest {
 		if entry.Path == material.DisplayText {
 			t.Fatalf("明水印文字出现在产物路径里: %q", entry.Path)

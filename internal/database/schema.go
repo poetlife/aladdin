@@ -253,6 +253,16 @@ type GalaxyProjectRecord struct {
 	Name string
 	// Description 是简介。空表示未填写。
 	Description string
+	// BlindWatermark 表示这个工程**要不要在发布出来的站点上铺盲水印**。
+	//
+	// **默认关闭。** 盲水印要在截图上留下可提取的痕迹，而它必然改变渲染结果的
+	// 像素——在深色主题上，那点改动是看得见的（见 docs/design/galaxy/watermark.md
+	// 的"可见性"）。因此它不是一个"平台替所有人决定"的能力，而是一个**创作者对
+	// 自己作品的选择**：需要溯源的人打开它，能接受那层纹理；不需要的人不受影响。
+	//
+	// 存在工程行上而不是内容槽行上：它是"这个作品要不要"的问题，两个槽属于同一个
+	// 作品，不该各答一半。
+	BlindWatermark bool
 	// CreatedAt 与 UpdatedAt 是展示与排障用，不参与判定。
 	//
 	// **这张表上没有形态，也没有发布指针**：一个工程有哪几种内容由
