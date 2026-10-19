@@ -65,6 +65,20 @@ func cellInk(bit, lx, ly int) bool {
 // 颜色是纯黑/纯白加同一个 alpha，不按底色混合：图案本身不知道页面长什么样，
 // 混合发生在浏览器合成的时候（这正是"前端渲染"的含义）。
 func Tile(code string) ([]byte, error) {
+	img, err := tileImage(code)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	enc := png.Encoder{CompressionLevel: png.BestCompression}
+	if err := enc.Encode(&buf, img); err != nil {
+		return nil, fmt.Errorf("编码水印图案失败: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func tileImage(code string) (*image.NRGBA, error) {
 	bits, err := frameBits(code)
 	if err != nil {
 		return nil, err
@@ -95,13 +109,7 @@ func Tile(code string) ([]byte, error) {
 			}
 		}
 	}
-
-	var buf bytes.Buffer
-	enc := png.Encoder{CompressionLevel: png.BestCompression}
-	if err := enc.Encode(&buf, img); err != nil {
-		return nil, fmt.Errorf("编码水印图案失败: %w", err)
-	}
-	return buf.Bytes(), nil
+	return img, nil
 }
 
 // alphaByte 把 tileAlpha 换成 PNG 的 8 位 alpha。

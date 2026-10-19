@@ -14,8 +14,15 @@ import (
 // rendered 是"一张带水印的页面"：底色 + 平铺的图案，还没经过任何变换。
 func rendered(t testingT, code string, bg backdrop, w, h int) image.Image {
 	t.Helper()
-	return composite(newPage(w, h, bg), decodeTile(t, code))
+	return composite(newPage(w, h, bg), testTile(t, code))
 }
+
+const (
+	// round-trip 矩阵覆盖的是"能否解回"而不是性能上限；画布保留多帧重复，
+	// 但小于性能用例的 1600×1000，避免 race 下把同一条提取路径放大几十次。
+	roundTripPageW = FrameWidthPx * 2
+	roundTripPageH = FrameHeightPx * 3
+)
 
 // 所有底色都要过一遍，且**每一种底色都要与每一种变换组合**。
 //
@@ -36,11 +43,11 @@ type transform struct {
 	apply func(testingT, image.Image) image.Image
 }
 
-func transforms() []transform {
+func transforms(w, h int) []transform {
 	return []transform{
 		{"原尺寸", func(_ testingT, img image.Image) image.Image { return img }},
 		{"裁切偏移(37,29)", func(_ testingT, img image.Image) image.Image {
-			return crop(img, 37, 29, pageW-37-11, pageH-29-7)
+			return crop(img, 37, 29, w-37-11, h-29-7)
 		}},
 		{"放大2倍", func(_ testingT, img image.Image) image.Image { return scaleNearest(img, 2) }},
 		{"放大3倍", func(_ testingT, img image.Image) image.Image { return scaleNearest(img, 3) }},
@@ -70,9 +77,9 @@ func TestRoundTrip(t *testing.T) {
 	}
 	for _, code := range codes {
 		for _, bd := range backdrops {
-			for _, tf := range transforms() {
+			for _, tf := range transforms(roundTripPageW, roundTripPageH) {
 				t.Run(code+"/"+bd.name+"/"+tf.name, func(t *testing.T) {
-					page := rendered(t, code, bd.bg, pageW, pageH)
+					page := rendered(t, code, bd.bg, roundTripPageW, roundTripPageH)
 					shot := tf.apply(t, page)
 					r, ok := analyze(shot)
 					if !ok {
@@ -229,6 +236,9 @@ func TestSmallCropStillDecodes(t *testing.T) {
 func TestExtractPerformance(t *testing.T) {
 	if testing.Short() {
 		t.Skip("短模式跳过耗时用例")
+	}
+	if raceDetector {
+		t.Skip("race 插桩会显著扭曲性能阈值")
 	}
 	const code = "0123456789ABCDEF"
 	page := rendered(t, code, gradientBackdrop, pageW, pageH)

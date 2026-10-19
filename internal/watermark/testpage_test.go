@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"image/png"
 	"math/rand"
 )
 
@@ -76,16 +75,12 @@ func newPage(w, h int, bg backdrop) *image.NRGBA {
 	return img
 }
 
-// decodeTile 解掉 Tile 的 PNG，得到可以直接合成的图案。
-func decodeTile(t testingT, code string) image.Image {
+// testTile 直接取 Tile 编码前的图案，避免 round-trip 矩阵反复跑昂贵的 PNG 压缩。
+func testTile(t testingT, code string) image.Image {
 	t.Helper()
-	raw, err := Tile(code)
+	img, err := tileImage(code)
 	if err != nil {
 		t.Fatalf("生成图案 %q: %v", code, err)
-	}
-	img, err := png.Decode(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatalf("解码图案 %q: %v", code, err)
 	}
 	return img
 }

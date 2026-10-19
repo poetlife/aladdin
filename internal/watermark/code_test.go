@@ -163,7 +163,7 @@ func TestTileDeterministicAndSized(t *testing.T) {
 // 地面真值。两者若逐像素相同，说明平铺在边界上没有任何额外处理。
 func TestTileSeamless(t *testing.T) {
 	const w, h = FrameWidthPx * 2, FrameHeightPx * 2
-	tile := decodeTile(t, "A5C3A5C3A5C3A5C3")
+	tile := testTile(t, "A5C3A5C3A5C3A5C3")
 	tb := tile.Bounds()
 
 	// ground truth：把单帧的像素按 (x mod 帧宽, y mod 帧高) 取出来，再按 alpha
