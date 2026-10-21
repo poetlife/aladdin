@@ -13,6 +13,11 @@ option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/rbac/v1;rbacv1"
 // 它定义在 proto 里而不是各端各写一份，是为了让 Go 与 TypeScript
 // 两侧的枚举取值永远同源——两边对同一个原因的拼写不一致，
 // 会表现为"前端把权限不足当成了网络错误"这类难以定位的问题。
+//
+// 迁移期说明：失败分类的**唯一来源**是 aladdin/errors/v1/errors.proto。
+// 本文件保留 DenialReason 与 DenialDetail 作为已经发布出去的旧形状；
+// 服务端在迁移期同时携带 FailureDetail，删除条件见
+// docs/design/errors/README.md 的「与 DenialDetail 的迁移关系」。
 
 // DenialReason 是一次鉴权结论的固定原因。
 enum DenialReason {

@@ -93,13 +93,15 @@
 
 **关键约定一：不得把"无权限"与"未认证"混为一谈。** 混用会导致客户端在权限不足时反复尝试刷新凭证，把一次权限配置错误放大成登录风暴。
 
-**关键约定二：拒绝原因必须是可被机器读取的枚举，而不是一句文本。** 它随错误一起返回，三端都从**同一份 proto 定义**解码（见 `api/proto/aladdin/rbac/v1/errors.proto`），因此不存在"前端按文本猜、CLI 按枚举判"的分裂。
+**关键约定二：拒绝原因必须是可被机器读取的枚举，而不是一句文本。** 它随错误一起返回，三端都从**同一份 proto 定义**解码（失败分类见 [../errors/README.md](../errors/README.md)），因此不存在"前端按文本猜、CLI 按枚举判"的分裂。拒绝原因同时决定传输码与默认文案，客户端只按原因分支，不匹配文案。
 
 **关键约定三：注解缺失属于服务端缺陷，不是调用方的问题。** 它返回独立的错误码并在详情里带上方法名，使排障的人一眼知道该找谁，而不是去查自己的角色配置。
 
 **关键约定四：注解缺失与"地址不对应任何方法"是两回事。** 前者判的是"方法存在、注解不在"，属于服务端缺陷；后者判的是"路径压根不是一个 RPC 方法"——拼错的地址、扫描器、直接访问根路径都算，属于调用方把地址打错了。两者都走"未声明即拒绝"这条默认，但**返回不同的错误码**：混成同一个，会让一次地址打错在面板上呈现为服务端故障，把排障引向一个并不存在的漏写注解。
 
 拒绝时**不返回**主体是否持有相邻权限之类的信息，避免通过错误信息探测权限布局。
+
+同一个传输码可以对应多个拒绝原因（例如"权限不足"与"作用域不够"都是权限不足），客户端据原因给出不同提示，不据传输码猜。迁移期拒绝错误同时携带新的 `FailureDetail` 与旧的 `DenialDetail`，新客户端优先读前者；删除旧形状的条件写在 [../errors/README.md](../errors/README.md) 的「与 DenialDetail 的迁移关系」。
 
 ### 流式 RPC
 
@@ -158,10 +160,12 @@
 | 链路标识与认证中间件 | [internal/server/middleware.go](../../../internal/server/middleware.go) |
 | 鉴权拦截器（唯一实现） | [internal/server/interceptor/authz.go](../../../internal/server/interceptor/authz.go) |
 | 注解读取（唯一实现） | [internal/rbac/annotation.go](../../../internal/rbac/annotation.go) |
-| 拒绝语义与错误码映射 | [internal/server/interceptor/rejection.go](../../../internal/server/interceptor/rejection.go) |
+| 拒绝语义与失败分类的映射 | [internal/server/interceptor/rejection.go](../../../internal/server/interceptor/rejection.go) |
 | 主体与凭证提取 | [internal/server/interceptor/authn.go](../../../internal/server/interceptor/authn.go) |
 | 注解定义 | [api/proto/aladdin/rbac/v1/annotations.proto](../../../api/proto/aladdin/rbac/v1/annotations.proto) |
-| 拒绝原因定义（唯一来源） | [api/proto/aladdin/rbac/v1/errors.proto](../../../api/proto/aladdin/rbac/v1/errors.proto) |
+| 拒绝原因定义（`DenialDetail`，迁移期） | [api/proto/aladdin/rbac/v1/errors.proto](../../../api/proto/aladdin/rbac/v1/errors.proto) |
+| 失败分类与详情的定义（唯一来源） | [api/proto/aladdin/errors/v1/errors.proto](../../../api/proto/aladdin/errors/v1/errors.proto) |
+| 失败到对外错误的唯一转换点 | [internal/errs/connect.go](../../../internal/errs/connect.go) |
 
 ---
 

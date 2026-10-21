@@ -249,9 +249,16 @@ func New(cfg config.ServerConfig, logger *zap.Logger, metrics *observability.Met
 		registeredPaths = append(registeredPaths, path)
 	}
 
-	// 两个业务服务都挂鉴权拦截器。拦截器同时适用于三种协议。
+	// 所有业务服务共用这一组拦截器，顺序不可调换：
+	//
+	//   1. 失败转换在外层，把方法返回的领域错误编码成带 FailureDetail 的
+	//      Connect 错误（唯一转换点，见 docs/design/errors/README.md）；
+	//   2. 鉴权在内层，它的拒绝已经是编码好的 Connect 错误，会被外层原样透传。
+	//
+	// 两条拦截器都同时适用于三种协议，也同时覆盖 unary 与流式调用。
+	failureInterceptor := &interceptor.FailureInterceptor{Logger: logger}
 	opts := []connect.HandlerOption{
-		connect.WithInterceptors(authorizer.Interceptor()),
+		connect.WithInterceptors(failureInterceptor, authorizer.Interceptor()),
 	}
 	rbacPath, rbacHandler := rbacv1connect.NewRBACServiceHandler(NewRBACService(store, engine, lifecycleGate), opts...)
 	register(rbacPath, rbacHandler)

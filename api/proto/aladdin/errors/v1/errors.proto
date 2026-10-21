@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package aladdin.errors.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/poetlife/aladdin/api/gen/aladdin/errors/v1;errorsv1";
+
+// 本文件定义**全业务面**的失败分类。
+//
+// 鉴权链路上的 DenialReason 证明了一件事：失败原因一旦是可被机器读取的枚举，
+// 客户端就能按它分支，而不是按会变的文案猜。这份文件把同一种做法推广到
+// 所有业务失败，并让它成为 Go / TypeScript 两侧唯一的取值来源。
+//
+// 三条设计约束（见 docs/design/errors/README.md）：
+//
+//   1. 每个原因同时声明默认文案与传输码，二者都由生成器校验，缺一即构建失败；
+//   2. 传输码由原因决定，调用方不传——否则同一个原因在两个方法里会有两个码；
+//   3. 编号是线上契约，只增不改、删除只标记保留，永不复用。
+
+// 失败原因的默认文案与传输码。
+//
+// 它们挂在枚举值上，而不是散落在各端的 switch 里：新增一种失败只需改 proto
+// 并运行生成，不需要在服务层再补一条"错误 → 码 + 文案"的映射。
+extend google.protobuf.EnumValueOptions {
+  // 用户可见的默认文案。一次具体的失败可以补充上下文（哪一项超限、被哪个
+  // 版本引用），但补充文案只用于展示，客户端不得据此分支。
+  string text = 81001;
+
+  // 该原因对应的 Connect 传输码，取值为十六个标准码的小写写法：
+  // canceled / unknown / invalid_argument / deadline_exceeded / not_found /
+  // already_exists / permission_denied / resource_exhausted /
+  // failed_precondition / aborted / out_of_range / unimplemented / internal /
+  // unavailable / data_loss / unauthenticated。
+  //
+  // 不扩这十六个码：它们是 gRPC 与 Connect 互操作的基础，细分交给原因。
+  string connect_code = 81002;
+}
+
+// FailureReason 是一次失败的固定原因。
+//
+// 它是**失败**的分类，不包含"允许"这类成功结论：成功不是一次失败，
+// 也不需要客户端做失败处理。
+//
+// 粒度是"客户端可能据此改变行为"的类别，不是一句文案（见
+// docs/design/errors/README.md 的「原因的粒度」）。
+enum FailureReason {
+  // 未分类。它不是一种失败，任何对外的失败都不得使用它。
+  FAILURE_REASON_UNSPECIFIED = 0;
+
+  // ---------------------------------------------------------------
+  // 1000–1099：跨领域的通用失败
+  // ---------------------------------------------------------------
+
+  // 存储不可用，无法得出业务结论。客户端应退避重试，而不是以为输入有错。
+  //
+  // 它刻意独立于各领域的存储类型：一次数据库抖动不能同时表现为"认证失败"
+  // 和"作品不存在"。
+  FAILURE_REASON_STORE_UNAVAILABLE = 1000 [(text) = "服务暂时不可用，请稍后重试", (connect_code) = "unavailable"];
+
+  // ---------------------------------------------------------------
+  // 1100–1199：认证与鉴权
+  // ---------------------------------------------------------------
+
+  // 已确认主体，但没有这条权限。客户端不应重试，也不应引导重新登录。
+  //
+  // 与 SCOPE_MISMATCH 分开，是因为两者对用户的提示完全不同：一个要联系
+  // 管理员，另一个只需换一个更高层级的作用域。
+  FAILURE_REASON_PERMISSION_DENIED = 1100 [(text) = "权限不足", (connect_code) = "permission_denied"];
+
+  // 主体有这条权限，但被授予的作用域不覆盖本次请求。
+  FAILURE_REASON_SCOPE_MISMATCH = 1101 [(text) = "当前作用域下权限不足，需要更高层级授权", (connect_code) = "permission_denied"];
+
+  // 凭证失效或未携带。客户端应引导重新登录。
+  FAILURE_REASON_SESSION_EXPIRED = 1102 [(text) = "凭证已失效，请重新登录", (connect_code) = "unauthenticated"];
+
+  // 凭证对应的主体已被删除或停用，无法继续以这个主体行事。
+  //
+  // 它属于认证失败：客户端能做的是重新登录，而不是刷新某个列表。
+  // 业务面"请求里指定的主体不存在"是另一件事，使用各自领域的分段。
+  FAILURE_REASON_SESSION_SUBJECT_NOT_FOUND = 1103 [(text) = "主体不存在或已停用", (connect_code) = "unauthenticated"];
+
+  // 方法没有声明任何鉴权注解，被默认拒绝。
+  //
+  // 这不是调用方的问题，而是服务端的配置缺陷：新增接口时漏写了
+  // public / authenticated_only / required_permission 三者之一。
+  // 它返回 internal，使排障的人一眼看出该找服务端。
+  FAILURE_REASON_ANNOTATION_MISSING = 1104 [(text) = "服务端方法注解缺失，已默认拒绝", (connect_code) = "internal"];
+
+  // 请求的地址不对应任何 RPC 方法：地址拼错、扫描器，或直接访问根路径。
+  //
+  // 与 ANNOTATION_MISSING 是两回事：那一个是"方法存在、注解不在"，
+  // 这一个是"路径压根不是一个方法"。混成同一个码会让一次地址打错
+  // 呈现为服务端故障。
+  FAILURE_REASON_UNKNOWN_PROCEDURE = 1105 [(text) = "这个地址不是一个 RPC 方法", (connect_code) = "unimplemented"];
+
+  // 鉴权判定本身给不出结论（既不是拒绝，也不是存储故障）。
+  //
+  // 它只用于兜住一个理论上不可达的分支；正常路径上的拒绝都使用上面
+  // 更具体的原因。
+  FAILURE_REASON_PERMISSION_CHECK_FAILED = 1106 [(text) = "鉴权失败", (connect_code) = "internal"];
+
+  // ---------------------------------------------------------------
+  // 1900–1999：服务端内部失败
+  // ---------------------------------------------------------------
+
+  // 未分类或不应暴露细节的内部失败。
+  //
+  // 对外固定这一句文案；原始错误只进日志，不上线。客户端不应重试，
+  // 也不应把它当作输入有错。
+  FAILURE_REASON_INTERNAL_UNEXPECTED = 1900 [(text) = "服务内部错误", (connect_code) = "internal"];
+}
+
+// FailureDetail 是附带在 RPC 错误上的结构化失败原因。
+//
+// 它作为 google.protobuf.Any 挂在错误详情里，三端都从同一个生成类型读取，
+// 不做任何文本匹配。
+//
+// 它与错误消息同源：两者在同一次转换里由同一个原因与同一份文案产出，
+// 因此不会出现"消息说 A、详情说 B"。
+message FailureDetail {
+  // 客户端据此分支。任何一次已分类的失败都必须带上它。
+  FailureReason reason = 1;
+
+  // 与错误消息同值的展示文案。
+  //
+  // 它让客户端不必再从原始错误文本里取文案；但**客户端不得按它分支**——
+  // 需要分支的信息进 reason 或 metadata。
+  string message = 2;
+
+  // 结构化补充信息，供排障与客户端做非文案判断。
+  //
+  // 不得放凭证、口令、临时凭证、内部路径或因果链原文。
+  // 键的含义由产生它的那一类失败定义（例如注解缺失时的 method）。
+  map<string, string> metadata = 3;
+}

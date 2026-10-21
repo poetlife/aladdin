@@ -1,6 +1,10 @@
 version: v2
 # 只产 OpenAPI 文档，与 buf.gen.yaml 的代码生成分开。
 #
+# 失败分类（api/proto/aladdin/errors）没有 RPC 服务，由 make api-docs 的
+# --exclude-path 排除：它的 schema 没有任何方法引用，带进文档只会让对外
+# 接口看起来比实际多。它是三端共用的契约，但不在"方法面"这份文档里。
+#
 # 分开的理由：代码是每次改 proto 都要重生成的（make gen，且被 check-gen
 # 校验同步），文档是查阅与发布时才需要的。合在一起会让日常 gen 变慢，
 # 也会让文档产物的噪音混进代码提交。
