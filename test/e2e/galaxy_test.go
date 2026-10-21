@@ -3,10 +3,13 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -23,6 +26,7 @@ import (
 	"github.com/poetlife/aladdin/internal/objectstore"
 	"github.com/poetlife/aladdin/internal/observability"
 	"github.com/poetlife/aladdin/internal/rbac"
+	"github.com/poetlife/aladdin/internal/watermark"
 )
 
 // 本文件端到端验证创作链路：发布在**公开匿名**的地址上可达、一文件一地址、
@@ -1372,4 +1376,155 @@ func assetIDsOf(resp *galaxyv1.ListAssetsResponse) []string {
 		ids = append(ids, asset.GetId())
 	}
 	return ids
+}
+
+// **一次访问带着水印，而发布物一个字节都没变。**
+//
+// 四步：壳解析分享地址时拿到这一层水印（明水印的文字 + 盲水印的图案）；同一访客
+// 再解析一次得到同一枚码（窗口内复用，登记表因此按访客数增长而不是按浏览量）；
+// 把图案铺成一张"截图"、从里面**解出码**（走的是真实下发的那份 PNG 字节）；按那
+// 枚码查出这次访问的登记。最后一步在**审计员**的凭证下做——创作者拿不到
+// galaxy.watermark.read（见 docs/design/galaxy/watermark.md）。
+func TestGalaxySharedPageCarriesWatermark(t *testing.T) {
+	h := startServer(t, rbac.RoleGalaxyAuthor, testScope)
+	client := connectGalaxy(t, h, testToken)
+
+	projectID := createProject(t, client, "带水印的站点", galaxyv1.ContentSlot_CONTENT_SLOT_SITE)
+	pushDraft(t, client, projectID, pushContentOverRPC(t, h, client, projectID, "index.html", "<p>正文</p>"))
+	address := publishDraft(t, client, projectID)
+
+	path := pathOf(address)
+	// **带凭证**：这一档要走"身份优先取主体"。
+	viewer := connectGalaxy(t, h, testToken)
+	resolve := func() *galaxyv1.WatermarkLayer {
+		t.Helper()
+		resp, err := viewer.ResolveSharedPage(context.Background(), connect.NewRequest(&galaxyv1.ResolveSharedPageRequest{Path: path}))
+		if err != nil {
+			t.Fatalf("解析分享地址失败: %v", err)
+		}
+		return resp.Msg.GetWatermark()
+	}
+
+	layer := resolve()
+	if layer == nil {
+		t.Fatal("解析成功却没有带回水印层：壳上就没有东西可叠")
+	}
+	if layer.GetDisplayText() == "" {
+		t.Fatal("明水印没有文字")
+	}
+	// **盲水印默认关闭**：新建工程没打开它，因此这一层里不该有图案。明水印不受影响
+	// （见 docs/design/galaxy/watermark.md 的"默认关闭"）。
+	if len(layer.GetPattern()) != 0 {
+		t.Fatalf("工程的盲水印开关关着，却下发了 %d 字节图案", len(layer.GetPattern()))
+	}
+	// 打开它之后再解析，图案才出现——同一次读取回答"这一页在不在"与"要不要铺图案"。
+	if _, err := client.UpdateProject(context.Background(), connect.NewRequest(&galaxyv1.UpdateProjectRequest{
+		ProjectId:      projectID,
+		Name:           "带水印的站点",
+		BlindWatermark: true,
+	})); err != nil {
+		t.Fatalf("打开盲水印失败: %v", err)
+	}
+	layer = resolve()
+	if layer == nil || len(layer.GetPattern()) == 0 {
+		t.Fatal("打开开关后仍没有图案")
+	}
+	// **明水印不含身份明文**：它会被截进图里、被转发出去。
+	if strings.Contains(layer.GetDisplayText(), testSubject) {
+		t.Fatalf("明水印里出现了主体标识: %q", layer.GetDisplayText())
+	}
+
+	// 窗口内复用同一枚码：同一访客、同一工程、同一槽。
+	if again := resolve(); again.GetDisplayText() != layer.GetDisplayText() {
+		t.Fatalf("窗口内两次打开拿到了不同的水印：%q vs %q", layer.GetDisplayText(), again.GetDisplayText())
+	}
+
+	// 从**服务端下发的那份图案**里解出码：这一步把"壳上叠的那一张 PNG"与"命令行能
+	// 读回来的码"接在一起——两者对不上，整条取证链路就是空的。
+	code := extractFromPattern(t, layer.GetPattern())
+
+	// 创作者查不到：那枚码不在他的权限集合里。
+	if _, err := client.LookupWatermark(context.Background(), connect.NewRequest(&galaxyv1.LookupWatermarkRequest{Code: code})); err == nil {
+		t.Fatal("创作者居然能查水印：让作者查出「谁看了我的页面」是另一条隐私决策")
+	}
+
+	// 审计员查得到，且主体就是这位访客。
+	auditToken := "e2e-auditor-token"
+	auditSubject := "usr_e2e_auditor"
+	if err := h.srv.Store().PutSubject(context.Background(), rbac.Subject{
+		ID: auditSubject, Type: rbac.SubjectTypeUser, DefaultScope: testScope,
+	}); err != nil {
+		t.Fatalf("注入审计员主体失败: %v", err)
+	}
+	if err := h.srv.Store().Bind(context.Background(), rbac.RoleBinding{
+		SubjectID: auditSubject, RoleID: rbac.RoleAuditor, Scope: testScope,
+	}); err != nil {
+		t.Fatalf("注入审计员绑定失败: %v", err)
+	}
+	h.srv.Authenticator().Add(auditToken, rbac.Subject{ID: auditSubject, Type: rbac.SubjectTypeUser, DefaultScope: testScope})
+	auditor := connectGalaxy(t, h, auditToken)
+
+	got, err := auditor.LookupWatermark(context.Background(), connect.NewRequest(&galaxyv1.LookupWatermarkRequest{Code: code}))
+	if err != nil {
+		t.Fatalf("审计员查水印失败: %v", err)
+	}
+	visit := got.Msg.GetVisit()
+	if visit == nil {
+		t.Fatal("审计员查不到刚签发的登记")
+	}
+	if visit.GetSubjectId() != testSubject {
+		t.Errorf("登记的主体 = %q，期望 %q", visit.GetSubjectId(), testSubject)
+	}
+	if visit.GetProjectId() != projectID {
+		t.Errorf("登记的工程 = %q，期望 %q", visit.GetProjectId(), projectID)
+	}
+
+	// 查一个**形状合法但不存在**的码：空结果而不是错误（否定结论只有一个）。
+	missing, err := auditor.LookupWatermark(context.Background(), connect.NewRequest(&galaxyv1.LookupWatermarkRequest{
+		Code: "0123456789ABCDEF",
+	}))
+	if err != nil {
+		t.Fatalf("查一个不存在的码被当成错误: %v", err)
+	}
+	if missing.Msg.GetVisit() != nil {
+		t.Fatal("不存在的码查出了一条登记")
+	}
+
+	// **发布物一个字节都没变**：水印只经壳下发，产物里没有它。
+	// 取的是**入口那一页**：槽根不带结尾斜杠会先 301 到带斜杠的形式（见
+	// docs/design/galaxy/publication.md），这里直接点 entry 文件省掉那一跳。
+	status, published, _ := fetchPublished(t, h, address, "index.html", nil)
+	if status != http.StatusOK {
+		t.Fatalf("取发布产物失败：状态 %d", status)
+	}
+	if strings.Contains(published, code) || strings.Contains(published, layer.GetDisplayText()) {
+		t.Fatal("发布产物里出现了水印：它该在壳上，不该在内容里")
+	}
+}
+
+// extractFromPattern 把服务端下发的图案铺成一张"整屏截图"，再从里面解出码。
+//
+// 铺法照着壳上那一层来：图案按原尺寸平铺（见 web/src/pages/galaxy/WatermarkOverlay.tsx），
+// 因此这里也按原尺寸铺满、再从任意偏移处截一块——那正是"用户截了一屏"的形状。
+// 偏移非零是刻意的：真实的截图不会正好对齐帧原点。
+func extractFromPattern(t *testing.T, pattern []byte) string {
+	t.Helper()
+	tile, err := png.Decode(bytes.NewReader(pattern))
+	if err != nil {
+		t.Fatalf("下发的图案不是 PNG: %v", err)
+	}
+	bounds := tile.Bounds()
+	shot := image.NewRGBA(image.Rect(0, 0, 3*bounds.Dx(), 2*bounds.Dy()))
+	for y := 0; y < shot.Bounds().Dy(); y++ {
+		for x := 0; x < shot.Bounds().Dx(); x++ {
+			shot.Set(x, y, tile.At(bounds.Min.X+x%bounds.Dx(), bounds.Min.Y+y%bounds.Dy()))
+		}
+	}
+	// 裁掉左上角一块：偏移之后帧相位未知，提取侧必须自己找回来。
+	cropped := shot.SubImage(image.Rect(37, 29, shot.Bounds().Dx(), shot.Bounds().Dy()))
+	code, err := watermark.Extract(cropped)
+	if err != nil {
+		t.Fatalf("从下发的图案里解不出水印: %v", err)
+	}
+	return code
 }

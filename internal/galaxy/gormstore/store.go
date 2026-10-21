@@ -81,6 +81,7 @@ func toProject(rec database.GalaxyProjectRecord) galaxy.Project {
 		OwnerSubjectID: rec.OwnerSubjectID,
 		Name:           rec.Name,
 		Description:    rec.Description,
+		BlindWatermark: rec.BlindWatermark,
 		CreatedAt:      rec.CreatedAt,
 		UpdatedAt:      rec.UpdatedAt,
 	}

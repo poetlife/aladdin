@@ -49,7 +49,7 @@ func TestEachWritePublishesOnTheProjectTopic(t *testing.T) {
 			name:    "改工程元数据",
 			prepare: func(t *testing.T, f *fixture) stage { return stage{project: f.createProject(t, "工程")} },
 			act: func(t *testing.T, f *fixture, s stage) {
-				if _, err := f.service.UpdateProject(context.Background(), testOwner, s.project.ID, "新名字", "新简介"); err != nil {
+				if _, err := f.service.UpdateProject(context.Background(), testOwner, s.project.ID, "新名字", "新简介", false); err != nil {
 					t.Fatalf("改元数据失败: %v", err)
 				}
 			},
@@ -191,7 +191,7 @@ func TestWritesThatFailPublishNothing(t *testing.T) {
 			name: "工程名称过长",
 			act: func(t *testing.T, f *fixture, project Project) {
 				if _, err := f.service.UpdateProject(context.Background(), testOwner, project.ID,
-					strings.Repeat("字", ProjectNameMaxRunes+1), ""); err == nil {
+					strings.Repeat("字", ProjectNameMaxRunes+1), "", false); err == nil {
 					t.Fatal("过长的工程名称应当被拒")
 				}
 			},
@@ -199,7 +199,7 @@ func TestWritesThatFailPublishNothing(t *testing.T) {
 		{
 			name: "不是自己的工程",
 			act: func(t *testing.T, f *fixture, project Project) {
-				if _, err := f.service.UpdateProject(context.Background(), testOther, project.ID, "改名", ""); err == nil {
+				if _, err := f.service.UpdateProject(context.Background(), testOther, project.ID, "改名", "", false); err == nil {
 					t.Fatal("改别人的工程应当被拒")
 				}
 			},

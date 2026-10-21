@@ -28,6 +28,7 @@ export const PermissionCatalog: readonly PermissionCatalogEntry[] = [
   { code: 'galaxy.project.read', description: '读取自己创建的工程、草稿与版本' },
   { code: 'galaxy.project.write', description: '创建、修改、删除工程，保存版本。删除属不可逆操作' },
   { code: 'galaxy.project.publish', description: '发布与撤回发布。唯一一个让内容离开私有边界的动作' },
+  { code: 'galaxy.watermark.read', description: '按水印码查回一次访问：主体（匿名为空）、时间、工程与来源。只读，用于溯源' },
   { code: 'galaxy.asset.read', description: '读取自己工程下的资产列表与读取地址' },
   { code: 'galaxy.asset.write', description: '上传与删除工程资产' },
   { code: 'galaxy.attachment.read', description: '读取自己工程下的附件列表与下载地址' },

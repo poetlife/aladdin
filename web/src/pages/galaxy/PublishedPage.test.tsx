@@ -5,7 +5,10 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as galaxyApi from '../../api/galaxy'
-import { ResolveSharedPageResponseSchema } from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
+import {
+  ResolveSharedPageResponseSchema,
+  WatermarkLayerSchema,
+} from '../../gen/proto/aladdin/galaxy/v1/galaxy_pb'
 import { LOADING_TEXT } from '../../ui/LoadingHint'
 import { PublishedPage } from './PublishedPage'
 
@@ -73,6 +76,101 @@ describe('主站壳', () => {
     const sandbox = iframe?.getAttribute('sandbox') ?? ''
     expect(sandbox).toContain('allow-scripts')
     expect(sandbox).not.toContain('allow-same-origin')
+  })
+
+  // **水印叠在壳上、不进行内。** 明水印是给人看的威慑，盲水印是给命令行读的取证；
+  // 两者都在 iframe **之外**的一层上（见 docs/design/galaxy/watermark.md 的"铺在哪"）。
+  // 页面里的层叠绕不到它，`site` 槽的产物也因此一个字节都没变。
+  it('水印叠在 iframe 之上，不在页内', async () => {
+    const contentUrl = 'https://pub.example.com/g/p1'
+    vi.mocked(galaxyApi.resolveSharedPage).mockResolvedValue(
+      create(ResolveSharedPageResponseSchema, {
+        contentUrl,
+        watermark: create(WatermarkLayerSchema, {
+          displayText: 'aladdin · 2026-10-18 · ABCD1234',
+          pattern: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+        }),
+      }),
+    )
+
+    const container = await renderAt('/g/p1')
+
+    const overlay = container.querySelector('[data-testid="watermark-overlay"]')
+    expect(overlay, '没有渲染出水印层').not.toBeNull()
+    // 它在 iframe 之外：不在那一帧里，而是它的兄弟。
+    const iframe = container.querySelector('iframe')
+    expect(iframe).not.toBeNull()
+    expect(overlay?.contains(iframe)).toBe(false)
+    // 明水印那一行字出现在页面上，但它不是内容的一部分。
+    expect(overlay?.textContent).toContain('ABCD1234')
+    expect(overlay?.querySelector('[data-testid="watermark-pattern"]')).not.toBeNull()
+    // **不接指针**：水印盖在正文上，点击、滚动、选中都该落到内容上。
+    expect((overlay as HTMLElement).style.pointerEvents).toBe('none')
+    // **不进无障碍树**：它是标记，不是内容。
+    expect(overlay?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  // **水印要压在加载遮罩之上。** 遮罩最长的寿命是加载那十秒，而盲水印要被截的是
+  // 内容：一块被遮罩盖住的地方截下来就是一片纯色，提不出任何东西。实测的后果很
+  // 具体——加载中途的截图只有下半有图案、上半是纯色，整张图因此解不出。
+  //
+  // 判据是**层叠顺序**而不是"看起来对"：水印层不带 z-index，遮罩层也不带，
+  // 靠 DOM 顺序决定（水印在后）。这里钉住这条顺序，改动它必须是有意的。
+  it('水印压在加载遮罩之上，而不是被它盖住', async () => {
+    vi.mocked(galaxyApi.resolveSharedPage).mockResolvedValue(
+      create(ResolveSharedPageResponseSchema, {
+        contentUrl: 'https://pub.example.com/g/p1',
+        watermark: create(WatermarkLayerSchema, {
+          displayText: 'aladdin · 2026-10-18 · ABCD1234',
+          pattern: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+        }),
+      }),
+    )
+
+    const container = await renderAt('/g/p1')
+
+    // 加载遮罩此刻在场（iframe 还没 load）。
+    const overlay = container.querySelector('[data-testid="watermark-overlay"]') as HTMLElement | null
+    expect(overlay, '没有渲染出水印层').not.toBeNull()
+    // 水印层不自己抬层级：抬了就会把遮罩顶下去，或者反过来被遮罩顶下去，
+    // 两种都由 DOM 顺序统一决定。
+    expect(overlay?.style.zIndex).toBe('1')
+  })
+
+  // **盲水印缺席是常态**：它由工程自己的开关控制、默认关闭。关着时服务端只下发
+  // `displayText`，壳上就只剩明水印那行字——不该因为"没有图案"而整层都不渲染
+  // （那样连明水印也没了），也不该报错。
+  it('只有明水印、没有图案时仍渲染那一行字', async () => {
+    vi.mocked(galaxyApi.resolveSharedPage).mockResolvedValue(
+      create(ResolveSharedPageResponseSchema, {
+        contentUrl: 'https://pub.example.com/g/p1',
+        watermark: create(WatermarkLayerSchema, {
+          displayText: 'aladdin · 2026-10-18 · ABCD1234',
+        }),
+      }),
+    )
+
+    const container = await renderAt('/g/p1')
+
+    const overlay = container.querySelector('[data-testid="watermark-overlay"]')
+    expect(overlay, '没有渲染出水印层：明水印不该受盲水印开关影响').not.toBeNull()
+    expect(overlay?.textContent).toContain('ABCD1234')
+    // 没有图案时那一层不出现。
+    expect(overlay?.querySelector('[data-testid="watermark-pattern"]')).toBeNull()
+  })
+
+  // 没有水印时这一层不渲染：一个空的绝对定位层只会多出一个挡住指针的风险，
+  // 而它一个像素的信息都没有。
+  it('解析结果里没有水印时不渲染水印层', async () => {
+    vi.mocked(galaxyApi.resolveSharedPage).mockResolvedValue(
+      create(ResolveSharedPageResponseSchema, {
+        contentUrl: 'https://pub.example.com/g/p1',
+      }),
+    )
+
+    const container = await renderAt('/g/p1')
+
+    expect(container.querySelector('[data-testid="watermark-overlay"]')).toBeNull()
   })
 
   // 空结果**是统一的否定结论**（未发布 / 已撤回 / 槽未启用 / 工程不存在 /

@@ -1826,6 +1826,12 @@ paths:
          中、路径不在集合里，一律返回空的 `content_url`，而不是 RPC 错误——错误码会
          成为一个"这个标识是真的"的第二信号（见 docs/design/galaxy/publication.md 的
          "主站壳"）。
+         壳解析这条地址时**同时拿到这次访问的水印**：明水印要显示的文字、以及盲水印
+         那一张随响应下发的图案。水印的码在这一次调用里签发（见
+         docs/design/galaxy/watermark.md）。
+
+         **水印不改变这一条的任一判定**：能看才谈得上水印，看不到的那一档照旧是空的
+         `content_url`，`watermark` 也一并留空。
       operationId: aladdin.galaxy.v1.GalaxyService.ResolveSharedPage
       parameters:
         - name: Connect-Protocol-Version
@@ -1856,6 +1862,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/aladdin.galaxy.v1.ResolveSharedPageResponse'
+  /aladdin.galaxy.v1.GalaxyService/LookupWatermark:
+    post:
+      x-aladdin-auth:
+        kind: requires
+        permission: galaxy.watermark.read
+        scope-source: SCOPE_SOURCE_CREDENTIAL
+      tags:
+        - aladdin.galaxy.v1.GalaxyService
+      summary: LookupWatermark
+      description: |-
+        **鉴权**：需要权限 `galaxy.watermark.read`；作用域取自凭证的默认作用域。
+
+        **幂等**：本方法无副作用，可安全重试；服务端在同一路径上也接受 GET。
+
+        按一枚水印码查回它对应的那一次访问。
+
+         这是**溯源**那条路的读侧：一段截图先由命令行解出码，再按码查出主体（匿名时
+         为空）、时间、工程与来源。它**不是**创作者能用的接口——让作者查出"谁看了我的
+         页面"是一条独立的隐私决策（见 docs/design/galaxy/watermark.md）。
+
+         **查不到不是错误**：超出保留窗口、码不存在、码形状非法，三者返回同一个空结果，
+         与发布态那条"否定结论只有一个"同一条取向。
+      operationId: aladdin.galaxy.v1.GalaxyService.LookupWatermark
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/aladdin.galaxy.v1.LookupWatermarkRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/aladdin.galaxy.v1.LookupWatermarkResponse'
   /aladdin.identity.v1.IdentityService/Login:
     post:
       x-aladdin-auth:
@@ -5405,6 +5463,25 @@ components:
           title: versions
       title: ListVersionsResponse
       additionalProperties: false
+    aladdin.galaxy.v1.LookupWatermarkRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          title: code
+          description: 水印码，16 个字符。形状非法与"查不到"返回同一个空结果。
+      title: LookupWatermarkRequest
+      additionalProperties: false
+    aladdin.galaxy.v1.LookupWatermarkResponse:
+      type: object
+      properties:
+        visit:
+          allOf:
+            - title: visit
+              description: 查不到时为空。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.WatermarkRecord'
+      title: LookupWatermarkResponse
+      additionalProperties: false
     aladdin.galaxy.v1.PreviewDraftRequest:
       type: object
       properties:
@@ -5472,6 +5549,13 @@ components:
 
              槽只增不删（见 AddProjectSlot），因此这个列表只会在后面追加。**每个槽的
              发布状态都属于它自己**：发布或撤回一个槽不改变另一个槽的任何字段。
+        blindWatermark:
+          type: boolean
+          title: blind_watermark
+          description: |-
+            这个工程要不要在发布出来的站点上铺盲水印。**默认 false**。
+
+             明水印不受它影响（那一层始终在）。见 docs/design/galaxy/watermark.md。
       title: Project
       additionalProperties: false
       description: |-
@@ -5648,6 +5732,11 @@ components:
              **空表示"没有这一页"**，且六种情形同此一答（未发布 / 已撤回 / 该槽未启用 /
              工程不存在 / 标识没被猜中 / 路径不在集合里）。它不是错误：调用方据此渲染
              与发布态相同的"不存在"。
+        watermark:
+          allOf:
+            - title: watermark
+              description: 这次访问的水印。**没有可看的内容时为空**（与 `content_url` 同进退）。
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.WatermarkLayer'
       title: ResolveSharedPageResponse
       additionalProperties: false
     aladdin.galaxy.v1.RestoreDraftSnapshotRequest:
@@ -5811,6 +5900,17 @@ components:
         description:
           type: string
           title: description
+        blindWatermark:
+          type: boolean
+          title: blind_watermark
+          description: |-
+            要不要在发布出来的站点上铺**盲水印**（默认关闭）。
+
+             盲水印能在截图上留下可提取的痕迹，代价是**改变渲染出来的像素**——深色主题上
+             那点改动看得见（见 docs/design/galaxy/watermark.md）。因此它是创作者对自己作品
+             的选择，不是平台的默认行为。
+
+             **它与明水印无关**：明水印（码的前 8 位那一行斜字）始终在，不受这个开关影响。
       title: UpdateProjectRequest
       additionalProperties: false
     aladdin.galaxy.v1.UpdateProjectResponse:
@@ -5950,6 +6050,71 @@ components:
       title: Version
       additionalProperties: false
       description: Version 是文件清单的一次不可变快照。
+    aladdin.galaxy.v1.WatermarkLayer:
+      type: object
+      properties:
+        displayText:
+          type: string
+          title: display_text
+          description: |-
+            明水印显示的那一行字：平台标记 + 日期 + 码的前几位。
+
+             由服务端给出而不是让前端拼：水印显示什么是一个产品决定，而拼字符串是它的
+             实现——两处各拼一份的表现是"壳上写的与提取出来的不是同一枚码"。
+        pattern:
+          type: string
+          title: pattern
+          format: byte
+          description: |-
+            盲水印的平铺图案，PNG 字节。壳把它当作一层近乎不可见的平铺背景叠上去。
+
+             **由服务端生成**（算法在 internal/watermark）：前端再算一遍就是同一个算法的
+             第二份实现，而它的漂移只有在拿到一张真截图时才会被发现。
+      title: WatermarkLayer
+      additionalProperties: false
+      description: |-
+        WatermarkLayer 是一次访问的水印：明水印显示什么、盲水印叠什么。
+
+         两者都指向**同一枚码**，而那枚码与"这是谁"的对应关系在服务端登记（见
+         docs/design/galaxy/watermark.md）。因此这里**不含身份明文**：壳拿到的东西即使
+         被页面里的人看见，也读不出访客是谁。
+    aladdin.galaxy.v1.WatermarkRecord:
+      type: object
+      properties:
+        code:
+          type: string
+          title: code
+          description: 水印码本身。回显它是为了让调用方能确认自己查的是哪一枚。
+        subjectId:
+          type: string
+          title: subject_id
+          description: 访客的主体标识。**匿名为空**——那一档只记来源与浏览器标识的摘要。
+        visitedAt:
+          type: string
+          title: visited_at
+          description: 访问发生的时刻（RFC 3339）。
+        projectId:
+          type: string
+          title: project_id
+          description: 这次访问落在哪个工程与哪个内容槽。
+        slot:
+          allOf:
+            - title: slot
+            - $ref: '#/components/schemas/aladdin.galaxy.v1.ContentSlot'
+        sourceAddress:
+          type: string
+          title: source_address
+          description: |-
+            来源地址与浏览器标识的摘要。
+
+             **浏览器标识以摘要形式给出**：原值是一串能指纹化这台设备的字符串，而溯源
+             只需要"是不是同一台"，不需要"它是哪一版"。
+        userAgentDigest:
+          type: string
+          title: user_agent_digest
+      title: WatermarkRecord
+      additionalProperties: false
+      description: WatermarkRecord 是一次被水印标记过的访问。
     aladdin.objectstore.v1.DirectUploadCredential:
       type: object
       properties:

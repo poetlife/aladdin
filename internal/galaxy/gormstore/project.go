@@ -99,6 +99,7 @@ func (s *Store) CreateProject(ctx context.Context, project galaxy.Project) error
 			OwnerSubjectID: project.OwnerSubjectID,
 			Name:           project.Name,
 			Description:    project.Description,
+			BlindWatermark: project.BlindWatermark,
 			CreatedAt:      project.CreatedAt,
 			UpdatedAt:      project.UpdatedAt,
 		}
@@ -125,13 +126,16 @@ func (s *Store) CreateProject(ctx context.Context, project galaxy.Project) error
 
 // PutProjectMeta 实现 galaxy.MutableStore。
 //
-// 只覆盖名称、简介与更新时间：**它不动发布指针、也不动内容槽**，一次改名不该
-// 影响发布态，而"有哪些槽"由槽表回答。
-func (s *Store) PutProjectMeta(ctx context.Context, projectID, name, description string, at time.Time) error {
+// 只覆盖名称、简介、盲水印开关与更新时间：**它不动发布指针、也不动内容槽**，
+// 一次改名不该影响发布态，而"有哪些槽"由槽表回答。
+func (s *Store) PutProjectMeta(ctx context.Context, projectID, name, description string, blindWatermark bool, at time.Time) error {
 	result := s.db.WithContext(ctx).
 		Model(&database.GalaxyProjectRecord{}).
 		Where("id = ?", projectID).
-		Updates(map[string]any{"name": name, "description": description, "updated_at": at})
+		Updates(map[string]any{
+			"name": name, "description": description,
+			"blind_watermark": blindWatermark, "updated_at": at,
+		})
 	if result.Error != nil {
 		return unavailable("写入工程元数据", result.Error)
 	}

@@ -151,6 +151,18 @@ describe('创作与发布介绍页', () => {
     expect(text).toContain('publication pull')
   })
 
+  // 水印是"拿得到但跑不掉"那一半：站点上带着这一次访问的标记，而截图能解回它。
+  // 这一章要给出那条命令，否则用户手里有截图时无从下手。
+  it('给出从截图回溯访问的命令，并说清强度边界', async () => {
+    const container = await renderPage()
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('aladdin galaxy watermark extract')
+    expect(text).toContain('galaxy.watermark.read')
+    // 明文说清它扛不住什么：只讲"能溯源"而不讲边界，是在承诺一件做不到的事。
+    expect(text).toContain('重绘')
+  })
+
   // 发布域是部署实例的值，写进仓库就违反"仓库不含实例值"（见 docs/deploy.md）。
   // 这一页通篇在讲地址，正是最容易顺手写死一个域名的地方。
   it('不出现任何绝对地址', async () => {

@@ -66,8 +66,13 @@ export async function getProject(projectId: string, trace?: TraceCapture) {
 }
 
 /** 修改工程的名称与简介。空串表示清空。**内容槽不在其中**（槽只增不删）。 */
-export async function updateProject(projectId: string, name: string, description: string) {
-  return galaxyClient().updateProject({ projectId, name, description })
+export async function updateProject(
+  projectId: string,
+  name: string,
+  description: string,
+  blindWatermark: boolean,
+) {
+  return galaxyClient().updateProject({ projectId, name, description, blindWatermark })
 }
 
 /** 删除一个工程。连带删除它的全部内容槽、版本、资产与发布记录。 */

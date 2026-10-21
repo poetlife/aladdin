@@ -107,6 +107,12 @@ type Project struct {
 	OwnerSubjectID string
 	Name           string
 	Description    string
+	// BlindWatermark 表示这个工程**要不要在发布出来的站点上铺盲水印**。
+	//
+	// **默认关闭。** 盲水印能在截图上留下可提取的痕迹，代价是改变渲染出来的像素
+	// ——深色主题上那点改动看得见（见 docs/design/galaxy/watermark.md 的"可见性"）。
+	// 因此它是创作者对自己作品的选择，不是平台的默认行为。**明水印不受它影响。**
+	BlindWatermark bool
 	// Slots 是启用的内容槽，**至少一个**。
 	//
 	// **槽只增不删**（见 Service.AddProjectSlot）：让历史版本无法复现的从来不是
@@ -309,6 +315,12 @@ type Store interface {
 	// 时间（见 PreviewGrant.Expired）。把判定放在读里会让"这条凭证此刻算不算
 	// 数"多出第二种说法。
 	GetPreviewGrant(ctx context.Context, token string) (PreviewGrant, error)
+
+	// GetWatermarkVisit 按码读回一条水印登记，没有时返回 ErrWatermarkNotFound。
+	//
+	// **保留期不由它判定**（与预览凭证同一条）：过期与否由调用方比较时间
+	// （见 WatermarkVisit.Expired）。一条没被回收掉的行因此不会多给一秒钟的可查性。
+	GetWatermarkVisit(ctx context.Context, code string) (WatermarkVisit, error)
 }
 
 // MutableStore 是 Store 的写能力。
@@ -325,9 +337,13 @@ type MutableStore interface {
 	// 的中间状态，而"至少一个槽"是工程能成立的前提。
 	CreateProject(ctx context.Context, project Project) error
 
-	// PutProjectMeta 覆盖工程的名称与简介，并更新更新时间。
+	// PutProjectMeta 覆盖工程的名称、简介与"要不要铺盲水印"，并更新更新时间。
 	// 它**不动**发布指针，也**不动内容槽**：一次改名不该影响发布态。
-	PutProjectMeta(ctx context.Context, projectID, name, description string, at time.Time) error
+	//
+	// **盲水印开关也走这一处**：它和名称、简介一样是"这个工程长什么样"的一部分，
+	// 而不是一次独立的操作。拆成第二个方法只会让"改名字"与"开盲水印"两条路各写
+	// 一遍更新与留痕。
+	PutProjectMeta(ctx context.Context, projectID, name, description string, blindWatermark bool, at time.Time) error
 
 	// AddProjectSlot 给工程加一个槽。**槽已经启用时返回 ErrSlotEnabled**。
 	//
@@ -424,6 +440,21 @@ type MutableStore interface {
 	// 失效时刻由调用方给出，不由存储自己取当前时间：判断留在上层，存储只读写
 	// 事实（与"存储保持哑"同源），这条清理因此可测。
 	PutPreviewGrant(ctx context.Context, grant PreviewGrant, cleanupBefore time.Time) error
+
+	// ReuseOrPutWatermarkVisit 写入一条水印登记，但**同一访客在窗口内已有登记时
+	// 返回那一条、不写入**；并在同一个事务里清掉 visitedAt 早于 cleanupBefore 的
+	// 那些。
+	//
+	// 查找与写入必须是**一次**存储操作：分成两步的话，同一访客同时打开两次就会各
+	// 签一枚、各写一行，"窗口内复用同一枚码"当场失效——而它的失效方式（登记表按
+	// 页面浏览量增长）要到线上跑了几个月才看得出来。
+	//
+	// 同一访客的判据是 visit 的（工程，槽，身份键）三元组，身份键由
+	// WatermarkViewer.IdentityKey 派生（唯一入口）：**谁算同一个访客只有那一处回答**。
+	//
+	// 清理挂在写入这一处（与预览凭证同一条理由）：表的增长只由"还有多少条在保留期
+	// 内"决定，而查询那条路是只读的。
+	ReuseOrPutWatermarkVisit(ctx context.Context, visit WatermarkVisit, reuseSince, cleanupBefore time.Time) (WatermarkVisit, error)
 }
 
 // 标识前缀。**唯一入口**是本文件的分配函数：工程标识与资产标识由创建入口
@@ -731,14 +762,14 @@ func (s *Service) ListProjects(ctx context.Context, subjectID string) ([]Project
 }
 
 // UpdateProject 覆盖工程的名称与简介。
-func (s *Service) UpdateProject(ctx context.Context, subjectID, projectID, name, description string) (Project, error) {
+func (s *Service) UpdateProject(ctx context.Context, subjectID, projectID, name, description string, blindWatermark bool) (Project, error) {
 	if err := validateProjectMeta(name, description); err != nil {
 		return Project{}, err
 	}
 	if _, err := OwnedProject(ctx, s.store, projectID, subjectID); err != nil {
 		return Project{}, err
 	}
-	if err := s.store.PutProjectMeta(ctx, projectID, name, description, s.now()); err != nil {
+	if err := s.store.PutProjectMeta(ctx, projectID, name, description, blindWatermark, s.now()); err != nil {
 		return Project{}, err
 	}
 	// 写入已经成功，事件就发出去：后面那次读取失败不改变"元数据已变"这个事实，

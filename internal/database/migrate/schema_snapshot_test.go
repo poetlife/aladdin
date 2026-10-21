@@ -83,6 +83,7 @@ table galaxy_project_slots
   project_id text pk=true null=true
   slot text pk=true null=true
 table galaxy_projects
+  blind_watermark numeric pk=false null=true
   created_at datetime pk=false null=true
   description text pk=false null=true
   id text pk=true null=true
@@ -106,6 +107,15 @@ table galaxy_versions
   saved_at datetime pk=false null=true
   seq integer pk=false null=true
   slot text pk=false null=true
+table galaxy_watermark_visits
+  code text pk=true null=true
+  identity_key text pk=false null=true
+  project_id text pk=false null=true
+  slot text pk=false null=true
+  source_address text pk=false null=true
+  subject_id text pk=false null=true
+  user_agent_digest text pk=false null=true
+  visited_at datetime pk=false null=true
 table identities
   display text pk=false null=true
   external_id text pk=true null=true

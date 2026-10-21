@@ -218,6 +218,15 @@ export function SandboxFrame({ url, title, height = 420, onSettled }: SandboxFra
 function LoadingCover(): React.ReactNode {
   const { token } = theme.useToken()
   return (
+    // **不设 `zIndex`，让水印那一层压在它上面。**
+    //
+    // 想当然的做法是让遮罩压住水印（"遮罩要回答这儿为什么什么都没有，不该被斜字
+    // 穿过"），但那张截图只在这个部署里存在——遮罩最长的寿命是加载那十秒，而
+    // **盲水印要被截的是内容，不是遮罩**：一块被遮罩盖住的地方截下来就是一片底色，
+    // 提不出任何东西。实测的后果很具体：加载中的截图只有下半有图案、上半是纯色，
+    // 整张图因此解不出。
+    //
+    // 所以顺序反过来：水印在最上层、遮罩在中间，加载期间那一层颗粒照常铺满。
     <div style={{ position: 'absolute', inset: 0, background: token.colorBgContainer }}>
       <LoadingHint />
     </div>
