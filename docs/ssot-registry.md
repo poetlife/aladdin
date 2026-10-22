@@ -150,6 +150,7 @@
 | 一份字节的内容摘要（SHA-256 十六进制，三端必须同形） | 服务端的摘要规则与 SDK 的算法入口；**按字节算，不经过 utf8 解码** | [internal/objectstore/content.go](../internal/objectstore/content.go) / [sdk/src/content-digest.ts](../sdk/src/content-digest.ts) |
 | 一个资产标识在文件组里的默认条目路径（`assets/<资产标识>`） | 服务端把 `asset://` 登记成条目时用的前缀与 SDK 的默认前缀；**两处必须同值**（跨语言两处，同"一份形状、按载体各一份"），由 SDK 的测试直接读服务端源码钉住（否则同一个资产在两条路上有两个地址） | [internal/galaxy/placeholder.go](../internal/galaxy/placeholder.go) / [sdk/src/build/asset-reference.ts](../sdk/src/build/asset-reference.ts) |
 | 拒绝结论到 RPC 错误码与错误详情的转换 | `Reject` / `DenyByAnnotation`（鉴权拦截器与事件通道的逐主题判定共用） | [internal/server/interceptor/rejection.go](../internal/server/interceptor/rejection.go) |
+| 任意失败到对外 Connect 错误的转换（含未分类兜底与透传规则） | `ToConnect` + `FailureInterceptor`（RPC 边界的唯一转换点） | [internal/errs/connect.go](../internal/errs/connect.go) / [internal/server/interceptor/failure.go](../internal/server/interceptor/failure.go) |
 | 按客户端协议写出错误响应（中间件层） | `connect.ErrorWriter` | [internal/server/middleware.go](../internal/server/middleware.go) |
 | 服务端为每个请求起 span、回写 `traceparent` 与 `x-trace-id` 响应头 | `observability.StartServerSpan` / `WriteTraceHeaders` | [internal/observability/tracing.go](../internal/observability/tracing.go) |
 | 每个请求留一行可检索的日志（含 trace_id / 过程名 / 结果码 / 耗时） | `telemetryMiddleware.logRequest` | [internal/server/middleware.go](../internal/server/middleware.go) |
@@ -176,7 +177,9 @@
 | 数据内容 | 唯一入口 | 所在文件 |
 |---------|---------|---------|
 | 接口契约与消息定义（服务端 + 前端类型） | proto 定义，经 `buf generate` 同时派生出 Go 与 TS 两侧代码 | [api/proto/](../api/proto/) |
-| 拒绝原因枚举（Go / TypeScript / CLI 三端同源） | [api/proto/aladdin/rbac/v1/errors.proto](../api/proto/aladdin/rbac/v1/errors.proto) | 由 `buf generate` 派生，三端均引用生成常量 |
+| 失败原因目录（原因 → 传输码 + 默认文案） | proto 枚举值选项，经 `failuregen` 派生 | [api/proto/aladdin/errors/v1/errors.proto](../api/proto/aladdin/errors/v1/errors.proto) |
+| 失败原因的编号分段 | 生成器里的分段表（与 [design/errors](design/errors/README.md) 的分段表一致，构建期强制） | [internal/tools/failuregen/main.go](../internal/tools/failuregen/main.go) |
+| 拒绝原因枚举（Go / TypeScript / CLI 三端同源） | [api/proto/aladdin/rbac/v1/errors.proto](../api/proto/aladdin/rbac/v1/errors.proto)；迁移期与 `FailureDetail` 并存，删除条件见 [design/errors](design/errors/README.md) | 由 `buf generate` 派生，三端均引用生成常量 |
 | 文档页 ↔ 宿主之间消息的形状（通道名、协议版本、消息类型） | 接入桥协议；**一份形状、按载体各一份，不得出现第四种形状**（这是已定的取舍，理由见 [design/galaxy/sdk.md](design/galaxy/sdk.md) 的待定决策）：服务端渲染进 `docs` 页的那一段常量脚本、宿主侧的解析（唯一一处，预览与壳共用）、以及用户打进 `site` 产物的运行期包。取值由运行期包的测试读另外两处的源码钉住 | [internal/galaxy/doc_frame_bridge.go](../internal/galaxy/doc_frame_bridge.go) / [web/src/pages/galaxy/frame-channel.ts](../web/src/pages/galaxy/frame-channel.ts) / [sdk/src/runtime/frame-channel.ts](../sdk/src/runtime/frame-channel.ts) |
 | SDK 包的版本号 | **发布 tag**：发布流水线在打包前把 tag 覆写成包里的 `version`，仓库里的那个值是占位——同一件事不在第二处维护 | [.github/workflows/release.yml](../.github/workflows/release.yml) 的 `publish-npm` |
 | 权限码全集（Go 常量与前端常量同源） | 权限目录，经 `make gen` 双向派生 | [api/permissions/catalog.yaml](../api/permissions/catalog.yaml) |

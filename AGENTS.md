@@ -29,6 +29,7 @@
 | 持久化 | [docs/design/persistence/](docs/design/persistence/README.md) | 库结构、迁移语义、后端选择与连接串 |
 | 身份认证 | [docs/design/identity/](docs/design/identity/README.md) | 登录方式、主体标识的确定、会话凭证的签发与失效 |
 | 个人档案 | [docs/design/profile/](docs/design/profile/README.md) | 主体的展示信息（昵称、头像、简介）：存放、下发与边界 |
+| 失败分类 | [docs/design/errors/](docs/design/errors/README.md) | 一次失败是什么：proto 里的原因枚举、生成错误值、传输码与默认文案、唯一的对外转换点，以及客户端按原因而非文案分支 |
 | 对象存储直传 | [docs/design/objectstore/](docs/design/objectstore/README.md) | 上传的公共链路：签发临时凭证、客户端直传、提交核对；类型与大小由存储侧策略强制 |
 | galaxy 创作与发布 | [docs/design/galaxy/](docs/design/galaxy/README.md) | 用户创作工程（多版本）、管理资产与工程附件（私有、强制下载的发布物），发布成一个可公开访问的站点（`static` 内容原样服务、`docs` 渲染成多页）：引用完整性、公开匿名、渲染隔离；以及用户在**自己的构建与自己的页面**里的接入面（创作与发布 SDK） |
 | 平台 Skill 目录 | [docs/design/skill/](docs/design/skill/README.md) | 平台治理的技能目录：管理员从 GitHub 纳管（快照、同步、回滚、标签）、创作者与 agent 检索并**取用而不落盘** |

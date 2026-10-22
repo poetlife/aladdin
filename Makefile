@@ -103,11 +103,13 @@ tools: ## 安装代码生成与静态检查工具（已装且版本一致则跳�
 .PHONY: gen
 gen: ## 由 proto 与权限目录生成两端代码（唯一生成入口）
 	buf generate
+	go run ./internal/tools/failuregen
 	go run ./internal/tools/permissiongen
 
 .PHONY: check-gen
 check-gen: ## 校验生成产物与源定义同步（CI 用）
 	buf generate
+	go run ./internal/tools/failuregen -check
 	go run ./internal/tools/permissiongen -check
 	@# buf 生成是幂等的：重新生成后若 api/gen、web/src/gen 或 sdk/src/gen 出现
 	@# 改动，说明提交进去的生成产物与 proto 不同步（有人手改过，或忘了 make gen）。
@@ -127,7 +129,9 @@ api-docs: ## 生成 OpenAPI 文档（含鉴权扩展），供对外查阅
 	@# 两步缺一不可：第一步产出标准 OpenAPI，第二步补上 aladdin 自己的
 	@# 鉴权注解（生成器看不见私有注解，见 internal/tools/openapigen）。
 	@# 第二步顺带产出一份合并文档供渲染页使用——渲染器只认单份 spec。
-	buf generate --template buf.gen.openapi.yaml
+	@# 失败分类的 proto 没有 RPC 服务，不属于方法面：把它排除，避免文档里
+	@# 多出一组无人引用的 schema（它仍是三端共用的契约，见 docs/design/errors）。
+	buf generate --template buf.gen.openapi.yaml --exclude-path api/proto/aladdin/errors
 	go run ./internal/tools/openapigen -merge-out web/public/api-docs/openapi.yaml
 
 .PHONY: check-api-docs
@@ -136,7 +140,7 @@ check-api-docs: ## 校验 OpenAPI 文档与 proto 同步（CI 用）
 	@# 新增一个服务会多出**未跟踪**的文档文件，而 git diff 看不见未跟踪文件，
 	@# 那会让"忘了为新服务生成文档"逃过校验。代价是刚 add 还没 commit 时
 	@# 这一步也会报错——它校验的正是"已提交的文档与 proto 一致"。
-	buf generate --template buf.gen.openapi.yaml
+	buf generate --template buf.gen.openapi.yaml --exclude-path api/proto/aladdin/errors
 	go run ./internal/tools/openapigen -merge-out web/public/api-docs/openapi.yaml
 	@if git rev-parse --git-dir >/dev/null 2>&1; then \
 		if [ -n "$$(git status --porcelain -- api/openapi web/public/api-docs/openapi.yaml)" ]; then \
