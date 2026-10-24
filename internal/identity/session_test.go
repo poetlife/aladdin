@@ -262,7 +262,7 @@ func TestHashTokenIsDeterministic(t *testing.T) {
 	if a == HashToken("凭证乙") {
 		t.Error("不同的凭证得到了同一个摘要")
 	}
-	// 定长十六进制：库里那一列的长度按它定死（见 internal/database/schema.go）。
+	// 定长十六进制：库里那一列的长度按它定死（见 internal/database/entity）。
 	if len(a) != 64 {
 		t.Errorf("摘要长度 = %d，期望 64", len(a))
 	}

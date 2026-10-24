@@ -11,7 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/telemetry"
 )
 
@@ -35,7 +35,7 @@ func (s *Store) Append(ctx context.Context, entries []telemetry.Entry) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	recs := make([]database.ClientEventRecord, 0, len(entries))
+	recs := make([]entity.ClientEventRecord, 0, len(entries))
 	for _, e := range entries {
 		recs = append(recs, toRecord(e))
 	}
@@ -55,7 +55,7 @@ func (s *Store) Append(ctx context.Context, entries []telemetry.Entry) error {
 func (s *Store) Stats(ctx context.Context, from, to time.Time) ([]telemetry.Stat, error) {
 	var rows []statRow
 	err := s.db.WithContext(ctx).
-		Model(&database.ClientEventRecord{}).
+		Model(&entity.ClientEventRecord{}).
 		Select("client, action, result, COUNT(*) AS count").
 		Where("occurred_at >= ? AND occurred_at < ?", from, to).
 		Group("client, action, result").
@@ -88,7 +88,7 @@ func (s *Store) Recent(ctx context.Context, from, to time.Time, limit int) ([]te
 	if limit <= 0 {
 		return nil, nil
 	}
-	var recs []database.ClientEventRecord
+	var recs []entity.ClientEventRecord
 	err := s.db.WithContext(ctx).
 		Where("occurred_at >= ? AND occurred_at < ?", from, to).
 		Order("occurred_at DESC, id DESC").
@@ -112,7 +112,7 @@ func (s *Store) Recent(ctx context.Context, from, to time.Time, limit int) ([]te
 func (s *Store) DeleteBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	result := s.db.WithContext(ctx).
 		Where("occurred_at < ?", cutoff).
-		Delete(&database.ClientEventRecord{})
+		Delete(&entity.ClientEventRecord{})
 	if result.Error != nil {
 		return 0, unavailable("回收过期客户端事件", result.Error)
 	}
@@ -131,8 +131,8 @@ type statRow struct {
 }
 
 // toRecord 把领域类型翻译成记录。
-func toRecord(e telemetry.Entry) database.ClientEventRecord {
-	return database.ClientEventRecord{
+func toRecord(e telemetry.Entry) entity.ClientEventRecord {
+	return entity.ClientEventRecord{
 		OccurredAt:    e.OccurredAt,
 		Client:        e.Client,
 		Surface:       e.Surface,
@@ -148,7 +148,7 @@ func toRecord(e telemetry.Entry) database.ClientEventRecord {
 // toEntry 把记录翻译回领域类型。
 //
 // 转换只在这一处：记录里加一列不会悄悄改变读侧看到的东西，除非这里也跟着改。
-func toEntry(rec database.ClientEventRecord) telemetry.Entry {
+func toEntry(rec entity.ClientEventRecord) telemetry.Entry {
 	return telemetry.Entry{
 		Record: telemetry.Record{
 			Client:     rec.Client,

@@ -7,13 +7,13 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/galaxy"
 )
 
 // GetPublication 实现 galaxy.Store：按发布标识读回产物清单。
 func (s *Store) GetPublication(ctx context.Context, publicationID string) (galaxy.Publication, error) {
-	var rec database.GalaxyPublicationRecord
+	var rec entity.GalaxyPublicationRecord
 	if err := s.db.WithContext(ctx).First(&rec, "id = ?", publicationID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return galaxy.Publication{}, galaxy.ErrPublicationNotFound
@@ -34,7 +34,7 @@ func (s *Store) PutPublication(ctx context.Context, publication galaxy.Publicati
 	if err != nil {
 		return err
 	}
-	rec := database.GalaxyPublicationRecord{
+	rec := entity.GalaxyPublicationRecord{
 		ID:                   publication.ID,
 		ProjectID:            publication.ProjectID,
 		Slot:                 string(publication.Slot),

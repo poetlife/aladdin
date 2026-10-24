@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0012ClientEvents 建立遥测模块的客户端事件表。
@@ -21,6 +21,6 @@ import (
 var migration0012ClientEvents = &gormigrate.Migration{
 	ID: "0012_client_events",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.ClientEventRecord{})
+		return tx.AutoMigrate(&entity.ClientEventRecord{})
 	},
 }

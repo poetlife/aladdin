@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/identity"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
@@ -35,9 +35,9 @@ func New(db *gorm.DB) *Store {
 //
 // 冲突时覆盖全部非主键列。摘要重复在当前设计下不会发生（摘要是随机凭证的
 // 哈希），但覆盖语义让"写入"是幂等的，不必让调用方去保证唯一性。
-// 表结构的唯一信源是 internal/database/schema.go。
+// 表结构的唯一信源是 internal/database/entity。
 func (s *Store) Put(ctx context.Context, tokenHash string, session identity.Session) error {
-	rec := database.SessionRecord{
+	rec := entity.SessionRecord{
 		TokenHash:    tokenHash,
 		SubjectID:    session.SubjectID,
 		SubjectType:  string(session.SubjectType),
@@ -62,7 +62,7 @@ func (s *Store) Put(ctx context.Context, tokenHash string, session identity.Sess
 // 会各有一份判断，而两份判断迟早会有一份漏掉——漏掉的那份就是"过期了
 // 还能用"。
 func (s *Store) Get(ctx context.Context, tokenHash string) (identity.Session, error) {
-	var rec database.SessionRecord
+	var rec entity.SessionRecord
 	if err := s.db.WithContext(ctx).First(&rec, "token_hash = ?", tokenHash).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return identity.Session{}, identity.ErrSessionNotFound
@@ -79,7 +79,7 @@ func (s *Store) Get(ctx context.Context, tokenHash string) (identity.Session, er
 func (s *Store) Delete(ctx context.Context, tokenHash string) error {
 	err := s.db.WithContext(ctx).
 		Where("token_hash = ?", tokenHash).
-		Delete(&database.SessionRecord{}).Error
+		Delete(&entity.SessionRecord{}).Error
 	if err != nil {
 		return unavailable("撤销会话", err)
 	}
@@ -94,7 +94,7 @@ func (s *Store) Delete(ctx context.Context, tokenHash string) error {
 func (s *Store) DeleteExpired(ctx context.Context, now time.Time) (int64, error) {
 	result := s.db.WithContext(ctx).
 		Where("expires_at <= ?", now).
-		Delete(&database.SessionRecord{})
+		Delete(&entity.SessionRecord{})
 	if result.Error != nil {
 		return 0, unavailable("回收过期会话", result.Error)
 	}
@@ -105,7 +105,7 @@ func (s *Store) DeleteExpired(ctx context.Context, now time.Time) (int64, error)
 //
 // 转换只在这一处：记录里加一列不会悄悄改变认证看到的东西，
 // 除非这里也跟着改——而那时改动是显式的。
-func toSession(rec database.SessionRecord) identity.Session {
+func toSession(rec entity.SessionRecord) identity.Session {
 	return identity.Session{
 		SubjectID:    rec.SubjectID,
 		SubjectType:  rbac.SubjectType(rec.SubjectType),

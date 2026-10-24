@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0017GalaxyDraftSnapshots 建立草稿快照表，并给版本表加一列说明。
@@ -27,8 +27,8 @@ var migration0017GalaxyDraftSnapshots = &gormigrate.Migration{
 	ID: "0017_galaxy_draft_snapshots",
 	Migrate: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(
-			&database.GalaxyDraftSnapshotRecord{},
-			&database.GalaxyVersionRecord{},
+			&entity.GalaxyDraftSnapshotRecord{},
+			&entity.GalaxyVersionRecord{},
 		)
 	},
 }

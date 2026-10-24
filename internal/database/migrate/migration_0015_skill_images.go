@@ -6,7 +6,7 @@ import (
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/idgen"
 )
 
@@ -46,17 +46,17 @@ const legacyCoverImageIDPrefix = "ski_"
 var migration0015SkillImages = &gormigrate.Migration{
 	ID: "0015_skill_images",
 	Migrate: func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&database.SkillImageRecord{}); err != nil {
+		if err := tx.AutoMigrate(&entity.SkillImageRecord{}); err != nil {
 			return err
 		}
-		if !hasColumn(tx, (database.SkillRecord{}).TableName(), "cover_key") {
+		if !hasColumn(tx, (entity.SkillRecord{}).TableName(), "cover_key") {
 			return nil
 		}
 		var covers []struct {
 			ID       string
 			CoverKey string
 		}
-		if err := tx.Table((database.SkillRecord{}).TableName()).
+		if err := tx.Table((entity.SkillRecord{}).TableName()).
 			Select("id, cover_key").
 			Where("cover_key IS NOT NULL AND cover_key <> ''").
 			Scan(&covers).Error; err != nil {
@@ -68,7 +68,7 @@ var migration0015SkillImages = &gormigrate.Migration{
 			if err != nil {
 				return err
 			}
-			record := database.SkillImageRecord{
+			record := entity.SkillImageRecord{
 				ID:        imageID,
 				SkillID:   cover.ID,
 				Position:  0,
@@ -79,6 +79,6 @@ var migration0015SkillImages = &gormigrate.Migration{
 				return err
 			}
 		}
-		return tx.Exec("ALTER TABLE " + (database.SkillRecord{}).TableName() + " DROP COLUMN cover_key").Error
+		return tx.Exec("ALTER TABLE " + (entity.SkillRecord{}).TableName() + " DROP COLUMN cover_key").Error
 	},
 }

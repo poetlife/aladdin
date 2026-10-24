@@ -2,11 +2,11 @@
 //
 // 它把"角色、主体、绑定关系"这三样事实落到库里，别的什么都不做：
 // 判定在 internal/rbac，约束校验在 internal/rbac/constraints.go，
-// 表结构在 internal/database/schema.go。本包只负责读写与两侧类型的转换。
+// 表结构在 internal/database/entity。本包只负责读写与两侧类型的转换。
 package gormstore
 
 import (
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
 
@@ -20,7 +20,7 @@ import (
 // 而 `[]T{}` 读回来是空切片。两侧一致，契约测试才能用整体相等来断言，
 // 不必为"哪种空"写特例。
 
-func toRoleDefinition(rec database.RoleRecord) rbac.RoleDefinition {
+func toRoleDefinition(rec entity.RoleRecord) rbac.RoleDefinition {
 	return rbac.RoleDefinition{
 		ID:                    rec.ID,
 		DisplayName:           rec.DisplayName,
@@ -31,8 +31,8 @@ func toRoleDefinition(rec database.RoleRecord) rbac.RoleDefinition {
 	}
 }
 
-func fromRoleDefinition(role rbac.RoleDefinition) database.RoleRecord {
-	return database.RoleRecord{
+func fromRoleDefinition(role rbac.RoleDefinition) entity.RoleRecord {
+	return entity.RoleRecord{
 		ID:                    role.ID,
 		DisplayName:           role.DisplayName,
 		Builtin:               role.Builtin,
@@ -45,15 +45,15 @@ func fromRoleDefinition(role rbac.RoleDefinition) database.RoleRecord {
 // 主体两个方向都要：写方向是登记，读方向是签发会话时把主体的当前属性
 // 冻结进凭证。读方向刻意只服务签发路径——判定用的是凭证里那个已确认的
 // 主体，它不回查主体表（见 docs/design/identity/session-token.md）。
-func fromSubject(subject rbac.Subject) database.SubjectRecord {
-	return database.SubjectRecord{
+func fromSubject(subject rbac.Subject) entity.SubjectRecord {
+	return entity.SubjectRecord{
 		ID:           subject.ID,
 		Type:         string(subject.Type),
 		DefaultScope: string(subject.DefaultScope),
 	}
 }
 
-func toSubject(rec database.SubjectRecord) rbac.Subject {
+func toSubject(rec entity.SubjectRecord) rbac.Subject {
 	return rbac.Subject{
 		ID:           rec.ID,
 		Type:         rbac.SubjectType(rec.Type),
@@ -61,7 +61,7 @@ func toSubject(rec database.SubjectRecord) rbac.Subject {
 	}
 }
 
-func toBindings(recs []database.RoleBindingRecord) []rbac.RoleBinding {
+func toBindings(recs []entity.RoleBindingRecord) []rbac.RoleBinding {
 	out := make([]rbac.RoleBinding, 0, len(recs))
 	for _, rec := range recs {
 		out = append(out, rbac.RoleBinding{
@@ -73,15 +73,15 @@ func toBindings(recs []database.RoleBindingRecord) []rbac.RoleBinding {
 	return out
 }
 
-func fromBinding(binding rbac.RoleBinding) database.RoleBindingRecord {
-	return database.RoleBindingRecord{
+func fromBinding(binding rbac.RoleBinding) entity.RoleBindingRecord {
+	return entity.RoleBindingRecord{
 		SubjectID: binding.SubjectID,
 		RoleID:    binding.RoleID,
 		Scope:     string(binding.Scope),
 	}
 }
 
-func toScopes(recs []database.ScopeRecord) []rbac.ScopeDefinition {
+func toScopes(recs []entity.ScopeRecord) []rbac.ScopeDefinition {
 	out := make([]rbac.ScopeDefinition, 0, len(recs))
 	for _, rec := range recs {
 		out = append(out, toScopeDefinition(rec))
@@ -89,15 +89,15 @@ func toScopes(recs []database.ScopeRecord) []rbac.ScopeDefinition {
 	return out
 }
 
-func toScopeDefinition(rec database.ScopeRecord) rbac.ScopeDefinition {
+func toScopeDefinition(rec entity.ScopeRecord) rbac.ScopeDefinition {
 	return rbac.ScopeDefinition{
 		Path:        rec.Path,
 		DisplayName: rec.DisplayName,
 	}
 }
 
-func fromScopeDefinition(scope rbac.ScopeDefinition) database.ScopeRecord {
-	return database.ScopeRecord{
+func fromScopeDefinition(scope rbac.ScopeDefinition) entity.ScopeRecord {
+	return entity.ScopeRecord{
 		Path:        scope.Path,
 		DisplayName: scope.DisplayName,
 	}

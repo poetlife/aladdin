@@ -196,7 +196,8 @@
 | 直传凭证里那条策略长什么样（动作、资源、类型与长度条件） | 策略的构造入口 | [internal/objectstore/cosupload/policy.go](../internal/objectstore/cosupload/policy.go) |
 | 公开区的对象与它的地址 | 上架入口（公开区唯一的写入口，按（工程，内容摘要，类型）幂等） | [internal/galaxy/promote.go](../internal/galaxy/promote.go) |
 | 工程标识与资产标识的分配 | galaxy 的创建入口（分配即冻结、不可猜、不复用）；随机部分取自 `idgen.New` | [internal/galaxy/project.go](../internal/galaxy/project.go) |
-| 表结构与迁移清单（库里长什么样） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/schema.go](../internal/database/schema.go) / [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |
+| 表结构（库里长什么样：表、列、主键、索引） | 表结构的唯一信源 | [internal/database/entity/](../internal/database/entity/) |
+| 库结构演进到哪一步（已发布的迁移清单） | 迁移清单，由 `migrate.Run` 执行 | [internal/database/migrate/migrations.go](../internal/database/migrate/migrations.go) |
 | 服务端配置（监听地址、日志级别与路径） | 服务端 `config.yml` + `config.local.yml`，经 `config.LoadServer` 读取 | [internal/config/load.go](../internal/config/load.go) |
 | CLI 配置（目标地址、超时、输出详细度） | CLI `config.yml` + `config.local.yml`，经 `config.LoadCLI` 读取 | [internal/config/load.go](../internal/config/load.go) |
 | 两端各自认识的配置键 | `serverKeys` / `cliKeys` | [internal/config/file.go](../internal/config/file.go) |

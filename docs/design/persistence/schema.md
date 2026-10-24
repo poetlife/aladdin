@@ -485,7 +485,7 @@
 
 | 职责 | 文件路径 |
 |------|---------|
-| 表结构定义 | [internal/database/schema.go](../../../internal/database/schema.go) |
+| 表结构定义 | [internal/database/entity/](../../../internal/database/entity/) |
 | 迁移清单 | [internal/database/migrate/migrations.go](../../../internal/database/migrate/migrations.go) |
 | 已发布的迁移 | [internal/database/migrate/](../../../internal/database/migrate/) 下的 `migration_*.go` |
 | 迁移执行与版本记录 | [internal/database/migrate/migrate.go](../../../internal/database/migrate/migrate.go) |

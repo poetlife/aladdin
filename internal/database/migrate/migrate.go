@@ -1,13 +1,13 @@
 // Package migrate 是**库结构演进的唯一入口**：全仓库只有这里定义迁移、
 // 只有这里执行迁移。业务代码不得自行执行 DDL（见 docs/ssot-registry.md）。
 //
-// 它独立成包而不是并进 internal/database：表结构定义是全仓库长期不动的一
-// 份，迁移清单却会随着每次结构变更不断变长。两者放在同一个目录里，几个月
-// 之后"这个目录里哪个文件是稳定的、哪个是只增不减的历史"就看不出来了。
+// 它独立成包而不是并进 entity：表结构是长期不动的一份，迁移清单却会随着每次
+// 结构变更不断变长。两者放在同一个包里，几个月之后"哪个文件是稳定的、哪个是
+// 只增不减的历史"就看不出来了。
 //
-// 依赖方向是单向的：本包依赖 internal/database（要用它定义的记录类型来
-// 建表），反过来不成立。因此运行器由本包导出，由启动路径调用，而不是挂在
-// database 上——挂上去就成环了。
+// 依赖方向是单向的：本包依赖 internal/database/entity（要用它定义的记录类型来
+// 建表），反过来不成立。因此运行器由本包导出，由启动路径调用，而不是并进
+// entity——那样 entity 就要反过来依赖迁移，成环。
 package migrate
 
 import (
@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migrationTableName 是记录"库结构已经演进到哪一步"的表的表名。
@@ -109,7 +109,7 @@ func migrationOptions() *gormigrate.Options {
 		TableName:    migrationTableName,
 		IDColumnName: "id",
 		// 与业务表标识类列同一个长度上限：版本标识也是标识。
-		IDColumnSize: database.IDSize,
+		IDColumnSize: entity.IDSize,
 		// 每个迁移在自己的事务里执行：失败则整体回滚，不留下半成品结构。
 		UseTransaction: true,
 		// 库里存在代码中没有的版本时拒绝启动——通常意味着二进制被回滚而库没有。

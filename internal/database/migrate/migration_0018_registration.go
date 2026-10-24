@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0018Registration 建立注册策略表与邀请码表。
@@ -21,9 +21,9 @@ import (
 var migration0018Registration = &gormigrate.Migration{
 	ID: "0018_registration",
 	Migrate: func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&database.RegistrationPolicyRecord{}); err != nil {
+		if err := tx.AutoMigrate(&entity.RegistrationPolicyRecord{}); err != nil {
 			return err
 		}
-		return tx.AutoMigrate(&database.RegistrationInviteRecord{})
+		return tx.AutoMigrate(&entity.RegistrationInviteRecord{})
 	},
 }

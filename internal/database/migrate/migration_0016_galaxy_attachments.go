@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0016GalaxyAttachments 建立工程附件表。
@@ -21,6 +21,6 @@ import (
 var migration0016GalaxyAttachments = &gormigrate.Migration{
 	ID: "0016_galaxy_attachments",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.GalaxyAttachmentRecord{})
+		return tx.AutoMigrate(&entity.GalaxyAttachmentRecord{})
 	},
 }

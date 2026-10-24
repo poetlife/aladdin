@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/identity"
 )
 
@@ -25,7 +25,7 @@ func NewIdentityStore(db *gorm.DB) *IdentityStore {
 
 // Lookup 实现 identity.IdentityStore。
 func (s *IdentityStore) Lookup(ctx context.Context, source, externalID string) (identity.Identity, error) {
-	var rec database.IdentityRecord
+	var rec entity.IdentityRecord
 	err := s.db.WithContext(ctx).
 		First(&rec, "source = ? AND external_id = ?", source, externalID).Error
 	if err != nil {
@@ -58,7 +58,7 @@ func (s *IdentityStore) Put(ctx context.Context, ident identity.Identity) error 
 		return nil
 	}
 
-	var existing database.IdentityRecord
+	var existing entity.IdentityRecord
 	err := s.db.WithContext(ctx).
 		First(&existing, "source = ? AND external_id = ?", ident.Source, ident.ExternalID).Error
 	switch {
@@ -85,7 +85,7 @@ func (s *IdentityStore) Put(ctx context.Context, ident identity.Identity) error 
 	// 已经属于同一个主体：只刷新展示信息，重复绑定是幂等的。
 	// 条件里仍带 subject_id——即使归属在上一步之后发生了变化，
 	// 这次更新也只会落空，而不会改到别人的行上。
-	err = s.db.WithContext(ctx).Model(&database.IdentityRecord{}).
+	err = s.db.WithContext(ctx).Model(&entity.IdentityRecord{}).
 		Where("source = ? AND external_id = ? AND subject_id = ?",
 			ident.Source, ident.ExternalID, ident.SubjectID).
 		Update("display", ident.Display).Error
@@ -102,7 +102,7 @@ func (s *IdentityStore) Put(ctx context.Context, ident identity.Identity) error 
 // 身份分别认领走，留下一个零身份、却还有角色的主体。
 func (s *IdentityStore) Reclaim(ctx context.Context, ident identity.Identity, fromSubjectID string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing database.IdentityRecord
+		var existing entity.IdentityRecord
 		err := tx.First(&existing, "source = ? AND external_id = ?",
 			ident.Source, ident.ExternalID).Error
 		switch {
@@ -121,7 +121,7 @@ func (s *IdentityStore) Reclaim(ctx context.Context, ident identity.Identity, fr
 		}
 
 		var count int64
-		if err := tx.Model(&database.IdentityRecord{}).
+		if err := tx.Model(&entity.IdentityRecord{}).
 			Where("subject_id = ?", fromSubjectID).Count(&count).Error; err != nil {
 			return identityUnavailable("认领身份", err)
 		}
@@ -129,7 +129,7 @@ func (s *IdentityStore) Reclaim(ctx context.Context, ident identity.Identity, fr
 			return fmt.Errorf("%w: %s", identity.ErrIdentityNotVacant, ident.Source)
 		}
 
-		result := tx.Model(&database.IdentityRecord{}).
+		result := tx.Model(&entity.IdentityRecord{}).
 			Where("source = ? AND external_id = ? AND subject_id = ?",
 				ident.Source, ident.ExternalID, fromSubjectID).
 			Updates(map[string]any{
@@ -157,7 +157,7 @@ func (s *IdentityStore) Delete(ctx context.Context, source, externalID, subjectI
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("source = ? AND external_id = ? AND subject_id = ?",
 			source, externalID, subjectID).
-			Delete(&database.IdentityRecord{})
+			Delete(&entity.IdentityRecord{})
 		if result.Error != nil {
 			return identityUnavailable("解绑身份", result.Error)
 		}
@@ -167,7 +167,7 @@ func (s *IdentityStore) Delete(ctx context.Context, source, externalID, subjectI
 		}
 
 		var remaining int64
-		if err := tx.Model(&database.IdentityRecord{}).
+		if err := tx.Model(&entity.IdentityRecord{}).
 			Where("subject_id = ?", subjectID).Count(&remaining).Error; err != nil {
 			return identityUnavailable("解绑身份", err)
 		}
@@ -186,7 +186,7 @@ func (s *IdentityStore) Delete(ctx context.Context, source, externalID, subjectI
 // 不排序：顺序由调用方定，否则内存实现（按 map 遍历）与这里会各有一套，
 // 而"列出来的渠道每次顺序都不一样"会让界面看起来在抖动。
 func (s *IdentityStore) ListBySubject(ctx context.Context, subjectID string) ([]identity.Identity, error) {
-	var recs []database.IdentityRecord
+	var recs []entity.IdentityRecord
 	if err := s.db.WithContext(ctx).
 		Where("subject_id = ?", subjectID).Find(&recs).Error; err != nil {
 		return nil, identityUnavailable("读取主体的身份", err)
@@ -202,7 +202,7 @@ func (s *IdentityStore) ListBySubject(ctx context.Context, subjectID string) ([]
 //
 // 与 ListBySubject 同理，不排序：顺序由调用方定。
 func (s *IdentityStore) ListByDisplay(ctx context.Context, display string) ([]identity.Identity, error) {
-	var recs []database.IdentityRecord
+	var recs []entity.IdentityRecord
 	if err := s.db.WithContext(ctx).
 		Where("display = ?", display).Find(&recs).Error; err != nil {
 		return nil, identityUnavailable("按展示值读取身份", err)
@@ -218,7 +218,7 @@ func (s *IdentityStore) ListByDisplay(ctx context.Context, display string) ([]id
 //
 // 转换只在这一处：记录里加一列不会悄悄改变认证看到的东西，
 // 除非这里也跟着改——而那时改动是显式的。
-func toIdentity(rec database.IdentityRecord) identity.Identity {
+func toIdentity(rec entity.IdentityRecord) identity.Identity {
 	return identity.Identity{
 		Source:     rec.Source,
 		ExternalID: rec.ExternalID,
@@ -227,8 +227,8 @@ func toIdentity(rec database.IdentityRecord) identity.Identity {
 	}
 }
 
-func fromIdentity(ident identity.Identity) database.IdentityRecord {
-	return database.IdentityRecord{
+func fromIdentity(ident identity.Identity) entity.IdentityRecord {
+	return entity.IdentityRecord{
 		Source:     ident.Source,
 		ExternalID: ident.ExternalID,
 		SubjectID:  ident.SubjectID,

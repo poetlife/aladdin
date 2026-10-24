@@ -1,8 +1,9 @@
-// Package database 提供数据库连接、后端方言与结构迁移。
+// Package database 提供数据库连接与后端方言。
 //
-// 它是持久化基础设施的**唯一入口**：全仓库只有这里建立数据库连接、
-// 只有这里定义表结构、只有这里执行迁移。业务代码不得自行 gorm.Open
-// 或执行 DDL（见 docs/ssot-registry.md）。
+// 它只做三件事：解析后端、归一连接串、建立连接并配置连接池。表结构定义在
+// internal/database/entity，建表与版本演进在 internal/database/migrate。
+// 全仓库只有这里建立数据库连接；业务代码不得自行 gorm.Open 或执行 DDL
+// （见 docs/ssot-registry.md）。
 //
 // 后端取值的合法集合定义在本包（dialect.go）：方言知识只应有一处，
 // 配置模块只负责把取值按分层规则读出来。

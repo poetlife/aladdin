@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0008ScopesTable 给作用域一张登记表，并**回填既有部署里已经在用的范围**。
@@ -26,15 +26,15 @@ import (
 var migration0008ScopesTable = &gormigrate.Migration{
 	ID: "0008_scopes_table",
 	Migrate: func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&database.ScopeRecord{}); err != nil {
+		if err := tx.AutoMigrate(&entity.ScopeRecord{}); err != nil {
 			return err
 		}
 
-		var bindingRecs []database.RoleBindingRecord
+		var bindingRecs []entity.RoleBindingRecord
 		if err := tx.Find(&bindingRecs).Error; err != nil {
 			return err
 		}
-		var subjectRecs []database.SubjectRecord
+		var subjectRecs []entity.SubjectRecord
 		if err := tx.Find(&subjectRecs).Error; err != nil {
 			return err
 		}
@@ -46,7 +46,7 @@ var migration0008ScopesTable = &gormigrate.Migration{
 			}
 			seen[path] = true
 			// 显示名留空：界面回落到显示路径本身，改名由管理员在界面上做。
-			return tx.Create(&database.ScopeRecord{Path: path}).Error
+			return tx.Create(&entity.ScopeRecord{Path: path}).Error
 		}
 		for _, rec := range bindingRecs {
 			if err := register(rec.Scope); err != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/poetlife/aladdin/internal/config"
 	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/database/migrate"
 	"github.com/poetlife/aladdin/internal/rbac"
 )
@@ -91,7 +92,7 @@ func closeQuietly(db *gorm.DB) {
 
 // Role 实现 rbac.Store。
 func (s *Store) Role(ctx context.Context, roleID string) (rbac.RoleDefinition, error) {
-	var rec database.RoleRecord
+	var rec entity.RoleRecord
 	if err := s.db.WithContext(ctx).First(&rec, "id = ?", roleID).Error; err != nil {
 		return rbac.RoleDefinition{}, roleLookupError(err, roleID)
 	}
@@ -103,7 +104,7 @@ func (s *Store) Role(ctx context.Context, roleID string) (rbac.RoleDefinition, e
 // 不带 ORDER BY：顺序由 rbac.SortRoles 定义，两个存储实现共用同一条规则。
 // 让 SQL 也排一次，就是给同一件事写了第二个实现。
 func (s *Store) Roles(ctx context.Context) ([]rbac.RoleDefinition, error) {
-	var recs []database.RoleRecord
+	var recs []entity.RoleRecord
 	if err := s.db.WithContext(ctx).Find(&recs).Error; err != nil {
 		return nil, unavailable("读取角色列表", err)
 	}
@@ -121,7 +122,7 @@ func (s *Store) Roles(ctx context.Context) ([]rbac.RoleDefinition, error) {
 // 决定是报"主体不存在"还是"确实没有这条权限"。
 func (s *Store) SubjectBindings(ctx context.Context, subjectID string) ([]rbac.RoleBinding, error) {
 	var count int64
-	err := s.db.WithContext(ctx).Model(&database.SubjectRecord{}).
+	err := s.db.WithContext(ctx).Model(&entity.SubjectRecord{}).
 		Where("id = ?", subjectID).Count(&count).Error
 	if err != nil {
 		return nil, subjectLookupError(err, subjectID)
@@ -130,7 +131,7 @@ func (s *Store) SubjectBindings(ctx context.Context, subjectID string) ([]rbac.R
 		return nil, fmt.Errorf("%w: %s", rbac.ErrSubjectNotFound, subjectID)
 	}
 
-	var recs []database.RoleBindingRecord
+	var recs []entity.RoleBindingRecord
 	if err := s.db.WithContext(ctx).Where("subject_id = ?", subjectID).Find(&recs).Error; err != nil {
 		return nil, unavailable("读取主体 "+subjectID+" 的角色绑定", err)
 	}
@@ -143,7 +144,7 @@ func (s *Store) SubjectBindings(ctx context.Context, subjectID string) ([]rbac.R
 // 冻结下来，此后校验只读会话表，不再回头查主体。因此这不是判定路径上的
 // 一次查询，而是"登记之后读回当前值"的入口。
 func (s *Store) Subject(ctx context.Context, subjectID string) (rbac.Subject, error) {
-	var rec database.SubjectRecord
+	var rec entity.SubjectRecord
 	if err := s.db.WithContext(ctx).First(&rec, "id = ?", subjectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return rbac.Subject{}, fmt.Errorf("%w: %s", rbac.ErrSubjectNotFound, subjectID)
@@ -175,7 +176,7 @@ func (s *Store) PutRole(ctx context.Context, role rbac.RoleDefinition) error {
 // rbac.ValidateRoleDeletion 校验。删除不存在的角色返回 ErrRoleNotFound，
 // 而不是静默成功——多半意味着调用方拼错了角色标识。
 func (s *Store) DeleteRole(ctx context.Context, roleID string) error {
-	result := s.db.WithContext(ctx).Where("id = ?", roleID).Delete(&database.RoleRecord{})
+	result := s.db.WithContext(ctx).Where("id = ?", roleID).Delete(&entity.RoleRecord{})
 	if result.Error != nil {
 		return unavailable("删除角色 "+roleID, result.Error)
 	}
@@ -218,7 +219,7 @@ func (s *Store) Unbind(ctx context.Context, binding rbac.RoleBinding) error {
 	result := s.db.WithContext(ctx).
 		Where("subject_id = ? AND role_id = ? AND scope = ?",
 			binding.SubjectID, binding.RoleID, string(binding.Scope)).
-		Delete(&database.RoleBindingRecord{})
+		Delete(&entity.RoleBindingRecord{})
 	if result.Error != nil {
 		return unavailable("撤销绑定 "+binding.SubjectID+"/"+binding.RoleID, result.Error)
 	}
@@ -227,7 +228,7 @@ func (s *Store) Unbind(ctx context.Context, binding rbac.RoleBinding) error {
 
 // BindingsOfRole 实现 rbac.MutableStore。
 func (s *Store) BindingsOfRole(ctx context.Context, roleID string) ([]rbac.RoleBinding, error) {
-	var recs []database.RoleBindingRecord
+	var recs []entity.RoleBindingRecord
 	if err := s.db.WithContext(ctx).Where("role_id = ?", roleID).Find(&recs).Error; err != nil {
 		return nil, unavailable("读取角色 "+roleID+" 的绑定", err)
 	}
@@ -241,7 +242,7 @@ func (s *Store) BindingsOfRole(ctx context.Context, roleID string) ([]rbac.RoleB
 // 只能有一处实现。代价是这次查询是 O(全部绑定)——它只服务删除范围前的一次
 // 引用校验，属管理面操作，可以接受。
 func (s *Store) BindingsUnderScope(ctx context.Context, scope rbac.Scope) ([]rbac.RoleBinding, error) {
-	var recs []database.RoleBindingRecord
+	var recs []entity.RoleBindingRecord
 	if err := s.db.WithContext(ctx).Find(&recs).Error; err != nil {
 		return nil, unavailable("读取范围 "+string(scope)+" 下的绑定", err)
 	}
@@ -258,7 +259,7 @@ func (s *Store) BindingsUnderScope(ctx context.Context, scope rbac.Scope) ([]rba
 //
 // 不带 ORDER BY：顺序由 rbac.SortScopes 定义，两个存储实现共用同一条规则。
 func (s *Store) Scopes(ctx context.Context) ([]rbac.ScopeDefinition, error) {
-	var recs []database.ScopeRecord
+	var recs []entity.ScopeRecord
 	if err := s.db.WithContext(ctx).Find(&recs).Error; err != nil {
 		return nil, unavailable("读取范围目录", err)
 	}
@@ -267,7 +268,7 @@ func (s *Store) Scopes(ctx context.Context) ([]rbac.ScopeDefinition, error) {
 
 // Scope 实现 rbac.Store。
 func (s *Store) Scope(ctx context.Context, path string) (rbac.ScopeDefinition, error) {
-	var rec database.ScopeRecord
+	var rec entity.ScopeRecord
 	if err := s.db.WithContext(ctx).First(&rec, "path = ?", path).Error; err != nil {
 		return rbac.ScopeDefinition{}, scopeLookupError(err, path)
 	}
@@ -296,7 +297,7 @@ func (s *Store) PutScope(ctx context.Context, scope rbac.ScopeDefinition) error 
 // rbac.ValidateScopeDeletion 校验。删除不存在的范围返回 ErrScopeNotFound，
 // 而不是静默成功——多半意味着调用方拼错了路径。
 func (s *Store) DeleteScope(ctx context.Context, path string) error {
-	result := s.db.WithContext(ctx).Where("path = ?", path).Delete(&database.ScopeRecord{})
+	result := s.db.WithContext(ctx).Where("path = ?", path).Delete(&entity.ScopeRecord{})
 	if result.Error != nil {
 		return unavailable("删除范围 "+path, result.Error)
 	}

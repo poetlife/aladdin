@@ -223,7 +223,7 @@
 | 管理面与"完成注册" | [internal/server/registration_service.go](../../../internal/server/registration_service.go) |
 | 接口定义 | [api/proto/aladdin/identity/v1/registration.proto](../../../api/proto/aladdin/identity/v1/registration.proto) |
 | 权限码 | [api/permissions/catalog.yaml](../../../api/permissions/catalog.yaml) |
-| 表结构与迁移 | [internal/database/schema.go](../../../internal/database/schema.go)、[internal/database/migrate/](../../../internal/database/migrate/) |
+| 表结构与迁移 | [internal/database/entity/](../../../internal/database/entity/)、[internal/database/migrate/](../../../internal/database/migrate/) |
 | 界面（注册管理页、填码页） | [web/src/pages/RegistrationPage.tsx](../../../web/src/pages/RegistrationPage.tsx)、[web/src/pages/CompleteRegistrationPage.tsx](../../../web/src/pages/CompleteRegistrationPage.tsx) |
 | 命令行 | [cmd/aladdin/command-registration.go](../../../cmd/aladdin/command-registration.go)、[cmd/aladdin/command-invite.go](../../../cmd/aladdin/command-invite.go) |
 

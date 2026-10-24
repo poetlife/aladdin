@@ -190,7 +190,7 @@
 | 强制下载的响应头与签发（**与资产、头像共用同一条链路**） | [internal/objectstore/upload.go](../../../internal/objectstore/upload.go) |
 | COS 侧的实现（签发下载地址） | [internal/objectstore/cosupload/store.go](../../../internal/objectstore/cosupload/store.go) |
 | 附件的持久化 | [internal/galaxy/gormstore/attachment.go](../../../internal/galaxy/gormstore/attachment.go) |
-| 表结构 | [internal/database/schema.go](../../../internal/database/schema.go) 与 [internal/database/migrate/](../../../internal/database/migrate/) |
+| 表结构 | [internal/database/entity/](../../../internal/database/entity/) 与 [internal/database/migrate/](../../../internal/database/migrate/) |
 | 接口定义 | [api/proto/aladdin/galaxy/v1/galaxy.proto](../../../api/proto/aladdin/galaxy/v1/galaxy.proto) |
 | 接入与留痕 | [internal/server/galaxy_service.go](../../../internal/server/galaxy_service.go) |
 
