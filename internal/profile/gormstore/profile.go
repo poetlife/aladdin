@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/profile"
 )
 
@@ -33,7 +33,7 @@ func New(db *gorm.DB) *Store {
 
 // Get 实现 profile.Store。
 func (s *Store) Get(ctx context.Context, subjectID string) (profile.Profile, error) {
-	var rec database.SubjectProfileRecord
+	var rec entity.SubjectProfileRecord
 	if err := s.db.WithContext(ctx).First(&rec, "subject_id = ?", subjectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return profile.Profile{}, profile.ErrProfileNotFound
@@ -49,7 +49,7 @@ func (s *Store) Get(ctx context.Context, subjectID string) (profile.Profile, err
 // 一次改名顺手把头像清掉，而那是两个互不相干的操作——把它写成一条会互相
 // 覆盖的语句，正是 profile.Store 按字段分成两个方法的理由。
 func (s *Store) PutText(ctx context.Context, subjectID, nickname, bio string, at time.Time) error {
-	rec := database.SubjectProfileRecord{
+	rec := entity.SubjectProfileRecord{
 		SubjectID: subjectID,
 		Nickname:  nickname,
 		Bio:       bio,
@@ -69,7 +69,7 @@ func (s *Store) PutText(ctx context.Context, subjectID, nickname, bio string, at
 //
 // 与 PutText 同理，冲突时只覆盖头像对象键与更新时间，不碰昵称与简介。
 func (s *Store) PutAvatarKey(ctx context.Context, subjectID, key string, at time.Time) error {
-	rec := database.SubjectProfileRecord{
+	rec := entity.SubjectProfileRecord{
 		SubjectID: subjectID,
 		AvatarKey: key,
 		UpdatedAt: at,
@@ -88,7 +88,7 @@ func (s *Store) PutAvatarKey(ctx context.Context, subjectID, key string, at time
 //
 // 转换只在这一处：记录里加一列不会悄悄改变展示看到的东西，除非这里也跟着改
 // ——而那时改动是显式的。
-func toProfile(rec database.SubjectProfileRecord) profile.Profile {
+func toProfile(rec entity.SubjectProfileRecord) profile.Profile {
 	return profile.Profile{
 		SubjectID: rec.SubjectID,
 		Nickname:  rec.Nickname,

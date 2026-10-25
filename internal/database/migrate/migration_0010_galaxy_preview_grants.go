@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0010GalaxyPreviewGrants 新增预览凭证表：一条随预览地址走的短时凭证。
@@ -20,6 +20,6 @@ import (
 var migration0010GalaxyPreviewGrants = &gormigrate.Migration{
 	ID: "0010_galaxy_preview_grants",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.GalaxyPreviewGrantRecord{})
+		return tx.AutoMigrate(&entity.GalaxyPreviewGrantRecord{})
 	},
 }

@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0006GalaxyTables 建立 galaxy 的五张表。
@@ -30,11 +30,11 @@ var migration0006GalaxyTables = &gormigrate.Migration{
 	ID: "0006_galaxy_tables",
 	Migrate: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(
-			&database.GalaxyProjectRecord{},
-			&database.GalaxyDraftRecord{},
-			&database.GalaxyVersionRecord{},
-			&database.GalaxyAssetRecord{},
-			&database.GalaxyPublicationRecord{},
+			&entity.GalaxyProjectRecord{},
+			&entity.GalaxyDraftRecord{},
+			&entity.GalaxyVersionRecord{},
+			&entity.GalaxyAssetRecord{},
+			&entity.GalaxyPublicationRecord{},
 		)
 	},
 }

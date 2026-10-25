@@ -232,7 +232,7 @@ skill 模块补上这一块：**真相源在平台**，管理员从远端仓库�
 | 目录行为：纳管、同步、回滚、说明层、收藏、检索、使用量 | [internal/skill/catalog.go](../../../internal/skill/catalog.go) |
 | 持久化契约与内存实现 | [internal/skill/store.go](../../../internal/skill/store.go) / [internal/skill/memory_store.go](../../../internal/skill/memory_store.go) |
 | 持久化的 SQL 实现与契约测试 | [internal/skill/gormstore/](../../../internal/skill/gormstore/store.go) |
-| 表结构与迁移 | [internal/database/schema.go](../../../internal/database/schema.go) / [internal/database/migrate/migration_0013_skill_catalog.go](../../../internal/database/migrate/migration_0013_skill_catalog.go) |
+| 表结构与迁移 | [internal/database/entity/](../../../internal/database/entity/) / [internal/database/migrate/migration_0013_skill_catalog.go](../../../internal/database/migrate/migration_0013_skill_catalog.go) |
 | 接口与权限码（读面 / 维护面） | [api/proto/aladdin/skill/v1/skill.proto](../../../api/proto/aladdin/skill/v1/skill.proto) |
 | 权限码与内置角色 | [api/permissions/catalog.yaml](../../../api/permissions/catalog.yaml) |
 | 读面 / 维护面的 RPC 实现与错误映射 | [internal/server/skill_service.go](../../../internal/server/skill_service.go) / [internal/server/skill_admin_service.go](../../../internal/server/skill_admin_service.go) |

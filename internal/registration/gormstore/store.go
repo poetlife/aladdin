@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/rbac"
 	"github.com/poetlife/aladdin/internal/registration"
 )
@@ -37,7 +37,7 @@ func New(db *gorm.DB) *Store {
 // **没有记录时返回零值**，不在这里补一个默认策略：取值缺失等价于开放注册这条
 // 归一化只有一处（registration.Policy.Effective），两个实现各补一次就会各有一套。
 func (s *Store) Policy(ctx context.Context) (registration.Policy, error) {
-	var rec database.RegistrationPolicyRecord
+	var rec entity.RegistrationPolicyRecord
 	err := s.db.WithContext(ctx).First(&rec, "id = ?", policyRowID).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -67,7 +67,7 @@ func (s *Store) PutPolicy(ctx context.Context, policy registration.Policy) error
 // 它**不排序**：顺序由领域层统一决定（registration.sortInvites），两个实现各排
 // 一次会给"列表顺序"两个来源。
 func (s *Store) Invites(ctx context.Context) ([]registration.Invite, error) {
-	var recs []database.RegistrationInviteRecord
+	var recs []entity.RegistrationInviteRecord
 	if err := s.db.WithContext(ctx).Find(&recs).Error; err != nil {
 		return nil, unavailable("读取邀请码", err)
 	}
@@ -94,7 +94,7 @@ func (s *Store) PutInvite(ctx context.Context, invite registration.Invite) error
 // 而两次都返回成功，是因为重复点击不该变成一个调用方无法与真失败区分开的错误。
 func (s *Store) RevokeInvite(ctx context.Context, id string, at time.Time) (registration.Invite, error) {
 	res := s.db.WithContext(ctx).
-		Model(&database.RegistrationInviteRecord{}).
+		Model(&entity.RegistrationInviteRecord{}).
 		Where("id = ? AND revoked_at IS NULL", id).
 		UpdateColumn("revoked_at", at)
 	if res.Error != nil {
@@ -103,7 +103,7 @@ func (s *Store) RevokeInvite(ctx context.Context, id string, at time.Time) (regi
 
 	// 无论上面有没有改动到行，都读回现状：行不存在与已撤销都要能被区分出来
 	// （前者是 ErrInviteNotFound，后者是幂等成功）。
-	var rec database.RegistrationInviteRecord
+	var rec entity.RegistrationInviteRecord
 	err := s.db.WithContext(ctx).First(&rec, "id = ?", id).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -124,7 +124,7 @@ func (s *Store) RevokeInvite(ctx context.Context, id string, at time.Time) (regi
 // 就是同一件事，而多查一次只是给探测者多一个可观察的差异。
 func (s *Store) Redeem(ctx context.Context, codeHash string, at time.Time) (registration.Invite, error) {
 	res := s.db.WithContext(ctx).
-		Model(&database.RegistrationInviteRecord{}).
+		Model(&entity.RegistrationInviteRecord{}).
 		Where("code_hash = ?", codeHash).
 		Where("revoked_at IS NULL").
 		Where("expires_at IS NULL OR expires_at > ?", at).
@@ -137,7 +137,7 @@ func (s *Store) Redeem(ctx context.Context, codeHash string, at time.Time) (regi
 		return registration.Invite{}, registration.ErrInviteUnusable
 	}
 
-	var rec database.RegistrationInviteRecord
+	var rec entity.RegistrationInviteRecord
 	if err := s.db.WithContext(ctx).First(&rec, "code_hash = ?", codeHash).Error; err != nil {
 		return registration.Invite{}, unavailable("读回邀请码", err)
 	}
@@ -147,7 +147,7 @@ func (s *Store) Redeem(ctx context.Context, codeHash string, at time.Time) (regi
 // toPolicy 把记录翻成领域取值。
 //
 // 空的范围列落回空串，也就是全局——领域侧的 Scope 用空串表示根，与库里一致。
-func toPolicy(rec database.RegistrationPolicyRecord) registration.Policy {
+func toPolicy(rec entity.RegistrationPolicyRecord) registration.Policy {
 	return registration.Policy{
 		Mode:               registration.Mode(rec.Mode),
 		DefaultRoleID:      rec.DefaultRoleID,
@@ -158,8 +158,8 @@ func toPolicy(rec database.RegistrationPolicyRecord) registration.Policy {
 }
 
 // fromPolicy 把领域取值翻成记录。
-func fromPolicy(policy registration.Policy) database.RegistrationPolicyRecord {
-	return database.RegistrationPolicyRecord{
+func fromPolicy(policy registration.Policy) entity.RegistrationPolicyRecord {
+	return entity.RegistrationPolicyRecord{
 		Mode:               string(policy.Mode),
 		DefaultRoleID:      policy.DefaultRoleID,
 		DefaultScope:       string(policy.DefaultScope),
@@ -169,7 +169,7 @@ func fromPolicy(policy registration.Policy) database.RegistrationPolicyRecord {
 }
 
 // toInvite 把记录翻成领域取值：两个可空时间列落回零值（不过期 / 未撤销）。
-func toInvite(rec database.RegistrationInviteRecord) registration.Invite {
+func toInvite(rec entity.RegistrationInviteRecord) registration.Invite {
 	invite := registration.Invite{
 		ID:                 rec.ID,
 		CodeHash:           rec.CodeHash,
@@ -192,8 +192,8 @@ func toInvite(rec database.RegistrationInviteRecord) registration.Invite {
 //
 // 后者在 MySQL 的 datetime 上根本插不进去（它的下界是 1000 年），而在 SQLite 上
 // 会变成一串看起来像数据的 '0001-01-01'。
-func fromInvite(invite registration.Invite) database.RegistrationInviteRecord {
-	rec := database.RegistrationInviteRecord{
+func fromInvite(invite registration.Invite) entity.RegistrationInviteRecord {
+	rec := entity.RegistrationInviteRecord{
 		ID:                 invite.ID,
 		CodeHash:           invite.CodeHash,
 		Label:              invite.Label,

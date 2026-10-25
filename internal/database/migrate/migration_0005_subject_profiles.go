@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0005SubjectProfiles 建立个人档案表。
@@ -26,6 +26,6 @@ import (
 var migration0005SubjectProfiles = &gormigrate.Migration{
 	ID: "0005_subject_profiles",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.SubjectProfileRecord{})
+		return tx.AutoMigrate(&entity.SubjectProfileRecord{})
 	},
 }

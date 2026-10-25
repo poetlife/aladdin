@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/galaxy"
 )
 
@@ -17,7 +17,7 @@ import (
 // （见 galaxy.WatermarkVisit.Expired）。把判定放进读里，"这枚码此刻算不算数"
 // 就会有两种说法。
 func (s *Store) GetWatermarkVisit(ctx context.Context, code string) (galaxy.WatermarkVisit, error) {
-	var rec database.GalaxyWatermarkVisitRecord
+	var rec entity.GalaxyWatermarkVisitRecord
 	if err := s.db.WithContext(ctx).First(&rec, "code = ?", code).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return galaxy.WatermarkVisit{}, galaxy.ErrWatermarkNotFound
@@ -41,11 +41,11 @@ func (s *Store) ReuseOrPutWatermarkVisit(ctx context.Context, visit galaxy.Water
 	var reused galaxy.WatermarkVisit
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("visited_at < ?", cleanupBefore).
-			Delete(&database.GalaxyWatermarkVisitRecord{}).Error; err != nil {
+			Delete(&entity.GalaxyWatermarkVisitRecord{}).Error; err != nil {
 			return err
 		}
 
-		var existing database.GalaxyWatermarkVisitRecord
+		var existing entity.GalaxyWatermarkVisitRecord
 		err := tx.Where("project_id = ? AND slot = ? AND identity_key = ? AND visited_at >= ?",
 			visit.ProjectID, string(visit.Slot), visit.IdentityKey, reuseSince).
 			Order("visited_at DESC").
@@ -58,7 +58,7 @@ func (s *Store) ReuseOrPutWatermarkVisit(ctx context.Context, visit galaxy.Water
 			return err
 		}
 
-		rec := database.GalaxyWatermarkVisitRecord{
+		rec := entity.GalaxyWatermarkVisitRecord{
 			Code:            visit.Code,
 			ProjectID:       visit.ProjectID,
 			Slot:            string(visit.Slot),
@@ -81,7 +81,7 @@ func (s *Store) ReuseOrPutWatermarkVisit(ctx context.Context, visit galaxy.Water
 }
 
 // toWatermarkVisit 把库里的行翻译成领域取值。
-func toWatermarkVisit(rec database.GalaxyWatermarkVisitRecord) galaxy.WatermarkVisit {
+func toWatermarkVisit(rec entity.GalaxyWatermarkVisitRecord) galaxy.WatermarkVisit {
 	return galaxy.WatermarkVisit{
 		Code:            rec.Code,
 		ProjectID:       rec.ProjectID,

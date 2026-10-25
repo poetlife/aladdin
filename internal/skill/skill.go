@@ -341,7 +341,7 @@ type Usage struct {
 // UsageDay 把一个时刻折成使用统计里的那一个"日"（唯一入口）。
 //
 // 两个实现都用它，因此"哪一天"这个判据不会因为库怎么存而不同（见
-// internal/database 的 SkillUsageDailyRecord）。按**服务器本地时区**折算而不是
+// internal/database/entity 的 SkillUsageDailyRecord）。按**服务器本地时区**折算而不是
 // UTC：使用量的读者看的是"昨天有没有人用"，而那个"昨天"是他所在的那一天——与
 // 遥测的 TODAY 窗口同一个锚。
 func UsageDay(t time.Time) string { return t.Format("2006-01-02") }

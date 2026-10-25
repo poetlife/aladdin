@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/galaxy"
 )
 
@@ -15,7 +15,7 @@ import (
 // 查询同时约束工程标识与附件标识：**"附件属于别的工程"与"附件不存在"因此从查询
 // 这一层就是同一个结果**（与 GetAsset 同源）。
 func (s *Store) GetAttachment(ctx context.Context, projectID, attachmentID string) (galaxy.Attachment, error) {
-	var rec database.GalaxyAttachmentRecord
+	var rec entity.GalaxyAttachmentRecord
 	err := s.db.WithContext(ctx).
 		First(&rec, "id = ? AND project_id = ?", attachmentID, projectID).Error
 	if err != nil {
@@ -29,7 +29,7 @@ func (s *Store) GetAttachment(ctx context.Context, projectID, attachmentID strin
 
 // ListAttachments 实现 galaxy.Store：按上传时间倒序。
 func (s *Store) ListAttachments(ctx context.Context, projectID string) ([]galaxy.Attachment, error) {
-	var recs []database.GalaxyAttachmentRecord
+	var recs []entity.GalaxyAttachmentRecord
 	err := s.db.WithContext(ctx).
 		Where("project_id = ?", projectID).
 		Order("uploaded_at DESC, id ASC").
@@ -51,7 +51,7 @@ func (s *Store) ListAttachments(ctx context.Context, projectID string) ([]galaxy
 func (s *Store) SumAttachmentBytes(ctx context.Context, projectID string) (int64, error) {
 	var total int64
 	err := s.db.WithContext(ctx).
-		Model(&database.GalaxyAttachmentRecord{}).
+		Model(&entity.GalaxyAttachmentRecord{}).
 		Where("project_id = ?", projectID).
 		Select("COALESCE(SUM(size_bytes), 0)").
 		Row().Scan(&total)
@@ -65,7 +65,7 @@ func (s *Store) SumAttachmentBytes(ctx context.Context, projectID string) (int64
 //
 // 附件不可变，因此这里只有"写入"、没有改字节那一半：换一份字节是重新上传一个。
 func (s *Store) CreateAttachment(ctx context.Context, attachment galaxy.Attachment) error {
-	rec := database.GalaxyAttachmentRecord{
+	rec := entity.GalaxyAttachmentRecord{
 		ID:                  attachment.ID,
 		ProjectID:           attachment.ProjectID,
 		VersionID:           attachment.VersionID,
@@ -88,7 +88,7 @@ func (s *Store) CreateAttachment(ctx context.Context, attachment galaxy.Attachme
 // 地址指向的还是同一份字节（与 UpdateAssetMeta 同源）。
 func (s *Store) UpdateAttachmentDescription(ctx context.Context, projectID, attachmentID, description string) error {
 	result := s.db.WithContext(ctx).
-		Model(&database.GalaxyAttachmentRecord{}).
+		Model(&entity.GalaxyAttachmentRecord{}).
 		Where("id = ? AND project_id = ?", attachmentID, projectID).
 		Update("description", description)
 	if result.Error != nil {
@@ -99,7 +99,7 @@ func (s *Store) UpdateAttachmentDescription(ctx context.Context, projectID, atta
 		// 一次这一行是否真的在（与 UpdateAssetMeta 同源）。
 		var count int64
 		if err := s.db.WithContext(ctx).
-			Model(&database.GalaxyAttachmentRecord{}).
+			Model(&entity.GalaxyAttachmentRecord{}).
 			Where("id = ? AND project_id = ?", attachmentID, projectID).
 			Count(&count).Error; err != nil {
 			return unavailable("更新附件说明", err)
@@ -118,7 +118,7 @@ func (s *Store) UpdateAttachmentDescription(ctx context.Context, projectID, atta
 func (s *Store) DeleteAttachment(ctx context.Context, projectID, attachmentID string) error {
 	result := s.db.WithContext(ctx).
 		Where("id = ? AND project_id = ?", attachmentID, projectID).
-		Delete(&database.GalaxyAttachmentRecord{})
+		Delete(&entity.GalaxyAttachmentRecord{})
 	if result.Error != nil {
 		return unavailable("删除附件", result.Error)
 	}
@@ -133,7 +133,7 @@ func (s *Store) DeleteAttachment(ctx context.Context, projectID, attachmentID st
 // 它与版本的删除**在同一个事务里**（见 DeleteVersion）：清到一半的表现是一条指向
 // 不存在版本的悬空标注，而它在界面上是一个打不开的版本号。
 func clearAttachmentVersions(tx *gorm.DB, projectID, versionID string) error {
-	return tx.Model(&database.GalaxyAttachmentRecord{}).
+	return tx.Model(&entity.GalaxyAttachmentRecord{}).
 		Where("project_id = ? AND version_id = ?", projectID, versionID).
 		Update("version_id", "").Error
 }

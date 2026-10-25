@@ -15,7 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/galaxy"
 )
 
@@ -75,7 +75,7 @@ func decodeManifest(encoded string) (galaxy.Manifest, error) {
 // 转换只在这一处：记录里加一列不会悄悄改变上层看到的东西，除非这里也跟着改
 // ——而那时改动是显式的。**槽不在这里翻译**：它在另一张表上，由调用方合并
 // （见 project.go 的 loadSlots）。
-func toProject(rec database.GalaxyProjectRecord) galaxy.Project {
+func toProject(rec entity.GalaxyProjectRecord) galaxy.Project {
 	return galaxy.Project{
 		ID:             rec.ID,
 		OwnerSubjectID: rec.OwnerSubjectID,
@@ -87,7 +87,7 @@ func toProject(rec database.GalaxyProjectRecord) galaxy.Project {
 	}
 }
 
-func toDraft(rec database.GalaxyDraftRecord) (galaxy.Draft, error) {
+func toDraft(rec entity.GalaxyDraftRecord) (galaxy.Draft, error) {
 	manifest, err := decodeManifest(rec.Manifest)
 	if err != nil {
 		return galaxy.Draft{}, err
@@ -100,7 +100,7 @@ func toDraft(rec database.GalaxyDraftRecord) (galaxy.Draft, error) {
 	}, nil
 }
 
-func toVersion(rec database.GalaxyVersionRecord) (galaxy.Version, error) {
+func toVersion(rec entity.GalaxyVersionRecord) (galaxy.Version, error) {
 	manifest, err := decodeManifest(rec.Manifest)
 	if err != nil {
 		return galaxy.Version{}, err
@@ -117,7 +117,7 @@ func toVersion(rec database.GalaxyVersionRecord) (galaxy.Version, error) {
 	}, nil
 }
 
-func toDraftSnapshot(rec database.GalaxyDraftSnapshotRecord) (galaxy.DraftSnapshot, error) {
+func toDraftSnapshot(rec entity.GalaxyDraftSnapshotRecord) (galaxy.DraftSnapshot, error) {
 	manifest, err := decodeManifest(rec.Manifest)
 	if err != nil {
 		return galaxy.DraftSnapshot{}, err
@@ -134,7 +134,7 @@ func toDraftSnapshot(rec database.GalaxyDraftSnapshotRecord) (galaxy.DraftSnapsh
 	}, nil
 }
 
-func toAsset(rec database.GalaxyAssetRecord) galaxy.Asset {
+func toAsset(rec entity.GalaxyAssetRecord) galaxy.Asset {
 	return galaxy.Asset{
 		ID:         rec.ID,
 		ProjectID:  rec.ProjectID,
@@ -151,7 +151,7 @@ func toAsset(rec database.GalaxyAssetRecord) galaxy.Asset {
 	}
 }
 
-func toAttachment(rec database.GalaxyAttachmentRecord) galaxy.Attachment {
+func toAttachment(rec entity.GalaxyAttachmentRecord) galaxy.Attachment {
 	return galaxy.Attachment{
 		ID:                  rec.ID,
 		ProjectID:           rec.ProjectID,
@@ -165,7 +165,7 @@ func toAttachment(rec database.GalaxyAttachmentRecord) galaxy.Attachment {
 	}
 }
 
-func toPublication(rec database.GalaxyPublicationRecord) (galaxy.Publication, error) {
+func toPublication(rec entity.GalaxyPublicationRecord) (galaxy.Publication, error) {
 	manifest, err := decodeManifest(rec.Manifest)
 	if err != nil {
 		return galaxy.Publication{}, err

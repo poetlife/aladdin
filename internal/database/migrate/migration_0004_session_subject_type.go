@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0004SessionSubjectType 给会话表补上签发时的主体类型。
@@ -19,6 +19,6 @@ import (
 var migration0004SessionSubjectType = &gormigrate.Migration{
 	ID: "0004_session_subject_type",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.SessionRecord{})
+		return tx.AutoMigrate(&entity.SessionRecord{})
 	},
 }

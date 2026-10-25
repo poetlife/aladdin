@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/skill"
 )
 
@@ -42,7 +42,7 @@ func unavailable(action string, err error) error {
 
 // ListSkills 实现 skill.Store。
 func (s *Store) ListSkills(ctx context.Context) ([]skill.Skill, error) {
-	var records []database.SkillRecord
+	var records []entity.SkillRecord
 	if err := s.db.WithContext(ctx).Find(&records).Error; err != nil {
 		return nil, unavailable("列出技能", err)
 	}
@@ -109,7 +109,7 @@ func (s *Store) ListVersions(ctx context.Context, skillID string) ([]skill.Versi
 	if _, err := s.skillRecord(ctx, skillID); err != nil {
 		return nil, err
 	}
-	var records []database.SkillVersionRecord
+	var records []entity.SkillVersionRecord
 	// 排序键里带上标识：同一秒内产生的两个版本也要有确定的先后，否则同一份数据
 	// 在不同实现、不同一次查询里会给出不同的顺序。
 	if err := s.db.WithContext(ctx).
@@ -133,7 +133,7 @@ func (s *Store) CreateSkill(ctx context.Context, item skill.Skill) error {
 	}
 	now := time.Now()
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		record := database.SkillRecord{
+		record := entity.SkillRecord{
 			ID:               item.ID,
 			Title:            item.Title,
 			Summary:          item.Summary,
@@ -149,7 +149,7 @@ func (s *Store) CreateSkill(ctx context.Context, item skill.Skill) error {
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
-		version := database.SkillVersionRecord{
+		version := entity.SkillVersionRecord{
 			ID:           item.Current.ID,
 			SkillID:      item.ID,
 			Commit:       item.Current.Commit,
@@ -180,7 +180,7 @@ func (s *Store) AppendVersion(ctx context.Context, skillID string, version skill
 		return err
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		record := database.SkillVersionRecord{
+		record := entity.SkillVersionRecord{
 			ID:           version.ID,
 			SkillID:      skillID,
 			Commit:       version.Commit,
@@ -193,7 +193,7 @@ func (s *Store) AppendVersion(ctx context.Context, skillID string, version skill
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
-		result := tx.Model(&database.SkillRecord{}).
+		result := tx.Model(&entity.SkillRecord{}).
 			Where("id = ?", skillID).
 			Updates(map[string]any{
 				"current_version_id": version.ID,
@@ -224,7 +224,7 @@ func (s *Store) AppendVersion(ctx context.Context, skillID string, version skill
 func (s *Store) SetCurrentVersion(ctx context.Context, skillID, versionID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var count int64
-		if err := tx.Model(&database.SkillVersionRecord{}).
+		if err := tx.Model(&entity.SkillVersionRecord{}).
 			Where("id = ? AND skill_id = ?", versionID, skillID).
 			Count(&count).Error; err != nil {
 			return err
@@ -233,7 +233,7 @@ func (s *Store) SetCurrentVersion(ctx context.Context, skillID, versionID string
 			// 先确认技能本身在不在：**技能不存在**与**版本不属于它**是两句不同的
 			// 话，虽然都不该暴露"别人的版本存在吗"这个信息。
 			var skills int64
-			if err := tx.Model(&database.SkillRecord{}).
+			if err := tx.Model(&entity.SkillRecord{}).
 				Where("id = ?", skillID).Count(&skills).Error; err != nil {
 				return err
 			}
@@ -242,7 +242,7 @@ func (s *Store) SetCurrentVersion(ctx context.Context, skillID, versionID string
 			}
 			return skill.ErrVersionNotFound
 		}
-		result := tx.Model(&database.SkillRecord{}).
+		result := tx.Model(&entity.SkillRecord{}).
 			Where("id = ?", skillID).
 			Updates(map[string]any{"current_version_id": versionID, "updated_at": time.Now()})
 		if result.Error != nil {
@@ -265,7 +265,7 @@ func (s *Store) SetCurrentVersion(ctx context.Context, skillID, versionID string
 // UpdateMetadata 实现 skill.Store：改说明层，**它不碰内容层任何一项**。
 func (s *Store) UpdateMetadata(ctx context.Context, skillID, title, summary string, tags []string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&database.SkillRecord{}).
+		result := tx.Model(&entity.SkillRecord{}).
 			Where("id = ?", skillID).
 			Updates(map[string]any{"title": title, "summary": summary, "updated_at": time.Now()})
 		if result.Error != nil {
@@ -277,7 +277,7 @@ func (s *Store) UpdateMetadata(ctx context.Context, skillID, title, summary stri
 		// 标签是**整体替换**：先删后插。先插后删会让归一化之后重复的取值在两步
 		// 之间撞上主键。
 		if err := tx.Where("skill_id = ?", skillID).
-			Delete(&database.SkillTagRecord{}).Error; err != nil {
+			Delete(&entity.SkillTagRecord{}).Error; err != nil {
 			return err
 		}
 		return insertTags(tx, skillID, tags)
@@ -302,18 +302,18 @@ func (s *Store) UpdateMetadata(ctx context.Context, skillID, title, summary stri
 func (s *Store) PutImage(ctx context.Context, skillID string, image skill.Image) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var skills int64
-		if err := tx.Model(&database.SkillRecord{}).
+		if err := tx.Model(&entity.SkillRecord{}).
 			Where("id = ?", skillID).Count(&skills).Error; err != nil {
 			return err
 		}
 		if skills == 0 {
 			return skill.ErrSkillNotFound
 		}
-		var existing database.SkillImageRecord
+		var existing entity.SkillImageRecord
 		err := tx.Where("id = ? AND skill_id = ?", image.ID, skillID).Take(&existing).Error
 		switch {
 		case err == nil:
-			return tx.Model(&database.SkillImageRecord{}).
+			return tx.Model(&entity.SkillImageRecord{}).
 				Where("id = ?", image.ID).
 				Updates(map[string]any{
 					"object_key": image.ObjectKey,
@@ -322,13 +322,13 @@ func (s *Store) PutImage(ctx context.Context, skillID string, image skill.Image)
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			// 新增的那一张排在末尾：位置是 `max + 1`，因此**已有的图一张都不动**。
 			var next int
-			if err := tx.Model(&database.SkillImageRecord{}).
+			if err := tx.Model(&entity.SkillImageRecord{}).
 				Where("skill_id = ?", skillID).
 				Select("COALESCE(MAX(position), -1) + 1").
 				Scan(&next).Error; err != nil {
 				return err
 			}
-			return tx.Create(&database.SkillImageRecord{
+			return tx.Create(&entity.SkillImageRecord{
 				ID:        image.ID,
 				SkillID:   skillID,
 				Position:  next,
@@ -353,7 +353,7 @@ func (s *Store) PutImage(ctx context.Context, skillID string, image skill.Image)
 func (s *Store) DeleteImage(ctx context.Context, skillID, imageID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("id = ? AND skill_id = ?", imageID, skillID).
-			Delete(&database.SkillImageRecord{})
+			Delete(&entity.SkillImageRecord{})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -363,7 +363,7 @@ func (s *Store) DeleteImage(ctx context.Context, skillID, imageID string) error 
 		// 先确认技能本身在不在：**技能不存在**与**这一张不在它的图集里**是两句
 		// 不同的话，虽然都不该暴露"别人的图存在吗"这个信息。
 		var skills int64
-		if err := tx.Model(&database.SkillRecord{}).
+		if err := tx.Model(&entity.SkillRecord{}).
 			Where("id = ?", skillID).Count(&skills).Error; err != nil {
 			return err
 		}
@@ -388,14 +388,14 @@ func (s *Store) DeleteImage(ctx context.Context, skillID, imageID string) error 
 func (s *Store) ReorderImages(ctx context.Context, skillID string, imageIDs []string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var skills int64
-		if err := tx.Model(&database.SkillRecord{}).
+		if err := tx.Model(&entity.SkillRecord{}).
 			Where("id = ?", skillID).Count(&skills).Error; err != nil {
 			return err
 		}
 		if skills == 0 {
 			return skill.ErrSkillNotFound
 		}
-		var records []database.SkillImageRecord
+		var records []entity.SkillImageRecord
 		if err := tx.Where("skill_id = ?", skillID).
 			Order("position ASC, id ASC").Find(&records).Error; err != nil {
 			return err
@@ -406,7 +406,7 @@ func (s *Store) ReorderImages(ctx context.Context, skillID string, imageIDs []st
 			return skill.ErrImageOrderMismatch
 		}
 		for position, imageID := range imageIDs {
-			if err := tx.Model(&database.SkillImageRecord{}).
+			if err := tx.Model(&entity.SkillImageRecord{}).
 				Where("id = ? AND skill_id = ?", imageID, skillID).
 				Update("position", position).Error; err != nil {
 				return err
@@ -430,15 +430,15 @@ func (s *Store) ReorderImages(ctx context.Context, skillID string, imageIDs []st
 func (s *Store) DeleteSkill(ctx context.Context, skillID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, model := range []any{
-			&database.SkillVersionRecord{}, &database.SkillTagRecord{},
-			&database.SkillImageRecord{},
-			&database.SkillFavoriteRecord{}, &database.SkillUsageDailyRecord{},
+			&entity.SkillVersionRecord{}, &entity.SkillTagRecord{},
+			&entity.SkillImageRecord{},
+			&entity.SkillFavoriteRecord{}, &entity.SkillUsageDailyRecord{},
 		} {
 			if err := tx.Where("skill_id = ?", skillID).Delete(model).Error; err != nil {
 				return err
 			}
 		}
-		result := tx.Where("id = ?", skillID).Delete(&database.SkillRecord{})
+		result := tx.Where("id = ?", skillID).Delete(&entity.SkillRecord{})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -464,12 +464,12 @@ func (s *Store) SetFavorite(ctx context.Context, skillID, subjectID string, favo
 	if !favorited {
 		if err := s.db.WithContext(ctx).
 			Where("skill_id = ? AND subject_id = ?", skillID, subjectID).
-			Delete(&database.SkillFavoriteRecord{}).Error; err != nil {
+			Delete(&entity.SkillFavoriteRecord{}).Error; err != nil {
 			return unavailable("取消收藏", err)
 		}
 		return nil
 	}
-	record := database.SkillFavoriteRecord{
+	record := entity.SkillFavoriteRecord{
 		SkillID: skillID, SubjectID: subjectID, CreatedAt: time.Now(),
 	}
 	// 已收藏时什么都不做：它是幂等的，而"再收藏一次改一下时间"会让"什么时候
@@ -483,7 +483,7 @@ func (s *Store) SetFavorite(ctx context.Context, skillID, subjectID string, favo
 
 // FavoriteIDs 实现 skill.Store。
 func (s *Store) FavoriteIDs(ctx context.Context, subjectID string) (map[string]bool, error) {
-	var records []database.SkillFavoriteRecord
+	var records []entity.SkillFavoriteRecord
 	if err := s.db.WithContext(ctx).
 		Where("subject_id = ?", subjectID).
 		Find(&records).Error; err != nil {
@@ -501,7 +501,7 @@ func (s *Store) RecordUse(ctx context.Context, skillID, subjectID string, at tim
 	if _, err := s.skillRecord(ctx, skillID); err != nil {
 		return err
 	}
-	record := database.SkillUsageDailyRecord{
+	record := entity.SkillUsageDailyRecord{
 		SkillID:   skillID,
 		SubjectID: subjectID,
 		Day:       skill.UsageDay(at),
@@ -526,7 +526,7 @@ func (s *Store) Usage(ctx context.Context, skillIDs []string, since time.Time) (
 	if len(skillIDs) == 0 {
 		return map[string]skill.Usage{}, nil
 	}
-	var records []database.SkillUsageDailyRecord
+	var records []entity.SkillUsageDailyRecord
 	if err := s.db.WithContext(ctx).
 		Where("skill_id IN ? AND day >= ?", skillIDs, skill.UsageDay(since)).
 		Find(&records).Error; err != nil {
@@ -559,48 +559,48 @@ func (s *Store) Usage(ctx context.Context, skillIDs []string, since time.Time) (
 func (s *Store) DeleteUsageBefore(ctx context.Context, before time.Time) error {
 	if err := s.db.WithContext(ctx).
 		Where("day < ?", skill.UsageDay(before)).
-		Delete(&database.SkillUsageDailyRecord{}).Error; err != nil {
+		Delete(&entity.SkillUsageDailyRecord{}).Error; err != nil {
 		return unavailable("回收技能使用记录", err)
 	}
 	return nil
 }
 
 // skillRecord 读一个技能行。
-func (s *Store) skillRecord(ctx context.Context, skillID string) (database.SkillRecord, error) {
-	var record database.SkillRecord
+func (s *Store) skillRecord(ctx context.Context, skillID string) (entity.SkillRecord, error) {
+	var record entity.SkillRecord
 	err := s.db.WithContext(ctx).Where("id = ?", skillID).Take(&record).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return database.SkillRecord{}, skill.ErrSkillNotFound
+		return entity.SkillRecord{}, skill.ErrSkillNotFound
 	}
 	if err != nil {
-		return database.SkillRecord{}, unavailable("读取技能", err)
+		return entity.SkillRecord{}, unavailable("读取技能", err)
 	}
 	return record, nil
 }
 
 // versionRecord 读一个技能下的某一份版本。
-func (s *Store) versionRecord(ctx context.Context, skillID, versionID string) (database.SkillVersionRecord, error) {
-	var record database.SkillVersionRecord
+func (s *Store) versionRecord(ctx context.Context, skillID, versionID string) (entity.SkillVersionRecord, error) {
+	var record entity.SkillVersionRecord
 	err := s.db.WithContext(ctx).
 		Where("id = ? AND skill_id = ?", versionID, skillID).
 		Take(&record).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return database.SkillVersionRecord{}, unavailable("读取当前版本",
+		return entity.SkillVersionRecord{}, unavailable("读取当前版本",
 			fmt.Errorf("技能 %s 的版本 %s 不存在", skillID, versionID))
 	}
 	if err != nil {
-		return database.SkillVersionRecord{}, unavailable("读取技能版本", err)
+		return entity.SkillVersionRecord{}, unavailable("读取技能版本", err)
 	}
 	return record, nil
 }
 
 // versionsByID 一次读出多份版本。
-func (s *Store) versionsByID(ctx context.Context, versionIDs []string) (map[string]database.SkillVersionRecord, error) {
-	var records []database.SkillVersionRecord
+func (s *Store) versionsByID(ctx context.Context, versionIDs []string) (map[string]entity.SkillVersionRecord, error) {
+	var records []entity.SkillVersionRecord
 	if err := s.db.WithContext(ctx).Where("id IN ?", versionIDs).Find(&records).Error; err != nil {
 		return nil, unavailable("读取技能版本", err)
 	}
-	result := make(map[string]database.SkillVersionRecord, len(records))
+	result := make(map[string]entity.SkillVersionRecord, len(records))
 	for _, record := range records {
 		result[record.ID] = record
 	}
@@ -609,7 +609,7 @@ func (s *Store) versionsByID(ctx context.Context, versionIDs []string) (map[stri
 
 // tagsBySkill 一次读出多个技能的标签。
 func (s *Store) tagsBySkill(ctx context.Context, skillIDs []string) (map[string][]string, error) {
-	var records []database.SkillTagRecord
+	var records []entity.SkillTagRecord
 	// 按标签排序：读取侧不做二次排序，两种实现给出的顺序必须逐字一致。
 	if err := s.db.WithContext(ctx).
 		Where("skill_id IN ?", skillIDs).
@@ -629,16 +629,16 @@ func insertTags(tx *gorm.DB, skillID string, tags []string) error {
 	if len(tags) == 0 {
 		return nil
 	}
-	records := make([]database.SkillTagRecord, 0, len(tags))
+	records := make([]entity.SkillTagRecord, 0, len(tags))
 	for _, tag := range tags {
-		records = append(records, database.SkillTagRecord{SkillID: skillID, Tag: tag})
+		records = append(records, entity.SkillTagRecord{SkillID: skillID, Tag: tag})
 	}
 	return tx.Create(&records).Error
 }
 
 // imagesBySkill 一次读出多个技能的展示图集，**按图集顺序**。
 func (s *Store) imagesBySkill(ctx context.Context, skillIDs []string) (map[string][]skill.Image, error) {
-	var records []database.SkillImageRecord
+	var records []entity.SkillImageRecord
 	// 排序键里带上标识：位置只保证"后写入的图更大"，同一个位置上的两行（并发追加）
 	// 也要有确定的先后，否则同一份数据在不同一次查询里会给出不同的顺序。
 	if err := s.db.WithContext(ctx).
@@ -660,9 +660,9 @@ func insertImages(tx *gorm.DB, skillID string, images []skill.Image) error {
 		return nil
 	}
 	now := time.Now()
-	records := make([]database.SkillImageRecord, 0, len(images))
+	records := make([]entity.SkillImageRecord, 0, len(images))
 	for position, image := range images {
-		records = append(records, database.SkillImageRecord{
+		records = append(records, entity.SkillImageRecord{
 			ID:        image.ID,
 			SkillID:   skillID,
 			Position:  position,
@@ -680,13 +680,13 @@ func insertImages(tx *gorm.DB, skillID string, images []skill.Image) error {
 // ——校验、取用与界面上的文件列表都要整棵树，没有"按某一条路径反查版本"的查询。
 // 整份读写在一列上是一次赋值，在一组子行上却要先删后插，而"删到一半"会留下一个
 // 库里有、内容不全的版本。列的形态本身是实现细节，spec 只要求整份读写。
-func encodeFiles(files []skill.File) ([]database.SkillFileRecord, error) {
+func encodeFiles(files []skill.File) ([]entity.SkillFileRecord, error) {
 	if len(files) == 0 {
 		return nil, nil
 	}
-	records := make([]database.SkillFileRecord, 0, len(files))
+	records := make([]entity.SkillFileRecord, 0, len(files))
 	for _, file := range files {
-		records = append(records, database.SkillFileRecord{
+		records = append(records, entity.SkillFileRecord{
 			Path: file.Path, Digest: file.Digest, SizeBytes: file.SizeBytes,
 		})
 	}
@@ -694,7 +694,7 @@ func encodeFiles(files []skill.File) ([]database.SkillFileRecord, error) {
 }
 
 // toSkill 把记录折成领域类型。
-func toSkill(record database.SkillRecord, version database.SkillVersionRecord, tags []string, images []skill.Image) skill.Skill {
+func toSkill(record entity.SkillRecord, version entity.SkillVersionRecord, tags []string, images []skill.Image) skill.Skill {
 	return skill.Skill{
 		ID:      record.ID,
 		Title:   record.Title,
@@ -713,7 +713,7 @@ func toSkill(record database.SkillRecord, version database.SkillVersionRecord, t
 }
 
 // toImage 把图集记录折成领域类型。
-func toImage(record database.SkillImageRecord) skill.Image {
+func toImage(record entity.SkillImageRecord) skill.Image {
 	return skill.Image{
 		ID:        record.ID,
 		ObjectKey: record.ObjectKey,
@@ -722,7 +722,7 @@ func toImage(record database.SkillImageRecord) skill.Image {
 }
 
 // toImages 折一整组图集记录。
-func toImages(records []database.SkillImageRecord) []skill.Image {
+func toImages(records []entity.SkillImageRecord) []skill.Image {
 	images := make([]skill.Image, 0, len(records))
 	for _, record := range records {
 		images = append(images, toImage(record))
@@ -731,7 +731,7 @@ func toImages(records []database.SkillImageRecord) []skill.Image {
 }
 
 // toVersion 把版本记录折成领域类型。
-func toVersion(record database.SkillVersionRecord) skill.Version {
+func toVersion(record entity.SkillVersionRecord) skill.Version {
 	files := make([]skill.File, 0, len(record.Files))
 	for _, file := range record.Files {
 		files = append(files, skill.File{

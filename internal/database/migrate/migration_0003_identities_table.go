@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0003IdentitiesTable 建立认证模块的身份别名表。
@@ -23,6 +23,6 @@ import (
 var migration0003IdentitiesTable = &gormigrate.Migration{
 	ID: "0003_identities_table",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.IdentityRecord{})
+		return tx.AutoMigrate(&entity.IdentityRecord{})
 	},
 }

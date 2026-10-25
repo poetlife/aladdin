@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 	"github.com/poetlife/aladdin/internal/galaxy"
 )
 
@@ -15,7 +15,7 @@ import (
 // 查询同时约束工程标识与资产标识：**"资产属于别的工程"与"资产不存在"因此从
 // 查询这一层就是同一个结果**，不需要上层再判一次归属。
 func (s *Store) GetAsset(ctx context.Context, projectID, assetID string) (galaxy.Asset, error) {
-	var rec database.GalaxyAssetRecord
+	var rec entity.GalaxyAssetRecord
 	err := s.db.WithContext(ctx).
 		First(&rec, "id = ? AND project_id = ?", assetID, projectID).Error
 	if err != nil {
@@ -42,14 +42,14 @@ func (s *Store) ListAssets(ctx context.Context, projectID string, tags []string)
 	query := s.db.WithContext(ctx).Where("project_id = ?", projectID)
 	if len(tags) > 0 {
 		matching := s.db.WithContext(ctx).
-			Model(&database.GalaxyAssetTagRecord{}).
+			Model(&entity.GalaxyAssetTagRecord{}).
 			Select("asset_id").
 			Where("project_id = ? AND tag IN ?", projectID, tags).
 			Group("asset_id").
 			Having("COUNT(DISTINCT tag) = ?", len(tags))
 		query = query.Where("id IN (?)", matching)
 	}
-	var recs []database.GalaxyAssetRecord
+	var recs []entity.GalaxyAssetRecord
 	if err := query.Order("uploaded_at DESC, id ASC").Find(&recs).Error; err != nil {
 		return nil, unavailable("列出资产", err)
 	}
@@ -73,7 +73,7 @@ func (s *Store) ListAssets(ctx context.Context, projectID string, tags []string)
 func (s *Store) ListProjectTags(ctx context.Context, projectID string) ([]string, error) {
 	var tags []string
 	err := s.db.WithContext(ctx).
-		Model(&database.GalaxyAssetTagRecord{}).
+		Model(&entity.GalaxyAssetTagRecord{}).
 		Where("project_id = ?", projectID).
 		Distinct().
 		Order("tag ASC").
@@ -91,7 +91,7 @@ func (s *Store) ListProjectTags(ctx context.Context, projectID string) ([]string
 // 并落库**，标签与资产行在同一个事务里。
 func (s *Store) CreateAsset(ctx context.Context, asset galaxy.Asset) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		rec := database.GalaxyAssetRecord{
+		rec := entity.GalaxyAssetRecord{
 			ID:         asset.ID,
 			ProjectID:  asset.ProjectID,
 			Digest:     asset.Digest,
@@ -121,7 +121,7 @@ func (s *Store) CreateAsset(ctx context.Context, asset galaxy.Asset) error {
 // 一次失败的写入会留下"标题变了、标签没变"这种两边都说不清的中间状态。
 func (s *Store) UpdateAssetMeta(ctx context.Context, projectID, assetID, title, notes string, tags []string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&database.GalaxyAssetRecord{}).
+		result := tx.Model(&entity.GalaxyAssetRecord{}).
 			Where("id = ? AND project_id = ?", assetID, projectID).
 			Updates(map[string]any{"title": title, "notes": notes})
 		if result.Error != nil {
@@ -131,7 +131,7 @@ func (s *Store) UpdateAssetMeta(ctx context.Context, projectID, assetID, title, 
 			// 行不存在，或者值本来就相同。后者是合法的空改动，前者不是——
 			// 因此再确认一次这一行是否真的在，免得把"资产属于别的工程"报成成功。
 			var count int64
-			if err := tx.Model(&database.GalaxyAssetRecord{}).
+			if err := tx.Model(&entity.GalaxyAssetRecord{}).
 				Where("id = ? AND project_id = ?", assetID, projectID).
 				Count(&count).Error; err != nil {
 				return err
@@ -141,7 +141,7 @@ func (s *Store) UpdateAssetMeta(ctx context.Context, projectID, assetID, title, 
 			}
 		}
 		if err := tx.Where("project_id = ? AND asset_id = ?", projectID, assetID).
-			Delete(&database.GalaxyAssetTagRecord{}).Error; err != nil {
+			Delete(&entity.GalaxyAssetTagRecord{}).Error; err != nil {
 			return err
 		}
 		return insertAssetTags(tx, projectID, assetID, tags)
@@ -162,7 +162,7 @@ func (s *Store) UpdateAssetMeta(ctx context.Context, projectID, assetID, title, 
 func (s *Store) DeleteAsset(ctx context.Context, projectID, assetID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("id = ? AND project_id = ?", assetID, projectID).
-			Delete(&database.GalaxyAssetRecord{})
+			Delete(&entity.GalaxyAssetRecord{})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -170,7 +170,7 @@ func (s *Store) DeleteAsset(ctx context.Context, projectID, assetID string) erro
 			return galaxy.ErrAssetNotFound
 		}
 		return tx.Where("project_id = ? AND asset_id = ?", projectID, assetID).
-			Delete(&database.GalaxyAssetTagRecord{}).Error
+			Delete(&entity.GalaxyAssetTagRecord{}).Error
 	})
 	if err != nil {
 		if errors.Is(err, galaxy.ErrAssetNotFound) {
@@ -186,7 +186,7 @@ func (s *Store) DeleteAsset(ctx context.Context, projectID, assetID string) erro
 // 一次读整个工程而不是逐个资产查：列表页要的是全部资产，逐个查就是 N+1 次
 // 往返。标签行在一张独立的窄表上，一次全取与只取几行差别很小。
 func (s *Store) assetTags(ctx context.Context, projectID string) (map[string][]string, error) {
-	var recs []database.GalaxyAssetTagRecord
+	var recs []entity.GalaxyAssetTagRecord
 	err := s.db.WithContext(ctx).
 		Where("project_id = ?", projectID).
 		Order("asset_id ASC, tag ASC").
@@ -210,9 +210,9 @@ func insertAssetTags(tx *gorm.DB, projectID, assetID string, tags []string) erro
 	if len(tags) == 0 {
 		return nil
 	}
-	recs := make([]database.GalaxyAssetTagRecord, 0, len(tags))
+	recs := make([]entity.GalaxyAssetTagRecord, 0, len(tags))
 	for _, tag := range tags {
-		recs = append(recs, database.GalaxyAssetTagRecord{
+		recs = append(recs, entity.GalaxyAssetTagRecord{
 			ProjectID: projectID,
 			AssetID:   assetID,
 			Tag:       tag,

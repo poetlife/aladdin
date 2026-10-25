@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0011GalaxyContentSlots 把「一个工程一种形态」改成「一个工程一组内容槽」。
@@ -40,15 +40,15 @@ var migration0011GalaxyContentSlots = &gormigrate.Migration{
 	ID: "0011_galaxy_content_slots",
 	Migrate: func(tx *gorm.DB) error {
 		// 一、建内容槽表。它是"这个工程有哪些内容"的**唯一**定义处。
-		if err := tx.AutoMigrate(&database.GalaxySlotRecord{}); err != nil {
+		if err := tx.AutoMigrate(&entity.GalaxySlotRecord{}); err != nil {
 			return err
 		}
 
 		// 二、给三张已有表加 slot 列（记录类型已经带上它，AutoMigrate 只补列）。
 		if err := tx.AutoMigrate(
-			&database.GalaxyVersionRecord{},
-			&database.GalaxyPublicationRecord{},
-			&database.GalaxyPreviewGrantRecord{},
+			&entity.GalaxyVersionRecord{},
+			&entity.GalaxyPublicationRecord{},
+			&entity.GalaxyPreviewGrantRecord{},
 		); err != nil {
 			return err
 		}
@@ -142,7 +142,7 @@ func rebuildDrafts(tx *gorm.DB) error {
 	if err := tx.Migrator().RenameTable("galaxy_drafts", oldTable); err != nil {
 		return err
 	}
-	if err := tx.AutoMigrate(&database.GalaxyDraftRecord{}); err != nil {
+	if err := tx.AutoMigrate(&entity.GalaxyDraftRecord{}); err != nil {
 		return err
 	}
 	err := tx.Exec(`INSERT INTO galaxy_drafts (project_id, slot, manifest, updated_at)

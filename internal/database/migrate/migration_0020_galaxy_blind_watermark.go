@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0020GalaxyBlindWatermark 给工程表加一列「要不要铺盲水印」。
@@ -19,6 +19,6 @@ import (
 var migration0020GalaxyBlindWatermark = &gormigrate.Migration{
 	ID: "0020_galaxy_blind_watermark",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.GalaxyProjectRecord{})
+		return tx.AutoMigrate(&entity.GalaxyProjectRecord{})
 	},
 }

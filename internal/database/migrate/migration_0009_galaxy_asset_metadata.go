@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0009GalaxyAssetMetadata 给资产加"说明层"元数据：资产表增展示标题与
@@ -26,8 +26,8 @@ var migration0009GalaxyAssetMetadata = &gormigrate.Migration{
 	ID: "0009_galaxy_asset_metadata",
 	Migrate: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(
-			&database.GalaxyAssetRecord{},
-			&database.GalaxyAssetTagRecord{},
+			&entity.GalaxyAssetRecord{},
+			&entity.GalaxyAssetTagRecord{},
 		)
 	},
 }

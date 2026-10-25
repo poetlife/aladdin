@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0002SessionTable 建立认证模块的会话表。
@@ -18,6 +18,6 @@ import (
 var migration0002SessionTable = &gormigrate.Migration{
 	ID: "0002_session_table",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.SessionRecord{})
+		return tx.AutoMigrate(&entity.SessionRecord{})
 	},
 }

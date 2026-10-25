@@ -153,7 +153,7 @@ Go 侧常量与前端常量均由它派生（`make gen`），不允许任何一�
 | 持久化的 SQL 实现 | [internal/rbac/gormstore/](../../../internal/rbac/gormstore/) |
 | 内置角色的初始化（只补缺失） | [internal/rbac/builtin_roles.go](../../../internal/rbac/builtin_roles.go) |
 | 内置角色定义（由权限目录生成） | [internal/rbac/catalog_gen.go](../../../internal/rbac/catalog_gen.go) |
-| 表结构定义 | [internal/database/schema.go](../../../internal/database/schema.go) |
+| 表结构定义 | [internal/database/entity/](../../../internal/database/entity/) |
 | 迁移机制与迁移清单 | [internal/database/migrate/](../../../internal/database/migrate/) |
 | 前端权限码常量（由 proto 生成） | [web/src/gen/](../../../web/src/gen/) |
 

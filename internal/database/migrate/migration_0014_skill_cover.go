@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0014SkillCover 给技能表加上封面那一列。
@@ -18,6 +18,6 @@ import (
 var migration0014SkillCover = &gormigrate.Migration{
 	ID: "0014_skill_cover",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.SkillRecord{})
+		return tx.AutoMigrate(&entity.SkillRecord{})
 	},
 }

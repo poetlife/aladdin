@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0007GalaxyFileSet 把 galaxy 的内容形态从「一份 HTML」改成「一组具名
@@ -39,11 +39,11 @@ var migration0007GalaxyFileSet = &gormigrate.Migration{
 			}
 		}
 		return tx.AutoMigrate(
-			&database.GalaxyProjectRecord{},
-			&database.GalaxyDraftRecord{},
-			&database.GalaxyVersionRecord{},
-			&database.GalaxyAssetRecord{},
-			&database.GalaxyPublicationRecord{},
+			&entity.GalaxyProjectRecord{},
+			&entity.GalaxyDraftRecord{},
+			&entity.GalaxyVersionRecord{},
+			&entity.GalaxyAssetRecord{},
+			&entity.GalaxyPublicationRecord{},
 		)
 	},
 }

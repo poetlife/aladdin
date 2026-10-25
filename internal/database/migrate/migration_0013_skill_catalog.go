@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0013SkillCatalog 建立平台技能目录的五张表。
@@ -25,11 +25,11 @@ var migration0013SkillCatalog = &gormigrate.Migration{
 	ID: "0013_skill_catalog",
 	Migrate: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(
-			&database.SkillRecord{},
-			&database.SkillVersionRecord{},
-			&database.SkillTagRecord{},
-			&database.SkillFavoriteRecord{},
-			&database.SkillUsageDailyRecord{},
+			&entity.SkillRecord{},
+			&entity.SkillVersionRecord{},
+			&entity.SkillTagRecord{},
+			&entity.SkillFavoriteRecord{},
+			&entity.SkillUsageDailyRecord{},
 		)
 	},
 }

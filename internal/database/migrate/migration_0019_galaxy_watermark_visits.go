@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-gormigrate/gormigrate/v2"
 
-	"github.com/poetlife/aladdin/internal/database"
+	"github.com/poetlife/aladdin/internal/database/entity"
 )
 
 // migration0019GalaxyWatermarkVisits 新增水印登记表：一枚码对回一次访问。
@@ -20,6 +20,6 @@ import (
 var migration0019GalaxyWatermarkVisits = &gormigrate.Migration{
 	ID: "0019_galaxy_watermark_visits",
 	Migrate: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&database.GalaxyWatermarkVisitRecord{})
+		return tx.AutoMigrate(&entity.GalaxyWatermarkVisitRecord{})
 	},
 }
